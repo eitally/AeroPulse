@@ -30,6 +30,7 @@ import type {
   TeamSummaryWithRole,
 } from '../types';
 import {
+  COACH_EVENT_GROUP_OPTIONS,
   CURATED_TEAM_PALETTE_PRESETS,
   buildFreeNativeSmsUri,
   computeAccessibleTeamPalette,
@@ -47,6 +48,7 @@ import {
   graduateClassApi,
   leaveOrGraduateTeamApi,
   mergeRosterMembersApi,
+  requestParentConsentLinkApi,
   transferHeadCoachApi,
   updateMemberRoleApi,
   updateMemberStatusApi,
@@ -224,6 +226,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const [isSendingBulk, setIsSendingBulk] = useState(false);
   const [isJoiningTeam, setIsJoiningTeam] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copyingParentLinkId, setCopyingParentLinkId] = useState<string | null>(null);
+  const [rosterSearchQuery, setRosterSearchQuery] = useState('');
+  const [rosterEventFilter, setRosterEventFilter] = useState<string>('ALL');
+  const [rosterAwaitingParentOnly, setRosterAwaitingParentOnly] = useState(false);
   const [bannerMessage, setBannerMessage] = useState<{
     tone: 'success' | 'info' | 'error';
     text: string;
@@ -345,6 +351,46 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
       navigator.clipboard.writeText(value).catch(() => {});
       setCopiedId(key);
       window.setTimeout(() => setCopiedId(null), 2000);
+    }
+  };
+
+  const handleCopyParentConsentLink = async (membershipId: string) => {
+    if (!activeTeam) return;
+    if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo-team-')) {
+      copyTextWithFeedback(
+        `parent-${membershipId}`,
+        `${originUrl}/api/teams/parent-consent?token=demo-${membershipId}`
+      );
+      setBannerMessage({ tone: 'info', text: 'Copied 1-click Parent Consent link.' });
+      return;
+    }
+    setCopyingParentLinkId(membershipId);
+    try {
+      const data = await requestParentConsentLinkApi({
+        teamId: activeTeam.brand.teamId,
+        membershipId,
+        originUrl,
+      });
+      if (data.consentUrl) {
+        copyTextWithFeedback(`parent-${membershipId}`, data.consentUrl);
+      }
+      if (data.team) {
+        applyUpdatedTeamSummary(data.team);
+      }
+      setBannerMessage({
+        tone: 'success',
+        text:
+          data.emailStatus === 'SENT_RESEND'
+            ? 'Copied Parent Consent link & emailed guardian.'
+            : 'Copied 1-click Parent Consent link — paste via text or email.',
+      });
+    } catch (err) {
+      setBannerMessage({
+        tone: 'error',
+        text: err instanceof Error ? err.message : 'Failed generating parent consent link.',
+      });
+    } finally {
+      setCopyingParentLinkId(null);
     }
   };
 
@@ -1693,6 +1739,9 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-xs font-mono text-slate-600 dark:text-slate-300">
+                      {parsedRosterPreview.length > 12
+                        ? `Showing 12 of ${parsedRosterPreview.length} preview rows · `
+                        : ''}
                       Ready to import <strong>{parsedRosterPreview.length}</strong> athlete
                       {parsedRosterPreview.length === 1 ? '' : 's'} into{' '}
                       <strong>{activeTeam.brand.shortName}</strong>
@@ -1721,11 +1770,59 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           )}
 
           {/* Live Team Roster & Onboarding Funnel Status Table */}
+          {(() => {
+            const awaitingParentCount = activeTeam.memberships.filter(
+              (m) =>
+                m.role === 'ATHLETE' &&
+                m.isMinorU18 &&
+                m.parentConsentStatus !== 'ACKNOWLEDGED' &&
+                m.status !== 'REVOKED'
+            ).length;
+            const cleanSearch = rosterSearchQuery.trim().toLowerCase();
+            const filteredMemberships = activeTeam.memberships.filter((m) => {
+              if (
+                rosterAwaitingParentOnly &&
+                !(
+                  m.role === 'ATHLETE' &&
+                  m.isMinorU18 &&
+                  m.parentConsentStatus !== 'ACKNOWLEDGED' &&
+                  m.status !== 'REVOKED'
+                )
+              ) {
+                return false;
+              }
+              if (rosterEventFilter !== 'ALL' && m.eventGroup !== rosterEventFilter) {
+                return false;
+              }
+              if (cleanSearch) {
+                const hay = `${m.invitedName} ${m.invitedEmail || ''} ${m.squadGroup}`.toLowerCase();
+                if (!hay.includes(cleanSearch)) return false;
+              }
+              return true;
+            });
+            return (
           <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 overflow-hidden">
             <div className="px-5 py-3 border-b border-stone-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
-              <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                {activeTeam.brand.name} — Roster ({activeTeam.memberships.length})
-              </h4>
+              <div className="flex flex-wrap items-center gap-2">
+                <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                  {activeTeam.brand.name} — Roster ({filteredMemberships.length}
+                  {filteredMemberships.length !== activeTeam.memberships.length
+                    ? ` / ${activeTeam.memberships.length}`
+                    : ''})
+                </h4>
+                {awaitingParentCount > 0 && (
+                  <button
+                    type="button"
+                    data-testid="roster-awaiting-parent-pill"
+                    onClick={() => setRosterAwaitingParentOnly((prev) => !prev)}
+                    className={`px-2 py-0.5 rounded-full text-2xs font-mono font-bold cursor-pointer ${
+                      rosterAwaitingParentOnly ? 'ap-nav-volt-active' : 'ap-status-caution'
+                    }`}
+                  >
+                    {awaitingParentCount} awaiting parent
+                  </button>
+                )}
+              </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 {canManageGovernance && (
@@ -1833,6 +1930,42 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               </div>
             )}
 
+            <div className="px-5 py-2.5 border-b border-stone-200/80 dark:border-slate-800 flex flex-wrap items-center gap-2 bg-stone-50/70 dark:bg-ap-carbon/60">
+              <input
+                type="search"
+                aria-label="Search roster"
+                value={rosterSearchQuery}
+                onChange={(e) => setRosterSearchQuery(e.target.value)}
+                placeholder="Search roster..."
+                className="flex-1 min-w-[170px] min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 text-xs text-slate-900 dark:text-slate-100"
+              />
+              <select
+                aria-label="Filter roster by event group"
+                value={rosterEventFilter}
+                onChange={(e) => setRosterEventFilter(e.target.value)}
+                className="min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 text-xs font-mono text-slate-800 dark:text-slate-100"
+              >
+                <option value="ALL">All Events</option>
+                {COACH_EVENT_GROUP_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.shortLabel}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                aria-pressed={rosterAwaitingParentOnly}
+                onClick={() => setRosterAwaitingParentOnly((prev) => !prev)}
+                className={`min-h-[38px] px-3 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
+                  rosterAwaitingParentOnly
+                    ? 'ap-nav-volt-active'
+                    : 'ap-card-inset text-slate-700 dark:text-slate-200'
+                }`}
+              >
+                Awaiting Parent
+              </button>
+            </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-stone-100 dark:bg-ap-carbon text-2xs font-mono uppercase text-slate-500">
@@ -1845,7 +1978,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-200/70 dark:divide-slate-800">
-                  {activeTeam.memberships.map((m) => {
+                  {filteredMemberships.map((m) => {
                     const joinLink = m.magicJoinUrl || activeJoinUrl;
                     const firstName = m.invitedName.split(/\s+/)[0];
                     const isSelfRow = m.membershipId === activeTeam.myMembershipId;
@@ -1884,7 +2017,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                     return (
                       <tr key={m.membershipId}>
                         <td className="py-3 px-4">
-                          <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          <div className="font-semibold text-slate-900 dark:text-white flex flex-wrap items-center gap-1.5">
                             <span>{m.invitedName}</span>
                             {m.isMinorU18 && (
                               <span
@@ -1892,6 +2025,19 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 title="Safe-Sport Weight Shield Active"
                               >
                                 Safe-Sport
+                              </span>
+                            )}
+                            {m.role === 'ATHLETE' && m.isMinorU18 && (
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-2xs font-mono ${
+                                  m.parentConsentStatus === 'ACKNOWLEDGED'
+                                    ? 'ap-status-prime'
+                                    : 'ap-status-caution'
+                                }`}
+                              >
+                                {m.parentConsentStatus === 'ACKNOWLEDGED'
+                                  ? 'Parent Approved ✓'
+                                  : 'Awaiting Parent'}
                               </span>
                             )}
                           </div>
@@ -2012,9 +2158,11 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                               className="mt-1 min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                             >
                               <option value="">All Events</option>
-                              <option value="SPRINTS">Sprints</option>
-                              <option value="MID_DISTANCE">800m / Mile</option>
-                              <option value="DISTANCE">3000m / 3200m+</option>
+                              {COACH_EVENT_GROUP_OPTIONS.map((opt) => (
+                                <option key={opt.id} value={opt.id}>
+                                  {opt.shortLabel}
+                                </option>
+                              ))}
                             </select>
                           )}
                         </td>
@@ -2132,6 +2280,24 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                                 )}
                               </button>
 
+                              {m.isMinorU18 && (
+                                <button
+                                  type="button"
+                                  disabled={copyingParentLinkId === m.membershipId}
+                                  onClick={() => void handleCopyParentConsentLink(m.membershipId)}
+                                  className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-2xs font-mono inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <ShieldCheck className="w-3 h-3" />
+                                  <span>
+                                    {copiedId === `parent-${m.membershipId}`
+                                      ? 'Parent Link Copied ✓'
+                                      : copyingParentLinkId === m.membershipId
+                                        ? 'Creating…'
+                                        : 'Copy Parent Link'}
+                                  </span>
+                                </button>
+                              )}
+
                               {allowDirectSms && smsHref && (
                                 <a
                                   href={smsHref}
@@ -2209,6 +2375,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               </table>
             </div>
           </div>
+            );
+          })()}
         </div>
       )}
     </div>

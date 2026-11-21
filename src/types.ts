@@ -1004,7 +1004,15 @@ export type VdotPodIntensity =
   | 'RACE_800M'
   | 'RACE_400M';
 
-export type CoachEventGroup = 'SPRINTS' | 'MID_DISTANCE' | 'DISTANCE';
+export type CoachEventGroup =
+  | 'DISTANCE'
+  | 'MID_DISTANCE'
+  | 'SPRINTS'
+  | 'HURDLES'
+  | 'JUMPS'
+  | 'POLE_VAULT'
+  | 'THROWS'
+  | 'MULTI';
 
 export type TrackRepDistanceMeters = 150 | 200 | 300 | 400 | 500 | 600 | 800 | 1000 | 1200 | 1600;
 export type SpeedReservePhenotype = 'ENDURANCE' | 'HYBRID' | 'SPEED';

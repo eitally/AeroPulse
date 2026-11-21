@@ -95,11 +95,11 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
   test.describe('Desktop Viewport (1440x900)', () => {
     test.skip(({ isMobile }) => isMobile, 'Desktop only');
 
-    test('Connect with Strava leads homepage, Google advances Step 2, and standalone Strava enters workspace directly', async ({
+    test('Google leads Coach-first homepage, Athlete toggle surfaces Strava #1, and standalone Strava enters workspace directly', async ({
       page,
       context,
     }) => {
-      // 1. Fresh AuthGate — Connect with Strava should be the top CTA above Google
+      // 1. Fresh AuthGate (Coach-first default) — Continue with Google sits above Connect with Strava
       await context.clearCookies();
       await page.goto('/');
       await page.evaluate(() => localStorage.clear());
@@ -110,11 +110,19 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
       await expect(stravaBtn).toBeVisible({ timeout: 15000 });
       await expect(googleBtn).toBeVisible({ timeout: 15000 });
 
-      const stravaBox = await stravaBtn.boundingBox();
-      const googleBox = await googleBtn.boundingBox();
-      expect(stravaBox).not.toBeNull();
-      expect(googleBox).not.toBeNull();
-      expect(stravaBox!.y).toBeLessThan(googleBox!.y);
+      const coachStravaBox = await stravaBtn.boundingBox();
+      const coachGoogleBox = await googleBtn.boundingBox();
+      expect(coachStravaBox).not.toBeNull();
+      expect(coachGoogleBox).not.toBeNull();
+      expect(coachGoogleBox!.y).toBeLessThan(coachStravaBox!.y);
+
+      // Switching to Solo Athlete swaps Connect with Strava back to #1 above Google
+      await page.getByTestId('onboarding-role-athlete').click();
+      const athleteStravaBox = await stravaBtn.boundingBox();
+      const athleteGoogleBox = await googleBtn.boundingBox();
+      expect(athleteStravaBox).not.toBeNull();
+      expect(athleteGoogleBox).not.toBeNull();
+      expect(athleteStravaBox!.y).toBeLessThan(athleteGoogleBox!.y);
 
       // Google OAuth still follows data.url -> Step 2 setup for non-Strava accounts
       let interceptedAuthUrl = false;

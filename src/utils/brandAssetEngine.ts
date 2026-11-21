@@ -160,8 +160,8 @@ export function buildSocialOgBannerSvg(): string {
     `</g>`,
     `<rect x="34" y="34" width="1132" height="562" rx="28" stroke="#2B543B" stroke-width="3"/>`,
     heroLockupInner,
-    `<text x="92" y="462" fill="#F4F7F4" font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.8">Run &amp; Ride Readiness</text>`,
-    `<text x="92" y="510" fill="#93A39A" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, monospace" font-size="18" font-weight="600" letter-spacing="1.4">THRESHOLD PHYSIOLOGY  ·  ADAPTIVE LOAD  ·  0.01S TRACKSIDE TIMING</text>`,
+    `<text x="92" y="462" fill="#F4F7F4" font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif" font-size="34" font-weight="700" letter-spacing="-0.8">Track, XC &amp; Endurance Lab</text>`,
+    `<text x="92" y="510" fill="#93A39A" font-family="'JetBrains Mono', ui-monospace, SFMono-Regular, monospace" font-size="18" font-weight="600" letter-spacing="1.4">PACE PODS  ·  0.01S WATCHLESS TIMING  ·  1HZ PHYSIOLOGY</text>`,
     `<g transform="translate(92, 540)">`,
     `<rect x="0" y="0" width="54" height="10" rx="5" fill="#94A3B8"/>`,
     `<rect x="62" y="0" width="54" height="10" rx="5" fill="#0D9488"/>`,
@@ -530,7 +530,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '4x', label: '4x (3600×1890)', width: 3600, height: 1890 },
     ],
     recommendedFor: 'OpenGraph link previews, press kits, coaching clinic title slides',
-    minPhysicalSpec: '1.91:1 social aspect · powers thresh.app meta og:image',
+    minPhysicalSpec: '1.91:1 social aspect · powers thresh.fit meta og:image',
     svgMarkup: buildSocialOgBannerSvg(),
   },
 ];
@@ -1014,8 +1014,8 @@ export function buildDesignTokensExportJson(): string {
 
 export const BRAND_KIT_README_MD = `# THRESH Official Brand Kit & Permissions
 
-- **Canonical Name:** THRESH (always ALL-CAPS in running copy; retire legacy AeroPulse naming in public materials).
-- **Canonical Tagline:** THRESH — Run & Ride Readiness.
+- **Canonical Name:** THRESH (always ALL-CAPS in running copy).
+- **Canonical Positioning:** THRESH — Track, XC & Endurance Coaching Lab.
 - **Included Vectors (\`/svg/\`):** Primary Light/Dark lockups (S2 × W-A), Die-Cut Badge Pill, True Compound-Path 1-Ink Stencils (Obsidian Black, Reversed White, Track Volt), Standalone S2 Symbols & Tiled App Icons, Standalone W-A Wordmarks, 4-Lane Turn Watermark, and 1200x630 OpenGraph Card.
 - **Usage & Print Policy:**
   - **Permitted:** Unmodified editorial coverage, podcasts, race meet heat sheets & programs, API partner directories, and active team tent banners, warm-ups, & roster posters using \`Team × THRESH\` co-branding (following NFHS/NCAA competition uniform area limits <= 2.25 sq in on race singlets without implied institutional sponsorship).

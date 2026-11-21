@@ -2216,7 +2216,7 @@ export default function App() {
         <a href="#main-content" className="ap-skip-link">
           Skip to main content
         </a>
-        <OfflineIndicator />
+        <OfflineIndicator hidden={activeTab === 'coach' && coachSubTab === 'STOPWATCH'} />
 
         {/* Simplified Global Header Bar (Responsive Mobile & Desktop) */}
         <CockpitHeader
@@ -2370,6 +2370,9 @@ export default function App() {
             {!isStopwatchFullscreen && (
               <CockpitFooter
                 athleteFtp={effectiveAthleteProfile.ftp}
+                hideCyclingFtpLabel={
+                  activeTab === 'coach' || effectiveAthleteProfile.primarySport === 'Running'
+                }
                 onOpenProfile={handleOpenProfileModal}
                 onOpenDataSources={handleOpenDataSourcesModal}
                 onOpenGuide={handleOpenMetricsGuideModal}

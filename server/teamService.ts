@@ -582,7 +582,7 @@ export async function bulkCreateAndSendInvites(params: {
     let addedCount = 0;
     let manualLinkCount = 0;
 
-    for (const row of parsedRows.slice(0, 220)) {
+    for (const row of parsedRows.slice(0, 400)) {
       const cleanEmail = row.invitedEmail?.trim().toLowerCase();
       if (
         cleanEmail &&
@@ -626,14 +626,15 @@ export async function bulkCreateAndSendInvites(params: {
         manualLinkCount += 1;
       }
 
+      const resolvedEventGroup =
+        row.eventGroup || inferEventGroupFromSeedMark(row.seedMarkOrFtp);
       latestDoc.memberships.push({
         membershipId,
         teamId: latestDoc.brand.teamId,
         role: 'ATHLETE',
         squadGroup: row.squadGroup || orgDefaults.defaultSquads[0] || 'Varsity',
-        ...(inferEventGroupFromSeedMark(row.seedMarkOrFtp)
-          ? { eventGroup: inferEventGroupFromSeedMark(row.seedMarkOrFtp) }
-          : {}),
+        ...(resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {}),
+        ...(row.genderDivision ? { genderDivision: row.genderDivision } : {}),
         invitedName: String(row.invitedName || 'Team Athlete').trim().slice(0, 64),
         invitedEmail: cleanEmail,
         invitedPhone: row.invitedPhone,
@@ -873,6 +874,7 @@ export async function claimTeamJoinInvite(params: {
   birthMonthYear?: string;
   graduationYear?: number;
   parentGuardianEmail?: string;
+  deferParentEmail?: boolean;
 }): Promise<{
   ok: boolean;
   summary?: TeamSummaryWithRole;
@@ -999,7 +1001,8 @@ export async function claimTeamJoinInvite(params: {
     if (
       (ageCheck.ageTier === 'YOUTH_13_17' ||
         (ageCheck.ageTier === 'UNKNOWN' && doc.brand.orgType === 'HIGH_SCHOOL')) &&
-      !effectiveParentEmail
+      !effectiveParentEmail &&
+      !params.deferParentEmail
     ) {
       return {
         ok: false,
@@ -1008,11 +1011,16 @@ export async function claimTeamJoinInvite(params: {
     }
 
     const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-    const resolvedSharingTier: CoachDataSharingTier = params.sharingTier || 'SUMMARY_ONLY';
     const isMinor =
       ageCheck.ageTier === 'UNKNOWN'
         ? Boolean(doc.brand.orgType === 'HIGH_SCHOOL' || mem?.isMinorU18)
         : ageCheck.isMinorU18;
+    const isDeferredMinorParentEmail = Boolean(
+      isMinor && !effectiveParentEmail && params.deferParentEmail
+    );
+    const resolvedSharingTier: CoachDataSharingTier = isDeferredMinorParentEmail
+      ? 'LOAD_ONLY'
+      : params.sharingTier || 'SUMMARY_ONLY';
 
     if (!mem) {
       mem = {
@@ -1042,7 +1050,8 @@ export async function claimTeamJoinInvite(params: {
     } else {
       mem.userSid = params.callerSid;
       if (cleanStravaId) mem.stravaAthleteId = cleanStravaId;
-      if (params.sharingTier) mem.sharingTier = params.sharingTier;
+      if (isDeferredMinorParentEmail) mem.sharingTier = 'LOAD_ONLY';
+      else if (params.sharingTier) mem.sharingTier = params.sharingTier;
       else if (!mem.sharingTier) mem.sharingTier = 'SUMMARY_ONLY';
       if (params.athleteName?.trim()) {
         mem.invitedName = params.athleteName.trim().slice(0, 64);

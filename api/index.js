@@ -312,7 +312,8 @@ function resolveSafeOrigin(rawOrigin) {
 var TRUSTED_PROD_CORS_ORIGINS = /* @__PURE__ */ new Set([
   "https://thresh-dev.vercel.app",
   "https://aeropulse-eta.vercel.app",
-  "https://thresh.app"
+  "https://thresh.app",
+  "https://thresh.fit"
 ]);
 function normalizeVercelHostToOrigin(host) {
   const clean = String(host || "").trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
@@ -6659,7 +6660,7 @@ async function sendMagicLinkEmail(email, verifyUrl) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || "THRESH <auth@thresh.run>",
+          from: process.env.AUTH_EMAIL_FROM || "THRESH <auth@thresh.fit>",
           to: [email],
           subject: "Sign in to THRESH",
           html: `
@@ -6726,7 +6727,7 @@ async function createPendingEmailChange(userId, newEmail) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || "THRESH <auth@thresh.run>",
+          from: process.env.AUTH_EMAIL_FROM || "THRESH <auth@thresh.fit>",
           to: [cleanNewEmail],
           subject: "Verify your new THRESH email address",
           html: `
@@ -6821,6 +6822,1389 @@ function verifyPasskeyChallengeToken(token) {
   } catch {
     return null;
   }
+}
+
+// server/teamLifecycleService.ts
+import crypto10 from "crypto";
+
+// server/teamEmailAndOtpService.ts
+import crypto7 from "crypto";
+
+// src/utils/teamPalette.ts
+function normalizeHexColor(input, fallback = "#1C5436") {
+  const clean = String(input || "").trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3}$/.test(clean)) {
+    return `#${clean.split("").map((c) => c + c).join("").toUpperCase()}`;
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(clean)) {
+    return `#${clean.toUpperCase()}`;
+  }
+  return fallback;
+}
+function hexToRgb(hex) {
+  const norm = normalizeHexColor(hex);
+  const r = parseInt(norm.slice(1, 3), 16);
+  const g = parseInt(norm.slice(3, 5), 16);
+  const b = parseInt(norm.slice(5, 7), 16);
+  return [r, g, b];
+}
+function rgbToHex(r, g, b) {
+  const clamp3 = (n) => Math.max(0, Math.min(255, Math.round(n)));
+  return `#${[clamp3(r), clamp3(g), clamp3(b)].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
+}
+function rgbToHsl(r, g, b) {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  let h = 0;
+  let s = 0;
+  const l = (max + min) / 2;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    switch (max) {
+      case rn:
+        h = (gn - bn) / d + (gn < bn ? 6 : 0);
+        break;
+      case gn:
+        h = (bn - rn) / d + 2;
+        break;
+      case bn:
+        h = (rn - gn) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+  return [h * 360, s * 100, l * 100];
+}
+function hslToRgb(h, s, l) {
+  const hn = (h % 360 + 360) % 360 / 360;
+  const sn = Math.max(0, Math.min(100, s)) / 100;
+  const ln = Math.max(0, Math.min(100, l)) / 100;
+  if (sn === 0) {
+    const v = ln * 255;
+    return [v, v, v];
+  }
+  const hue2rgb = (p2, q2, t) => {
+    let tn = t;
+    if (tn < 0) tn += 1;
+    if (tn > 1) tn -= 1;
+    if (tn < 1 / 6) return p2 + (q2 - p2) * 6 * tn;
+    if (tn < 1 / 2) return q2;
+    if (tn < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - tn) * 6;
+    return p2;
+  };
+  const q = ln < 0.5 ? ln * (1 + sn) : ln + sn - ln * sn;
+  const p = 2 * ln - q;
+  return [
+    hue2rgb(p, q, hn + 1 / 3) * 255,
+    hue2rgb(p, q, hn) * 255,
+    hue2rgb(p, q, hn - 1 / 3) * 255
+  ];
+}
+function relativeLuminance(hex) {
+  const [r, g, b] = hexToRgb(hex).map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastRatio(hexA, hexB) {
+  const l1 = relativeLuminance(hexA);
+  const l2 = relativeLuminance(hexB);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+function ensureContrastAgainstSurface(hex, surfaceHex, minRatio = 4.55) {
+  const clean = normalizeHexColor(hex);
+  if (contrastRatio(clean, surfaceHex) >= minRatio) return clean;
+  const surfaceLum = relativeLuminance(surfaceHex);
+  const [r, g, b] = hexToRgb(clean);
+  const [h, s, startL] = rgbToHsl(r, g, b);
+  const darken = surfaceLum > 0.5;
+  let curL = startL;
+  for (let i = 0; i < 45; i++) {
+    curL = darken ? Math.max(8, curL - 2) : Math.min(92, curL + 2);
+    const [nr, ng, nb] = hslToRgb(h, Math.max(s, 35), curL);
+    const candidate = rgbToHex(nr, ng, nb);
+    if (contrastRatio(candidate, surfaceHex) >= minRatio) {
+      return candidate;
+    }
+  }
+  return darken ? "#14532D" : "#A3E635";
+}
+function selectButtonInk(bgHex) {
+  const whiteCr = contrastRatio(bgHex, "#FFFFFF");
+  const darkCr = contrastRatio(bgHex, "#080A09");
+  return darkCr >= whiteCr ? "#080A09" : "#FFFFFF";
+}
+function computeAccessibleTeamPalette(rawPrimaryHex, rawSecondaryHex) {
+  const primaryHex = normalizeHexColor(rawPrimaryHex, "#1C5436");
+  const secondaryHex = normalizeHexColor(rawSecondaryHex, "#65A30D");
+  let primaryOnLight = ensureContrastAgainstSurface(primaryHex, "#E9EFE9", 4.6);
+  primaryOnLight = ensureContrastAgainstSurface(primaryOnLight, "#FFFFFF", 4.65);
+  const primaryOnDark = ensureContrastAgainstSurface(primaryHex, "#15231B", 4.65);
+  let secondaryOnLight = ensureContrastAgainstSurface(secondaryHex, "#E9EFE9", 4.55);
+  secondaryOnLight = ensureContrastAgainstSurface(secondaryOnLight, "#FFFFFF", 4.6);
+  const secondaryOnDark = ensureContrastAgainstSurface(secondaryHex, "#15231B", 4.6);
+  const textOnPrimaryLight = selectButtonInk(primaryOnLight);
+  const textOnPrimaryDark = selectButtonInk(primaryOnDark);
+  return {
+    primaryHex,
+    secondaryHex,
+    primaryOnLight,
+    primaryOnDark,
+    secondaryOnLight,
+    secondaryOnDark,
+    textOnPrimaryLight,
+    textOnPrimaryDark,
+    hairlineGradientLight: `linear-gradient(90deg, ${primaryOnLight} 0%, ${secondaryOnLight} 100%)`,
+    hairlineGradientDark: `linear-gradient(90deg, ${primaryOnDark} 0%, ${secondaryOnDark} 100%)`
+  };
+}
+
+// src/physiology/teamOnboardingEngine.ts
+function getOrgTypeSafeguardingDefaults(orgType) {
+  switch (orgType) {
+    case "HIGH_SCHOOL":
+      return {
+        defaultSafeSportShield: true,
+        enableParentGuardianCc: true,
+        defaultPrimarySport: "Running",
+        defaultSquads: ["Varsity", "Junior Varsity", "Frosh/Soph"],
+        orgBadgeLabel: "High School \xB7 Safe-Sport Defaults ON"
+      };
+    case "COLLEGIATE":
+      return {
+        defaultSafeSportShield: true,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Running",
+        defaultSquads: ["Varsity Distance", "Mid-Distance", "Development"],
+        orgBadgeLabel: "Collegiate \xB7 NCAA CARA Enabled"
+      };
+    case "RUNNING_CLUB":
+      return {
+        defaultSafeSportShield: false,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Running",
+        defaultSquads: ["Marathon / Roads", "Track Group", "Community"],
+        orgBadgeLabel: "Running Club"
+      };
+    case "CYCLING_CLUB":
+      return {
+        defaultSafeSportShield: false,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Cycling",
+        defaultSquads: ["A Group / Race", "B Group / Tempo", "Social / Z2"],
+        orgBadgeLabel: "Cycling Team / Club"
+      };
+    case "COACH_SQUAD":
+    default:
+      return {
+        defaultSafeSportShield: false,
+        enableParentGuardianCc: false,
+        defaultPrimarySport: "Hybrid",
+        defaultSquads: ["Squad A", "Squad B", "1-on-1 Coached"],
+        orgBadgeLabel: "Coaching Squad"
+      };
+  }
+}
+function slugifyTeamName(name) {
+  const base = String(name || "team").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+  return base || "thresh-team";
+}
+function generateTeamJoinCode(shortName, suffixNum) {
+  const prefix = String(shortName || "TEAM").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "TEAM";
+  const digits = suffixNum !== void 0 ? String(suffixNum).padStart(2, "0").slice(-2) : String((/* @__PURE__ */ new Date()).getFullYear()).slice(-2);
+  return `${prefix}-${digits}`;
+}
+var COACH_EVENT_GROUP_OPTIONS = [
+  { id: "DISTANCE", label: "Distance (3000m / 3200m / 5K / XC)", shortLabel: "Distance" },
+  { id: "MID_DISTANCE", label: "Mid-Distance (800m / 1600m / Mile)", shortLabel: "Mid-Dist" },
+  { id: "SPRINTS", label: "Sprints (100m / 200m / 400m)", shortLabel: "Sprints" },
+  { id: "HURDLES", label: "Hurdles (100H / 110H / 300H / 400H)", shortLabel: "Hurdles" },
+  { id: "JUMPS", label: "Jumps (LJ / TJ / HJ)", shortLabel: "Jumps" },
+  { id: "POLE_VAULT", label: "Pole Vault (PV)", shortLabel: "Pole Vault" },
+  { id: "THROWS", label: "Throws (SP / Discus / Javelin)", shortLabel: "Throws" },
+  { id: "MULTI", label: "Multi-Events (Pent / Hept / Dec)", shortLabel: "Multi" }
+];
+var COACH_EVENT_GROUPS = new Set(
+  COACH_EVENT_GROUP_OPTIONS.map((opt) => opt.id)
+);
+var COACH_EVENT_GROUP_ALIASES = {
+  DIST: "DISTANCE",
+  DISTANCE: "DISTANCE",
+  XC: "DISTANCE",
+  CROSS_COUNTRY: "DISTANCE",
+  MID: "MID_DISTANCE",
+  MIDDIST: "MID_DISTANCE",
+  MID_DIST: "MID_DISTANCE",
+  MID_DISTANCE: "MID_DISTANCE",
+  SPRINT: "SPRINTS",
+  SPRINTS: "SPRINTS",
+  HURDLE: "HURDLES",
+  HURDLES: "HURDLES",
+  JUMP: "JUMPS",
+  JUMPS: "JUMPS",
+  PV: "POLE_VAULT",
+  VAULT: "POLE_VAULT",
+  POLE_VAULT: "POLE_VAULT",
+  THROW: "THROWS",
+  THROWS: "THROWS",
+  MULTI: "MULTI",
+  MULTIS: "MULTI",
+  MULTI_EVENT: "MULTI",
+  MULTI_EVENTS: "MULTI"
+};
+function normalizeCoachEventGroup(val) {
+  if (typeof val !== "string") return null;
+  const normalized = val.trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (COACH_EVENT_GROUPS.has(normalized)) {
+    return normalized;
+  }
+  return COACH_EVENT_GROUP_ALIASES[normalized] || null;
+}
+function sanitizeTargetEventGroups(raw) {
+  if (!Array.isArray(raw)) return void 0;
+  return raw.map((g) => normalizeCoachEventGroup(g)).filter((g) => g !== null);
+}
+function splitCsvLine(line, delimiter) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === delimiter && !inQuotes) {
+      out.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+function inferNameFromEmail(email) {
+  const local = email.split("@")[0] || "Athlete";
+  return local.replace(/[._-]+/g, " ").replace(/\d+/g, "").trim().split(/\s+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ") || "Team Athlete";
+}
+function normalizePhoneDisplay(raw) {
+  const cleaned = raw.trim();
+  const digits = cleaned.replace(/[^\d+]/g, "");
+  const onlyDigits = digits.replace(/\D/g, "");
+  if (onlyDigits.length < 10 || onlyDigits.length > 15) return void 0;
+  if (digits.startsWith("+")) return digits;
+  if (onlyDigits.length === 10) return `+1${onlyDigits}`;
+  if (onlyDigits.length === 11 && onlyDigits.startsWith("1")) return `+${onlyDigits}`;
+  return `+${onlyDigits}`;
+}
+function parseBulkRosterCsvOrText(rawText, orgType = "HIGH_SCHOOL", defaultSquad = "Varsity") {
+  const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+  if (lines.length === 0) return [];
+  const firstLine = lines[0];
+  const delimiter = firstLine.includes("	") ? "	" : firstLine.includes(",") ? "," : firstLine.includes(";") ? ";" : ",";
+  const firstCols = splitCsvLine(firstLine, delimiter).map(
+    (c) => c.toLowerCase().replace(/[^a-z0-9]/g, "")
+  );
+  const hasHeader = firstCols.length >= 2 && firstCols.some(
+    (c) => [
+      "name",
+      "athletename",
+      "fullname",
+      "first",
+      "firstname",
+      "email",
+      "athleteemail",
+      "phone",
+      "mobile",
+      "squad",
+      "group",
+      "pod",
+      "parentemail",
+      "guardianemail",
+      "eventgroup",
+      "event",
+      "events",
+      "discipline",
+      "gender",
+      "sex"
+    ].includes(c)
+  );
+  const colMap = {
+    name: -1,
+    firstName: -1,
+    lastName: -1,
+    email: -1,
+    phone: -1,
+    squad: -1,
+    eventGroup: -1,
+    gender: -1,
+    gradYear: -1,
+    parentEmail: -1,
+    seed: -1
+  };
+  if (hasHeader) {
+    firstCols.forEach((col, idx) => {
+      if (["name", "athletename", "fullname", "student", "athlete"].includes(col)) {
+        colMap.name = idx;
+      } else if (["first", "firstname", "fname"].includes(col)) {
+        colMap.firstName = idx;
+      } else if (["last", "lastname", "lname"].includes(col)) {
+        colMap.lastName = idx;
+      } else if (["email", "athleteemail", "studentemail", "mail"].includes(col)) {
+        colMap.email = idx;
+      } else if (["phone", "mobile", "cell", "cellphone", "phonenumber", "sms"].includes(col)) {
+        colMap.phone = idx;
+      } else if (["squad", "group", "pod", "level", "division", "team"].includes(col)) {
+        colMap.squad = idx;
+      } else if (["eventgroup", "event", "events", "discipline"].includes(col)) {
+        colMap.eventGroup = idx;
+      } else if (["gender", "sex", "boysgirls", "divisiongender"].includes(col)) {
+        colMap.gender = idx;
+      } else if (["gradyear", "class", "classyear", "year", "grad"].includes(col)) {
+        colMap.gradYear = idx;
+      } else if ([
+        "parentemail",
+        "guardianemail",
+        "parent",
+        "guardian",
+        "parentcc",
+        "momemail",
+        "dademail"
+      ].includes(col)) {
+        colMap.parentEmail = idx;
+      } else if (["seed", "pr", "seedmark", "ftp", "5k", "1600m", "mile", "mark"].includes(col)) {
+        colMap.seed = idx;
+      }
+    });
+  }
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+  const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+  const rows = [];
+  for (const line of dataLines) {
+    const angleMatch = line.match(/^([^<,]+)<([^>]+@[^>]+)>$/);
+    if (angleMatch && !hasHeader) {
+      const invitedEmail2 = angleMatch[2].trim().toLowerCase();
+      const invitedName2 = angleMatch[1].trim() || inferNameFromEmail(invitedEmail2);
+      rows.push({
+        invitedName: invitedName2,
+        invitedEmail: invitedEmail2,
+        squadGroup: defaultSquad,
+        isMinorU18: orgType === "HIGH_SCHOOL"
+      });
+      continue;
+    }
+    const cols = splitCsvLine(line, delimiter);
+    if (cols.every((c) => !c)) continue;
+    let invitedName = "";
+    let invitedEmail;
+    let invitedPhone;
+    let squadGroup = defaultSquad;
+    let eventGroup;
+    let genderDivision;
+    let graduationYear;
+    let parentGuardianEmail;
+    let seedMarkOrFtp;
+    if (hasHeader) {
+      if (colMap.name >= 0) {
+        invitedName = cols[colMap.name] || "";
+      } else if (colMap.firstName >= 0 || colMap.lastName >= 0) {
+        invitedName = [
+          colMap.firstName >= 0 ? cols[colMap.firstName] : "",
+          colMap.lastName >= 0 ? cols[colMap.lastName] : ""
+        ].filter(Boolean).join(" ");
+      }
+      if (colMap.email >= 0 && cols[colMap.email]?.includes("@")) {
+        invitedEmail = cols[colMap.email].trim().toLowerCase();
+      }
+      if (colMap.phone >= 0 && cols[colMap.phone]) {
+        invitedPhone = normalizePhoneDisplay(cols[colMap.phone]);
+      }
+      if (colMap.squad >= 0 && cols[colMap.squad]) {
+        squadGroup = cols[colMap.squad].trim();
+      }
+      if (colMap.eventGroup >= 0 && cols[colMap.eventGroup]) {
+        const rawEventGroup = cols[colMap.eventGroup].trim();
+        eventGroup = normalizeCoachEventGroup(rawEventGroup) || inferEventGroupFromSeedMark(rawEventGroup);
+      }
+      if (colMap.gender >= 0 && cols[colMap.gender]) {
+        const gRaw = cols[colMap.gender].trim().toUpperCase();
+        if (gRaw.startsWith("M") || gRaw === "B") genderDivision = "M";
+        else if (gRaw.startsWith("F") || gRaw.startsWith("W") || gRaw === "G") {
+          genderDivision = "F";
+        }
+      }
+      if (colMap.gradYear >= 0 && cols[colMap.gradYear]) {
+        const yr = parseInt(cols[colMap.gradYear].replace(/\D/g, ""), 10);
+        if (yr >= 20 && yr <= 99) graduationYear = 2e3 + yr;
+        else if (yr >= 2020 && yr <= 2045) graduationYear = yr;
+      }
+      if (colMap.parentEmail >= 0 && cols[colMap.parentEmail]?.includes("@")) {
+        parentGuardianEmail = cols[colMap.parentEmail].trim().toLowerCase();
+      }
+      if (colMap.seed >= 0 && cols[colMap.seed]) {
+        seedMarkOrFtp = cols[colMap.seed].trim();
+      }
+    } else {
+      const emailsFound = [];
+      for (const cell of cols) {
+        const trimmed = cell.trim();
+        if (!trimmed) continue;
+        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+          emailsFound.push(trimmed.toLowerCase());
+        } else if (!invitedPhone && normalizePhoneDisplay(trimmed) && /\d{3}.*\d{4}/.test(trimmed)) {
+          invitedPhone = normalizePhoneDisplay(trimmed);
+        } else if (!graduationYear && /^(202[4-9]|203[0-6])$/.test(trimmed)) {
+          graduationYear = Number(trimmed);
+        } else if (!seedMarkOrFtp && (/^\d{1,2}:\d{2}(\.\d+)?/.test(trimmed) || /^\d{2,3}\s*w$/i.test(trimmed))) {
+          seedMarkOrFtp = trimmed;
+        } else if (!invitedName) {
+          invitedName = trimmed;
+        } else if (squadGroup === defaultSquad) {
+          squadGroup = trimmed;
+        }
+      }
+      if (emailsFound[0]) invitedEmail = emailsFound[0];
+      if (emailsFound[1]) parentGuardianEmail = emailsFound[1];
+    }
+    if (!invitedName && invitedEmail) {
+      invitedName = inferNameFromEmail(invitedEmail);
+    }
+    if (!invitedName && !invitedEmail && !invitedPhone) continue;
+    const isMinorU18 = orgType === "HIGH_SCHOOL" || Boolean(parentGuardianEmail) || Boolean(graduationYear && orgType !== "COLLEGIATE" && graduationYear >= currentYear + 1);
+    rows.push({
+      invitedName: invitedName || "Team Athlete",
+      invitedEmail,
+      invitedPhone,
+      squadGroup: squadGroup || defaultSquad,
+      ...eventGroup ? { eventGroup } : {},
+      ...genderDivision ? { genderDivision } : {},
+      graduationYear,
+      parentGuardianEmail,
+      seedMarkOrFtp,
+      isMinorU18
+    });
+  }
+  return rows;
+}
+function parseClockSecs(clock) {
+  const parts = clock.trim().split(":").map((p) => Number(p));
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+function formatPaceDisplay(secsPerKm, unit) {
+  const targetSecs = unit === "mi" ? secsPerKm * 1.60934 : secsPerKm;
+  const m = Math.floor(targetSecs / 60);
+  const s = Math.round(targetSecs % 60);
+  return s === 60 ? `${m + 1}:00` : `${m}:${String(s).padStart(2, "0")}`;
+}
+function calibrateThresholdsFromSeedMark(seedInput, primarySport = "Running", distanceUnit = "mi") {
+  const raw = String(seedInput || "").trim();
+  const defaultPaceSecsKm = 270;
+  const defaultFtp = 240;
+  if (!raw) {
+    return {
+      cyclingFtpWatts: defaultFtp,
+      thresholdPaceSecsPerKm: defaultPaceSecsKm,
+      thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
+      easyPaceInputDisplay: formatPaceDisplay(Math.round(defaultPaceSecsKm * 1.24), distanceUnit),
+      intervalPaceInputDisplay: formatPaceDisplay(Math.round(defaultPaceSecsKm * 0.91), distanceUnit),
+      summaryNote: "Default starter zones (auto-refines on first Strava / Garmin / FIT sync)"
+    };
+  }
+  const twentyMinMatch = raw.match(/20\s*m(?:in(?:ute)?s?)?\s*[:@-]?\s*(\d{2,3})\s*w?/i) || raw.match(/(\d{2,3})\s*w(?:atts)?\s*(?:for\s*|@\s*|\(\s*|-)?\s*20\s*m(?:in)?/i);
+  if (twentyMinMatch) {
+    const rawWatts = Number(twentyMinMatch[1]);
+    const ftp = Math.max(90, Math.min(550, Math.round(rawWatts * 0.95)));
+    return {
+      cyclingFtpWatts: ftp,
+      thresholdPaceSecsPerKm: defaultPaceSecsKm,
+      thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
+      summaryNote: `Estimated ${ftp}W FTP from 20-minute power (${rawWatts}W \xD7 0.95)`
+    };
+  }
+  const wattsMatch = raw.match(/(\d{2,3})\s*w(?:atts)?\b/i) || (primarySport !== "Running" && /^\d{2,3}$/.test(raw) ? [raw, raw] : null);
+  if (wattsMatch) {
+    const ftp = Math.max(85, Math.min(550, Math.round(Number(wattsMatch[1]))));
+    return {
+      cyclingFtpWatts: ftp,
+      thresholdPaceSecsPerKm: defaultPaceSecsKm,
+      thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
+      summaryNote: `Calibrated to ${ftp}W Cycling FTP`
+    };
+  }
+  const clockMatch = raw.match(/(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)/);
+  if (clockMatch) {
+    const totalSecs = parseClockSecs(clockMatch[1]);
+    if (totalSecs && totalSecs >= 90) {
+      let distMeters = 5e3;
+      const lower = raw.toLowerCase();
+      if (/\b800\s*m?\b/.test(lower)) distMeters = 800;
+      else if (/\b1500\s*m?\b/.test(lower)) distMeters = 1500;
+      else if (/\b1600\s*m?\b/.test(lower)) distMeters = 1600;
+      else if (lower.includes("mile") && !lower.includes("2 mile") && !lower.includes("two mile")) {
+        distMeters = 1609.34;
+      } else if (/\b3000\s*m?\b|\b3k\b/.test(lower)) distMeters = 3e3;
+      else if (/\b3200\s*m?\b|2\s*mile|two\s*mile/.test(lower)) distMeters = 3200;
+      else if (/\b5k\b|\b5000\s*m?\b/.test(lower)) distMeters = 5e3;
+      else if (/\b10k\b|\b10000\s*m?\b/.test(lower)) distMeters = 1e4;
+      else if (lower.includes("half") || /\bhm\b/.test(lower)) distMeters = 21097.5;
+      else if (lower.includes("marathon")) distMeters = 42195;
+      else if (totalSecs < 165) distMeters = 800;
+      else if (totalSecs < 450) distMeters = 1600;
+      else if (totalSecs < 810) distMeters = 3200;
+      else distMeters = 5e3;
+      const profile = buildTrackSpeedReserveProfile({
+        marks: [{ distanceMeters: distMeters, durationSecs: totalSecs }]
+      });
+      const vdot = Math.max(24, Math.min(90, Number(profile.vdotAer.toFixed(1))));
+      const ltSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.88, [115, 520]));
+      const easySecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.7, [145, 560]));
+      const intervalSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.98, [115, 480]));
+      const disp = formatPaceDisplay(ltSecsPerKm, distanceUnit);
+      const easyDisp = formatPaceDisplay(easySecsPerKm, distanceUnit);
+      const intDisp = formatPaceDisplay(intervalSecsPerKm, distanceUnit);
+      const eventLabel = distMeters === 1609.34 ? "Mile" : distMeters === 21097.5 ? "Half Marathon" : distMeters === 42195 ? "Marathon" : `${Math.round(distMeters)}m`;
+      return {
+        cyclingFtpWatts: defaultFtp,
+        thresholdPaceSecsPerKm: ltSecsPerKm,
+        thresholdPaceInputDisplay: disp,
+        easyPaceInputDisplay: easyDisp,
+        intervalPaceInputDisplay: intDisp,
+        vdotEstimate: vdot,
+        summaryNote: `VDOT ${vdot} \xB7 Easy ${easyDisp}/${distanceUnit} \xB7 Threshold ${disp}/${distanceUnit} \xB7 VO2 ${intDisp}/${distanceUnit} (from ${clockMatch[1]} ${eventLabel})`
+      };
+    }
+  }
+  return {
+    cyclingFtpWatts: defaultFtp,
+    thresholdPaceSecsPerKm: defaultPaceSecsKm,
+    thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
+    summaryNote: "Starter zones ready"
+  };
+}
+function inferEventGroupFromSeedMark(seed) {
+  if (!seed || !seed.trim()) return void 0;
+  const s = seed.trim();
+  const explicitGroup = normalizeCoachEventGroup(s);
+  if (explicitGroup) return explicitGroup;
+  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|6000\s*m?|6\s*k|8000\s*m?|8\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc|cross\s*country)\b/i.test(s)) {
+    return "DISTANCE";
+  }
+  if (/\b(?:800\s*m?|1000\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile|steeple(?:chase)?|3000\s*sc)\b/i.test(s)) {
+    return "MID_DISTANCE";
+  }
+  if (/\b(?:100\s*m?\s*h|110\s*m?\s*h|300\s*m?\s*h|400\s*m?\s*h|hurdles?)\b/i.test(s)) {
+    return "HURDLES";
+  }
+  if (/\b(?:pv|pole\s*vault)\b/i.test(s)) {
+    return "POLE_VAULT";
+  }
+  if (/\b(?:lj|tj|hj|long\s*jump|triple\s*jump|high\s*jump|jumps?)\b/i.test(s)) {
+    return "JUMPS";
+  }
+  if (/\b(?:sp|shot\s*put|shot|discus|disc|jav(?:elin)?|hammer|weight\s*throw|throws?)\b/i.test(s)) {
+    return "THROWS";
+  }
+  if (/\b(?:pent(?:athlon)?|hept(?:athlon)?|dec(?:athlon)?|multi(?:s|-events?)?)\b/i.test(s)) {
+    return "MULTI";
+  }
+  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|dash|sprint)\b/i.test(s)) {
+    return "SPRINTS";
+  }
+  return void 0;
+}
+
+// server/teamStoreCore.ts
+import crypto6 from "crypto";
+
+// server/cleanRoomFirewall.ts
+var FIRST_PARTY_HARDWARE_TOKENS = [
+  "garmin",
+  "fit",
+  "wahoo",
+  "coros",
+  "suunto",
+  "polar",
+  "apple_watch",
+  "apple watch",
+  "intervals"
+];
+var ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS = [
+  ...FIRST_PARTY_HARDWARE_TOKENS,
+  "apple",
+  "thresh_stopwatch",
+  "thresh stopwatch",
+  "stopwatch",
+  "manual",
+  "official_race",
+  "official race",
+  "official fat"
+];
+function isStravaOriginRecord(item) {
+  if (!item || typeof item !== "object") return false;
+  const obj = item;
+  const src = String(
+    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
+  ).toLowerCase();
+  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
+  const hasFirstPartyHardware = badges.some(
+    (b) => FIRST_PARTY_HARDWARE_TOKENS.some((tok) => b.includes(tok))
+  );
+  if (Boolean(obj.stravaId) && !hasFirstPartyHardware) return true;
+  if (src.includes("strava") && !hasFirstPartyHardware) return true;
+  if (badges.includes("strava") && !hasFirstPartyHardware) return true;
+  return false;
+}
+function hasVerifiedCleanRoomProvenance(item) {
+  if (!item || typeof item !== "object") return false;
+  if (isStravaOriginRecord(item)) return false;
+  const obj = item;
+  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
+  if (badges.some(
+    (b) => ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => b.includes(tok))
+  )) {
+    return true;
+  }
+  const src = String(
+    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
+  ).toLowerCase();
+  return ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => src.includes(tok));
+}
+var SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS = /* @__PURE__ */ new Set([
+  "weightkg",
+  "weightlbs",
+  "weight",
+  "bmi",
+  "bodymassindex",
+  "bodyfatpct",
+  "bodyfat",
+  "leanbodymass",
+  "wattsperkg",
+  "avgwattsperkg",
+  "targetwkg",
+  "wkg",
+  "wperkg"
+]);
+function stripSafeSportWeightAndBodyCompFields(input, options) {
+  if (input === null || input === void 0 || typeof input !== "object") {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map(
+      (item) => stripSafeSportWeightAndBodyCompFields(item, options)
+    );
+  }
+  const record = input;
+  const isWellnessDayRecord = "hrvRMSSD" in record || "restingHR" in record;
+  const out = {};
+  for (const [k, v] of Object.entries(record)) {
+    const lowerKey = k.toLowerCase();
+    if (lowerKey === "weightkg" && options?.maskWellnessWeightKgZero && isWellnessDayRecord) {
+      out[k] = 0;
+      continue;
+    }
+    if (SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS.has(lowerKey)) {
+      continue;
+    }
+    out[k] = stripSafeSportWeightAndBodyCompFields(v, options);
+  }
+  return out;
+}
+function sanitizeTelemetryForCleanRoom(rawSummary, options) {
+  if (!rawSummary || typeof rawSummary !== "object") return {};
+  let clone = { ...rawSummary };
+  let strippedCount = 0;
+  for (const key of [
+    "recentWorkouts",
+    "recentActivities",
+    "activities",
+    "workouts",
+    "completedActivities"
+  ]) {
+    const rawList = clone[key];
+    if (Array.isArray(rawList)) {
+      const before = rawList.length;
+      const requirePositive = Boolean(
+        options?.requireFirstPartyProvenance || key === "recentWorkouts"
+      );
+      const filtered = rawList.filter(
+        (item) => requirePositive ? hasVerifiedCleanRoomProvenance(item) : !isStravaOriginRecord(item)
+      );
+      clone[key] = filtered;
+      strippedCount += before - filtered.length;
+    }
+  }
+  delete clone.stravaSegments;
+  delete clone.stravaKudos;
+  delete clone.stravaAthleteId;
+  delete clone.segmentEfforts;
+  if (options?.forceZeroWeight || clone.safeSportHideWeight || clone.isMinorU18 || clone.enforceZeroWeight) {
+    clone = stripSafeSportWeightAndBodyCompFields(clone);
+    clone.safeSportHideWeight = true;
+    clone.zeroWeightEnforced = true;
+  }
+  clone.cleanRoomPolicy = "FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY";
+  clone.stravaRecordsFiltered = strippedCount;
+  return clone;
+}
+
+// server/teamStoreCore.ts
+function canProgramWorkoutsRole(role) {
+  return role === "HEAD_COACH" || role === "ASSISTANT_COACH";
+}
+function canViewSafeguardingMedicalRole(role) {
+  return role === "HEAD_COACH" || role === "ASSISTANT_COACH" || role === "ATHLETIC_TRAINER" || role === "ORG_ADMIN";
+}
+function canViewAuditLogRole(role) {
+  return role === "HEAD_COACH" || role === "ORG_ADMIN";
+}
+function maskEmailForDisplay(email) {
+  const clean = String(email || "").trim().toLowerCase();
+  const atIdx = clean.indexOf("@");
+  if (atIdx <= 0) return void 0;
+  const local = clean.slice(0, atIdx);
+  const domain = clean.slice(atIdx + 1);
+  return `${local.slice(0, 2)}***@${domain}`;
+}
+var TEAMS_DIRECTORY_KEY = "teams_index_v1";
+var EMAIL_DIRECTORY_KEY = "users_email_idx_v1";
+function teamDocVaultKey(teamId) {
+  return `team_doc_${teamId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)}`;
+}
+function userTeamsVaultKey(sid) {
+  return `user_teams_${sid.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32)}`;
+}
+function hashToken(rawToken) {
+  return crypto6.createHash("sha256").update(rawToken.trim()).digest("hex");
+}
+function sanitizeExternalSyncConfig(raw, existing) {
+  if (!raw && !existing) return void 0;
+  const merged = { ...existing || {}, ...raw || {} };
+  const cleanUrl = (v) => {
+    if (!v) return void 0;
+    const s = String(v).trim().slice(0, 300);
+    return /^https?:\/\//i.test(s) || /^webcals?:\/\//i.test(s) ? s : void 0;
+  };
+  return {
+    ...merged.platform === "ATHLETIC_NET" || merged.platform === "TFRRS" ? { platform: merged.platform } : {},
+    ...merged.athleticNetSchoolId ? { athleticNetSchoolId: String(merged.athleticNetSchoolId).replace(/[^0-9]/g, "").slice(0, 12) } : {},
+    ...merged.athleticNetSportSlug === "xc" || merged.athleticNetSportSlug === "track-and-field-outdoor" || merged.athleticNetSportSlug === "track-and-field-indoor" ? { athleticNetSportSlug: merged.athleticNetSportSlug } : {},
+    ...cleanUrl(merged.athleticNetUrl) ? { athleticNetUrl: cleanUrl(merged.athleticNetUrl) } : {},
+    ...cleanUrl(merged.tfrrsTeamUrl) ? { tfrrsTeamUrl: cleanUrl(merged.tfrrsTeamUrl) } : {},
+    ...merged.tfrrsTeamCode ? { tfrrsTeamCode: String(merged.tfrrsTeamCode).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) } : {},
+    ...merged.teamFilterKeyword ? { teamFilterKeyword: String(merged.teamFilterKeyword).trim().slice(0, 64) } : {},
+    ...cleanUrl(merged.icsCalendarUrl) ? { icsCalendarUrl: cleanUrl(merged.icsCalendarUrl) } : {},
+    enablePublicParentHub: typeof merged.enablePublicParentHub === "boolean" ? merged.enablePublicParentHub : false,
+    ...merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}
+  };
+}
+async function loadTeamDocRaw(teamId) {
+  return loadTenantVaultAsync(teamDocVaultKey(teamId), null);
+}
+async function saveTeamDocRaw(teamId, doc) {
+  await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+  await syncNormalizedTeamPostgresAsync(
+    teamId,
+    {
+      slug: doc.brand.slug,
+      joinCode: doc.brand.joinCode,
+      orgType: doc.brand.orgType
+    },
+    doc,
+    (doc.memberships || []).map((m) => ({
+      membershipId: m.membershipId,
+      userSid: m.userSid,
+      invitedEmail: m.invitedEmail,
+      role: m.role,
+      status: m.status
+    }))
+  );
+}
+async function loadDirectory() {
+  return loadTenantVaultAsync(TEAMS_DIRECTORY_KEY, {
+    bySlug: {},
+    byJoinCode: {},
+    allTeamIds: []
+  });
+}
+async function addTeamToUserIndex(sid, teamId, displayName, email) {
+  await withVaultLock(userTeamsVaultKey(sid), async () => {
+    const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
+      teamIds: [],
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (!idx.teamIds.includes(teamId)) {
+      idx.teamIds.push(teamId);
+    }
+    if (displayName) idx.displayName = displayName;
+    if (email) idx.email = email;
+    idx.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTenantVaultAsync(userTeamsVaultKey(sid), idx);
+  });
+}
+async function removeTeamFromUserIndex(sid, teamId) {
+  if (!sid) return;
+  await withVaultLock(userTeamsVaultKey(sid), async () => {
+    const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
+      teamIds: [],
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    if (idx.teamIds.includes(teamId)) {
+      idx.teamIds = idx.teamIds.filter((id) => id !== teamId);
+      idx.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await saveTenantVaultAsync(userTeamsVaultKey(sid), idx);
+    }
+  });
+}
+function resolveTeamPlanTier(memberships) {
+  const activeOrInvitedAthletes = (memberships || []).filter(
+    (m) => m.status !== "REVOKED" && m.status !== "ALUMNI" && m.role !== "HEAD_COACH" && m.role !== "ASSISTANT_COACH" && m.role !== "ORG_ADMIN" && m.role !== "ATHLETIC_TRAINER" && m.role !== "PARENT_FOLLOWER"
+  ).length;
+  return activeOrInvitedAthletes <= 5 ? "SANDBOX" : "FOUNDING_TEAM";
+}
+function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
+  const myMembership = doc.memberships.find(
+    (m) => m.userSid === callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+  );
+  if (!myMembership) return null;
+  const isStaffViewer = canViewSafeguardingMedicalRole(myMembership.role);
+  const isCoach = isStaffViewer;
+  const isParentFollower = myMembership.role === "PARENT_FOLLOWER";
+  const parentFollowerEmail = myMembership.invitedEmail?.trim().toLowerCase();
+  const linkedChildMembershipIds = isParentFollower ? new Set(
+    doc.memberships.filter(
+      (m) => m.role === "ATHLETE" && m.status !== "REVOKED" && Boolean(parentFollowerEmail) && m.parentGuardianEmail?.trim().toLowerCase() === parentFollowerEmail
+    ).map((m) => m.membershipId)
+  ) : null;
+  const athleteMembers = doc.memberships.filter(
+    (m) => m.status !== "REVOKED" && (!isParentFollower || m.role === "ATHLETE")
+  );
+  const totalInvited = athleteMembers.length;
+  const individualOpened = athleteMembers.filter(
+    (m) => m.status === "OPENED" || m.status === "ACTIVE"
+  ).length;
+  const openedCount = Math.max(
+    individualOpened,
+    individualOpened + (doc.anonymousLinkOpens || 0)
+  );
+  const activeCount = athleteMembers.filter((m) => m.status === "ACTIVE").length;
+  const watchConnectedCount = athleteMembers.filter(
+    (m) => Boolean(m.liveSnapshot?.hasConnectedWatch)
+  ).length;
+  const cleanOrigin = originUrl.replace(/\/+$/, "");
+  const nowRef = /* @__PURE__ */ new Date();
+  const sanitizedMemberships = athleteMembers.map((m) => {
+    const isSelf = m.userSid === callerSid;
+    const isPeerTeammate = !isSelf && !isCoach && !isParentFollower;
+    const priv = m.liveSnapshot?.privacySettings;
+    const hideWellnessFromCoach = !isSelf && priv?.shareWellnessAndHrv === "PRIVATE";
+    const hidePmcFromCoach = !isSelf && priv?.sharePmcAndZones === "PRIVATE";
+    const ageResolved = resolveAthleteAgeTier({
+      birthMonthYear: m.birthMonthYear,
+      birthYear: m.birthYear,
+      orgType: doc.brand.orgType,
+      graduationYear: m.graduationYear,
+      now: nowRef
+    });
+    const effectiveIsMinor = ageResolved.ageTier === "UNKNOWN" ? Boolean(m.isMinorU18) : ageResolved.isMinorU18;
+    const safeSportShieldEnforced = Boolean(
+      doc.brand.defaultSafeSportShield || effectiveIsMinor || m.liveSnapshot?.safeSportHideWeight
+    );
+    let projectedSnapshot;
+    if (m.liveSnapshot && !isParentFollower) {
+      const rawWatch = m.liveSnapshot.safeSportWatch;
+      const projectedSafeSportWatch = !rawWatch ? void 0 : isSelf ? rawWatch : isCoach ? {
+        trafficLight: rawWatch.trafficLight,
+        coachSafeSummaryLabel: rawWatch.coachSafeSummaryLabel
+      } : void 0;
+      const hidePmc = !isSelf && (!isCoach || hidePmcFromCoach);
+      const hideWellness = !isSelf && (!isCoach || hideWellnessFromCoach);
+      const rawVerdict = m.liveSnapshot.verdictLabel;
+      const isNeutralVerdict = rawVerdict === "Awaiting Parent Consent" || rawVerdict === "Active" || rawVerdict === "Connected" || rawVerdict === "Joined \xB7 Awaiting First Sync";
+      const baseSnapshot = {
+        ...m.liveSnapshot,
+        verdictLabel: isPeerTeammate ? "Connected" : hideWellness && !isNeutralVerdict ? "Private" : rawVerdict,
+        readinessScore: hideWellness ? 0 : m.liveSnapshot.readinessScore,
+        acuteLoad7d: hidePmc ? 0 : m.liveSnapshot.acuteLoad7d,
+        caraHours7d: hidePmc ? 0 : m.liveSnapshot.caraHours7d,
+        lowAerobicPct: hidePmc ? 0 : m.liveSnapshot.lowAerobicPct,
+        highAerobicPct: hidePmc ? 0 : m.liveSnapshot.highAerobicPct,
+        neuromuscularPct: hidePmc ? 0 : m.liveSnapshot.neuromuscularPct,
+        ftpWatts: hidePmc || safeSportShieldEnforced && !isCoach && !isSelf ? void 0 : m.liveSnapshot.ftpWatts,
+        thresholdPaceSecsPerKm: hidePmc ? void 0 : m.liveSnapshot.thresholdPaceSecsPerKm,
+        ctl: hidePmc ? 0 : m.liveSnapshot.ctl,
+        atl: hidePmc ? 0 : m.liveSnapshot.atl,
+        tsb: hidePmc ? 0 : m.liveSnapshot.tsb,
+        // Never leak raw biometric wellnessDays or activity logs to fellow teammates
+        wellnessDays: hideWellness ? void 0 : m.liveSnapshot.wellnessDays,
+        activities: isSelf || isCoach ? m.liveSnapshot.activities : void 0,
+        sessionCheckIns: hideWellness ? void 0 : m.liveSnapshot.sessionCheckIns,
+        safeSportWatch: projectedSafeSportWatch
+      };
+      projectedSnapshot = safeSportShieldEnforced ? stripSafeSportWeightAndBodyCompFields(baseSnapshot, {
+        maskWellnessWeightKgZero: true
+      }) : baseSnapshot;
+    }
+    const officialPublicResults = Array.isArray(m.coachRecordedActivities) ? m.coachRecordedActivities.filter((a) => Boolean(a?.officialRaceData)).map((a) => ({
+      ...a,
+      athleteWeightKg: void 0,
+      avgHr: 0,
+      maxHr: 0,
+      streams: void 0
+    })) : void 0;
+    const base = {
+      membershipId: m.membershipId,
+      teamId: m.teamId,
+      userSid: isCoach || isSelf ? m.userSid : void 0,
+      stravaAthleteId: isCoach || isSelf ? m.stravaAthleteId : void 0,
+      sharingTier: isParentFollower ? void 0 : m.sharingTier,
+      role: m.role,
+      squadGroup: m.squadGroup,
+      ...m.eventGroup ? { eventGroup: m.eventGroup } : {},
+      invitedName: m.invitedName,
+      graduationYear: m.graduationYear,
+      birthYear: isCoach || isSelf ? m.birthYear : void 0,
+      birthMonthYear: isCoach || isSelf ? m.birthMonthYear : void 0,
+      isMinorU18: effectiveIsMinor,
+      parentConsentStatus: isCoach || isSelf ? effectiveIsMinor ? m.parentConsentStatus : "NOT_REQUIRED" : void 0,
+      parentConsentAt: isCoach || isSelf ? m.parentConsentAt : void 0,
+      seedMarkOrFtp: m.seedMarkOrFtp,
+      ...m.externalSource ? { externalSource: m.externalSource } : {},
+      ...m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {},
+      ...m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {},
+      ...m.genderDivision ? { genderDivision: m.genderDivision } : {},
+      status: m.status,
+      emailDeliveryStatus: isCoach || isSelf ? m.emailDeliveryStatus : void 0,
+      invitedAt: m.invitedAt,
+      openedAt: m.openedAt,
+      joinedAt: m.joinedAt,
+      ...m.leftAt ? { leftAt: m.leftAt } : {},
+      ...m.graduatedAt ? { graduatedAt: m.graduatedAt } : {},
+      liveSnapshot: projectedSnapshot,
+      coachRecordedActivities: isParentFollower ? officialPublicResults : (isCoach || isSelf) && Array.isArray(m.coachRecordedActivities) ? safeSportShieldEnforced ? stripSafeSportWeightAndBodyCompFields(m.coachRecordedActivities, {
+        maskWellnessWeightKgZero: true
+      }) : m.coachRecordedActivities : void 0
+    };
+    if (isCoach || isSelf) {
+      base.invitedEmail = m.invitedEmail;
+      base.invitedPhone = m.invitedPhone;
+      base.parentGuardianEmail = m.parentGuardianEmail;
+      const emailParam = m.invitedEmail ? `email=${encodeURIComponent(m.invitedEmail)}` : "";
+      if (m.rawInviteToken) {
+        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam ? `&${emailParam}` : ""}`;
+      } else {
+        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}${emailParam ? `?${emailParam}` : ""}`;
+      }
+    }
+    return base;
+  });
+  const visibleBroadcasts = (doc.broadcastWorkouts || []).filter((bw) => {
+    if (isCoach) return true;
+    if (isParentFollower) {
+      return !bw.targetMembershipIds || bw.targetMembershipIds.length === 0;
+    }
+    if (bw.athleteOverrides && bw.athleteOverrides[myMembership.membershipId]) {
+      return true;
+    }
+    if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
+      return bw.targetMembershipIds.includes(myMembership.membershipId);
+    }
+    const squadMatches = bw.targetSquadGroup === "ALL" || bw.targetSquadGroup.toLowerCase() === myMembership.squadGroup.toLowerCase();
+    if (!squadMatches) return false;
+    if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
+      return Boolean(myMembership.eventGroup) && bw.targetEventGroups.includes(myMembership.eventGroup);
+    }
+    return true;
+  }).map((bw) => {
+    if (!isParentFollower) return bw;
+    return {
+      ...bw,
+      athleteOverrides: void 0
+    };
+  });
+  const visibleComments = (doc.workoutComments || []).filter((c) => {
+    if (isStaffViewer) return true;
+    if (isParentFollower) {
+      return Boolean(
+        c.guardianVisible && linkedChildMembershipIds && linkedChildMembershipIds.has(c.targetMembershipId)
+      );
+    }
+    return c.targetMembershipId === myMembership.membershipId;
+  });
+  const visibleSafetyAlerts = (doc.guardianSafetyAlerts || []).filter((a) => {
+    if (isStaffViewer) return true;
+    if (isParentFollower) {
+      return Boolean(
+        linkedChildMembershipIds && linkedChildMembershipIds.has(a.targetMembershipId)
+      );
+    }
+    return a.targetMembershipId === myMembership.membershipId;
+  });
+  return {
+    brand: {
+      ...doc.brand,
+      planTier: resolveTeamPlanTier(doc.memberships)
+    },
+    myRole: myMembership.role,
+    mySquadGroup: myMembership.squadGroup,
+    ...myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {},
+    myMembershipId: myMembership.membershipId,
+    totalInvited,
+    openedCount,
+    activeCount,
+    watchConnectedCount,
+    memberships: sanitizedMemberships,
+    broadcastWorkouts: visibleBroadcasts,
+    ...isParentFollower ? {} : { workoutLibrary: doc.workoutLibrary || [] },
+    workoutComments: visibleComments,
+    guardianSafetyAlerts: visibleSafetyAlerts
+  };
+}
+async function listTeamsForUser(callerSid, originUrl) {
+  const userIdx = await loadTenantVaultAsync(
+    userTeamsVaultKey(callerSid),
+    {
+      teamIds: [],
+      updatedAt: ""
+    }
+  );
+  const out = [];
+  for (const teamId of userIdx.teamIds) {
+    const doc = await loadTenantVaultAsync(
+      teamDocVaultKey(teamId),
+      null
+    );
+    if (!doc) continue;
+    const summary = projectTeamSummaryForCaller(doc, callerSid, originUrl);
+    if (summary) out.push(summary);
+  }
+  return out;
+}
+
+// server/teamEmailAndOtpService.ts
+function emailOtpVaultKey(email) {
+  const hash = crypto7.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
+  return `email_otp_${hash}`;
+}
+function isResendConfigured() {
+  return Boolean((process.env.RESEND_API_KEY || "").trim());
+}
+async function sendEmailViaResend(params) {
+  const apiKey = (process.env.RESEND_API_KEY || "").trim();
+  if (!apiKey) {
+    return {
+      delivered: false,
+      status: "READY_MANUAL_LINK"
+    };
+  }
+  const fromAddress = (process.env.RESEND_FROM_EMAIL || "THRESH Coaching <auth@thresh.fit>").trim();
+  try {
+    const payload = {
+      from: fromAddress,
+      to: [params.to.trim()],
+      subject: params.subject,
+      html: params.html,
+      text: params.text
+    };
+    if (params.cc && params.cc.includes("@")) {
+      payload.cc = [params.cc.trim()];
+    }
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => "");
+      return {
+        delivered: false,
+        status: "FAILED",
+        error: `Resend HTTP ${resp.status}: ${errBody.slice(0, 180)}`
+      };
+    }
+    const data = await resp.json().catch(() => ({}));
+    return {
+      delivered: true,
+      status: "SENT_RESEND",
+      messageId: data.id
+    };
+  } catch (err) {
+    return {
+      delivered: false,
+      status: "FAILED",
+      error: err instanceof Error ? err.message : "Network error contacting Resend API"
+    };
+  }
+}
+function buildTeamInviteEmailContent(params) {
+  const { brand, invitedName, squadGroup, magicJoinUrl, hasParentCc, seedMarkOrFtp } = params;
+  const palette = computeAccessibleTeamPalette(brand.primaryHex, brand.secondaryHex);
+  const firstName = invitedName.trim().split(/\s+/)[0] || "Athlete";
+  const safeFirstName = escapeHtml(firstName);
+  const safeTeamName = escapeHtml(brand.name);
+  const safeShortName = escapeHtml(brand.shortName || brand.name);
+  const safeCoach = escapeHtml(brand.coachDisplayName);
+  const safeSquad = escapeHtml(squadGroup || "Roster");
+  const safeCode = escapeHtml(brand.joinCode);
+  const safeUrl = escapeHtml(magicJoinUrl);
+  const safeSeed = seedMarkOrFtp ? escapeHtml(seedMarkOrFtp) : "";
+  const subject = `Coach ${brand.coachDisplayName} invited ${firstName} to join ${brand.name} on THRESH`;
+  const safeSportSection = brand.defaultSafeSportShield || hasParentCc ? `<div style="margin-top:20px;padding:14px 16px;border-radius:12px;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;font-size:13px;line-height:1.5;">
+          <strong>Scholastic &amp; Safe-Sport Protections Enabled:</strong>
+          <ul style="margin:6px 0 0;padding-left:18px;">
+            <li>Body weight &amp; W/kg metrics are masked by default to support healthy youth development.</li>
+            <li>No paid GPS watch required \u2014 athletes can calibrate zones from a single track/XC race mark or upload <code>.FIT</code> files.</li>
+            ${hasParentCc ? "<li>A parent/guardian was transparently CC&apos;d on this roster invitation by the coaching staff.</li>" : ""}
+          </ul>
+        </div>` : "";
+  const html = `<!doctype html>
+<html>
+<body style="margin:0;padding:24px;background:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111318;">
+  <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:20px;overflow:hidden;border:1px solid #E5E7EB;">
+    <div style="background:linear-gradient(135deg, ${palette.primaryOnLight} 0%, ${palette.secondaryOnLight} 100%);padding:24px 28px;color:#FFFFFF;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.9;">${safeShortName} \xD7 THRESH</div>
+      <h1 style="margin:6px 0 2px;font-size:22px;font-weight:800;letter-spacing:-0.02em;">${safeTeamName}</h1>
+      <div style="font-size:13px;opacity:0.92;">Coach ${safeCoach} \xB7 ${safeSquad}</div>
+    </div>
+    <div style="padding:28px;">
+      <p style="margin:0 0 14px;font-size:15px;line-height:1.55;">Hi <strong>${safeFirstName}</strong>,</p>
+      <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#374151;">
+        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on THRESH for workout pace groups, practice schedules, and split timing. Sign in with school Google or Email in one tap \u2014 no GPS watch or Strava required (optional watch sync anytime).
+        ${safeSeed ? `<br/><span style="color:#065F46;font-size:13px;">Your initial zones are pre-seeded from <strong>${safeSeed}</strong>.</span>` : ""}
+      </p>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${safeUrl}" style="display:inline-block;padding:14px 26px;border-radius:12px;background:${palette.primaryOnLight};color:${palette.textOnPrimaryLight};text-decoration:none;font-weight:700;font-size:15px;">
+          Sign In &amp; Join ${safeShortName} &rarr;
+        </a>
+      </div>
+      <div style="padding:12px 16px;border-radius:12px;background:#F3F4F6;text-align:center;font-size:13px;color:#4B5563;">
+        Or enter Team Join Code: <strong style="font-family:monospace;font-size:16px;color:#111318;letter-spacing:0.06em;">${safeCode}</strong>
+      </div>
+      ${safeSportSection}
+    </div>
+  </div>
+</body>
+</html>`;
+  const text = [
+    `Hi ${firstName},`,
+    ``,
+    `Coach ${brand.coachDisplayName} invited you to join ${brand.name} (${squadGroup}) on THRESH.`,
+    `Tap your personalized link to sign in with Google or Email and join in 45 seconds (no GPS watch or Strava needed): ${magicJoinUrl}`,
+    `Team Join Code: ${brand.joinCode}`,
+    brand.defaultSafeSportShield ? `Safe-Sport Protection: Body weight & W/kg are hidden by default.` : ``
+  ].filter(Boolean).join("\n");
+  return { subject, html, text };
+}
+function buildParentConsentEmailContent(params) {
+  const { brand, athleteName, parentConsentUrl } = params;
+  const subject = `Notice: ${athleteName} joined ${brand.name} on THRESH (Scholastic Safeguards Active)`;
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111318;background:#F4F6F3;margin:0;padding:24px 12px;">
+  <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
+    <div style="background:${brand.primaryHex};padding:24px;color:#FFFFFF;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">THRESH SCHOLASTIC SAFEGUARDING</div>
+      <h1 style="margin:8px 0 4px;font-size:20px;font-weight:800;color:#FFFFFF;">Parent / Guardian Notice</h1>
+      <div style="font-size:14px;opacity:0.9;">${escapeHtml(brand.name)} \xB7 Coach ${escapeHtml(brand.coachDisplayName)}</div>
+    </div>
+    <div style="padding:24px;">
+      <p style="font-size:15px;margin:0 0 16px;">Hello,</p>
+      <p style="font-size:14px;color:#374151;margin:0 0 16px;">
+        <strong>${escapeHtml(athleteName)}</strong> has joined the <strong>${escapeHtml(brand.name)}</strong> roster on THRESH for athletic training and workout tracking under Coach ${escapeHtml(brand.coachDisplayName)}.
+      </p>
+
+      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin:0 0 20px;">
+        <div style="font-size:12px;font-weight:700;color:#0F172A;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Active Safeguards & Youth Privacy (COPPA & Safe Sport)</div>
+        <ul style="font-size:13px;color:#475569;margin:0;padding-left:18px;line-height:1.6;">
+          <li><strong>Safe-Sport Weight Shield Active:</strong> Body weight and power-to-weight ratios are strictly hidden to prevent disordered eating and RED-S syndrome.</li>
+          <li><strong>Clean-Room Data Firewall:</strong> Training logs (distance, pace, heart rate) are shared only with certified team coaches. Zero advertising, zero tracking, and zero data sales to third parties.</li>
+          <li><strong>Scholastic Retention:</strong> Roster participation data is maintained strictly for school athletic training and may be reviewed or deleted at any time upon parental request.</li>
+        </ul>
+      </div>
+
+      <div style="text-align:center;margin:24px 0 16px;">
+        <a href="${parentConsentUrl}" style="display:inline-block;background:${brand.primaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
+          Acknowledge & Confirm Roster Enrollment
+        </a>
+      </div>
+
+      <p style="font-size:12px;color:#64748B;text-align:center;margin:0;">
+        Or review via browser: <a href="${parentConsentUrl}" style="color:${brand.primaryHex};word-break:break-all;">${parentConsentUrl}</a>
+      </p>
+    </div>
+  </div>
+</body>
+</html>`;
+  const text = [
+    `THRESH SCHOLASTIC SAFEGUARDING - Parent / Guardian Notice`,
+    ``,
+    `Hello,`,
+    `${athleteName} has joined ${brand.name} on THRESH for athletic training under Coach ${brand.coachDisplayName}.`,
+    ``,
+    `Active Safeguards:`,
+    `- Safe-Sport Weight Shield: Body weight is hidden to prevent RED-S and disordered eating.`,
+    `- Clean-Room Firewall: Activity data is private to team coaches; zero ad tracking, zero data sales.`,
+    ``,
+    `Please acknowledge your athlete's enrollment here:`,
+    parentConsentUrl
+  ].join("\n");
+  return { subject, html, text };
+}
+async function requestEmailOtpCode(rawEmail) {
+  const email = String(rawEmail || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return { ok: false, deliveryStatus: "FAILED", error: "Enter a valid email address." };
+  }
+  const code = String(crypto7.randomInt(1e5, 999999));
+  const record = {
+    email,
+    codeHash: hashToken(`${email}:${code}`),
+    expiresAt: Date.now() + 10 * 60 * 1e3,
+    attempts: 0
+  };
+  await saveTenantVaultAsync(emailOtpVaultKey(email), record);
+  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:0 auto;padding:24px;border:1px solid #E5E7EB;border-radius:16px;background:#FFFFFF;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#14532D;text-transform:uppercase;">THRESH CROSS-DEVICE SIGN-IN</div>
+    <h2 style="margin:8px 0 12px;color:#111318;">Your 6-Digit Verification Code</h2>
+    <div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:0.16em;padding:14px 20px;background:#F3F4F6;border-radius:12px;text-align:center;color:#111318;">${escapeHtml(code)}</div>
+    <p style="font-size:13px;color:#4B5563;margin-top:14px;">Expires in 10 minutes. Enter this code in THRESH to sync your teams and athlete profile across devices.</p>
+  </div>`;
+  const res = await sendEmailViaResend({
+    to: email,
+    subject: `${code} is your THRESH sign-in code`,
+    html,
+    text: `Your THRESH verification code is ${code} (expires in 10 minutes).`
+  });
+  const isProd = isProductionDeployment();
+  if (!res.delivered && isProd) {
+    return {
+      ok: false,
+      deliveryStatus: res.status,
+      error: res.error || "Email code delivery is not configured on this server. Please sign in with Strava instead."
+    };
+  }
+  return {
+    ok: res.status !== "FAILED",
+    deliveryStatus: res.status,
+    ...res.status === "READY_MANUAL_LINK" && !isProd ? { devPreviewCode: code } : {},
+    ...res.error ? { error: res.error } : {}
+  };
+}
+async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid) {
+  const email = String(rawEmail || "").trim().toLowerCase();
+  const code = String(rawCode || "").replace(/\D/g, "");
+  if (!email || code.length !== 6) {
+    return { ok: false, error: "Enter the 6-digit verification code." };
+  }
+  const key = emailOtpVaultKey(email);
+  const stored = await loadTenantVaultAsync(key, null);
+  if (!stored || Date.now() > stored.expiresAt) {
+    return { ok: false, error: "Verification code expired. Request a fresh code." };
+  }
+  if (stored.attempts >= 5) {
+    return { ok: false, error: "Too many attempts. Request a fresh code." };
+  }
+  const candidateHash = hashToken(`${email}:${code}`);
+  const a = Buffer.from(candidateHash);
+  const b = Buffer.from(stored.codeHash);
+  if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) {
+    stored.attempts += 1;
+    await saveTenantVaultAsync(key, stored);
+    return { ok: false, error: "Incorrect 6-digit code." };
+  }
+  await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
+  const otpUser = await findOrCreateUser("magic_link", email, {
+    email,
+    name: email.split("@")[0]
+  });
+  const canonicalOtpSid = deriveUserSessionSid(otpUser.id);
+  const emailDir = await loadTenantVaultAsync(EMAIL_DIRECTORY_KEY, {
+    byEmail: {}
+  });
+  let account = emailDir.byEmail[email];
+  if (!account) {
+    const newSid = preferredSid && /^[a-f0-9]{24,64}$/i.test(preferredSid) ? preferredSid : canonicalOtpSid;
+    account = {
+      sid: newSid,
+      displayName: otpUser.name,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    emailDir.byEmail[email] = account;
+    await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
+  }
+  const dir = await loadTenantVaultAsync(TEAMS_DIRECTORY_KEY, {
+    bySlug: {},
+    byJoinCode: {},
+    allTeamIds: []
+  });
+  const userTeams = await loadTenantVaultAsync(
+    userTeamsVaultKey(account.sid),
+    {
+      teamIds: [],
+      email,
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    }
+  );
+  userTeams.email = email;
+  for (const teamId of dir.allTeamIds) {
+    const doc = await loadTenantVaultAsync(
+      teamDocVaultKey(teamId),
+      null
+    );
+    if (!doc) continue;
+    let mutated = false;
+    for (const m of doc.memberships) {
+      if (m.invitedEmail && m.invitedEmail.toLowerCase() === email && m.status !== "REVOKED") {
+        m.userSid = account.sid;
+        if (m.status !== "ACTIVE") {
+          m.status = "ACTIVE";
+          m.joinedAt = (/* @__PURE__ */ new Date()).toISOString();
+        }
+        if (!account.displayName && m.invitedName) {
+          account.displayName = m.invitedName;
+        }
+        if (!userTeams.teamIds.includes(teamId)) {
+          userTeams.teamIds.push(teamId);
+        }
+        mutated = true;
+      }
+    }
+    if (mutated) {
+      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+    }
+  }
+  userTeams.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await saveTenantVaultAsync(userTeamsVaultKey(account.sid), userTeams);
+  emailDir.byEmail[email] = account;
+  await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
+  return {
+    ok: true,
+    sid: account.sid,
+    email,
+    displayName: account.displayName
+  };
 }
 
 // server/athleteArchiveHelper.ts
@@ -7320,509 +8704,6 @@ function parseOfficialResultsTextDeterministically(rawText, defaultUrl) {
   return results;
 }
 
-// src/utils/teamPalette.ts
-function normalizeHexColor(input, fallback = "#1C5436") {
-  const clean = String(input || "").trim().replace(/^#/, "");
-  if (/^[0-9a-fA-F]{3}$/.test(clean)) {
-    return `#${clean.split("").map((c) => c + c).join("").toUpperCase()}`;
-  }
-  if (/^[0-9a-fA-F]{6}$/.test(clean)) {
-    return `#${clean.toUpperCase()}`;
-  }
-  return fallback;
-}
-function hexToRgb(hex) {
-  const norm = normalizeHexColor(hex);
-  const r = parseInt(norm.slice(1, 3), 16);
-  const g = parseInt(norm.slice(3, 5), 16);
-  const b = parseInt(norm.slice(5, 7), 16);
-  return [r, g, b];
-}
-function rgbToHex(r, g, b) {
-  const clamp3 = (n) => Math.max(0, Math.min(255, Math.round(n)));
-  return `#${[clamp3(r), clamp3(g), clamp3(b)].map((v) => v.toString(16).padStart(2, "0")).join("").toUpperCase()}`;
-}
-function rgbToHsl(r, g, b) {
-  const rn = r / 255;
-  const gn = g / 255;
-  const bn = b / 255;
-  const max = Math.max(rn, gn, bn);
-  const min = Math.min(rn, gn, bn);
-  let h = 0;
-  let s = 0;
-  const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case rn:
-        h = (gn - bn) / d + (gn < bn ? 6 : 0);
-        break;
-      case gn:
-        h = (bn - rn) / d + 2;
-        break;
-      case bn:
-        h = (rn - gn) / d + 4;
-        break;
-    }
-    h /= 6;
-  }
-  return [h * 360, s * 100, l * 100];
-}
-function hslToRgb(h, s, l) {
-  const hn = (h % 360 + 360) % 360 / 360;
-  const sn = Math.max(0, Math.min(100, s)) / 100;
-  const ln = Math.max(0, Math.min(100, l)) / 100;
-  if (sn === 0) {
-    const v = ln * 255;
-    return [v, v, v];
-  }
-  const hue2rgb = (p2, q2, t) => {
-    let tn = t;
-    if (tn < 0) tn += 1;
-    if (tn > 1) tn -= 1;
-    if (tn < 1 / 6) return p2 + (q2 - p2) * 6 * tn;
-    if (tn < 1 / 2) return q2;
-    if (tn < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - tn) * 6;
-    return p2;
-  };
-  const q = ln < 0.5 ? ln * (1 + sn) : ln + sn - ln * sn;
-  const p = 2 * ln - q;
-  return [
-    hue2rgb(p, q, hn + 1 / 3) * 255,
-    hue2rgb(p, q, hn) * 255,
-    hue2rgb(p, q, hn - 1 / 3) * 255
-  ];
-}
-function relativeLuminance(hex) {
-  const [r, g, b] = hexToRgb(hex).map((v) => {
-    const s = v / 255;
-    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-function contrastRatio(hexA, hexB) {
-  const l1 = relativeLuminance(hexA);
-  const l2 = relativeLuminance(hexB);
-  const lighter = Math.max(l1, l2);
-  const darker = Math.min(l1, l2);
-  return (lighter + 0.05) / (darker + 0.05);
-}
-function ensureContrastAgainstSurface(hex, surfaceHex, minRatio = 4.55) {
-  const clean = normalizeHexColor(hex);
-  if (contrastRatio(clean, surfaceHex) >= minRatio) return clean;
-  const surfaceLum = relativeLuminance(surfaceHex);
-  const [r, g, b] = hexToRgb(clean);
-  const [h, s, startL] = rgbToHsl(r, g, b);
-  const darken = surfaceLum > 0.5;
-  let curL = startL;
-  for (let i = 0; i < 45; i++) {
-    curL = darken ? Math.max(8, curL - 2) : Math.min(92, curL + 2);
-    const [nr, ng, nb] = hslToRgb(h, Math.max(s, 35), curL);
-    const candidate = rgbToHex(nr, ng, nb);
-    if (contrastRatio(candidate, surfaceHex) >= minRatio) {
-      return candidate;
-    }
-  }
-  return darken ? "#14532D" : "#A3E635";
-}
-function selectButtonInk(bgHex) {
-  const whiteCr = contrastRatio(bgHex, "#FFFFFF");
-  const darkCr = contrastRatio(bgHex, "#080A09");
-  return darkCr >= whiteCr ? "#080A09" : "#FFFFFF";
-}
-function computeAccessibleTeamPalette(rawPrimaryHex, rawSecondaryHex) {
-  const primaryHex = normalizeHexColor(rawPrimaryHex, "#1C5436");
-  const secondaryHex = normalizeHexColor(rawSecondaryHex, "#65A30D");
-  let primaryOnLight = ensureContrastAgainstSurface(primaryHex, "#E9EFE9", 4.6);
-  primaryOnLight = ensureContrastAgainstSurface(primaryOnLight, "#FFFFFF", 4.65);
-  const primaryOnDark = ensureContrastAgainstSurface(primaryHex, "#15231B", 4.65);
-  let secondaryOnLight = ensureContrastAgainstSurface(secondaryHex, "#E9EFE9", 4.55);
-  secondaryOnLight = ensureContrastAgainstSurface(secondaryOnLight, "#FFFFFF", 4.6);
-  const secondaryOnDark = ensureContrastAgainstSurface(secondaryHex, "#15231B", 4.6);
-  const textOnPrimaryLight = selectButtonInk(primaryOnLight);
-  const textOnPrimaryDark = selectButtonInk(primaryOnDark);
-  return {
-    primaryHex,
-    secondaryHex,
-    primaryOnLight,
-    primaryOnDark,
-    secondaryOnLight,
-    secondaryOnDark,
-    textOnPrimaryLight,
-    textOnPrimaryDark,
-    hairlineGradientLight: `linear-gradient(90deg, ${primaryOnLight} 0%, ${secondaryOnLight} 100%)`,
-    hairlineGradientDark: `linear-gradient(90deg, ${primaryOnDark} 0%, ${secondaryOnDark} 100%)`
-  };
-}
-
-// src/physiology/teamOnboardingEngine.ts
-function getOrgTypeSafeguardingDefaults(orgType) {
-  switch (orgType) {
-    case "HIGH_SCHOOL":
-      return {
-        defaultSafeSportShield: true,
-        enableParentGuardianCc: true,
-        defaultPrimarySport: "Running",
-        defaultSquads: ["Varsity", "Junior Varsity", "Frosh/Soph"],
-        orgBadgeLabel: "High School \xB7 Safe-Sport Defaults ON"
-      };
-    case "COLLEGIATE":
-      return {
-        defaultSafeSportShield: true,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Running",
-        defaultSquads: ["Varsity Distance", "Mid-Distance", "Development"],
-        orgBadgeLabel: "Collegiate \xB7 NCAA CARA Enabled"
-      };
-    case "RUNNING_CLUB":
-      return {
-        defaultSafeSportShield: false,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Running",
-        defaultSquads: ["Marathon / Roads", "Track Group", "Community"],
-        orgBadgeLabel: "Running Club"
-      };
-    case "CYCLING_CLUB":
-      return {
-        defaultSafeSportShield: false,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Cycling",
-        defaultSquads: ["A Group / Race", "B Group / Tempo", "Social / Z2"],
-        orgBadgeLabel: "Cycling Team / Club"
-      };
-    case "COACH_SQUAD":
-    default:
-      return {
-        defaultSafeSportShield: false,
-        enableParentGuardianCc: false,
-        defaultPrimarySport: "Hybrid",
-        defaultSquads: ["Squad A", "Squad B", "1-on-1 Coached"],
-        orgBadgeLabel: "Coaching Squad"
-      };
-  }
-}
-function slugifyTeamName(name) {
-  const base = String(name || "team").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
-  return base || "thresh-team";
-}
-function generateTeamJoinCode(shortName, suffixNum) {
-  const prefix = String(shortName || "TEAM").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4) || "TEAM";
-  const digits = suffixNum !== void 0 ? String(suffixNum).padStart(2, "0").slice(-2) : String((/* @__PURE__ */ new Date()).getFullYear()).slice(-2);
-  return `${prefix}-${digits}`;
-}
-function splitCsvLine(line, delimiter) {
-  const out = [];
-  let cur = "";
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === delimiter && !inQuotes) {
-      out.push(cur.trim());
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur.trim());
-  return out;
-}
-function inferNameFromEmail(email) {
-  const local = email.split("@")[0] || "Athlete";
-  return local.replace(/[._-]+/g, " ").replace(/\d+/g, "").trim().split(/\s+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(" ") || "Team Athlete";
-}
-function normalizePhoneDisplay(raw) {
-  const cleaned = raw.trim();
-  const digits = cleaned.replace(/[^\d+]/g, "");
-  const onlyDigits = digits.replace(/\D/g, "");
-  if (onlyDigits.length < 10 || onlyDigits.length > 15) return void 0;
-  if (digits.startsWith("+")) return digits;
-  if (onlyDigits.length === 10) return `+1${onlyDigits}`;
-  if (onlyDigits.length === 11 && onlyDigits.startsWith("1")) return `+${onlyDigits}`;
-  return `+${onlyDigits}`;
-}
-function parseBulkRosterCsvOrText(rawText, orgType = "HIGH_SCHOOL", defaultSquad = "Varsity") {
-  const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
-  if (lines.length === 0) return [];
-  const firstLine = lines[0];
-  const delimiter = firstLine.includes("	") ? "	" : firstLine.includes(",") ? "," : firstLine.includes(";") ? ";" : ",";
-  const firstCols = splitCsvLine(firstLine, delimiter).map(
-    (c) => c.toLowerCase().replace(/[^a-z0-9]/g, "")
-  );
-  const hasHeader = firstCols.length >= 2 && firstCols.some(
-    (c) => [
-      "name",
-      "athletename",
-      "fullname",
-      "first",
-      "firstname",
-      "email",
-      "athleteemail",
-      "phone",
-      "mobile",
-      "squad",
-      "group",
-      "pod",
-      "parentemail",
-      "guardianemail"
-    ].includes(c)
-  );
-  const colMap = {
-    name: -1,
-    firstName: -1,
-    lastName: -1,
-    email: -1,
-    phone: -1,
-    squad: -1,
-    gradYear: -1,
-    parentEmail: -1,
-    seed: -1
-  };
-  if (hasHeader) {
-    firstCols.forEach((col, idx) => {
-      if (["name", "athletename", "fullname", "student", "athlete"].includes(col)) {
-        colMap.name = idx;
-      } else if (["first", "firstname", "fname"].includes(col)) {
-        colMap.firstName = idx;
-      } else if (["last", "lastname", "lname"].includes(col)) {
-        colMap.lastName = idx;
-      } else if (["email", "athleteemail", "studentemail", "mail"].includes(col)) {
-        colMap.email = idx;
-      } else if (["phone", "mobile", "cell", "cellphone", "phonenumber", "sms"].includes(col)) {
-        colMap.phone = idx;
-      } else if (["squad", "group", "pod", "level", "division", "team"].includes(col)) {
-        colMap.squad = idx;
-      } else if (["gradyear", "class", "classyear", "year", "grad"].includes(col)) {
-        colMap.gradYear = idx;
-      } else if ([
-        "parentemail",
-        "guardianemail",
-        "parent",
-        "guardian",
-        "parentcc",
-        "momemail",
-        "dademail"
-      ].includes(col)) {
-        colMap.parentEmail = idx;
-      } else if (["seed", "pr", "seedmark", "ftp", "5k", "1600m", "mile", "mark"].includes(col)) {
-        colMap.seed = idx;
-      }
-    });
-  }
-  const dataLines = hasHeader ? lines.slice(1) : lines;
-  const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
-  const rows = [];
-  for (const line of dataLines) {
-    const angleMatch = line.match(/^([^<,]+)<([^>]+@[^>]+)>$/);
-    if (angleMatch && !hasHeader) {
-      const invitedEmail2 = angleMatch[2].trim().toLowerCase();
-      const invitedName2 = angleMatch[1].trim() || inferNameFromEmail(invitedEmail2);
-      rows.push({
-        invitedName: invitedName2,
-        invitedEmail: invitedEmail2,
-        squadGroup: defaultSquad,
-        isMinorU18: orgType === "HIGH_SCHOOL"
-      });
-      continue;
-    }
-    const cols = splitCsvLine(line, delimiter);
-    if (cols.every((c) => !c)) continue;
-    let invitedName = "";
-    let invitedEmail;
-    let invitedPhone;
-    let squadGroup = defaultSquad;
-    let graduationYear;
-    let parentGuardianEmail;
-    let seedMarkOrFtp;
-    if (hasHeader) {
-      if (colMap.name >= 0) {
-        invitedName = cols[colMap.name] || "";
-      } else if (colMap.firstName >= 0 || colMap.lastName >= 0) {
-        invitedName = [
-          colMap.firstName >= 0 ? cols[colMap.firstName] : "",
-          colMap.lastName >= 0 ? cols[colMap.lastName] : ""
-        ].filter(Boolean).join(" ");
-      }
-      if (colMap.email >= 0 && cols[colMap.email]?.includes("@")) {
-        invitedEmail = cols[colMap.email].trim().toLowerCase();
-      }
-      if (colMap.phone >= 0 && cols[colMap.phone]) {
-        invitedPhone = normalizePhoneDisplay(cols[colMap.phone]);
-      }
-      if (colMap.squad >= 0 && cols[colMap.squad]) {
-        squadGroup = cols[colMap.squad].trim();
-      }
-      if (colMap.gradYear >= 0 && cols[colMap.gradYear]) {
-        const yr = parseInt(cols[colMap.gradYear].replace(/\D/g, ""), 10);
-        if (yr >= 20 && yr <= 99) graduationYear = 2e3 + yr;
-        else if (yr >= 2020 && yr <= 2045) graduationYear = yr;
-      }
-      if (colMap.parentEmail >= 0 && cols[colMap.parentEmail]?.includes("@")) {
-        parentGuardianEmail = cols[colMap.parentEmail].trim().toLowerCase();
-      }
-      if (colMap.seed >= 0 && cols[colMap.seed]) {
-        seedMarkOrFtp = cols[colMap.seed].trim();
-      }
-    } else {
-      const emailsFound = [];
-      for (const cell of cols) {
-        const trimmed = cell.trim();
-        if (!trimmed) continue;
-        if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-          emailsFound.push(trimmed.toLowerCase());
-        } else if (!invitedPhone && normalizePhoneDisplay(trimmed) && /\d{3}.*\d{4}/.test(trimmed)) {
-          invitedPhone = normalizePhoneDisplay(trimmed);
-        } else if (!graduationYear && /^(202[4-9]|203[0-6])$/.test(trimmed)) {
-          graduationYear = Number(trimmed);
-        } else if (!seedMarkOrFtp && (/^\d{1,2}:\d{2}(\.\d+)?/.test(trimmed) || /^\d{2,3}\s*w$/i.test(trimmed))) {
-          seedMarkOrFtp = trimmed;
-        } else if (!invitedName) {
-          invitedName = trimmed;
-        } else if (squadGroup === defaultSquad) {
-          squadGroup = trimmed;
-        }
-      }
-      if (emailsFound[0]) invitedEmail = emailsFound[0];
-      if (emailsFound[1]) parentGuardianEmail = emailsFound[1];
-    }
-    if (!invitedName && invitedEmail) {
-      invitedName = inferNameFromEmail(invitedEmail);
-    }
-    if (!invitedName && !invitedEmail && !invitedPhone) continue;
-    const isMinorU18 = orgType === "HIGH_SCHOOL" || Boolean(parentGuardianEmail) || Boolean(graduationYear && orgType !== "COLLEGIATE" && graduationYear >= currentYear + 1);
-    rows.push({
-      invitedName: invitedName || "Team Athlete",
-      invitedEmail,
-      invitedPhone,
-      squadGroup: squadGroup || defaultSquad,
-      graduationYear,
-      parentGuardianEmail,
-      seedMarkOrFtp,
-      isMinorU18
-    });
-  }
-  return rows;
-}
-function parseClockSecs(clock) {
-  const parts = clock.trim().split(":").map((p) => Number(p));
-  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
-  if (parts.length === 2) return parts[0] * 60 + parts[1];
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  return null;
-}
-function formatPaceDisplay(secsPerKm, unit) {
-  const targetSecs = unit === "mi" ? secsPerKm * 1.60934 : secsPerKm;
-  const m = Math.floor(targetSecs / 60);
-  const s = Math.round(targetSecs % 60);
-  return s === 60 ? `${m + 1}:00` : `${m}:${String(s).padStart(2, "0")}`;
-}
-function calibrateThresholdsFromSeedMark(seedInput, primarySport = "Running", distanceUnit = "mi") {
-  const raw = String(seedInput || "").trim();
-  const defaultPaceSecsKm = 270;
-  const defaultFtp = 240;
-  if (!raw) {
-    return {
-      cyclingFtpWatts: defaultFtp,
-      thresholdPaceSecsPerKm: defaultPaceSecsKm,
-      thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
-      easyPaceInputDisplay: formatPaceDisplay(Math.round(defaultPaceSecsKm * 1.24), distanceUnit),
-      intervalPaceInputDisplay: formatPaceDisplay(Math.round(defaultPaceSecsKm * 0.91), distanceUnit),
-      summaryNote: "Default starter zones (auto-refines on first Strava / Garmin / FIT sync)"
-    };
-  }
-  const twentyMinMatch = raw.match(/20\s*m(?:in(?:ute)?s?)?\s*[:@-]?\s*(\d{2,3})\s*w?/i) || raw.match(/(\d{2,3})\s*w(?:atts)?\s*(?:for\s*|@\s*|\(\s*|-)?\s*20\s*m(?:in)?/i);
-  if (twentyMinMatch) {
-    const rawWatts = Number(twentyMinMatch[1]);
-    const ftp = Math.max(90, Math.min(550, Math.round(rawWatts * 0.95)));
-    return {
-      cyclingFtpWatts: ftp,
-      thresholdPaceSecsPerKm: defaultPaceSecsKm,
-      thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
-      summaryNote: `Estimated ${ftp}W FTP from 20-minute power (${rawWatts}W \xD7 0.95)`
-    };
-  }
-  const wattsMatch = raw.match(/(\d{2,3})\s*w(?:atts)?\b/i) || (primarySport !== "Running" && /^\d{2,3}$/.test(raw) ? [raw, raw] : null);
-  if (wattsMatch) {
-    const ftp = Math.max(85, Math.min(550, Math.round(Number(wattsMatch[1]))));
-    return {
-      cyclingFtpWatts: ftp,
-      thresholdPaceSecsPerKm: defaultPaceSecsKm,
-      thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
-      summaryNote: `Calibrated to ${ftp}W Cycling FTP`
-    };
-  }
-  const clockMatch = raw.match(/(\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?)/);
-  if (clockMatch) {
-    const totalSecs = parseClockSecs(clockMatch[1]);
-    if (totalSecs && totalSecs >= 90) {
-      let distMeters = 5e3;
-      const lower = raw.toLowerCase();
-      if (/\b800\s*m?\b/.test(lower)) distMeters = 800;
-      else if (/\b1500\s*m?\b/.test(lower)) distMeters = 1500;
-      else if (/\b1600\s*m?\b/.test(lower)) distMeters = 1600;
-      else if (lower.includes("mile") && !lower.includes("2 mile") && !lower.includes("two mile")) {
-        distMeters = 1609.34;
-      } else if (/\b3000\s*m?\b|\b3k\b/.test(lower)) distMeters = 3e3;
-      else if (/\b3200\s*m?\b|2\s*mile|two\s*mile/.test(lower)) distMeters = 3200;
-      else if (/\b5k\b|\b5000\s*m?\b/.test(lower)) distMeters = 5e3;
-      else if (/\b10k\b|\b10000\s*m?\b/.test(lower)) distMeters = 1e4;
-      else if (lower.includes("half") || /\bhm\b/.test(lower)) distMeters = 21097.5;
-      else if (lower.includes("marathon")) distMeters = 42195;
-      else if (totalSecs < 165) distMeters = 800;
-      else if (totalSecs < 450) distMeters = 1600;
-      else if (totalSecs < 810) distMeters = 3200;
-      else distMeters = 5e3;
-      const profile = buildTrackSpeedReserveProfile({
-        marks: [{ distanceMeters: distMeters, durationSecs: totalSecs }]
-      });
-      const vdot = Math.max(24, Math.min(90, Number(profile.vdotAer.toFixed(1))));
-      const ltSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.88, [115, 520]));
-      const easySecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.7, [145, 560]));
-      const intervalSecsPerKm = Math.round(solveTrackPaceSecsPerKmForPctVdot(vdot, 0.98, [115, 480]));
-      const disp = formatPaceDisplay(ltSecsPerKm, distanceUnit);
-      const easyDisp = formatPaceDisplay(easySecsPerKm, distanceUnit);
-      const intDisp = formatPaceDisplay(intervalSecsPerKm, distanceUnit);
-      const eventLabel = distMeters === 1609.34 ? "Mile" : distMeters === 21097.5 ? "Half Marathon" : distMeters === 42195 ? "Marathon" : `${Math.round(distMeters)}m`;
-      return {
-        cyclingFtpWatts: defaultFtp,
-        thresholdPaceSecsPerKm: ltSecsPerKm,
-        thresholdPaceInputDisplay: disp,
-        easyPaceInputDisplay: easyDisp,
-        intervalPaceInputDisplay: intDisp,
-        vdotEstimate: vdot,
-        summaryNote: `VDOT ${vdot} \xB7 Easy ${easyDisp}/${distanceUnit} \xB7 Threshold ${disp}/${distanceUnit} \xB7 VO2 ${intDisp}/${distanceUnit} (from ${clockMatch[1]} ${eventLabel})`
-      };
-    }
-  }
-  return {
-    cyclingFtpWatts: defaultFtp,
-    thresholdPaceSecsPerKm: defaultPaceSecsKm,
-    thresholdPaceInputDisplay: formatPaceDisplay(defaultPaceSecsKm, distanceUnit),
-    summaryNote: "Starter zones ready"
-  };
-}
-function inferEventGroupFromSeedMark(seed) {
-  if (!seed || !seed.trim()) return void 0;
-  const s = seed.trim();
-  if (/\b(?:3000\s*m?|3200\s*m?|5000\s*m?|5\s*k|10000\s*m?|10\s*k|2\s*miles?|2\s*mi|xc)\b/i.test(s)) {
-    return "DISTANCE";
-  }
-  if (/\b(?:800\s*m?|1500\s*m?|1600\s*m?|1\s*mile|mile)\b/i.test(s)) {
-    return "MID_DISTANCE";
-  }
-  if (/\b(?:100\s*m?|200\s*m?|400\s*m?|hurdles?|dash|sprint)\b/i.test(s)) {
-    return "SPRINTS";
-  }
-  return void 0;
-}
-
 // src/utils/athleticNetAndTfrrsEngine.ts
 var ICONIC_COURSE_PATTERNS = [
   { pattern: /crystal\s*springs/i, distanceMeters: 4748, eventLabel: "2.95 mi XC (Crystal Springs)" },
@@ -8061,787 +8942,6 @@ function normalizeAthleteMatchKey(name) {
   const commaParts = s.split(",").map((p) => p.trim()).filter(Boolean);
   const reordered = commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : s;
   return reordered.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-// server/teamStoreCore.ts
-import crypto6 from "crypto";
-
-// server/cleanRoomFirewall.ts
-var FIRST_PARTY_HARDWARE_TOKENS = [
-  "garmin",
-  "fit",
-  "wahoo",
-  "coros",
-  "suunto",
-  "polar",
-  "apple_watch",
-  "apple watch",
-  "intervals"
-];
-var ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS = [
-  ...FIRST_PARTY_HARDWARE_TOKENS,
-  "apple",
-  "thresh_stopwatch",
-  "thresh stopwatch",
-  "stopwatch",
-  "manual",
-  "official_race",
-  "official race",
-  "official fat"
-];
-function isStravaOriginRecord(item) {
-  if (!item || typeof item !== "object") return false;
-  const obj = item;
-  const src = String(
-    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
-  ).toLowerCase();
-  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
-  const hasFirstPartyHardware = badges.some(
-    (b) => FIRST_PARTY_HARDWARE_TOKENS.some((tok) => b.includes(tok))
-  );
-  if (Boolean(obj.stravaId) && !hasFirstPartyHardware) return true;
-  if (src.includes("strava") && !hasFirstPartyHardware) return true;
-  if (badges.includes("strava") && !hasFirstPartyHardware) return true;
-  return false;
-}
-function hasVerifiedCleanRoomProvenance(item) {
-  if (!item || typeof item !== "object") return false;
-  if (isStravaOriginRecord(item)) return false;
-  const obj = item;
-  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
-  if (badges.some(
-    (b) => ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => b.includes(tok))
-  )) {
-    return true;
-  }
-  const src = String(
-    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
-  ).toLowerCase();
-  return ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => src.includes(tok));
-}
-var SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS = /* @__PURE__ */ new Set([
-  "weightkg",
-  "weightlbs",
-  "weight",
-  "bmi",
-  "bodymassindex",
-  "bodyfatpct",
-  "bodyfat",
-  "leanbodymass",
-  "wattsperkg",
-  "avgwattsperkg",
-  "targetwkg",
-  "wkg",
-  "wperkg"
-]);
-function stripSafeSportWeightAndBodyCompFields(input, options) {
-  if (input === null || input === void 0 || typeof input !== "object") {
-    return input;
-  }
-  if (Array.isArray(input)) {
-    return input.map(
-      (item) => stripSafeSportWeightAndBodyCompFields(item, options)
-    );
-  }
-  const record = input;
-  const isWellnessDayRecord = "hrvRMSSD" in record || "restingHR" in record;
-  const out = {};
-  for (const [k, v] of Object.entries(record)) {
-    const lowerKey = k.toLowerCase();
-    if (lowerKey === "weightkg" && options?.maskWellnessWeightKgZero && isWellnessDayRecord) {
-      out[k] = 0;
-      continue;
-    }
-    if (SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS.has(lowerKey)) {
-      continue;
-    }
-    out[k] = stripSafeSportWeightAndBodyCompFields(v, options);
-  }
-  return out;
-}
-function sanitizeTelemetryForCleanRoom(rawSummary, options) {
-  if (!rawSummary || typeof rawSummary !== "object") return {};
-  let clone = { ...rawSummary };
-  let strippedCount = 0;
-  for (const key of [
-    "recentWorkouts",
-    "recentActivities",
-    "activities",
-    "workouts",
-    "completedActivities"
-  ]) {
-    const rawList = clone[key];
-    if (Array.isArray(rawList)) {
-      const before = rawList.length;
-      const requirePositive = Boolean(
-        options?.requireFirstPartyProvenance || key === "recentWorkouts"
-      );
-      const filtered = rawList.filter(
-        (item) => requirePositive ? hasVerifiedCleanRoomProvenance(item) : !isStravaOriginRecord(item)
-      );
-      clone[key] = filtered;
-      strippedCount += before - filtered.length;
-    }
-  }
-  delete clone.stravaSegments;
-  delete clone.stravaKudos;
-  delete clone.stravaAthleteId;
-  delete clone.segmentEfforts;
-  if (options?.forceZeroWeight || clone.safeSportHideWeight || clone.isMinorU18 || clone.enforceZeroWeight) {
-    clone = stripSafeSportWeightAndBodyCompFields(clone);
-    clone.safeSportHideWeight = true;
-    clone.zeroWeightEnforced = true;
-  }
-  clone.cleanRoomPolicy = "FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY";
-  clone.stravaRecordsFiltered = strippedCount;
-  return clone;
-}
-
-// server/teamStoreCore.ts
-function canProgramWorkoutsRole(role) {
-  return role === "HEAD_COACH" || role === "ASSISTANT_COACH";
-}
-function canViewSafeguardingMedicalRole(role) {
-  return role === "HEAD_COACH" || role === "ASSISTANT_COACH" || role === "ATHLETIC_TRAINER" || role === "ORG_ADMIN";
-}
-function canViewAuditLogRole(role) {
-  return role === "HEAD_COACH" || role === "ORG_ADMIN";
-}
-function maskEmailForDisplay(email) {
-  const clean = String(email || "").trim().toLowerCase();
-  const atIdx = clean.indexOf("@");
-  if (atIdx <= 0) return void 0;
-  const local = clean.slice(0, atIdx);
-  const domain = clean.slice(atIdx + 1);
-  return `${local.slice(0, 2)}***@${domain}`;
-}
-var TEAMS_DIRECTORY_KEY = "teams_index_v1";
-var EMAIL_DIRECTORY_KEY = "users_email_idx_v1";
-function teamDocVaultKey(teamId) {
-  return `team_doc_${teamId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)}`;
-}
-function userTeamsVaultKey(sid) {
-  return `user_teams_${sid.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32)}`;
-}
-function hashToken(rawToken) {
-  return crypto6.createHash("sha256").update(rawToken.trim()).digest("hex");
-}
-function sanitizeExternalSyncConfig(raw, existing) {
-  if (!raw && !existing) return void 0;
-  const merged = { ...existing || {}, ...raw || {} };
-  const cleanUrl = (v) => {
-    if (!v) return void 0;
-    const s = String(v).trim().slice(0, 300);
-    return /^https?:\/\//i.test(s) || /^webcals?:\/\//i.test(s) ? s : void 0;
-  };
-  return {
-    ...merged.platform === "ATHLETIC_NET" || merged.platform === "TFRRS" ? { platform: merged.platform } : {},
-    ...merged.athleticNetSchoolId ? { athleticNetSchoolId: String(merged.athleticNetSchoolId).replace(/[^0-9]/g, "").slice(0, 12) } : {},
-    ...merged.athleticNetSportSlug === "xc" || merged.athleticNetSportSlug === "track-and-field-outdoor" || merged.athleticNetSportSlug === "track-and-field-indoor" ? { athleticNetSportSlug: merged.athleticNetSportSlug } : {},
-    ...cleanUrl(merged.athleticNetUrl) ? { athleticNetUrl: cleanUrl(merged.athleticNetUrl) } : {},
-    ...cleanUrl(merged.tfrrsTeamUrl) ? { tfrrsTeamUrl: cleanUrl(merged.tfrrsTeamUrl) } : {},
-    ...merged.tfrrsTeamCode ? { tfrrsTeamCode: String(merged.tfrrsTeamCode).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) } : {},
-    ...merged.teamFilterKeyword ? { teamFilterKeyword: String(merged.teamFilterKeyword).trim().slice(0, 64) } : {},
-    ...cleanUrl(merged.icsCalendarUrl) ? { icsCalendarUrl: cleanUrl(merged.icsCalendarUrl) } : {},
-    enablePublicParentHub: typeof merged.enablePublicParentHub === "boolean" ? merged.enablePublicParentHub : false,
-    ...merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}
-  };
-}
-async function loadTeamDocRaw(teamId) {
-  return loadTenantVaultAsync(teamDocVaultKey(teamId), null);
-}
-async function saveTeamDocRaw(teamId, doc) {
-  await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-  await syncNormalizedTeamPostgresAsync(
-    teamId,
-    {
-      slug: doc.brand.slug,
-      joinCode: doc.brand.joinCode,
-      orgType: doc.brand.orgType
-    },
-    doc,
-    (doc.memberships || []).map((m) => ({
-      membershipId: m.membershipId,
-      userSid: m.userSid,
-      invitedEmail: m.invitedEmail,
-      role: m.role,
-      status: m.status
-    }))
-  );
-}
-async function loadDirectory() {
-  return loadTenantVaultAsync(TEAMS_DIRECTORY_KEY, {
-    bySlug: {},
-    byJoinCode: {},
-    allTeamIds: []
-  });
-}
-async function addTeamToUserIndex(sid, teamId, displayName, email) {
-  await withVaultLock(userTeamsVaultKey(sid), async () => {
-    const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
-      teamIds: [],
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    if (!idx.teamIds.includes(teamId)) {
-      idx.teamIds.push(teamId);
-    }
-    if (displayName) idx.displayName = displayName;
-    if (email) idx.email = email;
-    idx.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTenantVaultAsync(userTeamsVaultKey(sid), idx);
-  });
-}
-async function removeTeamFromUserIndex(sid, teamId) {
-  if (!sid) return;
-  await withVaultLock(userTeamsVaultKey(sid), async () => {
-    const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
-      teamIds: [],
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    if (idx.teamIds.includes(teamId)) {
-      idx.teamIds = idx.teamIds.filter((id) => id !== teamId);
-      idx.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTenantVaultAsync(userTeamsVaultKey(sid), idx);
-    }
-  });
-}
-function resolveTeamPlanTier(memberships) {
-  const activeOrInvitedAthletes = (memberships || []).filter(
-    (m) => m.status !== "REVOKED" && m.status !== "ALUMNI" && m.role !== "HEAD_COACH" && m.role !== "ASSISTANT_COACH" && m.role !== "ORG_ADMIN" && m.role !== "ATHLETIC_TRAINER" && m.role !== "PARENT_FOLLOWER"
-  ).length;
-  return activeOrInvitedAthletes <= 5 ? "SANDBOX" : "FOUNDING_TEAM";
-}
-function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
-  const myMembership = doc.memberships.find(
-    (m) => m.userSid === callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-  );
-  if (!myMembership) return null;
-  const isStaffViewer = canViewSafeguardingMedicalRole(myMembership.role);
-  const isCoach = isStaffViewer;
-  const isParentFollower = myMembership.role === "PARENT_FOLLOWER";
-  const parentFollowerEmail = myMembership.invitedEmail?.trim().toLowerCase();
-  const linkedChildMembershipIds = isParentFollower ? new Set(
-    doc.memberships.filter(
-      (m) => m.role === "ATHLETE" && m.status !== "REVOKED" && Boolean(parentFollowerEmail) && m.parentGuardianEmail?.trim().toLowerCase() === parentFollowerEmail
-    ).map((m) => m.membershipId)
-  ) : null;
-  const athleteMembers = doc.memberships.filter(
-    (m) => m.status !== "REVOKED" && (!isParentFollower || m.role === "ATHLETE")
-  );
-  const totalInvited = athleteMembers.length;
-  const individualOpened = athleteMembers.filter(
-    (m) => m.status === "OPENED" || m.status === "ACTIVE"
-  ).length;
-  const openedCount = Math.max(
-    individualOpened,
-    individualOpened + (doc.anonymousLinkOpens || 0)
-  );
-  const activeCount = athleteMembers.filter((m) => m.status === "ACTIVE").length;
-  const watchConnectedCount = athleteMembers.filter(
-    (m) => Boolean(m.liveSnapshot?.hasConnectedWatch)
-  ).length;
-  const cleanOrigin = originUrl.replace(/\/+$/, "");
-  const nowRef = /* @__PURE__ */ new Date();
-  const sanitizedMemberships = athleteMembers.map((m) => {
-    const isSelf = m.userSid === callerSid;
-    const isPeerTeammate = !isSelf && !isCoach && !isParentFollower;
-    const priv = m.liveSnapshot?.privacySettings;
-    const hideWellnessFromCoach = !isSelf && priv?.shareWellnessAndHrv === "PRIVATE";
-    const hidePmcFromCoach = !isSelf && priv?.sharePmcAndZones === "PRIVATE";
-    const ageResolved = resolveAthleteAgeTier({
-      birthMonthYear: m.birthMonthYear,
-      birthYear: m.birthYear,
-      orgType: doc.brand.orgType,
-      graduationYear: m.graduationYear,
-      now: nowRef
-    });
-    const effectiveIsMinor = ageResolved.ageTier === "UNKNOWN" ? Boolean(m.isMinorU18) : ageResolved.isMinorU18;
-    const safeSportShieldEnforced = Boolean(
-      doc.brand.defaultSafeSportShield || effectiveIsMinor || m.liveSnapshot?.safeSportHideWeight
-    );
-    let projectedSnapshot;
-    if (m.liveSnapshot && !isParentFollower) {
-      const rawWatch = m.liveSnapshot.safeSportWatch;
-      const projectedSafeSportWatch = !rawWatch ? void 0 : isSelf ? rawWatch : isCoach ? {
-        trafficLight: rawWatch.trafficLight,
-        coachSafeSummaryLabel: rawWatch.coachSafeSummaryLabel
-      } : void 0;
-      const hidePmc = !isSelf && (!isCoach || hidePmcFromCoach);
-      const hideWellness = !isSelf && (!isCoach || hideWellnessFromCoach);
-      const rawVerdict = m.liveSnapshot.verdictLabel;
-      const isNeutralVerdict = rawVerdict === "Awaiting Parent Consent" || rawVerdict === "Active" || rawVerdict === "Connected" || rawVerdict === "Joined \xB7 Awaiting First Sync";
-      const baseSnapshot = {
-        ...m.liveSnapshot,
-        verdictLabel: isPeerTeammate ? "Connected" : hideWellness && !isNeutralVerdict ? "Private" : rawVerdict,
-        readinessScore: hideWellness ? 0 : m.liveSnapshot.readinessScore,
-        acuteLoad7d: hidePmc ? 0 : m.liveSnapshot.acuteLoad7d,
-        caraHours7d: hidePmc ? 0 : m.liveSnapshot.caraHours7d,
-        lowAerobicPct: hidePmc ? 0 : m.liveSnapshot.lowAerobicPct,
-        highAerobicPct: hidePmc ? 0 : m.liveSnapshot.highAerobicPct,
-        neuromuscularPct: hidePmc ? 0 : m.liveSnapshot.neuromuscularPct,
-        ftpWatts: hidePmc || safeSportShieldEnforced && !isCoach && !isSelf ? void 0 : m.liveSnapshot.ftpWatts,
-        thresholdPaceSecsPerKm: hidePmc ? void 0 : m.liveSnapshot.thresholdPaceSecsPerKm,
-        ctl: hidePmc ? 0 : m.liveSnapshot.ctl,
-        atl: hidePmc ? 0 : m.liveSnapshot.atl,
-        tsb: hidePmc ? 0 : m.liveSnapshot.tsb,
-        // Never leak raw biometric wellnessDays or activity logs to fellow teammates
-        wellnessDays: hideWellness ? void 0 : m.liveSnapshot.wellnessDays,
-        activities: isSelf || isCoach ? m.liveSnapshot.activities : void 0,
-        sessionCheckIns: hideWellness ? void 0 : m.liveSnapshot.sessionCheckIns,
-        safeSportWatch: projectedSafeSportWatch
-      };
-      projectedSnapshot = safeSportShieldEnforced ? stripSafeSportWeightAndBodyCompFields(baseSnapshot, {
-        maskWellnessWeightKgZero: true
-      }) : baseSnapshot;
-    }
-    const officialPublicResults = Array.isArray(m.coachRecordedActivities) ? m.coachRecordedActivities.filter((a) => Boolean(a?.officialRaceData)).map((a) => ({
-      ...a,
-      athleteWeightKg: void 0,
-      avgHr: 0,
-      maxHr: 0,
-      streams: void 0
-    })) : void 0;
-    const base = {
-      membershipId: m.membershipId,
-      teamId: m.teamId,
-      userSid: isCoach || isSelf ? m.userSid : void 0,
-      stravaAthleteId: isCoach || isSelf ? m.stravaAthleteId : void 0,
-      sharingTier: isParentFollower ? void 0 : m.sharingTier,
-      role: m.role,
-      squadGroup: m.squadGroup,
-      ...m.eventGroup ? { eventGroup: m.eventGroup } : {},
-      invitedName: m.invitedName,
-      graduationYear: m.graduationYear,
-      birthYear: isCoach || isSelf ? m.birthYear : void 0,
-      birthMonthYear: isCoach || isSelf ? m.birthMonthYear : void 0,
-      isMinorU18: effectiveIsMinor,
-      parentConsentStatus: isCoach || isSelf ? effectiveIsMinor ? m.parentConsentStatus : "NOT_REQUIRED" : void 0,
-      parentConsentAt: isCoach || isSelf ? m.parentConsentAt : void 0,
-      seedMarkOrFtp: m.seedMarkOrFtp,
-      ...m.externalSource ? { externalSource: m.externalSource } : {},
-      ...m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {},
-      ...m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {},
-      ...m.genderDivision ? { genderDivision: m.genderDivision } : {},
-      status: m.status,
-      emailDeliveryStatus: isCoach || isSelf ? m.emailDeliveryStatus : void 0,
-      invitedAt: m.invitedAt,
-      openedAt: m.openedAt,
-      joinedAt: m.joinedAt,
-      ...m.leftAt ? { leftAt: m.leftAt } : {},
-      ...m.graduatedAt ? { graduatedAt: m.graduatedAt } : {},
-      liveSnapshot: projectedSnapshot,
-      coachRecordedActivities: isParentFollower ? officialPublicResults : (isCoach || isSelf) && Array.isArray(m.coachRecordedActivities) ? safeSportShieldEnforced ? stripSafeSportWeightAndBodyCompFields(m.coachRecordedActivities, {
-        maskWellnessWeightKgZero: true
-      }) : m.coachRecordedActivities : void 0
-    };
-    if (isCoach || isSelf) {
-      base.invitedEmail = m.invitedEmail;
-      base.invitedPhone = m.invitedPhone;
-      base.parentGuardianEmail = m.parentGuardianEmail;
-      const emailParam = m.invitedEmail ? `email=${encodeURIComponent(m.invitedEmail)}` : "";
-      if (m.rawInviteToken) {
-        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam ? `&${emailParam}` : ""}`;
-      } else {
-        base.magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}${emailParam ? `?${emailParam}` : ""}`;
-      }
-    }
-    return base;
-  });
-  const visibleBroadcasts = (doc.broadcastWorkouts || []).filter((bw) => {
-    if (isCoach) return true;
-    if (isParentFollower) {
-      return !bw.targetMembershipIds || bw.targetMembershipIds.length === 0;
-    }
-    if (bw.athleteOverrides && bw.athleteOverrides[myMembership.membershipId]) {
-      return true;
-    }
-    if (Array.isArray(bw.targetMembershipIds) && bw.targetMembershipIds.length > 0) {
-      return bw.targetMembershipIds.includes(myMembership.membershipId);
-    }
-    const squadMatches = bw.targetSquadGroup === "ALL" || bw.targetSquadGroup.toLowerCase() === myMembership.squadGroup.toLowerCase();
-    if (!squadMatches) return false;
-    if (Array.isArray(bw.targetEventGroups) && bw.targetEventGroups.length > 0) {
-      return Boolean(myMembership.eventGroup) && bw.targetEventGroups.includes(myMembership.eventGroup);
-    }
-    return true;
-  }).map((bw) => {
-    if (!isParentFollower) return bw;
-    return {
-      ...bw,
-      athleteOverrides: void 0
-    };
-  });
-  const visibleComments = (doc.workoutComments || []).filter((c) => {
-    if (isStaffViewer) return true;
-    if (isParentFollower) {
-      return Boolean(
-        c.guardianVisible && linkedChildMembershipIds && linkedChildMembershipIds.has(c.targetMembershipId)
-      );
-    }
-    return c.targetMembershipId === myMembership.membershipId;
-  });
-  const visibleSafetyAlerts = (doc.guardianSafetyAlerts || []).filter((a) => {
-    if (isStaffViewer) return true;
-    if (isParentFollower) {
-      return Boolean(
-        linkedChildMembershipIds && linkedChildMembershipIds.has(a.targetMembershipId)
-      );
-    }
-    return a.targetMembershipId === myMembership.membershipId;
-  });
-  return {
-    brand: {
-      ...doc.brand,
-      planTier: resolveTeamPlanTier(doc.memberships)
-    },
-    myRole: myMembership.role,
-    mySquadGroup: myMembership.squadGroup,
-    ...myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {},
-    myMembershipId: myMembership.membershipId,
-    totalInvited,
-    openedCount,
-    activeCount,
-    watchConnectedCount,
-    memberships: sanitizedMemberships,
-    broadcastWorkouts: visibleBroadcasts,
-    ...isParentFollower ? {} : { workoutLibrary: doc.workoutLibrary || [] },
-    workoutComments: visibleComments,
-    guardianSafetyAlerts: visibleSafetyAlerts
-  };
-}
-async function listTeamsForUser(callerSid, originUrl) {
-  const userIdx = await loadTenantVaultAsync(
-    userTeamsVaultKey(callerSid),
-    {
-      teamIds: [],
-      updatedAt: ""
-    }
-  );
-  const out = [];
-  for (const teamId of userIdx.teamIds) {
-    const doc = await loadTenantVaultAsync(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-    const summary = projectTeamSummaryForCaller(doc, callerSid, originUrl);
-    if (summary) out.push(summary);
-  }
-  return out;
-}
-
-// server/teamEmailAndOtpService.ts
-import crypto7 from "crypto";
-function emailOtpVaultKey(email) {
-  const hash = crypto7.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
-  return `email_otp_${hash}`;
-}
-function isResendConfigured() {
-  return Boolean((process.env.RESEND_API_KEY || "").trim());
-}
-async function sendEmailViaResend(params) {
-  const apiKey = (process.env.RESEND_API_KEY || "").trim();
-  if (!apiKey) {
-    return {
-      delivered: false,
-      status: "READY_MANUAL_LINK"
-    };
-  }
-  const fromAddress = (process.env.RESEND_FROM_EMAIL || "THRESH Coaching <onboarding@resend.dev>").trim();
-  try {
-    const payload = {
-      from: fromAddress,
-      to: [params.to.trim()],
-      subject: params.subject,
-      html: params.html,
-      text: params.text
-    };
-    if (params.cc && params.cc.includes("@")) {
-      payload.cc = [params.cc.trim()];
-    }
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(payload)
-    });
-    if (!resp.ok) {
-      const errBody = await resp.text().catch(() => "");
-      return {
-        delivered: false,
-        status: "FAILED",
-        error: `Resend HTTP ${resp.status}: ${errBody.slice(0, 180)}`
-      };
-    }
-    const data = await resp.json().catch(() => ({}));
-    return {
-      delivered: true,
-      status: "SENT_RESEND",
-      messageId: data.id
-    };
-  } catch (err) {
-    return {
-      delivered: false,
-      status: "FAILED",
-      error: err instanceof Error ? err.message : "Network error contacting Resend API"
-    };
-  }
-}
-function buildTeamInviteEmailContent(params) {
-  const { brand, invitedName, squadGroup, magicJoinUrl, hasParentCc, seedMarkOrFtp } = params;
-  const palette = computeAccessibleTeamPalette(brand.primaryHex, brand.secondaryHex);
-  const firstName = invitedName.trim().split(/\s+/)[0] || "Athlete";
-  const safeFirstName = escapeHtml(firstName);
-  const safeTeamName = escapeHtml(brand.name);
-  const safeShortName = escapeHtml(brand.shortName || brand.name);
-  const safeCoach = escapeHtml(brand.coachDisplayName);
-  const safeSquad = escapeHtml(squadGroup || "Roster");
-  const safeCode = escapeHtml(brand.joinCode);
-  const safeUrl = escapeHtml(magicJoinUrl);
-  const safeSeed = seedMarkOrFtp ? escapeHtml(seedMarkOrFtp) : "";
-  const subject = `Coach ${brand.coachDisplayName} invited ${firstName} to join ${brand.name} on THRESH`;
-  const safeSportSection = brand.defaultSafeSportShield || hasParentCc ? `<div style="margin-top:20px;padding:14px 16px;border-radius:12px;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;font-size:13px;line-height:1.5;">
-          <strong>Scholastic &amp; Safe-Sport Protections Enabled:</strong>
-          <ul style="margin:6px 0 0;padding-left:18px;">
-            <li>Body weight &amp; W/kg metrics are masked by default to support healthy youth development.</li>
-            <li>No paid GPS watch required \u2014 athletes can calibrate zones from a single track/XC race mark or upload <code>.FIT</code> files.</li>
-            ${hasParentCc ? "<li>A parent/guardian was transparently CC&apos;d on this roster invitation by the coaching staff.</li>" : ""}
-          </ul>
-        </div>` : "";
-  const html = `<!doctype html>
-<html>
-<body style="margin:0;padding:24px;background:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111318;">
-  <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:20px;overflow:hidden;border:1px solid #E5E7EB;">
-    <div style="background:linear-gradient(135deg, ${palette.primaryOnLight} 0%, ${palette.secondaryOnLight} 100%);padding:24px 28px;color:#FFFFFF;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.9;">${safeShortName} \xD7 THRESH</div>
-      <h1 style="margin:6px 0 2px;font-size:22px;font-weight:800;letter-spacing:-0.02em;">${safeTeamName}</h1>
-      <div style="font-size:13px;opacity:0.92;">Coach ${safeCoach} \xB7 ${safeSquad}</div>
-    </div>
-    <div style="padding:28px;">
-      <p style="margin:0 0 14px;font-size:15px;line-height:1.55;">Hi <strong>${safeFirstName}</strong>,</p>
-      <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#374151;">
-        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on THRESH for daily training readiness, workout pacing pods, and post-workout performance analysis. Sign in with your free Strava account in one tap to claim your roster spot and choose what training summary you share.
-        ${safeSeed ? `<br/><span style="color:#065F46;font-size:13px;">Your initial zones are pre-seeded from <strong>${safeSeed}</strong>.</span>` : ""}
-      </p>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="${safeUrl}" style="display:inline-block;padding:14px 26px;border-radius:12px;background:${palette.primaryOnLight};color:${palette.textOnPrimaryLight};text-decoration:none;font-weight:700;font-size:15px;">
-          Sign In With Strava &amp; Join ${safeShortName} &rarr;
-        </a>
-      </div>
-      <div style="padding:12px 16px;border-radius:12px;background:#F3F4F6;text-align:center;font-size:13px;color:#4B5563;">
-        Or enter Team Join Code: <strong style="font-family:monospace;font-size:16px;color:#111318;letter-spacing:0.06em;">${safeCode}</strong>
-      </div>
-      ${safeSportSection}
-    </div>
-  </div>
-</body>
-</html>`;
-  const text = [
-    `Hi ${firstName},`,
-    ``,
-    `Coach ${brand.coachDisplayName} invited you to join ${brand.name} (${squadGroup}) on THRESH.`,
-    `Tap your personalized link to sign in with Strava and join in 45 seconds: ${magicJoinUrl}`,
-    `Team Join Code: ${brand.joinCode}`,
-    brand.defaultSafeSportShield ? `Safe-Sport Protection: Body weight & W/kg are hidden by default.` : ``
-  ].filter(Boolean).join("\n");
-  return { subject, html, text };
-}
-function buildParentConsentEmailContent(params) {
-  const { brand, athleteName, parentConsentUrl } = params;
-  const subject = `Notice: ${athleteName} joined ${brand.name} on THRESH (Scholastic Safeguards Active)`;
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(subject)}</title>
-</head>
-<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111318;background:#F4F6F3;margin:0;padding:24px 12px;">
-  <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
-    <div style="background:${brand.primaryHex};padding:24px;color:#FFFFFF;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">THRESH SCHOLASTIC SAFEGUARDING</div>
-      <h1 style="margin:8px 0 4px;font-size:20px;font-weight:800;color:#FFFFFF;">Parent / Guardian Notice</h1>
-      <div style="font-size:14px;opacity:0.9;">${escapeHtml(brand.name)} \xB7 Coach ${escapeHtml(brand.coachDisplayName)}</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;margin:0 0 16px;">Hello,</p>
-      <p style="font-size:14px;color:#374151;margin:0 0 16px;">
-        <strong>${escapeHtml(athleteName)}</strong> has joined the <strong>${escapeHtml(brand.name)}</strong> roster on THRESH for athletic training and workout tracking under Coach ${escapeHtml(brand.coachDisplayName)}.
-      </p>
-
-      <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin:0 0 20px;">
-        <div style="font-size:12px;font-weight:700;color:#0F172A;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Active Safeguards & Youth Privacy (COPPA & Safe Sport)</div>
-        <ul style="font-size:13px;color:#475569;margin:0;padding-left:18px;line-height:1.6;">
-          <li><strong>Safe-Sport Weight Shield Active:</strong> Body weight and power-to-weight ratios are strictly hidden to prevent disordered eating and RED-S syndrome.</li>
-          <li><strong>Clean-Room Data Firewall:</strong> Training logs (distance, pace, heart rate) are shared only with certified team coaches. Zero advertising, zero tracking, and zero data sales to third parties.</li>
-          <li><strong>Scholastic Retention:</strong> Roster participation data is maintained strictly for school athletic training and may be reviewed or deleted at any time upon parental request.</li>
-        </ul>
-      </div>
-
-      <div style="text-align:center;margin:24px 0 16px;">
-        <a href="${parentConsentUrl}" style="display:inline-block;background:${brand.primaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
-          Acknowledge & Confirm Roster Enrollment
-        </a>
-      </div>
-
-      <p style="font-size:12px;color:#64748B;text-align:center;margin:0;">
-        Or review via browser: <a href="${parentConsentUrl}" style="color:${brand.primaryHex};word-break:break-all;">${parentConsentUrl}</a>
-      </p>
-    </div>
-  </div>
-</body>
-</html>`;
-  const text = [
-    `THRESH SCHOLASTIC SAFEGUARDING - Parent / Guardian Notice`,
-    ``,
-    `Hello,`,
-    `${athleteName} has joined ${brand.name} on THRESH for athletic training under Coach ${brand.coachDisplayName}.`,
-    ``,
-    `Active Safeguards:`,
-    `- Safe-Sport Weight Shield: Body weight is hidden to prevent RED-S and disordered eating.`,
-    `- Clean-Room Firewall: Activity data is private to team coaches; zero ad tracking, zero data sales.`,
-    ``,
-    `Please acknowledge your athlete's enrollment here:`,
-    parentConsentUrl
-  ].join("\n");
-  return { subject, html, text };
-}
-async function requestEmailOtpCode(rawEmail) {
-  const email = String(rawEmail || "").trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { ok: false, deliveryStatus: "FAILED", error: "Enter a valid email address." };
-  }
-  const code = String(crypto7.randomInt(1e5, 999999));
-  const record = {
-    email,
-    codeHash: hashToken(`${email}:${code}`),
-    expiresAt: Date.now() + 10 * 60 * 1e3,
-    attempts: 0
-  };
-  await saveTenantVaultAsync(emailOtpVaultKey(email), record);
-  const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:0 auto;padding:24px;border:1px solid #E5E7EB;border-radius:16px;background:#FFFFFF;">
-    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#14532D;text-transform:uppercase;">THRESH CROSS-DEVICE SIGN-IN</div>
-    <h2 style="margin:8px 0 12px;color:#111318;">Your 6-Digit Verification Code</h2>
-    <div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:0.16em;padding:14px 20px;background:#F3F4F6;border-radius:12px;text-align:center;color:#111318;">${escapeHtml(code)}</div>
-    <p style="font-size:13px;color:#4B5563;margin-top:14px;">Expires in 10 minutes. Enter this code in THRESH to sync your teams and athlete profile across devices.</p>
-  </div>`;
-  const res = await sendEmailViaResend({
-    to: email,
-    subject: `${code} is your THRESH sign-in code`,
-    html,
-    text: `Your THRESH verification code is ${code} (expires in 10 minutes).`
-  });
-  const isProd = isProductionDeployment();
-  if (!res.delivered && isProd) {
-    return {
-      ok: false,
-      deliveryStatus: res.status,
-      error: res.error || "Email code delivery is not configured on this server. Please sign in with Strava instead."
-    };
-  }
-  return {
-    ok: res.status !== "FAILED",
-    deliveryStatus: res.status,
-    ...res.status === "READY_MANUAL_LINK" && !isProd ? { devPreviewCode: code } : {},
-    ...res.error ? { error: res.error } : {}
-  };
-}
-async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid) {
-  const email = String(rawEmail || "").trim().toLowerCase();
-  const code = String(rawCode || "").replace(/\D/g, "");
-  if (!email || code.length !== 6) {
-    return { ok: false, error: "Enter the 6-digit verification code." };
-  }
-  const key = emailOtpVaultKey(email);
-  const stored = await loadTenantVaultAsync(key, null);
-  if (!stored || Date.now() > stored.expiresAt) {
-    return { ok: false, error: "Verification code expired. Request a fresh code." };
-  }
-  if (stored.attempts >= 5) {
-    return { ok: false, error: "Too many attempts. Request a fresh code." };
-  }
-  const candidateHash = hashToken(`${email}:${code}`);
-  const a = Buffer.from(candidateHash);
-  const b = Buffer.from(stored.codeHash);
-  if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) {
-    stored.attempts += 1;
-    await saveTenantVaultAsync(key, stored);
-    return { ok: false, error: "Incorrect 6-digit code." };
-  }
-  await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
-  const otpUser = await findOrCreateUser("magic_link", email, {
-    email,
-    name: email.split("@")[0]
-  });
-  const canonicalOtpSid = deriveUserSessionSid(otpUser.id);
-  const emailDir = await loadTenantVaultAsync(EMAIL_DIRECTORY_KEY, {
-    byEmail: {}
-  });
-  let account = emailDir.byEmail[email];
-  if (!account) {
-    const newSid = preferredSid && /^[a-f0-9]{24,64}$/i.test(preferredSid) ? preferredSid : canonicalOtpSid;
-    account = {
-      sid: newSid,
-      displayName: otpUser.name,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    emailDir.byEmail[email] = account;
-    await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
-  }
-  const dir = await loadTenantVaultAsync(TEAMS_DIRECTORY_KEY, {
-    bySlug: {},
-    byJoinCode: {},
-    allTeamIds: []
-  });
-  const userTeams = await loadTenantVaultAsync(
-    userTeamsVaultKey(account.sid),
-    {
-      teamIds: [],
-      email,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    }
-  );
-  userTeams.email = email;
-  for (const teamId of dir.allTeamIds) {
-    const doc = await loadTenantVaultAsync(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-    let mutated = false;
-    for (const m of doc.memberships) {
-      if (m.invitedEmail && m.invitedEmail.toLowerCase() === email && m.status !== "REVOKED") {
-        m.userSid = account.sid;
-        if (m.status !== "ACTIVE") {
-          m.status = "ACTIVE";
-          m.joinedAt = (/* @__PURE__ */ new Date()).toISOString();
-        }
-        if (!account.displayName && m.invitedName) {
-          account.displayName = m.invitedName;
-        }
-        if (!userTeams.teamIds.includes(teamId)) {
-          userTeams.teamIds.push(teamId);
-        }
-        mutated = true;
-      }
-    }
-    if (mutated) {
-      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-    }
-  }
-  userTeams.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveTenantVaultAsync(userTeamsVaultKey(account.sid), userTeams);
-  emailDir.byEmail[email] = account;
-  await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
-  return {
-    ok: true,
-    sid: account.sid,
-    email,
-    displayName: account.displayName
-  };
 }
 
 // server/teamWorkoutAndGovernanceService.ts
@@ -9150,9 +9250,7 @@ async function broadcastWorkoutToTeamSquad(params) {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const cleanTargets = Array.isArray(params.targetMembershipIds) ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
-    const cleanEventGroups = Array.isArray(params.targetEventGroups) ? params.targetEventGroups.filter(
-      (g) => g === "SPRINTS" || g === "MID_DISTANCE" || g === "DISTANCE"
-    ) : void 0;
+    const cleanEventGroups = sanitizeTargetEventGroups(params.targetEventGroups);
     const dateStr = String(params.date || nowIso.slice(0, 10)).slice(0, 10);
     const targetSquadGroup = String(params.targetSquadGroup || "ALL").trim() || "ALL";
     const scheduledTime = sanitizeScheduledTime(params.scheduledTime);
@@ -9220,9 +9318,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const cleanTargets = Array.isArray(params.targetMembershipIds) ? params.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
-    const cleanEventGroups = Array.isArray(params.targetEventGroups) ? params.targetEventGroups.filter(
-      (g) => g === "SPRINTS" || g === "MID_DISTANCE" || g === "DISTANCE"
-    ) : void 0;
+    const cleanEventGroups = sanitizeTargetEventGroups(params.targetEventGroups);
     const targetSquadGroup = String(params.targetSquadGroup || "ALL").trim() || "ALL";
     const cleanBlockId = params.planBlockId ? String(params.planBlockId).slice(0, 80) : `tm-blk-${Date.now()}`;
     const cleanBlockName = params.planBlockName ? String(params.planBlockName).slice(0, 120) : void 0;
@@ -10312,7 +10408,7 @@ async function bulkCreateAndSendInvites(params) {
     if (!latestDoc) return null;
     let addedCount2 = 0;
     let manualLinkCount2 = 0;
-    for (const row of parsedRows.slice(0, 220)) {
+    for (const row of parsedRows.slice(0, 400)) {
       const cleanEmail = row.invitedEmail?.trim().toLowerCase();
       if (cleanEmail && latestDoc.memberships.some(
         (existing) => existing.invitedEmail?.toLowerCase() === cleanEmail && existing.status !== "REVOKED"
@@ -10344,12 +10440,14 @@ async function bulkCreateAndSendInvites(params) {
       } else {
         manualLinkCount2 += 1;
       }
+      const resolvedEventGroup = row.eventGroup || inferEventGroupFromSeedMark(row.seedMarkOrFtp);
       latestDoc.memberships.push({
         membershipId,
         teamId: latestDoc.brand.teamId,
         role: "ATHLETE",
         squadGroup: row.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
-        ...inferEventGroupFromSeedMark(row.seedMarkOrFtp) ? { eventGroup: inferEventGroupFromSeedMark(row.seedMarkOrFtp) } : {},
+        ...resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {},
+        ...row.genderDivision ? { genderDivision: row.genderDivision } : {},
         invitedName: String(row.invitedName || "Team Athlete").trim().slice(0, 64),
         invitedEmail: cleanEmail,
         invitedPhone: row.invitedPhone,
@@ -10595,15 +10693,18 @@ async function claimTeamJoinInvite(params) {
       };
     }
     const effectiveParentEmail = params.parentGuardianEmail?.trim().toLowerCase() || mem?.parentGuardianEmail?.trim().toLowerCase();
-    if ((ageCheck.ageTier === "YOUTH_13_17" || ageCheck.ageTier === "UNKNOWN" && doc.brand.orgType === "HIGH_SCHOOL") && !effectiveParentEmail) {
+    if ((ageCheck.ageTier === "YOUTH_13_17" || ageCheck.ageTier === "UNKNOWN" && doc.brand.orgType === "HIGH_SCHOOL") && !effectiveParentEmail && !params.deferParentEmail) {
       return {
         ok: false,
         error: "Parent or guardian email is required for athletes aged 13\u201317."
       };
     }
     const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-    const resolvedSharingTier = params.sharingTier || "SUMMARY_ONLY";
     const isMinor = ageCheck.ageTier === "UNKNOWN" ? Boolean(doc.brand.orgType === "HIGH_SCHOOL" || mem?.isMinorU18) : ageCheck.isMinorU18;
+    const isDeferredMinorParentEmail = Boolean(
+      isMinor && !effectiveParentEmail && params.deferParentEmail
+    );
+    const resolvedSharingTier = isDeferredMinorParentEmail ? "LOAD_ONLY" : params.sharingTier || "SUMMARY_ONLY";
     if (!mem) {
       mem = {
         membershipId: `mem_${crypto9.randomBytes(6).toString("hex")}`,
@@ -10628,7 +10729,8 @@ async function claimTeamJoinInvite(params) {
     } else {
       mem.userSid = params.callerSid;
       if (cleanStravaId) mem.stravaAthleteId = cleanStravaId;
-      if (params.sharingTier) mem.sharingTier = params.sharingTier;
+      if (isDeferredMinorParentEmail) mem.sharingTier = "LOAD_ONLY";
+      else if (params.sharingTier) mem.sharingTier = params.sharingTier;
       else if (!mem.sharingTier) mem.sharingTier = "SUMMARY_ONLY";
       if (params.athleteName?.trim()) {
         mem.invitedName = params.athleteName.trim().slice(0, 64);
@@ -10970,8 +11072,13 @@ async function updateMemberRosterLifecycleStatus(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
-      return { ok: false, error: "Coach permissions required." };
+    const canTrainerUpdateInjuryStatus = callerMem?.role === "ATHLETIC_TRAINER" && (params.status === "ACTIVE" || params.status === "INJURED");
+    const canCoachManageLifecycle = callerMem?.role === "HEAD_COACH" || callerMem?.role === "ASSISTANT_COACH" || callerMem?.role === "ORG_ADMIN";
+    if (!callerMem || !canCoachManageLifecycle && !canTrainerUpdateInjuryStatus) {
+      return {
+        ok: false,
+        error: callerMem?.role === "ATHLETIC_TRAINER" ? "Athletic trainers may only update ACTIVE or INJURED status." : "Coach permissions required."
+      };
     }
     const target = doc.memberships.find((m) => m.membershipId === params.membershipId);
     if (!target) return { ok: false, error: "Member not found." };
@@ -11146,7 +11253,7 @@ async function mergeDuplicateRosterMembers(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
-    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH" && callerMem.role !== "ORG_ADMIN") {
       return { ok: false, error: "Coach permissions required." };
     }
     const source = doc.memberships.find((m) => m.membershipId === params.sourceMembershipId);
@@ -11290,6 +11397,77 @@ async function declineAndPurgeParentConsent(token) {
     return { ok: true, athleteName, teamName };
   }
   return { ok: false, error: "Invalid or expired parent consent link." };
+}
+async function issueOrResendParentConsentLink(params) {
+  const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+  const cleanIncomingEmail = params.parentGuardianEmail?.trim().toLowerCase();
+  if (cleanIncomingEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIncomingEmail)) {
+    return { ok: false, error: "Enter a valid parent or guardian email address." };
+  }
+  let emailTarget = null;
+  const lockedOutcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH" && callerMem.role !== "ORG_ADMIN") {
+      return { ok: false, error: "Coach or admin permissions required." };
+    }
+    const mem = doc.memberships.find(
+      (m) => m.membershipId === params.membershipId && m.role === "ATHLETE" && m.status !== "REVOKED"
+    );
+    if (!mem) return { ok: false, error: "Roster athlete not found." };
+    if (cleanIncomingEmail) {
+      mem.parentGuardianEmail = cleanIncomingEmail;
+    }
+    const rawConsentToken = crypto10.randomBytes(16).toString("base64url");
+    mem.parentConsentTokenHash = hashToken(rawConsentToken);
+    mem.parentConsentToken = void 0;
+    if (mem.parentConsentStatus !== "ACKNOWLEDGED") {
+      mem.parentConsentStatus = "PENDING";
+    }
+    const consentUrl = `${cleanOrigin}/api/teams/parent-consent?token=${rawConsentToken}`;
+    if (mem.parentGuardianEmail) {
+      const content = buildParentConsentEmailContent({
+        brand: doc.brand,
+        athleteName: mem.invitedName,
+        parentConsentUrl: consentUrl
+      });
+      emailTarget = { to: mem.parentGuardianEmail, ...content };
+    }
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "PARENT_CONSENT_LINK_ISSUED",
+      targetId: mem.membershipId,
+      metadata: {
+        athleteName: mem.invitedName,
+        hasParentEmail: Boolean(mem.parentGuardianEmail)
+      }
+    });
+    return {
+      ok: true,
+      consentUrl,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+  if (!lockedOutcome || !lockedOutcome.ok || !lockedOutcome.consentUrl) {
+    return { ok: false, error: lockedOutcome?.error || "Could not issue parent consent link." };
+  }
+  let emailStatus = "READY_MANUAL_LINK";
+  if (emailTarget) {
+    const sendRes = await sendEmailViaResend(emailTarget);
+    emailStatus = sendRes.status;
+  }
+  return {
+    ok: true,
+    consentUrl: lockedOutcome.consentUrl,
+    emailStatus,
+    team: lockedOutcome.team
+  };
 }
 
 // server/routers/teamRouter.ts
@@ -11585,7 +11763,8 @@ teamRouter.post("/api/teams/join-claim", async (req, res) => {
       birthYear: verifiedBirthMonthYear ? Number(verifiedBirthMonthYear.slice(0, 4)) : typeof req.body?.birthYear === "number" ? req.body.birthYear : req.body?.birthYear ? Number(req.body.birthYear) : void 0,
       birthMonthYear: verifiedBirthMonthYear || (req.body?.birthMonthYear ? String(req.body.birthMonthYear).trim() : void 0),
       graduationYear: typeof req.body?.graduationYear === "number" ? req.body.graduationYear : req.body?.graduationYear ? Number(req.body.graduationYear) : void 0,
-      parentGuardianEmail: req.body?.parentGuardianEmail ? String(req.body.parentGuardianEmail).trim() : void 0
+      parentGuardianEmail: req.body?.parentGuardianEmail ? String(req.body.parentGuardianEmail).trim() : void 0,
+      deferParentEmail: Boolean(req.body?.deferParentEmail)
     });
     if (!claimed.ok || !claimed.summary) {
       const isValidationError = Boolean(claimed.error) && /COPPA|13 or older|Parent or guardian email/i.test(claimed.error || "");
@@ -11647,9 +11826,7 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
     }
     const originUrl = resolveRequestOrigin(req);
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
-    const targetEventGroups = Array.isArray(req.body?.targetEventGroups) ? req.body.targetEventGroups.filter(
-      (g) => g === "SPRINTS" || g === "MID_DISTANCE" || g === "DISTANCE"
-    ) : void 0;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
     const updated = await broadcastWorkoutToTeamSquad({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ""),
@@ -11695,9 +11872,7 @@ teamRouter.post("/api/teams/:teamId/workouts/broadcast-batch", async (req, res) 
     }
     const originUrl = resolveRequestOrigin(req);
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
-    const targetEventGroups = Array.isArray(req.body?.targetEventGroups) ? req.body.targetEventGroups.filter(
-      (g) => g === "SPRINTS" || g === "MID_DISTANCE" || g === "DISTANCE"
-    ) : void 0;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
     const workouts = Array.isArray(req.body?.workouts) ? req.body.workouts : [];
     const updated = await broadcastWorkoutBatchToTeamSquad({
       callerSid: claims.sid,
@@ -11829,8 +12004,7 @@ teamRouter.patch("/api/teams/:teamId/members/:membershipId/event-group", async (
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const rawGroup = req.body?.eventGroup;
-    const eventGroup = rawGroup === "SPRINTS" || rawGroup === "MID_DISTANCE" || rawGroup === "DISTANCE" ? rawGroup : null;
+    const eventGroup = normalizeCoachEventGroup(req.body?.eventGroup);
     const originUrl = resolveRequestOrigin(req);
     const updated = await updateTeamMemberEventGroup({
       callerSid: claims.sid,
@@ -12012,6 +12186,45 @@ teamRouter.patch(
       res.status(400).json({
         ok: false,
         error: err instanceof Error ? err.message : "Failed updating member status."
+      });
+    }
+  }
+);
+teamRouter.post(
+  "/api/teams/:teamId/members/:membershipId/parent-consent-link",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveRequestOrigin(req);
+      const outcome = await issueOrResendParentConsentLink({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        membershipId: String(req.params.membershipId || ""),
+        originUrl,
+        parentGuardianEmail: req.body?.parentGuardianEmail ? String(req.body.parentGuardianEmail).trim() : void 0
+      });
+      if (!outcome.ok) {
+        const isAuthError = /permission/i.test(outcome.error || "");
+        res.status(isAuthError ? 403 : 400).json({
+          ok: false,
+          error: outcome.error || "Could not issue parent consent link."
+        });
+        return;
+      }
+      res.json({
+        ok: true,
+        consentUrl: outcome.consentUrl,
+        emailStatus: outcome.emailStatus,
+        team: outcome.team
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed issuing parent consent link."
       });
     }
   }
@@ -12458,7 +12671,7 @@ teamRouter.post("/api/teams/:teamId/comments", async (req, res) => {
 import express4 from "express";
 
 // server/athleticSyncService.ts
-import crypto10 from "crypto";
+import crypto11 from "crypto";
 function assertCoachMembership(doc, callerSid) {
   const mem = doc.memberships.find(
     (m) => m.userSid === callerSid && m.status !== "REVOKED"
@@ -12487,7 +12700,7 @@ function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
     const estDist = meet.distanceMeters || 5e3;
     const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
     additions.push({
-      broadcastId: `meet_${crypto10.randomBytes(6).toString("hex")}`,
+      broadcastId: `meet_${crypto11.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup: "ALL",
       date: cleanDate,
@@ -12667,8 +12880,9 @@ function findOrCreateExternalMembership(doc, candidate) {
     if (candidate.seedMarkOrFtp && !existing.seedMarkOrFtp) {
       existing.seedMarkOrFtp = candidate.seedMarkOrFtp;
     }
-    if (!existing.eventGroup && candidate.seedMarkOrFtp) {
-      existing.eventGroup = inferEventGroupFromSeedMark(candidate.seedMarkOrFtp) || "DISTANCE";
+    if (!existing.eventGroup && (candidate.eventGroup || candidate.seedMarkOrFtp)) {
+      const inferred = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
+      if (inferred) existing.eventGroup = inferred;
     }
     if (calibrated && (!existing.liveSnapshot || !existing.liveSnapshot.thresholdPaceSecsPerKm)) {
       existing.liveSnapshot = {
@@ -12695,13 +12909,14 @@ function findOrCreateExternalMembership(doc, candidate) {
     candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
   );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-  const rawToken = crypto10.randomBytes(12).toString("base64url");
+  const rawToken = crypto11.randomBytes(12).toString("base64url");
+  const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
   const createdMem = {
-    membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
     role: "ATHLETE",
     squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
-    eventGroup: candidate.seedMarkOrFtp ? inferEventGroupFromSeedMark(candidate.seedMarkOrFtp) || "DISTANCE" : "DISTANCE",
+    ...resolvedCreatedGroup ? { eventGroup: resolvedCreatedGroup } : {},
     invitedName: String(candidate.name || "Team Athlete").trim().slice(0, 64),
     graduationYear: candidate.graduationYear,
     isMinorU18: isMinorImport,
@@ -12714,7 +12929,7 @@ function findOrCreateExternalMembership(doc, candidate) {
     status: "INVITED",
     emailDeliveryStatus: "READY_MANUAL_LINK",
     rawInviteToken: rawToken,
-    inviteTokenHash: crypto10.createHash("sha256").update(rawToken).digest("hex"),
+    inviteTokenHash: crypto11.createHash("sha256").update(rawToken).digest("hex"),
     invitedAt: nowIso,
     liveSnapshot: {
       updatedAt: nowIso,
@@ -12752,7 +12967,7 @@ async function applyExternalTeamSyncBatch(params) {
   let addedMeets = 0;
   let recordedResults = 0;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  for (const ath of (params.athletes || []).slice(0, 150)) {
+  for (const ath of (params.athletes || []).slice(0, 400)) {
     const res = findOrCreateExternalMembership(doc, ath);
     if (res.created) addedAthletes += 1;
     else updatedAthletes += 1;
@@ -12780,7 +12995,7 @@ async function applyExternalTeamSyncBatch(params) {
     );
     if (duplicate) continue;
     const activity = synthesizeOfficialRaceActivity({
-      id: `ext-meet-${crypto10.randomBytes(5).toString("hex")}`,
+      id: `ext-meet-${crypto11.randomBytes(5).toString("hex")}`,
       date: row.date,
       meetName: row.meetName,
       eventLabel: row.eventLabel,
@@ -12933,7 +13148,7 @@ async function followTeamAsParentOrFan(params) {
     if (!mem) {
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       mem = {
-        membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         role: "PARENT_FOLLOWER",
@@ -13157,10 +13372,10 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
 
 // server/routers/authRouter.ts
 import express5 from "express";
-import crypto12 from "crypto";
+import crypto13 from "crypto";
 
 // server/webauthnVerify.ts
-import crypto11 from "crypto";
+import crypto12 from "crypto";
 function readCborLength(buf, addtl, offset) {
   if (addtl < 24) {
     return { length: addtl, nextOffset: offset };
@@ -13271,7 +13486,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 1 || !Buffer.isBuffer(xBuf) || !Buffer.isBuffer(yBuf)) {
       throw new Error("Invalid COSE EC2 P-256 public key parameters.");
     }
-    const pubKey = crypto11.createPublicKey({
+    const pubKey = crypto12.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -13292,7 +13507,7 @@ function coseKeyMapToSpki(coseMap) {
     if (!Buffer.isBuffer(nBuf) || !Buffer.isBuffer(eBuf)) {
       throw new Error("Invalid COSE RSA public key parameters.");
     }
-    const pubKey = crypto11.createPublicKey({
+    const pubKey = crypto12.createPublicKey({
       key: {
         kty: "RSA",
         n: nBuf.toString("base64url"),
@@ -13312,7 +13527,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 6 || !Buffer.isBuffer(xBuf)) {
       throw new Error("Invalid COSE Ed25519 public key parameters.");
     }
-    const pubKey = crypto11.createPublicKey({
+    const pubKey = crypto12.createPublicKey({
       key: {
         kty: "OKP",
         crv: "Ed25519",
@@ -13359,9 +13574,9 @@ function assertRpIdHashAndFlags(authData, expectedRpId, requireAtFlag) {
   if (!Buffer.isBuffer(authData) || authData.length < minLen) {
     throw new Error("Truncated WebAuthn authenticatorData.");
   }
-  const expectedRpHash = crypto11.createHash("sha256").update(expectedRpId).digest();
+  const expectedRpHash = crypto12.createHash("sha256").update(expectedRpId).digest();
   const actualRpHash = authData.subarray(0, 32);
-  if (!crypto11.timingSafeEqual(actualRpHash, expectedRpHash)) {
+  if (!crypto12.timingSafeEqual(actualRpHash, expectedRpHash)) {
     throw new Error("WebAuthn RP ID hash mismatch.");
   }
   const flags = authData.readUInt8(32);
@@ -13464,15 +13679,15 @@ function verifyWebAuthnAssertion(params) {
         error: "Passkey record lacks stored public key."
       };
     }
-    const pubKey = crypto11.createPublicKey({
+    const pubKey = crypto12.createPublicKey({
       key: Buffer.from(params.publicKeySpkiBase64, "base64"),
       format: "der",
       type: "spki"
     });
-    const clientDataHash = crypto11.createHash("sha256").update(clientDataBytes).digest();
+    const clientDataHash = crypto12.createHash("sha256").update(clientDataBytes).digest();
     const signedData = Buffer.concat([authData, clientDataHash]);
     const algDigest = params.coseAlg === -8 ? null : "sha256";
-    const isValidSig = crypto11.verify(algDigest, signedData, pubKey, sigBuf);
+    const isValidSig = crypto12.verify(algDigest, signedData, pubKey, sigBuf);
     if (!isValidSig) {
       return {
         verified: false,
@@ -14142,8 +14357,8 @@ authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
   const rpId = getRpId(req);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
-  const challenge = crypto12.randomBytes(32).toString("base64url");
-  const userId = crypto12.randomBytes(16).toString("base64url");
+  const challenge = crypto13.randomBytes(32).toString("base64url");
+  const userId = crypto13.randomBytes(16).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "register",
@@ -14253,7 +14468,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
 });
 authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
   const rpId = getRpId(req);
-  const challenge = crypto12.randomBytes(32).toString("base64url");
+  const challenge = crypto13.randomBytes(32).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "auth"
@@ -14465,7 +14680,7 @@ authRouter.delete("/api/auth/account", async (req, res) => {
 
 // server/routers/configRouter.ts
 import { Router as Router6 } from "express";
-import crypto15 from "crypto";
+import crypto16 from "crypto";
 import fs7 from "fs";
 
 // server/secretManager.ts
@@ -14863,7 +15078,7 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
 }
 
 // server/oauthHelpers.ts
-import crypto13 from "crypto";
+import crypto14 from "crypto";
 function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
   const verified = getVerifiedSessionClaims(req);
   if (verified?.sid) {
@@ -14876,7 +15091,7 @@ function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
     );
     return { sid: verified.sid, sessionToken: sessionToken2 };
   }
-  const sid = crypto13.randomBytes(16).toString("hex");
+  const sid = crypto14.randomBytes(16).toString("hex");
   const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return { sid, sessionToken };
@@ -15413,7 +15628,7 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 
 // server/routers/stravaRouter.ts
 import express6 from "express";
-import crypto14 from "crypto";
+import crypto15 from "crypto";
 import fs6 from "fs";
 
 // server/stravaIdUtils.ts
@@ -16219,7 +16434,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = (prevClaims?.sub === canonicalUserId ? prevClaims.sid : void 0) || (opts.expectedUserId === canonicalUserId ? opts.expectedSid : void 0) || deriveUserSessionSid(canonicalUserId);
     sessionSubject = canonicalUserId;
   } else {
-    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto14.randomBytes(16).toString("hex");
+    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto15.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
   if (opts.athleteId) {
@@ -20390,7 +20605,7 @@ configRouter.post("/api/auth/session", (req, res) => {
     res.json({ ok: true, sessionToken: refreshedToken, authLevel: "verified" });
     return;
   }
-  const anonSub = `anon_${crypto15.randomBytes(8).toString("hex")}`;
+  const anonSub = `anon_${crypto16.randomBytes(8).toString("hex")}`;
   const sessionToken = setSessionCookie(req, res, anonSub, void 0, "anon");
   res.json({ ok: true, sessionToken, authLevel: "anon" });
 });

@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { isSafeHttpsUrl } from './securityUtils.ts';
 import type {
+  CoachEventGroup,
   ExternalTeamPlatform,
   PublicTeamHubAthleteResultItem,
   PublicTeamHubMeetItem,
@@ -283,6 +284,7 @@ function findOrCreateExternalMembership(
   candidate: {
     name: string;
     squadGroup?: string;
+    eventGroup?: CoachEventGroup;
     graduationYear?: number;
     genderDivision?: 'M' | 'F' | 'NONBINARY';
     seedMarkOrFtp?: string;
@@ -333,8 +335,9 @@ function findOrCreateExternalMembership(
     if (candidate.seedMarkOrFtp && !existing.seedMarkOrFtp) {
       existing.seedMarkOrFtp = candidate.seedMarkOrFtp;
     }
-    if (!existing.eventGroup && candidate.seedMarkOrFtp) {
-      existing.eventGroup = inferEventGroupFromSeedMark(candidate.seedMarkOrFtp) || 'DISTANCE';
+    if (!existing.eventGroup && (candidate.eventGroup || candidate.seedMarkOrFtp)) {
+      const inferred = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
+      if (inferred) existing.eventGroup = inferred;
     }
     if (calibrated && (!existing.liveSnapshot || !existing.liveSnapshot.thresholdPaceSecsPerKm)) {
       existing.liveSnapshot = {
@@ -363,14 +366,14 @@ function findOrCreateExternalMembership(
   );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
   const rawToken = crypto.randomBytes(12).toString('base64url');
+  const resolvedCreatedGroup =
+    candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
   const createdMem: StoredMembershipInternal = {
     membershipId: `mem_${crypto.randomBytes(6).toString('hex')}`,
     teamId: doc.brand.teamId,
     role: 'ATHLETE',
     squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || 'Varsity',
-    eventGroup: candidate.seedMarkOrFtp
-      ? inferEventGroupFromSeedMark(candidate.seedMarkOrFtp) || 'DISTANCE'
-      : 'DISTANCE',
+    ...(resolvedCreatedGroup ? { eventGroup: resolvedCreatedGroup } : {}),
     invitedName: String(candidate.name || 'Team Athlete').trim().slice(0, 64),
     graduationYear: candidate.graduationYear,
     isMinorU18: isMinorImport,
@@ -439,7 +442,7 @@ export async function applyExternalTeamSyncBatch(params: {
   let recordedResults = 0;
   const nowIso = new Date().toISOString();
 
-  for (const ath of (params.athletes || []).slice(0, 150)) {
+  for (const ath of (params.athletes || []).slice(0, 400)) {
     const res = findOrCreateExternalMembership(doc, ath);
     if (res.created) addedAthletes += 1;
     else updatedAthletes += 1;

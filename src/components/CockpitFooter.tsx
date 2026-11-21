@@ -3,6 +3,7 @@ import { AeroPulseLogo } from './AeroPulseLogo';
 
 interface CockpitFooterProps {
   athleteFtp: number;
+  hideCyclingFtpLabel?: boolean;
   onOpenProfile: () => void;
   onOpenDataSources: () => void;
   onOpenGuide: () => void;
@@ -11,6 +12,7 @@ interface CockpitFooterProps {
 
 export const CockpitFooter: React.FC<CockpitFooterProps> = ({
   athleteFtp,
+  hideCyclingFtpLabel = false,
   onOpenProfile,
   onOpenDataSources,
   onOpenGuide,
@@ -22,7 +24,7 @@ export const CockpitFooter: React.FC<CockpitFooterProps> = ({
         <AeroPulseLogo size="sm" surface="on-dark" />
         <span className="hidden sm:inline text-emerald-200/55 dark:text-slate-400">·</span>
         <span className="hidden sm:inline font-mono text-2xs text-emerald-100/75 dark:text-slate-400">
-          Close Today · Lock Tomorrow · Coaching &amp; readiness telemetry only — not medical advice
+          Track, XC &amp; Endurance Coaching Lab · Informational coaching only — not medical advice
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-4 font-medium">
@@ -31,7 +33,7 @@ export const CockpitFooter: React.FC<CockpitFooterProps> = ({
           onClick={onOpenProfile}
           className="min-h-[44px] sm:min-h-0 inline-flex items-center text-emerald-50/85 hover:text-white dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
         >
-          Zones &amp; FTP ({athleteFtp}W)
+          {hideCyclingFtpLabel ? 'Profile & Zones' : `Zones & FTP (${athleteFtp}W)`}
         </button>
         <button
           type="button"
@@ -58,6 +60,12 @@ export const CockpitFooter: React.FC<CockpitFooterProps> = ({
           className="min-h-[44px] sm:min-h-0 inline-flex items-center text-emerald-50/85 hover:text-white dark:text-slate-300 dark:hover:text-white transition-colors"
         >
           Terms
+        </a>
+        <a
+          href="/for-athletic-directors"
+          className="min-h-[44px] sm:min-h-0 inline-flex items-center text-emerald-50/85 hover:text-white dark:text-slate-300 dark:hover:text-white transition-colors"
+        >
+          For ADs
         </a>
         <a
           href="/procurement"

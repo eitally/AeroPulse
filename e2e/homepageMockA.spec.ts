@@ -21,7 +21,7 @@ test.describe('THRESH Homepage Mock A — Live Instrument Split (Desktop & Mobil
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
     await expect(
-      page.getByRole('heading', { name: /Know today's readiness before you step on the line/i })
+      page.getByRole('heading', { name: /Run your track & XC squad from one clipboard/i })
     ).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('heading', { name: /Sign in or create account/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Live Cockpit Preview/i })).toBeVisible();
@@ -29,7 +29,7 @@ test.describe('THRESH Homepage Mock A — Live Instrument Split (Desktop & Mobil
     await expect(page.getByRole('heading', { name: /For Coaches & Programs/i })).toBeVisible();
 
     const heroBox = await page
-      .getByRole('heading', { name: /Know today's readiness before you step on the line/i })
+      .getByRole('heading', { name: /Run your track & XC squad from one clipboard/i })
       .boundingBox();
     const authBox = await page.getByTestId('homepage-auth-card').boundingBox();
     const specimenBox = await page.getByTestId('homepage-live-cockpit-preview').boundingBox();
@@ -44,8 +44,8 @@ test.describe('THRESH Homepage Mock A — Live Instrument Split (Desktop & Mobil
       expect(specimenBox!.y).toBeGreaterThan(authBox!.y);
 
       const touchTargets = [
-        page.getByRole('button', { name: /Connect with Strava/i }),
         page.getByRole('button', { name: /Continue with Google/i }),
+        page.getByRole('button', { name: /Connect with Strava/i }),
         page.getByTestId('homepage-drawer-passkey-btn'),
         page.getByTestId('homepage-drawer-teamcode-btn'),
         page.getByTestId('homepage-drawer-fit-btn'),
@@ -66,7 +66,29 @@ test.describe('THRESH Homepage Mock A — Live Instrument Split (Desktop & Mobil
     );
     expect(overflow).toBe(false);
 
-    // 1. Toggle Readiness Simulation: Optimal (+6 TSB) -> Fatigued (-24 TSB)
+    // 1. Default Coach-first state: Free Spring Pilot badge, Willow Glen Track & Field, 3 triage pills, legal + AD links
+    await expect(page.locator('body')).toContainText(/FREE SPRING PILOT/i);
+    await expect(page.getByTestId('homepage-role-helper')).toContainText(
+      'Create a school, college, or club workspace in 60 seconds'
+    );
+    await expect(page.getByTestId('specimen-coach-panel')).toBeVisible();
+    await expect(page.getByTestId('specimen-coach-panel')).toContainText('Willow Glen Track & Field (WGTR-26)');
+    await expect(page.getByTestId('specimen-coach-panel')).toContainText('24 Cleared');
+    await expect(page.getByTestId('specimen-coach-panel')).toContainText('3 Dial Back');
+    await expect(page.getByTestId('specimen-coach-panel')).toContainText('1 Shin Flag · Bike Swap');
+    await page.getByTestId('specimen-coach-tab-splits').click();
+    await expect(page.getByTestId('specimen-coach-panel')).toContainText('0.01s PHONE STOPWATCH');
+    await expect(page.locator('a[href="/privacy"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/terms"]').first()).toBeVisible();
+    await expect(page.locator('a[href="/procurement"]').first()).toBeVisible();
+    await expect(page.locator('footer a[href="/for-athletic-directors"]')).toBeVisible();
+
+    // 2. Role selector switches cleanly to Solo Athlete + interactive readiness simulation
+    await page.getByTestId('onboarding-role-athlete').click();
+    await expect(
+      page.getByRole('heading', { name: /Know today's readiness before you step on the line/i })
+    ).toBeVisible();
+    await expect(page.locator('body')).toContainText(/FREE FOR ATHLETES/i);
     await expect(page.getByTestId('specimen-atl-value')).toHaveText('58');
     await expect(page.getByTestId('specimen-tsb-value')).toHaveText('+6');
     await expect(page.locator('body')).toContainText('920');
@@ -80,26 +102,11 @@ test.describe('THRESH Homepage Mock A — Live Instrument Split (Desktop & Mobil
     await expect(page.getByTestId('specimen-prescription-text')).toContainText(
       'Today: 4 × 1km @ 3:48/km · Auto-modulated -15% strain guard'
     );
-
-    // Verify 1,180 TSS Fatigued weekly load, FREE FOR ATHLETES pricing badge & legal links
     await expect(page.locator('body')).toContainText('1,180');
-    await expect(page.locator('body')).toContainText(/FREE FOR ATHLETES/i);
-    await expect(page.locator('a[href="/privacy"]').first()).toBeVisible();
-    await expect(page.locator('a[href="/terms"]').first()).toBeVisible();
-    await expect(page.locator('a[href="/procurement"]').first()).toBeVisible();
 
-    // 2. Role selector syncs Live Cockpit Preview to Team Coach & updates helper copy
-    await page.getByTestId('onboarding-role-coach').click();
-    await expect(page.getByTestId('homepage-role-helper')).toContainText(
-      'Create a school, college, or club workspace in 60 seconds.'
-    );
+    // Switch back to Team Coach via specimen tab
+    await page.getByTestId('specimen-tab-coach').click();
     await expect(page.getByTestId('specimen-coach-panel')).toBeVisible();
-    await expect(page.getByTestId('specimen-coach-panel')).toContainText('24 Cleared');
-    await expect(page.getByTestId('specimen-coach-panel')).toContainText('0.01s PHONE STOPWATCH');
-
-    // Switch Live Cockpit Preview tab back to Solo Athlete
-    await page.getByTestId('specimen-tab-solo').click();
-    await expect(page.getByTestId('specimen-atl-value')).toBeVisible();
 
     // 3. 3-pill Progressive Disclosure Drawers
     await page.getByTestId('homepage-drawer-passkey-btn').click();

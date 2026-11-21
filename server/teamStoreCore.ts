@@ -7,7 +7,11 @@ import {
   withVaultLock,
 } from './tokenVault.ts';
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
-import { inferEventGroupFromSeedMark } from '../src/physiology/teamOnboardingEngine.ts';
+import {
+  inferEventGroupFromSeedMark,
+  normalizeCoachEventGroup,
+  sanitizeTargetEventGroups,
+} from '../src/physiology/teamOnboardingEngine.ts';
 import type {
   GuardianSafetyAlertRecord,
   TeamAthleteLiveSnapshot,
@@ -22,7 +26,11 @@ import type {
   TeamWorkoutLibraryTemplate,
 } from '../src/types.ts';
 
-export { inferEventGroupFromSeedMark };
+export {
+  inferEventGroupFromSeedMark,
+  normalizeCoachEventGroup,
+  sanitizeTargetEventGroups,
+};
 
 export function canProgramWorkoutsRole(role?: TeamMemberRole | string): boolean {
   return role === 'HEAD_COACH' || role === 'ASSISTANT_COACH';

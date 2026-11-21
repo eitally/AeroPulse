@@ -32,6 +32,7 @@
       <span class="mono" style="font-size:0.75rem;color:var(--text-muted)">Procurement &amp; DPA</span>
     </a>
     <nav class="legal-nav" aria-label="Legal and procurement navigation">
+      <a class="legal-nav-link" href="/for-athletic-directors">For ADs</a>
       <a class="legal-nav-link" href="/privacy">Privacy</a>
       <a class="legal-nav-link" href="/terms">Terms</a>
       <a class="legal-nav-link" href="/subprocessors">Subprocessors</a>
@@ -71,22 +72,22 @@
           <tbody>
             <tr>
               <td>Authentication &amp; WebAuthn</td>
-              <td><code>@simplewebauthn/server</code> cryptographic COSE signature + replay check; HMAC-SHA256 sessions; Google OAuth &amp; Magic Link fail-closed (no prod previewUrl leak)</td>
+              <td>FIDO2/WebAuthn Passkeys with cryptographic signature &amp; replay checks; HMAC-SHA256 sessions; fail-closed Google OAuth &amp; Magic Link flows</td>
               <td>Verified in automated CI security tests</td>
             </tr>
             <tr>
               <td>Encryption at Rest &amp; Transit</td>
-              <td>AES-256-GCM per-tenant vault envelopes; SHA-256 hashed consent/invite/OTP tokens; strict TLS <code>rejectUnauthorized: true</code> Postgres connections</td>
-              <td>Active in API server &amp; Neon driver</td>
+              <td>AES-256-GCM per-tenant vault envelopes; SHA-256 hashed consent/invite/OTP tokens; strict verified TLS PostgreSQL connections</td>
+              <td>Active in API server &amp; database layer</td>
             </tr>
             <tr>
               <td>Concurrency &amp; Auditability</td>
-              <td>Normalized Postgres <code>thresh_teams</code>, <code>thresh_team_members</code> row locks + append-only <code>thresh_audit_log</code> queryable by <code>HEAD_COACH</code> / <code>ORG_ADMIN</code></td>
+              <td>Transactional per-team concurrency locks plus an append-only governance audit trail queryable by <code>HEAD_COACH</code> &amp; <code>ORG_ADMIN</code></td>
               <td>Active across team governance endpoints</td>
             </tr>
             <tr>
               <td>AI &amp; Strava Firewall</td>
-              <td>Server-side allowlist firewall stripping 100% of Strava payloads &amp; minor weights prior to optional adult-only Gemini calls</td>
+              <td>Server-side allowlist firewall stripping third-party Strava payloads &amp; minor weights prior to optional adult-only Gemini calls</td>
               <td>Unit &amp; integration tested</td>
             </tr>
           </tbody>
@@ -104,8 +105,8 @@
         </div>
         <div class="price-card">
           <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">HIGH SCHOOL PROGRAM</span>
-          <div class="price-value">$250 / yr</div>
-          <p>Flat per school, unlimited XC/Track athletes, watchless Stopwatch, Guardian Hub &amp; PO/ASB invoice.</p>
+          <div class="price-value">Free Pilot · $250 / yr</div>
+          <p>Free Spring Track Founding Pilot, then $250/yr flat per school: unlimited athletes, watchless Stopwatch, Guardian Hub &amp; PO/ASB invoice.</p>
         </div>
         <div class="price-card">
           <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">COLLEGIATE / NCAA PROGRAM</span>
@@ -119,7 +120,7 @@
         </div>
       </div>
       <div class="legal-callout" style="margin-top:1rem;">
-        <p><strong>Purchase Orders, Signed CA NDPA &amp; W-9 Requests:</strong> Email <a href="mailto:procurement@thresh.app">procurement@thresh.app</a> with your District/University name, billing contact, and tax-exempt or PO form to receive a countersigned California SDPC NDPA, IRS Form W-9, and Net-30 invoice within 1 business day.</p>
+        <p><strong>Purchase Orders, Signed CA NDPA &amp; W-9 Requests:</strong> Email <a href="mailto:procurement@thresh.fit">procurement@thresh.fit</a> with your District/University name, billing contact, and tax-exempt or PO form to receive a countersigned California SDPC NDPA, IRS Form W-9, and Net-30 invoice within 1 business day.</p>
       </div>
     </section>
   </main>

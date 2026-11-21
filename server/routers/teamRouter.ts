@@ -12,6 +12,7 @@ import { getScopedRuntimeStore } from '../sessionContext.ts';
 import {
   declineAndPurgeParentConsent,
   graduateTeamClass,
+  issueOrResendParentConsentLink,
   leaveOrGraduateTeam,
   mergeDuplicateRosterMembers,
   previewParentConsentToken,
@@ -50,6 +51,10 @@ import {
   updateTeamMemberEventGroup,
   verifyEmailOtpCode,
 } from '../teamService.ts';
+import {
+  normalizeCoachEventGroup,
+  sanitizeTargetEventGroups,
+} from '../../src/physiology/teamOnboardingEngine.ts';
 import type {
   CoachDataSharingTier,
   CoachEventGroup,
@@ -410,6 +415,7 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
       parentGuardianEmail: req.body?.parentGuardianEmail
         ? String(req.body.parentGuardianEmail).trim()
         : undefined,
+      deferParentEmail: Boolean(req.body?.deferParentEmail),
     });
 
     if (!claimed.ok || !claimed.summary) {
@@ -485,12 +491,7 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast', async (req: Request, re
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds)
       ? req.body.targetMembershipIds.map((id: unknown) => String(id).trim()).filter(Boolean)
       : undefined;
-    const targetEventGroups = Array.isArray(req.body?.targetEventGroups)
-      ? req.body.targetEventGroups.filter(
-          (g: unknown): g is CoachEventGroup =>
-            g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-        )
-      : undefined;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
     const updated = await broadcastWorkoutToTeamSquad({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ''),
@@ -543,12 +544,7 @@ teamRouter.post('/api/teams/:teamId/workouts/broadcast-batch', async (req: Reque
     const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds)
       ? req.body.targetMembershipIds.map((id: unknown) => String(id).trim()).filter(Boolean)
       : undefined;
-    const targetEventGroups = Array.isArray(req.body?.targetEventGroups)
-      ? req.body.targetEventGroups.filter(
-          (g: unknown): g is CoachEventGroup =>
-            g === 'SPRINTS' || g === 'MID_DISTANCE' || g === 'DISTANCE'
-        )
-      : undefined;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
     const workouts = Array.isArray(req.body?.workouts) ? req.body.workouts : [];
     const updated = await broadcastWorkoutBatchToTeamSquad({
       callerSid: claims.sid,
@@ -685,7 +681,7 @@ teamRouter.delete('/api/teams/:teamId/workouts/:broadcastId', async (req: Reques
   }
 });
 
-// 11c. Update Roster Member Event Group ('SPRINTS' | 'MID_DISTANCE' | 'DISTANCE' | null)
+// 11c. Update Roster Member Event Group
 teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -693,11 +689,7 @@ teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
-    const rawGroup = req.body?.eventGroup;
-    const eventGroup: CoachEventGroup | null =
-      rawGroup === 'SPRINTS' || rawGroup === 'MID_DISTANCE' || rawGroup === 'DISTANCE'
-        ? rawGroup
-        : null;
+    const eventGroup: CoachEventGroup | null = normalizeCoachEventGroup(req.body?.eventGroup);
     const originUrl = resolveRequestOrigin(req);
     const updated = await updateTeamMemberEventGroup({
       callerSid: claims.sid,
@@ -899,6 +891,49 @@ teamRouter.patch(
       res.status(400).json({
         ok: false,
         error: err instanceof Error ? err.message : 'Failed updating member status.',
+      });
+    }
+  }
+);
+
+// 11e-bis. Coach Issue / Resend 1-Click Parent Consent Link
+teamRouter.post(
+  '/api/teams/:teamId/members/:membershipId/parent-consent-link',
+  async (req: Request, res: Response) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: 'Authentication required.' });
+        return;
+      }
+      const originUrl = resolveRequestOrigin(req);
+      const outcome = await issueOrResendParentConsentLink({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ''),
+        membershipId: String(req.params.membershipId || ''),
+        originUrl,
+        parentGuardianEmail: req.body?.parentGuardianEmail
+          ? String(req.body.parentGuardianEmail).trim()
+          : undefined,
+      });
+      if (!outcome.ok) {
+        const isAuthError = /permission/i.test(outcome.error || '');
+        res.status(isAuthError ? 403 : 400).json({
+          ok: false,
+          error: outcome.error || 'Could not issue parent consent link.',
+        });
+        return;
+      }
+      res.json({
+        ok: true,
+        consentUrl: outcome.consentUrl,
+        emailStatus: outcome.emailStatus,
+        team: outcome.team,
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Failed issuing parent consent link.',
       });
     }
   }

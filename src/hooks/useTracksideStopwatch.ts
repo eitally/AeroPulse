@@ -200,7 +200,7 @@ const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
   chuteQueueSecs: [],
   runnerLastTapEpochMs: {},
   sessionTitle: '',
-  soundEnabled: false,
+  soundEnabled: true,
   wakeLockEnabled: true,
   trackLane: 1,
   isStaggeredStart: false,
@@ -369,7 +369,7 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
         : [],
       runnerLastTapEpochMs: sanitizeNumberRecord(parsed.runnerLastTapEpochMs),
       sessionTitle: typeof parsed.sessionTitle === 'string' ? parsed.sessionTitle : '',
-      soundEnabled: typeof parsed.soundEnabled === 'boolean' ? parsed.soundEnabled : false,
+      soundEnabled: typeof parsed.soundEnabled === 'boolean' ? parsed.soundEnabled : true,
       wakeLockEnabled:
         typeof parsed.wakeLockEnabled === 'boolean' ? parsed.wakeLockEnabled : true,
       trackLane:

@@ -226,9 +226,18 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
   const [onboardingRole, setOnboardingRole] = useState<'ATHLETE' | 'COACH'>(() => {
     try {
-      return sessionStorage.getItem('thresh_onboarding_role') === 'COACH' ? 'COACH' : 'ATHLETE';
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const urlRole = params.get('role')?.toUpperCase();
+        if (urlRole === 'ATHLETE' || urlRole === 'COACH') return urlRole;
+        const saved =
+          localStorage.getItem('thresh_onboarding_role') ||
+          sessionStorage.getItem('thresh_onboarding_role');
+        if (saved === 'ATHLETE' || saved === 'COACH') return saved;
+      }
+      return initialJoin.codeOrSlug ? 'ATHLETE' : 'COACH';
     } catch {
-      return 'ATHLETE';
+      return initialJoin.codeOrSlug ? 'ATHLETE' : 'COACH';
     }
   });
   const [showFitDrawer, setShowFitDrawer] = useState(false);
@@ -240,11 +249,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const selectOnboardingRole = (nextRole: 'ATHLETE' | 'COACH') => {
     setOnboardingRole(nextRole);
     try {
-      if (nextRole === 'COACH') {
-        sessionStorage.setItem('thresh_onboarding_role', 'COACH');
-      } else {
-        sessionStorage.removeItem('thresh_onboarding_role');
-      }
+      sessionStorage.setItem('thresh_onboarding_role', nextRole);
+      localStorage.setItem('thresh_onboarding_role', nextRole);
     } catch {
       // ignore storage errors
     }
@@ -271,6 +277,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [birthYear, setBirthYear] = useState<string>('');
   const [birthMonth, setBirthMonth] = useState<string>('');
   const [parentGuardianEmail, setParentGuardianEmail] = useState<string>('');
+  const [deferParentEmail, setDeferParentEmail] = useState<boolean>(false);
   const [primarySport, setPrimarySport] = useState<
     'Cycling' | 'Running' | 'Swimming' | 'Triathlon' | 'Hybrid'
   >('Running');
@@ -611,6 +618,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   }, [joinCodeInput, joinSlug, inviteToken, activeBrand]);
 
   const handleGoogleSignIn = async () => {
+    selectOnboardingRole(onboardingRole);
     setIsGoogleRedirecting(true);
     setStepNotice(null);
     setJoinError(null);
@@ -648,6 +656,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   };
 
   const handlePasskeySignIn = async () => {
+    selectOnboardingRole(onboardingRole);
     setIsPasskeyAuthenticating(true);
     setPasskeyError(null);
     setJoinError(null);
@@ -704,6 +713,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
   const handleSendMagicLink = async (e: React.FormEvent) => {
     e.preventDefault();
+    selectOnboardingRole(onboardingRole);
     const cleanEmail = magicLinkEmail.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
       setJoinError('Please enter a valid email address.');
@@ -923,15 +933,16 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       if (
         isMinorAthlete &&
         !parentGuardianEmail.trim() &&
-        !invitePreview?.membership?.parentGuardianEmail
+        !invitePreview?.membership?.parentGuardianEmail &&
+        !deferParentEmail
       ) {
         setJoinError(
-          'Parent or guardian email is required for athletes under 18 to complete registration.'
+          'Parent or guardian email is required for athletes under 18 unless you choose to share the link later.'
         );
         return;
       }
 
-      // If athlete is joining a team, claim their roster spot now with their verified Strava identity!
+      // If athlete is joining a team, claim their roster spot now with their verified Strava/Google identity!
       let claimedResult: typeof claimedTeamsState = null;
       if (activeBrand && joinCodeInput.trim()) {
         const claimResp = await fetch('/api/teams/join-claim', {
@@ -952,6 +963,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             birthYear: validBirthYear ?? undefined,
             birthMonthYear: composedBirthMonthYear,
             parentGuardianEmail: parentGuardianEmail.trim() || undefined,
+            deferParentEmail,
           }),
         });
         const claimData = await claimResp.json().catch(() => ({}));
@@ -1178,6 +1190,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 >
                   Coach Guide
                 </a>
+                <a
+                  href="/for-athletic-directors"
+                  className="hidden lg:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-ap-turf items-center transition-colors"
+                >
+                  For ADs
+                </a>
                 <button
                   type="button"
                   data-testid="header-team-code-btn"
@@ -1222,7 +1240,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     }
                   >
                     <span className="font-mono text-2xs font-bold tracking-wider">
-                      {isDark ? (isSlateVariant ? 'SLATE DARK' : 'PINE DARK') : 'CHALK'}
+                      {isDark ? (isSlateVariant ? 'Midnight' : 'Dark') : 'Daylight'}
                     </span>
                   </button>
                 )}
@@ -1291,7 +1309,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-[1.08] text-ap-ink dark:text-ap-chalk">
                     {activeBrand
                       ? `Join ${activeBrand.name} on THRESH`
-                      : "Know today's readiness before you step on the line."}
+                      : onboardingRole === 'COACH'
+                        ? 'Run your track & XC squad from one clipboard.'
+                        : "Know today's readiness before you step on the line."}
                   </h1>
                   {activeBrand && (
                     <div className="mt-2">
@@ -1305,7 +1325,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   <p className="mt-2 text-sm sm:text-base leading-relaxed text-[#1F3528] dark:text-[#C8D8CE]">
                     {activeBrand
                       ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
-                      : 'THRESH turns wearable workouts, .FIT files, and trackside splits into daily workout modulation for solo athletes, and real-time injury triage for entire teams.'}
+                      : onboardingRole === 'COACH'
+                        ? 'Onboard your distance and track pods in 2 minutes, catch shin & knee overload early, and time 0.01s splits on the infield — zero GPS watches required.'
+                        : 'THRESH turns wearable workouts, .FIT files, and trackside splits into daily workout modulation for solo athletes, and real-time injury triage for entire teams.'}
                   </p>
                 </div>
 
@@ -1320,7 +1342,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       Sign in or create account
                     </h2>
                     <span className="ap-lane-badge ap-badge-volt shrink-0">
-                      <span className="ap-lane-badge-inner">FREE FOR ATHLETES</span>
+                      <span className="ap-lane-badge-inner">
+                        {onboardingRole === 'COACH' && !activeBrand
+                          ? 'FREE SPRING PILOT · $250/YR PO'
+                          : 'FREE FOR ATHLETES'}
+                      </span>
                     </span>
                   </div>
 
@@ -1331,19 +1357,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         aria-label="Choose your THRESH role"
                         className="grid grid-cols-2 gap-1 p-1 rounded-xl ap-pill-track"
                       >
-                        <button
-                          type="button"
-                          data-testid="onboarding-role-athlete"
-                          aria-pressed={onboardingRole === 'ATHLETE'}
-                          onClick={() => selectOnboardingRole('ATHLETE')}
-                          className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
-                            onboardingRole === 'ATHLETE'
-                              ? 'ap-pill-active'
-                              : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
-                          }`}
-                        >
-                          I&apos;m an Athlete
-                        </button>
                         <button
                           type="button"
                           data-testid="onboarding-role-coach"
@@ -1357,13 +1370,26 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         >
                           I&apos;m a Coach
                         </button>
+                        <button
+                          type="button"
+                          data-testid="onboarding-role-athlete"
+                          aria-pressed={onboardingRole === 'ATHLETE'}
+                          onClick={() => selectOnboardingRole('ATHLETE')}
+                          className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                            onboardingRole === 'ATHLETE'
+                              ? 'ap-pill-active'
+                              : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
+                          }`}
+                        >
+                          I&apos;m an Athlete
+                        </button>
                       </div>
                       <p
                         data-testid="homepage-role-helper"
                         className="text-xs sm:text-sm leading-snug text-[#1F3528] dark:text-[#C8D8CE]"
                       >
                         {onboardingRole === 'COACH'
-                          ? 'Create a school, college, or club workspace in 60 seconds.'
+                          ? 'Create a school, college, or club workspace in 60 seconds · Students & Parents $0.'
                           : 'Sync 90 days of workouts or join your team roster.'}
                       </p>
                     </div>
@@ -1419,50 +1445,81 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       );
                     })()}
 
-                  {/* Primary CTA 1: Connect with Strava */}
-                  <div className="space-y-1.5">
-                    <button
-                      type="button"
-                      onClick={() => void handleStravaLaunchClick('cloud', false)}
-                      disabled={busy}
-                      className="w-full min-h-[50px] py-2.5 px-4 rounded-xl bg-[#C23800] hover:bg-[#A83000] text-white font-extrabold text-base flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer transition-colors"
-                    >
-                      {isRedirecting ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <StravaChevronMark className="w-[18px] h-[18px]" />
-                      )}
-                      <span>
-                        {isRedirecting
-                          ? 'Opening Strava Sign-In…'
-                          : activeBrand
-                            ? `Connect with Strava to Join ${activeBrand.shortName}`
-                            : 'Connect with Strava'}
-                      </span>
-                    </button>
-                    <p className="text-xs text-center text-ap-muted dark:text-ap-muted-dark">
-                      {activeBrand
-                        ? 'Optional Strava sync — school athletes can also sign in with Google or Email below.'
-                        : 'Read-only 90d import · Never posts or edits activities'}
-                    </p>
-                  </div>
+                  {(() => {
+                    const isGoogleFirst =
+                      (!activeBrand && onboardingRole === 'COACH') ||
+                      (Boolean(activeBrand) &&
+                        (activeBrand?.orgType === 'HIGH_SCHOOL' ||
+                          activeBrand?.orgType === 'RUNNING_CLUB'));
 
-                  {/* Primary CTA 2: Continue with Google */}
-                  <button
-                    type="button"
-                    onClick={() => void handleGoogleSignIn()}
-                    disabled={busy || isGoogleRedirecting}
-                    className="w-full min-h-[48px] py-2.5 px-4 rounded-xl bg-white dark:bg-ap-chalk text-ap-ink shadow-[inset_0_0_0_1px_#C5D4CA] dark:shadow-none font-bold text-sm flex items-center justify-center gap-2.5 hover:brightness-95 disabled:opacity-60 cursor-pointer transition-colors"
-                  >
-                    {isGoogleRedirecting ? (
-                      <RefreshCw className="w-4 h-4 animate-spin text-slate-500" />
-                    ) : (
-                      <GoogleGIcon className="w-[18px] h-[18px]" />
-                    )}
-                    <span>
-                      {isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}
-                    </span>
-                  </button>
+                    const googleCtaNode = (
+                      <div key="google" className="space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void handleGoogleSignIn()}
+                          disabled={busy || isGoogleRedirecting}
+                          className={`w-full rounded-xl flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer transition-colors ${
+                            isGoogleFirst
+                              ? 'min-h-[50px] py-2.5 px-4 bg-[#1B3A2B] dark:bg-ap-volt text-white dark:text-ap-obsidian font-extrabold text-base hover:brightness-95'
+                              : 'min-h-[48px] py-2.5 px-4 bg-white dark:bg-ap-chalk text-ap-ink shadow-[inset_0_0_0_1px_#C5D4CA] dark:shadow-none font-bold text-sm hover:brightness-95'
+                          }`}
+                        >
+                          {isGoogleRedirecting ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <GoogleGIcon className="w-[18px] h-[18px]" />
+                          )}
+                          <span>
+                            {isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}
+                          </span>
+                        </button>
+                        {isGoogleFirst && (
+                          <p className="text-xs text-center text-ap-muted dark:text-ap-muted-dark">
+                            {activeBrand
+                              ? 'No GPS watch or Strava needed — sign in with School Google or Email'
+                              : 'Fastest for HS & Club Coaches · Use Google, Passkey, or Email'}
+                          </p>
+                        )}
+                      </div>
+                    );
+
+                    const stravaCtaNode = (
+                      <div key="strava" className="space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void handleStravaLaunchClick('cloud', false)}
+                          disabled={busy}
+                          className={`w-full rounded-xl flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer transition-colors ${
+                            !isGoogleFirst
+                              ? 'min-h-[50px] py-2.5 px-4 bg-[#C23800] hover:bg-[#A83000] text-white font-extrabold text-base'
+                              : 'min-h-[46px] py-2 px-4 bg-white dark:bg-[#111A15] text-ap-ink dark:text-ap-chalk shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] hover:bg-[#F1F5F2] dark:hover:bg-ap-turf font-bold text-sm'
+                          }`}
+                        >
+                          {isRedirecting ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <StravaChevronMark className="w-[18px] h-[18px]" />
+                          )}
+                          <span>
+                            {isRedirecting
+                              ? 'Opening Strava Sign-In…'
+                              : activeBrand
+                                ? `Connect with Strava to Join ${activeBrand.shortName}`
+                                : 'Connect with Strava'}
+                          </span>
+                        </button>
+                        <p className="text-xs text-center text-ap-muted dark:text-ap-muted-dark">
+                          {activeBrand
+                            ? 'Optional Strava sync — no GPS watch needed.'
+                            : isGoogleFirst
+                              ? 'Optional for coaches who also log personal training on Strava'
+                              : 'Read-only 90d import · Never posts or edits activities'}
+                        </p>
+                      </div>
+                    );
+
+                    return isGoogleFirst ? [googleCtaNode, stravaCtaNode] : [stravaCtaNode, googleCtaNode];
+                  })()}
 
                   {/* 3-Up Progressive Disclosure Pills */}
                   <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
@@ -1890,6 +1947,12 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   Terms
                 </a>
                 <a
+                  href="/for-athletic-directors"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                >
+                  For ADs
+                </a>
+                <a
                   href="/procurement"
                   className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
                 >
@@ -2071,6 +2134,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               setBirthMonth={setBirthMonth}
               parentGuardianEmail={parentGuardianEmail}
               setParentGuardianEmail={setParentGuardianEmail}
+              deferParentEmail={deferParentEmail}
+              onToggleDeferParentEmail={setDeferParentEmail}
               primarySport={primarySport}
               setPrimarySport={setPrimarySport}
               distanceUnit={distanceUnit}

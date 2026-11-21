@@ -41,6 +41,8 @@ export interface AuthOnboardingStepTwoProps {
   setBirthMonth: React.Dispatch<React.SetStateAction<string>>;
   parentGuardianEmail: string;
   setParentGuardianEmail: React.Dispatch<React.SetStateAction<string>>;
+  deferParentEmail: boolean;
+  onToggleDeferParentEmail: (val: boolean) => void;
   primarySport: 'Cycling' | 'Running' | 'Swimming' | 'Triathlon' | 'Hybrid';
   setPrimarySport: React.Dispatch<
     React.SetStateAction<'Cycling' | 'Running' | 'Swimming' | 'Triathlon' | 'Hybrid'>
@@ -110,6 +112,8 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
   setBirthMonth,
   parentGuardianEmail,
   setParentGuardianEmail,
+  deferParentEmail,
+  onToggleDeferParentEmail,
   primarySport,
   setPrimarySport,
   distanceUnit,
@@ -509,23 +513,41 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
 
                 {/* Parent / Guardian Email Requirement for Minor Athletes (13-17) */}
                 {!isUnder13 && isMinorAthlete && (
-                  <div className="space-y-1.5 pt-1 border-t border-slate-200/80 dark:border-white/10">
+                  <div className="space-y-2 pt-1 border-t border-slate-200/80 dark:border-white/10">
                     <label
                       htmlFor={`${formId}-parent-email`}
                       className="block text-2xs font-semibold text-slate-600 dark:text-slate-300"
                     >
-                      Parent or Guardian Email <span className="text-amber-700 dark:text-amber-400 font-bold">*Required for Athletes Under 18</span>
+                      Parent or Guardian Email{' '}
+                      <span className="text-amber-700 dark:text-amber-400 font-bold">
+                        *For Athletes Under 18
+                      </span>
                     </label>
                     <input
                       id={`${formId}-parent-email`}
                       type="email"
+                      disabled={deferParentEmail}
                       value={parentGuardianEmail}
                       onChange={(e) => setParentGuardianEmail(e.target.value)}
                       placeholder="parent.guardian@example.com"
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 disabled:opacity-50"
                     />
+                    <label className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer select-none min-h-[44px] sm:min-h-[28px] py-1">
+                      <input
+                        type="checkbox"
+                        data-testid="step2-defer-parent-email-checkbox"
+                        checked={deferParentEmail}
+                        onChange={(e) => onToggleDeferParentEmail(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded accent-emerald-600 shrink-0"
+                      />
+                      <span>
+                        I&apos;ll add my parent&apos;s email later (coach can share the link)
+                      </span>
+                    </label>
                     <p className="text-2xs text-slate-500 dark:text-slate-400">
-                      We will dispatch an automated parent notification with full transparency on data safeguards and a 1-click consent link.
+                      {deferParentEmail
+                        ? 'Summary telemetry stays paused (Load Only + Safe-Sport Weight Shield ON) until a parent or guardian approves via your coach link.'
+                        : 'We will dispatch an automated parent notification with full transparency on data safeguards and a 1-click consent link.'}
                     </p>
                   </div>
                 )}
@@ -789,7 +811,14 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                 <button
                   type="button"
                   onClick={() => void handleConfirmStep2()}
-                  disabled={busy || isUnder13}
+                  disabled={
+                    busy ||
+                    isUnder13 ||
+                    (Boolean(activeBrand) &&
+                      isMinorAthlete &&
+                      !deferParentEmail &&
+                      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parentGuardianEmail.trim()))
+                  }
                   className="ap-btn-primary text-sm px-6 cursor-pointer disabled:opacity-50"
                 >
                   {isSavingStep2 ? (

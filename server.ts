@@ -41,6 +41,13 @@ async function startServer() {
       res.sendFile(target);
     });
   }
+  app.get(['/for-athletic-directors', '/for-athletic-directors/'], (_req, res) => {
+    const target = serveBuiltDist
+      ? path.resolve(__dirname, 'dist', 'for-athletic-directors.html')
+      : path.join(publicPath, 'for-athletic-directors.html');
+    res.type('text/html; charset=utf-8');
+    res.sendFile(target);
+  });
 
   app.get('/manifest.webmanifest', (_req, res, next) => {
     const builtManifest = path.resolve(__dirname, 'dist', 'manifest.webmanifest');

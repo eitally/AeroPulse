@@ -52,6 +52,10 @@ import {
   buildSwimClipboardWorkout,
   buildTriBrickClipboardWorkout,
 } from '../physiology/swimZones';
+import {
+  COACH_EVENT_GROUP_OPTIONS,
+  normalizeCoachEventGroup,
+} from '../physiology/teamOnboardingEngine';
 import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
 import {
   Bike,
@@ -348,9 +352,10 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const audienceChips: Array<{ id: AudienceMode; label: string }> = useMemo(() => {
     const base: Array<{ id: AudienceMode; label: string }> = [
       { id: 'ALL', label: 'Whole Team' },
-      { id: 'SPRINTS', label: 'Sprints' },
-      { id: 'MID_DISTANCE', label: '800m / Mile' },
-      { id: 'DISTANCE', label: '3000m / 3200m+' },
+      ...COACH_EVENT_GROUP_OPTIONS.map((opt) => ({
+        id: opt.id as AudienceMode,
+        label: opt.shortLabel,
+      })),
       { id: 'INDIVIDUAL', label: 'Individuals' },
     ];
     return workspaceScope.showTrackEventGroupChips(clipboardSport)
@@ -365,8 +370,9 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         ? connectedAthletes.filter((a) => selectedAthleteIds.includes(a.id))
         : connectedAthletes;
     }
-    if (audienceMode === 'SPRINTS' || audienceMode === 'MID_DISTANCE' || audienceMode === 'DISTANCE') {
-      const matched = connectedAthletes.filter((a) => a.eventGroup === audienceMode);
+    const selectedGroup = normalizeCoachEventGroup(audienceMode);
+    if (selectedGroup) {
+      const matched = connectedAthletes.filter((a) => a.eventGroup === selectedGroup);
       return matched.length > 0 ? matched : connectedAthletes;
     }
     return connectedAthletes;
@@ -718,10 +724,10 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       const audienceLabel =
         audienceChips.find((c) => c.id === audienceMode)?.label || 'Whole Team';
       if (activeTeam) {
-        const targetEventGroups: CoachEventGroup[] | undefined =
-          audienceMode === 'SPRINTS' || audienceMode === 'MID_DISTANCE' || audienceMode === 'DISTANCE'
-            ? [audienceMode]
-            : undefined;
+        const selectedGroup = normalizeCoachEventGroup(audienceMode);
+        const targetEventGroups: CoachEventGroup[] | undefined = selectedGroup
+          ? [selectedGroup]
+          : undefined;
         const targetMembershipIds =
           audienceMode === 'INDIVIDUAL' && selectedAthleteIds.length > 0
             ? selectedAthleteIds.map((id) => id.replace(/^team-mem-/, ''))

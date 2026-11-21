@@ -480,7 +480,7 @@ export async function sendMagicLinkEmail(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || 'THRESH <auth@thresh.run>',
+          from: process.env.AUTH_EMAIL_FROM || 'THRESH <auth@thresh.fit>',
           to: [email],
           subject: 'Sign in to THRESH',
           html: `
@@ -570,7 +570,7 @@ export async function createPendingEmailChange(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || 'THRESH <auth@thresh.run>',
+          from: process.env.AUTH_EMAIL_FROM || 'THRESH <auth@thresh.fit>',
           to: [cleanNewEmail],
           subject: 'Verify your new THRESH email address',
           html: `

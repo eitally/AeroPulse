@@ -32,6 +32,7 @@
       <span class="mono" style="font-size:0.75rem;color:var(--text-muted)">Privacy &amp; Compliance</span>
     </a>
     <nav class="legal-nav" aria-label="Legal and procurement navigation">
+      <a class="legal-nav-link" href="/for-athletic-directors">For ADs</a>
       <a class="legal-nav-link" href="/privacy" aria-current="page">Privacy</a>
       <a class="legal-nav-link" href="/terms">Terms</a>
       <a class="legal-nav-link" href="/subprocessors">Subprocessors</a>
@@ -82,7 +83,7 @@
 
     <section class="legal-section">
       <h2>4. Strava Clean-Room Firewall &amp; Optional Gemini AI</h2>
-      <p>THRESH operates a strict server-side allowlist firewall (<code>server/cleanRoomFirewall.ts</code>) before any prompt reaches Google Gemini AI:</p>
+      <p>THRESH enforces a strict server-side telemetry allowlist firewall before any prompt reaches Google Gemini AI:</p>
       <ul>
         <li><strong>100% Strava Exclusion:</strong> Activities originating from Strava (across all payload keys including <code>recentWorkouts</code>) are stripped unconditionally and never transmitted to Gemini AI or displayed inside unowned third-party views.</li>
         <li><strong>Minor AI Default-Off:</strong> AI Coach insights are disabled by default for all minors (<code>U18</code>) and high school athletes, and body weight / body composition fields are stripped server-side.</li>
@@ -93,10 +94,10 @@
     <section class="legal-section">
       <h2>5. Security Controls, Encryption &amp; Permanent Erasure</h2>
       <ul>
-        <li><strong>Encryption:</strong> Credentials and tenant vaults are encrypted at rest with AES-256-GCM; PostgreSQL connections enforce strict TLS (<code>rejectUnauthorized: true</code> in production); WebAuthn Passkeys verify cryptographic COSE keys via <code>@simplewebauthn/server</code>.</li>
+        <li><strong>Encryption:</strong> Credentials and tenant vaults are encrypted at rest with AES-256-GCM; PostgreSQL connections enforce strict verified TLS in production; FIDO2/WebAuthn Passkeys verify cryptographic signatures before issuing sessions.</li>
         <li><strong>Self-Serve Deletion:</strong> Athletes can revoke Strava/wearable connectors or execute permanent erasure via <strong>Account &amp; Privacy → Delete My Account</strong>, which wipes session cookies, team memberships, and encrypted vault state (preventing deletion only if a sole active Head Coach has not transferred ownership).</li>
       </ul>
-      <p>Privacy &amp; procurement inquiries: <a href="mailto:privacy@thresh.app">privacy@thresh.app</a> · <a href="/procurement">District &amp; NCAA Procurement Pack</a></p>
+      <p>Privacy &amp; procurement inquiries: <a href="mailto:privacy@thresh.fit">privacy@thresh.fit</a> · <a href="/procurement">District &amp; NCAA Procurement Pack</a></p>
     </section>
   </main>
 

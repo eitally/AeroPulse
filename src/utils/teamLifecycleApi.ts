@@ -221,6 +221,28 @@ export function changePrimaryEmailApi(newEmail: string, verificationCode?: strin
   });
 }
 
+export function requestParentConsentLinkApi(params: {
+  teamId: string;
+  membershipId: string;
+  originUrl?: string;
+  parentGuardianEmail?: string;
+}) {
+  return requestLifecycleJson<{
+    consentUrl?: string;
+    emailStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
+    team?: TeamSummaryWithRole;
+  }>(
+    `/api/teams/${encodeURIComponent(params.teamId)}/members/${encodeURIComponent(params.membershipId)}/parent-consent-link`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        origin: params.originUrl,
+        ...(params.parentGuardianEmail ? { parentGuardianEmail: params.parentGuardianEmail } : {}),
+      }),
+    }
+  );
+}
+
 export function deleteAccountApi() {
   return requestLifecycleJson<{ ok: boolean }>('/api/auth/account?confirm=DELETE', {
     method: 'DELETE',

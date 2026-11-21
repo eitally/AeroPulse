@@ -1,5 +1,10 @@
+import crypto from 'crypto';
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
 import { timingSafeStringEqual } from './securityUtils.ts';
+import {
+  buildParentConsentEmailContent,
+  sendEmailViaResend,
+} from './teamEmailAndOtpService.ts';
 import type {
   CoachDataSharingTier,
   TeamInviteStatus,
@@ -262,11 +267,21 @@ export async function updateMemberRosterLifecycleStatus(params: {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
     );
-    if (
-      !callerMem ||
-      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
-    ) {
-      return { ok: false, error: 'Coach permissions required.' };
+    const canTrainerUpdateInjuryStatus =
+      callerMem?.role === 'ATHLETIC_TRAINER' &&
+      (params.status === 'ACTIVE' || params.status === 'INJURED');
+    const canCoachManageLifecycle =
+      callerMem?.role === 'HEAD_COACH' ||
+      callerMem?.role === 'ASSISTANT_COACH' ||
+      callerMem?.role === 'ORG_ADMIN';
+    if (!callerMem || (!canCoachManageLifecycle && !canTrainerUpdateInjuryStatus)) {
+      return {
+        ok: false,
+        error:
+          callerMem?.role === 'ATHLETIC_TRAINER'
+            ? 'Athletic trainers may only update ACTIVE or INJURED status.'
+            : 'Coach permissions required.',
+      };
     }
 
     const target = doc.memberships.find((m) => m.membershipId === params.membershipId);
@@ -512,7 +527,9 @@ export async function mergeDuplicateRosterMembers(params: {
     );
     if (
       !callerMem ||
-      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+      (callerMem.role !== 'HEAD_COACH' &&
+        callerMem.role !== 'ASSISTANT_COACH' &&
+        callerMem.role !== 'ORG_ADMIN')
     ) {
       return { ok: false, error: 'Coach permissions required.' };
     }
@@ -694,6 +711,113 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
     return { ok: true, athleteName, teamName };
   }
   return { ok: false, error: 'Invalid or expired parent consent link.' };
+}
+
+/**
+ * Generates or rotates a 1-click Parent / Guardian safeguarding acknowledgement URL
+ * for an athlete membership and optionally emails it when parentGuardianEmail is available.
+ */
+export async function issueOrResendParentConsentLink(params: {
+  callerSid: string;
+  teamId: string;
+  membershipId: string;
+  originUrl: string;
+  parentGuardianEmail?: string;
+}): Promise<{
+  ok: boolean;
+  consentUrl?: string;
+  emailStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
+  team?: TeamSummaryWithRole | null;
+  error?: string;
+}> {
+  const cleanOrigin = params.originUrl.replace(/\/+$/, '');
+  const cleanIncomingEmail = params.parentGuardianEmail?.trim().toLowerCase();
+  if (cleanIncomingEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanIncomingEmail)) {
+    return { ok: false, error: 'Enter a valid parent or guardian email address.' };
+  }
+
+  let emailTarget: { to: string; subject: string; html: string; text: string } | null = null;
+  const lockedOutcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: 'Team not found.' };
+
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' &&
+        callerMem.role !== 'ASSISTANT_COACH' &&
+        callerMem.role !== 'ORG_ADMIN')
+    ) {
+      return { ok: false, error: 'Coach or admin permissions required.' };
+    }
+
+    const mem = doc.memberships.find(
+      (m) =>
+        m.membershipId === params.membershipId &&
+        m.role === 'ATHLETE' &&
+        m.status !== 'REVOKED'
+    );
+    if (!mem) return { ok: false, error: 'Roster athlete not found.' };
+
+    if (cleanIncomingEmail) {
+      mem.parentGuardianEmail = cleanIncomingEmail;
+    }
+
+    const rawConsentToken = crypto.randomBytes(16).toString('base64url');
+    mem.parentConsentTokenHash = hashToken(rawConsentToken);
+    mem.parentConsentToken = undefined;
+    if (mem.parentConsentStatus !== 'ACKNOWLEDGED') {
+      mem.parentConsentStatus = 'PENDING';
+    }
+
+    const consentUrl = `${cleanOrigin}/api/teams/parent-consent?token=${rawConsentToken}`;
+    if (mem.parentGuardianEmail) {
+      const content = buildParentConsentEmailContent({
+        brand: doc.brand,
+        athleteName: mem.invitedName,
+        parentConsentUrl: consentUrl,
+      });
+      emailTarget = { to: mem.parentGuardianEmail, ...content };
+    }
+
+    doc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'PARENT_CONSENT_LINK_ISSUED',
+      targetId: mem.membershipId,
+      metadata: {
+        athleteName: mem.invitedName,
+        hasParentEmail: Boolean(mem.parentGuardianEmail),
+      },
+    });
+
+    return {
+      ok: true,
+      consentUrl,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    };
+  });
+
+  if (!lockedOutcome || !lockedOutcome.ok || !lockedOutcome.consentUrl) {
+    return { ok: false, error: lockedOutcome?.error || 'Could not issue parent consent link.' };
+  }
+
+  let emailStatus: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED' = 'READY_MANUAL_LINK';
+  if (emailTarget) {
+    const sendRes = await sendEmailViaResend(emailTarget);
+    emailStatus = sendRes.status;
+  }
+
+  return {
+    ok: true,
+    consentUrl: lockedOutcome.consentUrl,
+    emailStatus,
+    team: lockedOutcome.team,
+  };
 }
 
 export async function removeTeamFromDirectoryAndVault(teamId: string): Promise<void> {

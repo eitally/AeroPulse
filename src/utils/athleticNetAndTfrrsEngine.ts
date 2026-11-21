@@ -853,7 +853,9 @@ export function parseExternalTeamRoster(
         return {
           name: formatAthleteDisplayName(a.name).slice(0, 64),
           squadGroup: a.squadGroup || defaultSquad,
-          eventGroup: cleanSeed ? inferEventGroupFromSeedMark(cleanSeed) : 'DISTANCE',
+          ...(cleanSeed && inferEventGroupFromSeedMark(cleanSeed)
+            ? { eventGroup: inferEventGroupFromSeedMark(cleanSeed) }
+            : {}),
           ...(gradeMeta.graduationYear ? { graduationYear: gradeMeta.graduationYear } : {}),
           ...(gradeMeta.gradeLabel ? { gradeLabel: gradeMeta.gradeLabel } : {}),
           ...(a.genderDivision ? { genderDivision: a.genderDivision } : {}),
@@ -920,12 +922,13 @@ export function parseExternalTeamRoster(
         (genderDivision === 'F' ? 'Women Varsity' : genderDivision === 'M' ? 'Men Varsity' : defaultSquad);
       const eventHint = colIdx.event >= 0 ? cols[colIdx.event]?.trim() : '';
 
+      const inferredEventGroup =
+        inferEventGroupFromSeedMark(eventHint || seedRaw) ||
+        (/xc|cross|5k|6k|8k|3200/i.test(eventHint) ? 'DISTANCE' : undefined);
       out.push({
         name: name.slice(0, 64),
         squadGroup,
-        eventGroup:
-          inferEventGroupFromSeedMark(eventHint || seedRaw) ||
-          (/xc|cross|5k|6k|8k|3200/i.test(eventHint) ? 'DISTANCE' : 'DISTANCE'),
+        ...(inferredEventGroup ? { eventGroup: inferredEventGroup } : {}),
         ...(gradeMeta.graduationYear ? { graduationYear: gradeMeta.graduationYear } : {}),
         ...(gradeMeta.gradeLabel ? { gradeLabel: gradeMeta.gradeLabel } : {}),
         ...(genderDivision ? { genderDivision } : {}),
@@ -1019,10 +1022,11 @@ export function parseExternalTeamRoster(
     if (!key || seen.has(key)) continue;
     seen.add(key);
 
+    const freeformGroup = inferEventGroupFromSeedMark(seedMark || '');
     athletes.push({
       name: name.slice(0, 64),
       squadGroup: activeSquad,
-      eventGroup: inferEventGroupFromSeedMark(seedMark || '') || 'DISTANCE',
+      ...(freeformGroup ? { eventGroup: freeformGroup } : {}),
       ...(gradeMeta.graduationYear ? { graduationYear: gradeMeta.graduationYear } : {}),
       ...(gradeMeta.gradeLabel ? { gradeLabel: gradeMeta.gradeLabel } : {}),
       ...(activeGender ? { genderDivision: activeGender } : {}),
@@ -1486,6 +1490,7 @@ export function applyExternalSyncLocallyToTeamSummary(
   const upsertAthlete = (cand: {
     name: string;
     squadGroup?: string;
+    eventGroup?: CoachEventGroup;
     graduationYear?: number;
     genderDivision?: 'M' | 'F' | 'NONBINARY';
     seedMarkOrFtp?: string;
@@ -1515,20 +1520,20 @@ export function applyExternalSyncLocallyToTeamSummary(
       if (cand.graduationYear) existing.graduationYear = cand.graduationYear;
       if (cand.genderDivision) existing.genderDivision = cand.genderDivision;
       if (cand.seedMarkOrFtp && !existing.seedMarkOrFtp) existing.seedMarkOrFtp = cand.seedMarkOrFtp;
-      if (!existing.eventGroup && cand.seedMarkOrFtp) {
-        existing.eventGroup = inferEventGroupFromSeedMark(cand.seedMarkOrFtp) || 'DISTANCE';
+      if (!existing.eventGroup && (cand.eventGroup || cand.seedMarkOrFtp)) {
+        const inferred = cand.eventGroup || inferEventGroupFromSeedMark(cand.seedMarkOrFtp);
+        if (inferred) existing.eventGroup = inferred;
       }
       return { mem: existing, created: false };
     }
 
+    const createdGroup = cand.eventGroup || inferEventGroupFromSeedMark(cand.seedMarkOrFtp);
     const createdMem: TeamMembershipRecord = {
       membershipId: `mem-ext-${Math.random().toString(36).slice(2, 9)}`,
       teamId: team.brand.teamId,
       role: 'ATHLETE',
       squadGroup: cand.squadGroup || orgDefaults.defaultSquads[0] || 'Varsity',
-      eventGroup: cand.seedMarkOrFtp
-        ? inferEventGroupFromSeedMark(cand.seedMarkOrFtp) || 'DISTANCE'
-        : 'DISTANCE',
+      ...(createdGroup ? { eventGroup: createdGroup } : {}),
       invitedName: cand.name,
       graduationYear: cand.graduationYear,
       isMinorU18: isMinorImport,

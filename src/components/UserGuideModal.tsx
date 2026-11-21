@@ -446,9 +446,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         chapterId: 'ch2-sync',
         badge: 'STEP 1 & 2 · STRAVA IDENTITY + SYNC CHOICE',
         badgeColor: 'text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/25',
-        title: 'Strava Sign-In, Explicit Sync Window & Optional Sleep/HRV Add-Ons',
+        title: 'Flexible Sign-In, Explicit Sync Window & Optional Sleep/HRV Add-Ons',
         summary:
-          'Strava handles your THRESH identity across every device with zero passwords. Right after authenticating, you explicitly choose what syncs from Strava—and optionally add Garmin Connect or Intervals.icu later.',
+          'Google, Passkey, Email, or optional Strava handle your THRESH identity across every device. When connecting Strava or wearables, you explicitly choose what imports—zero mandatory wearables for team athletes.',
         bullets: [
           'Choose Last 90 Days (Recommended), Last 6 Months, Full Archive, or Identity Only (0 workouts imported).',
           'Optional Secondary Connections: Garmin Connect and Intervals.icu supply overnight HRV & Sleep Score whenever you want, but are never required.',
@@ -1544,9 +1544,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         {/* Bottom Footer with Chapter Prev/Next Controls */}
         <div className="px-4 sm:px-6 py-3 border-t border-emerald-900/15 dark:border-ap-edge bg-white dark:bg-ap-carbon flex items-center justify-between gap-3 shrink-0">
           <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 truncate">
-            Docs Suite: <code className="text-sky-600 dark:text-sky-400">docs/USER_GUIDE.md</code> ·{' '}
-            <code className="text-sky-600 dark:text-sky-400">docs/PHYSIOLOGY_AND_METRICS.md</code> ·{' '}
-            <code className="text-sky-600 dark:text-sky-400">docs/DESIGN_SYSTEM.md</code>
+            THRESH Documentation · <a href="/docs/coach.html" className="underline text-ap-cobalt dark:text-ap-volt">Coach Playbook</a> · <a href="/for-athletic-directors" className="underline text-ap-cobalt dark:text-ap-volt">For ADs</a>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

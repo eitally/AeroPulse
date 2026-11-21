@@ -356,7 +356,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
               <div className="pt-2 border-t border-stone-200 dark:border-ap-edge flex items-center gap-2 text-2xs text-ap-muted dark:text-ap-muted-dark">
                 <ShieldCheck className="w-4 h-4 text-ap-cobalt dark:text-ap-volt shrink-0" />
                 <span>
-                  Safe-Sport Clean-Room Hub: Displays public meet schedules, rosters, and official race marks only. Biometric HRV, sleep, GPS routes, RPE, and weight are never exposed.
+                  Safe-Sport Team Hub: Displays public meet schedules, rosters, and official results only. Private athlete health metrics, personal contacts, and GPS routes are never shown.
                 </span>
               </div>
             </section>
@@ -364,16 +364,56 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
               {/* Left Column: Meet Schedule */}
               <section className="lg:col-span-5 ap-card p-4 sm:p-5 space-y-3">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-ap-cobalt dark:text-ap-volt" />
                     <h2 className="text-sm sm:text-base font-bold">
                       Season Meet Schedule
                     </h2>
                   </div>
-                  <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
-                    {payload.upcomingMeets.length} upcoming
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {payload.upcomingMeets.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const lines = [
+                            'BEGIN:VCALENDAR',
+                            'VERSION:2.0',
+                            'PRODID:-//THRESH//Team Meet Schedule//EN',
+                          ];
+                          for (const meet of payload.upcomingMeets) {
+                            const ymd = meet.date.replace(/-/g, '');
+                            const safeTitle = `${payload.brand?.shortName || 'Team'} · ${meet.name}`.replace(/[,;\n]/g, ' ');
+                            const safeLoc = (meet.locationName || '').replace(/[,;\n]/g, ' ');
+                            lines.push(
+                              'BEGIN:VEVENT',
+                              `UID:${meet.id}@thresh.fit`,
+                              `DTSTART;VALUE=DATE:${ymd}`,
+                              `SUMMARY:${safeTitle}`,
+                              ...(safeLoc ? [`LOCATION:${safeLoc}`] : []),
+                              'END:VEVENT'
+                            );
+                          }
+                          lines.push('END:VCALENDAR');
+                          const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = `${(payload.brand?.slug || 'team').toLowerCase()}-meets.ics`;
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                        }}
+                        className="px-2.5 py-1 rounded-lg ap-card-inset text-2xs font-mono font-bold text-ap-cobalt dark:text-ap-volt hover:underline cursor-pointer"
+                      >
+                        + Add to Calendar (.ics)
+                      </button>
+                    )}
+                    <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
+                      {payload.upcomingMeets.length} upcoming
+                    </span>
+                  </div>
                 </div>
 
                 {payload.upcomingMeets.length === 0 && payload.recentSchedule.length === 0 ? (
@@ -526,8 +566,17 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
       </main>
 
       <footer className="max-w-6xl mx-auto px-3.5 sm:px-6 pb-6 pt-2 flex flex-wrap items-center justify-between gap-2 text-2xs text-ap-muted dark:text-ap-muted-dark">
-        <span>THRESH Clean-Room Team Hub · Youth Safe-Sport Shield</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span>THRESH Safe-Sport Team Hub</span>
+          <span>·</span>
+          <a href="/?role=coach" className="font-bold text-ap-cobalt dark:text-ap-volt hover:underline">
+            Coaching Track or XC? Start a Free Spring Pilot →
+          </a>
+        </div>
         <div className="flex flex-wrap items-center gap-3 font-semibold">
+          <a href="/for-athletic-directors" className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:underline">
+            For ADs
+          </a>
           <a href="/privacy" className="min-h-[44px] sm:min-h-0 inline-flex items-center hover:underline">
             Privacy
           </a>
