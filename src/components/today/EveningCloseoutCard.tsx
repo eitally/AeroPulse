@@ -521,15 +521,26 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
           </button>
 
           {!painDrawerOpen && (
-            <button
-              type="button"
-              data-testid="checkin-submit-clear"
-              disabled={isSaving}
-              onClick={handleSave}
-              className="min-h-[44px] px-4 py-1.5 rounded-xl ap-btn-primary text-xs font-bold cursor-pointer disabled:opacity-60"
-            >
-              {isSaving ? 'Locking…' : 'Close Day & Lock Tomorrow'}
-            </button>
+            <>
+              <button
+                type="button"
+                data-testid="watchless-did-workout-btn"
+                disabled={isSaving}
+                onClick={handleSave}
+                className="min-h-[44px] px-3.5 py-1.5 rounded-xl border border-ap-frame/30 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon text-xs font-bold text-ap-ink dark:text-ap-chalk hover:brightness-95 cursor-pointer disabled:opacity-60"
+              >
+                I Did Today&apos;s Workout ✓
+              </button>
+              <button
+                type="button"
+                data-testid="checkin-submit-clear"
+                disabled={isSaving}
+                onClick={handleSave}
+                className="min-h-[44px] px-4 py-1.5 rounded-xl ap-btn-primary text-xs font-bold cursor-pointer disabled:opacity-60"
+              >
+                {isSaving ? 'Locking…' : 'Close Day & Lock Tomorrow'}
+              </button>
+            </>
           )}
         </div>
       </div>
