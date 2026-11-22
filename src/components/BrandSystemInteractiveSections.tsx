@@ -366,7 +366,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
             Tier 3 · Partner Attribution Isolation (Clean-Room Separation)
           </h3>
           <span className="font-mono text-2xs font-bold uppercase text-slate-600 dark:text-slate-400">
-            Zero Partner Colors Inside THRESH Marks
+            Zero Partner Colors Inside MeetReady Marks
           </span>
         </div>
 
@@ -387,7 +387,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
 };
 
 // =============================================================================
-// Section C: Live Team × THRESH Co-Branding Sandbox & Exporter
+// Section C: Live Team × MeetReady Co-Branding Sandbox & Exporter
 // =============================================================================
 export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
   isDark = false,
@@ -423,7 +423,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
       variant,
     });
     const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
-    triggerBlobDownload(blob, `${slug}-x-thresh-${variant}.svg`);
+    triggerBlobDownload(blob, `${slug}-x-meetready-${variant}.svg`);
   };
 
   const handleDownloadCobrandPng = async (variant: 'light' | 'dark' | '1ink-black' | '1ink-white') => {
@@ -440,7 +440,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
       const vw = vbMatch ? Number(vbMatch[1]) : 760;
       const vh = vbMatch ? Number(vbMatch[2]) : 124;
       const blob = await rasterizeSvgToPngBlob(svg, vw * 3, vh * 3);
-      triggerBlobDownload(blob, `${slug}-x-thresh-${variant}-3x.png`);
+      triggerBlobDownload(blob, `${slug}-x-meetready-${variant}-3x.png`);
     } finally {
       setIsExporting(null);
     }
@@ -474,7 +474,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
           {/* Controls Column */}
           <div className="lg:col-span-5 space-y-4">
             <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-              Coaches and athletic directors can test any squad name and raw school hex — THRESH clamps light/dark contrast automatically (<code className="font-mono">&gt;= 4.55:1</code>), shifts inner track lanes to neutral Slate so school colors never clash with Pine green, and exports print-ready lockups for tent valances, flyers, and warm-ups.
+              Coaches and athletic directors can test any squad name and raw school hex — MeetReady clamps light/dark contrast automatically (<code className="font-mono">&gt;= 4.55:1</code>), shifts inner track lanes to neutral Slate so school colors never clash with Pine green, and exports print-ready lockups for tent valances, flyers, and warm-ups.
             </p>
 
             <div className="space-y-1.5">
@@ -624,7 +624,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
               <div className="overflow-x-auto">
                 <img
                   src={`data:image/svg+xml,${encodeURIComponent(previewSvg)}`}
-                  alt={`${displayName} × THRESH ${previewMode} co-branded lockup`}
+                  alt={`${displayName} × MeetReady ${previewMode} co-branded lockup`}
                   className="h-11 sm:h-14 w-auto max-w-full"
                 />
               </div>
@@ -671,7 +671,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
                 className="ap-btn-primary px-4 py-2.5 min-h-[44px] rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <DownloadSimple className="w-4 h-4" />
-                <span>Download {displayName} × THRESH (.SVG)</span>
+                <span>Download {displayName} × MeetReady (.SVG)</span>
               </button>
               <button
                 type="button"
@@ -872,12 +872,12 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
             </h3>
           </div>
           <span className="font-mono text-2xs font-bold ap-telemetry-label">
-            ALWAYS ALL-CAPS THRESH · LEGACY NAMING RETIRED
+            CAMELCASE &quot;MeetReady&quot; · LEGACY NAMING RETIRED
           </span>
         </div>
 
         <div className="ap-card-inset rounded-xl px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-300">
-          Write <strong>THRESH</strong> in ALL-CAPS across UI, print, meet sheets, and press copy (e.g. <em>THRESH — Track, XC &amp; Endurance Coaching Lab</em>); use lowercase only inside web domains (<code className="font-mono">https://thresh.fit</code>).
+          Write <strong>MeetReady</strong> in CamelCase across UI, print, meet sheets, and press copy (e.g. <em>MeetReady — Track &amp; Field &amp; Cross Country Team OS</em>); use lowercase only inside web domains (<code className="font-mono">https://meetready.app</code>).
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">

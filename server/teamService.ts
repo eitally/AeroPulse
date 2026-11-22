@@ -1002,7 +1002,7 @@ export async function claimTeamJoinInvite(params: {
       return {
         ok: false,
         error:
-          'THRESH accounts require athletes to be 13 or older (COPPA). Coaches can time U13 athletes watchlessly using Trackside Stopwatch without child accounts.',
+          'MeetReady accounts require athletes to be 13 or older (COPPA). Coaches can time U13 athletes watchlessly using Trackside Stopwatch without child accounts.',
       };
     }
 

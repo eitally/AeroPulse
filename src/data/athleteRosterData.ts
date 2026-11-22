@@ -47,7 +47,7 @@ export function createConnectedAthleteRecord(
     id: `athlete-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     name: isInviteCode ? `Athlete (${inviteCode})` : clean,
     avatarInitials: initials,
-    location: 'Connected via THRESH Invite',
+    location: 'Connected via MeetReady Invite',
     stravaAthleteId: '',
     inviteCode,
     role,

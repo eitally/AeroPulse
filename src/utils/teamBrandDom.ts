@@ -33,8 +33,8 @@ export function buildTeamFaviconDataUri(
 /**
  * Dynamically injects WCAG 2.1 AA contrast-clamped school/club accent tokens into
  * the document chrome (`.ap-content-stage`, `.ap-brand-hairline`, `.ap-btn-primary`, `.ap-nav-volt-active`)
- * AND re-themes the browser tab's THRESH Beacon SVG favicon to the team's primary color,
- * while strictly preserving THRESH physiological zone colors (`Z1–Z6`) and Readiness signals.
+ * AND re-themes the browser tab's MeetReady Beacon SVG favicon to the team's primary color,
+ * while strictly preserving MeetReady physiological zone colors (`Z1–Z6`) and Readiness signals.
  */
 export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefined): void {
   if (typeof document === 'undefined') return;

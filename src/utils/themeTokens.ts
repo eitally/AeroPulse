@@ -1,5 +1,5 @@
 /**
- * THRESH "#1 Stadium Track — Track Volt & Obsidian + Sundown P2 Midnight Slate" v3.1 Design System Tokens
+ * MeetReady "#1 Stadium Track — Track Volt & Obsidian + Sundown P2 Midnight Slate" v3.1 Design System Tokens
  * Synchronized 1:1 with `src/index.css`:
  * - Daylight: Stadium Chalk (#F4F7F2) Canvas, Crisp Paper (#FFFFFF) Cards, Chalk Inset (#E9EFE9)
  * - Track Pine (Dark): Obsidian-Pine (#0B110E) Canvas, Carbon-Pine (#111A15) Cards, Deep Turf Inset (#080D0A)
@@ -114,7 +114,7 @@ export function getAeroPulseThemePalette(
       '#94A3B8', // Z1 Cool Mist (Recovery)
       '#0D9488', // Z2 Aerobic Teal (Endurance)
       '#D97706', // Z3 Ochre (Tempo / Sweet Spot)
-      '#EA580C', // Z4 THRESH Vermilion (Lactate Threshold)
+      '#EA580C', // Z4 Threshold Vermilion (Lactate Threshold)
       '#DC2626', // Z5 Crimson (VO2max)
       '#7C3AED', // Z6 Deep Violet (Anaerobic)
     ],

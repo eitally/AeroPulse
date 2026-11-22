@@ -1151,7 +1151,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         heading: 'Intervals.icu Connection Could Not Complete',
         accentColor: '#FB7185',
         body: escapeHtml(errMsg),
-        ctaLabel: 'Return to THRESH',
+        ctaLabel: 'Return to MeetReady',
         ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
@@ -1179,7 +1179,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         heading: 'Intervals.icu Authorization Code Missing',
         accentColor: '#FB7185',
         body: 'No authorization code was returned by Intervals.icu.',
-        ctaLabel: 'Return to THRESH',
+        ctaLabel: 'Return to MeetReady',
         ctaHref: '/#fitness?openDataSources=1',
       })
     );
@@ -1195,7 +1195,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         body: !verifiedState
           ? 'OAuth state token was invalid or expired. Please re-initiate Intervals.icu connection.'
           : 'Browser OAuth verification cookie was missing or did not match. Please re-initiate Intervals.icu connection.',
-        ctaLabel: 'Return to THRESH',
+        ctaLabel: 'Return to MeetReady',
         ctaHref: '/#fitness?openDataSources=1',
       })
     );
@@ -1283,11 +1283,11 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
 
     res.type('html').send(
       renderThreshOAuthHtml({
-        title: 'Intervals.icu Connected · THRESH',
+        title: 'Intervals.icu Connected · MeetReady',
         heading: `Intervals.icu Connected${athleteName && !isGenericName(athleteName) ? ` · ${escapeHtml(athleteName)}` : ''}`,
         accentColor: '#10B981',
         body: 'Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and training data are ready to sync.',
-        ctaLabel: 'Continue to THRESH',
+        ctaLabel: 'Continue to MeetReady',
         ctaHref: '/#fitness?openDataSources=1',
         scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
@@ -1340,7 +1340,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         heading: 'Intervals.icu Connection Failed',
         accentColor: '#FB7185',
         body: escapeHtml(errMsg),
-        ctaLabel: 'Return to THRESH',
+        ctaLabel: 'Return to MeetReady',
         ctaHref: '/#fitness?openDataSources=1',
         ctaOnClick:
           "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",

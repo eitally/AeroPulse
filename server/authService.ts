@@ -74,7 +74,7 @@ export async function saveUser(user: ThreshUser): Promise<void> {
 }
 
 /**
- * Retrieves a user by their canonical THRESH user ID.
+ * Retrieves a user by their canonical MeetReady user ID.
  */
 export async function getUserById(userId: string): Promise<ThreshUser | null> {
   if (!userId) return null;
@@ -124,7 +124,7 @@ export async function findOrCreateUser(
   if (user) {
     // Update profile info if newly available
     let changed = false;
-    if (profile.name && (!user.name || user.name === 'THRESH Athlete')) {
+    if (profile.name && (!user.name || user.name === 'MeetReady Athlete')) {
       user.name = profile.name;
       changed = true;
     }
@@ -166,13 +166,13 @@ export async function findOrCreateUser(
     }
   }
 
-  // 3. Create fresh THRESH user
+  // 3. Create fresh MeetReady user
   const newUserId = `usr_${crypto.randomBytes(8).toString('hex')}`;
   const now = new Date().toISOString();
   const newUser: ThreshUser = {
     id: newUserId,
     email: cleanEmail,
-    name: profile.name?.trim() || (cleanEmail ? cleanEmail.split('@')[0] : 'THRESH Athlete'),
+    name: profile.name?.trim() || (cleanEmail ? cleanEmail.split('@')[0] : 'MeetReady Athlete'),
     picture: profile.picture,
     role: 'athlete',
     createdAt: now,
@@ -260,7 +260,7 @@ export async function unlinkProviderFromUser(
 }
 
 /**
- * Migrates a THRESH user's primary login email (e.g. graduating high school/college
+ * Migrates a MeetReady user's primary login email (e.g. graduating high school/college
  * seniors moving off @students.district.org before summer account deactivation).
  */
 export async function updateUserPrimaryEmail(
@@ -278,7 +278,7 @@ export async function updateUserPrimaryEmail(
   if (existingOwner && existingOwner.id !== user.id) {
     return {
       ok: false,
-      error: 'That email is already linked to another THRESH account.',
+      error: 'That email is already linked to another MeetReady account.',
     };
   }
 
@@ -480,15 +480,15 @@ export async function sendMagicLinkEmail(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || 'THRESH <auth@thresh.fit>',
+          from: process.env.AUTH_EMAIL_FROM || 'MeetReady <auth@meetready.app>',
           to: [email],
-          subject: 'Sign in to THRESH',
+          subject: 'Sign in to MeetReady',
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
-              <h2 style="color: #C8FF00; margin-top: 0;">Sign in to THRESH</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your THRESH endurance training cockpit. This link expires in 15 minutes.</p>
+              <h2 style="color: #C8FF00; margin-top: 0;">Sign in to MeetReady</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your MeetReady endurance training cockpit. This link expires in 15 minutes.</p>
               <div style="margin: 24px 0;">
-                <a href="${safeVerifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to THRESH</a>
+                <a href="${safeVerifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to MeetReady</a>
               </div>
               <p style="font-size: 12px; color: #64748B;">If you didn't request this email, you can safely ignore it.</p>
             </div>
@@ -499,9 +499,9 @@ export async function sendMagicLinkEmail(
       if (res.ok) {
         return { sent: true };
       }
-      console.warn('[THRESH Auth] Resend email send failed:', await res.text());
+      console.warn('[MeetReady Auth] Resend email send failed:', await res.text());
     } catch (err) {
-      console.error('[THRESH Auth] Failed sending email via Resend:', err);
+      console.error('[MeetReady Auth] Failed sending email via Resend:', err);
     }
   }
 
@@ -547,7 +547,7 @@ export async function createPendingEmailChange(
   if (existingOwner && existingOwner.id !== user.id) {
     return {
       ok: false,
-      error: 'That email is already linked to another THRESH account.',
+      error: 'That email is already linked to another MeetReady account.',
     };
   }
 
@@ -570,13 +570,13 @@ export async function createPendingEmailChange(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || 'THRESH <auth@thresh.fit>',
+          from: process.env.AUTH_EMAIL_FROM || 'MeetReady <auth@meetready.app>',
           to: [cleanNewEmail],
-          subject: 'Verify your new THRESH email address',
+          subject: 'Verify your new MeetReady email address',
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
               <h2 style="color: #C8FF00; margin-top: 0;">Confirm Email Change</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Enter this 6-digit verification code in THRESH to confirm moving your primary login email to <strong>${escapeHtml(cleanNewEmail)}</strong>:</p>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Enter this 6-digit verification code in MeetReady to confirm moving your primary login email to <strong>${escapeHtml(cleanNewEmail)}</strong>:</p>
               <div style="margin: 20px 0; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 0.2em; color: #C8FF00;">${escapeHtml(code)}</div>
               <p style="font-size: 12px; color: #64748B;">This code expires in 15 minutes. If you did not request this change, you can ignore this email.</p>
             </div>
@@ -586,9 +586,9 @@ export async function createPendingEmailChange(
       if (res.ok) {
         return { ok: true };
       }
-      console.warn('[THRESH Auth] Resend email-change dispatch failed:', await res.text());
+      console.warn('[MeetReady Auth] Resend email-change dispatch failed:', await res.text());
     } catch (err) {
-      console.error('[THRESH Auth] Failed sending email-change code via Resend:', err);
+      console.error('[MeetReady Auth] Failed sending email-change code via Resend:', err);
     }
   }
 

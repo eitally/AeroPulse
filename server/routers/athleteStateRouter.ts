@@ -73,7 +73,7 @@ const SAFE_PROFILE_KEYS: Array<keyof AthleteProfile> = [
 /**
  * Resolves a device-agnostic AES-256-GCM vault key for first-party athlete plans,
  * goals, check-ins, and threshold settings.
- * Anchored to canonical THRESH userId (`usr_...`) FIRST so connecting Strava later
+ * Anchored to canonical MeetReady userId (`usr_...`) FIRST so connecting Strava later
  * never strands previously created plans/goals, then verified Strava Athlete ID, then session sid.
  */
 export function resolveCanonicalAthleteVaultKey(req: Request): string | null {

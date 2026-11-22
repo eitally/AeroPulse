@@ -260,7 +260,7 @@ export const FitnessSnapshotMetricCards: React.FC<FitnessSnapshotMetricCardsProp
             <div className="rounded-2xl liquid-glass p-4 flex flex-col justify-between space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                  THRESH · eFTP
+                  Threshold · eFTP
                 </span>
                 <span className="text-xs font-mono text-[#EA580C] dark:text-orange-400 font-bold">
                   {athleteProfile?.safeSportHideWeight

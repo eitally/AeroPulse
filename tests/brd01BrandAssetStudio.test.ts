@@ -52,7 +52,7 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
       // Never collide on generic gradient id="g1"
       expect(asset.svgMarkup).not.toContain('id="g1"');
 
-      const gradMatches = [...asset.svgMarkup.matchAll(/id="(thresh-grad-[^"]+)"/g)];
+      const gradMatches = [...asset.svgMarkup.matchAll(/id="(meetready-grad-[^"]+)"/g)];
       for (const m of gradMatches) {
         const gid = m[1];
         expect(seenGradientIds.has(gid)).toBe(false);
@@ -63,11 +63,11 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
 
   it('enforces true boolean compound-path knockouts on all 5 1-ink stencils (zero fake strokes or masks)', () => {
     const oneInkIds = [
-      'thresh-1ink-stencil',
-      'thresh-1ink-stencil-white',
-      'thresh-1ink-stencil-volt',
-      'thresh-gauge-symbol-1ink-black',
-      'thresh-gauge-symbol-1ink-white',
+      'meetready-1ink-stencil',
+      'meetready-1ink-stencil-white',
+      'meetready-1ink-stencil-volt',
+      'meetready-gauge-symbol-1ink-black',
+      'meetready-gauge-symbol-1ink-white',
     ];
 
     for (const id of oneInkIds) {
@@ -80,10 +80,14 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
       expect(svg).not.toContain('<mask');
       expect(svg).toContain('fill-rule="evenodd"');
 
-      if (id === 'thresh-1ink-stencil' || id === 'thresh-1ink-stencil-volt' || id === 'thresh-gauge-symbol-1ink-black') {
+      if (
+        id === 'meetready-1ink-stencil' ||
+        id === 'meetready-1ink-stencil-volt' ||
+        id === 'meetready-gauge-symbol-1ink-black'
+      ) {
         expect(svg).not.toMatch(/#FFFFFF|#fff\b/i);
       }
-      if (id === 'thresh-1ink-stencil-white' || id === 'thresh-gauge-symbol-1ink-white') {
+      if (id === 'meetready-1ink-stencil-white' || id === 'meetready-gauge-symbol-1ink-white') {
         expect(svg).not.toMatch(/#101411|#000000|#000\b/i);
       }
     }
@@ -99,14 +103,14 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
     }
 
     const expectedPngs: Array<{ file: string; width: number; height: number }> = [
-      { file: 'thresh-og-1200x630.png', width: 1200, height: 630 },
-      { file: 'thresh-lockup-dark-2x.png', width: 944, height: 248 },
-      { file: 'thresh-lockup-light-2x.png', width: 944, height: 248 },
-      { file: 'thresh-sticker-diecut-2x.png', width: 944, height: 248 },
-      { file: 'thresh-1ink-stencil-2x.png', width: 944, height: 248 },
-      { file: 'thresh-1ink-stencil-white-2x.png', width: 944, height: 248 },
-      { file: 'thresh-icon-square-512.png', width: 512, height: 512 },
-      { file: 'thresh-icon-square-1024.png', width: 1024, height: 1024 },
+      { file: 'meetready-og-1200x630.png', width: 1200, height: 630 },
+      { file: 'meetready-lockup-dark-2x.png', width: 944, height: 248 },
+      { file: 'meetready-lockup-light-2x.png', width: 944, height: 248 },
+      { file: 'meetready-sticker-diecut-2x.png', width: 944, height: 248 },
+      { file: 'meetready-1ink-stencil-2x.png', width: 944, height: 248 },
+      { file: 'meetready-1ink-stencil-white-2x.png', width: 944, height: 248 },
+      { file: 'meetready-icon-square-512.png', width: 512, height: 512 },
+      { file: 'meetready-icon-square-1024.png', width: 1024, height: 1024 },
     ];
 
     for (const item of expectedPngs) {
@@ -120,10 +124,10 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
   });
 
   it('evaluates surface legality correctly across copier, chalk, obsidian & sunlit photo backdrops', () => {
-    const darkLockup = BRAND_ASSET_CATALOG.find((a) => a.id === 'thresh-lockup-dark')!;
-    const blackStencil = BRAND_ASSET_CATALOG.find((a) => a.id === 'thresh-1ink-stencil')!;
-    const whiteStencil = BRAND_ASSET_CATALOG.find((a) => a.id === 'thresh-1ink-stencil-white')!;
-    const sticker = BRAND_ASSET_CATALOG.find((a) => a.id === 'thresh-sticker-diecut')!;
+    const darkLockup = BRAND_ASSET_CATALOG.find((a) => a.id === 'meetready-lockup-dark')!;
+    const blackStencil = BRAND_ASSET_CATALOG.find((a) => a.id === 'meetready-1ink-stencil')!;
+    const whiteStencil = BRAND_ASSET_CATALOG.find((a) => a.id === 'meetready-1ink-stencil-white')!;
+    const sticker = BRAND_ASSET_CATALOG.find((a) => a.id === 'meetready-sticker-diecut')!;
 
     expect(evaluateAssetOnBackdrop(darkLockup, 'bw-copier').status).toBe('AVOID');
     expect(evaluateAssetOnBackdrop(blackStencil, 'bw-copier').status).toBe('RECOMMENDED');
@@ -132,7 +136,7 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
     expect(evaluateAssetOnBackdrop(sticker, 'photo-sunlit').status).toBe('RECOMMENDED');
   });
 
-  it('generates contrast-clamped & XSS-safe Team x THRESH co-brand SVGs without mutating Z1-Z6', () => {
+  it('generates contrast-clamped & XSS-safe Team x MeetReady co-brand SVGs without mutating Z1-Z6', () => {
     const cobrandLight = buildTeamCobrandLockupSvg({
       shortName: '<script>&"XC"',
       monogram: 'N&X',
@@ -176,11 +180,11 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
 
     const unpacked = unzipSync(bytes);
     expect(unpacked['BRAND_USAGE_AND_PERMISSIONS.md']).toBeDefined();
-    expect(unpacked['tokens/thresh-design-tokens.json']).toBeDefined();
+    expect(unpacked['tokens/meetready-design-tokens.json']).toBeDefined();
     expect(unpacked['png/sample-test.png']).toBeDefined();
 
-    const parsedTokens = JSON.parse(strFromU8(unpacked['tokens/thresh-design-tokens.json']));
-    expect(parsedTokens.name).toBe('THRESH');
+    const parsedTokens = JSON.parse(strFromU8(unpacked['tokens/meetready-design-tokens.json']));
+    expect(parsedTokens.name).toBe('MeetReady');
     expect(parsedTokens.sacredPhysiology.lockedAgainstCoBranding).toBe(true);
 
     for (const asset of BRAND_ASSET_CATALOG) {

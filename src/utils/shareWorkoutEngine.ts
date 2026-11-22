@@ -127,7 +127,7 @@ export function sharedWorkoutToPlannedEventInput(
       `- 10m 62% Effort Warmup\n- ${Math.max(15, Math.round((payload.plannedDurationSecs || 2700) / 60) - 20)}m 85% Effort Main Set\n- 10m 55% Effort Cooldown`,
     description:
       payload.description ||
-      (payload.teamName ? `Shared from ${payload.teamName} on THRESH` : 'Imported from THRESH Share Link'),
+      (payload.teamName ? `Shared from ${payload.teamName} on MeetReady` : 'Imported from MeetReady Share Link'),
     replaceExistingDate: false,
   };
 }
@@ -212,14 +212,14 @@ export async function renderShareCardPngBlob(opts: {
   drawRoundedRectPath(ctx, 44, 44, 992, 1262, 32);
   ctx.stroke();
 
-  // 2. Top Header: THRESH Wordmark + Category/Hashtag Pill
+  // 2. Top Header: MeetReady Wordmark + Category/Hashtag Pill
   ctx.fillStyle = '#1C5436';
-  drawRoundedRectPath(ctx, 84, 88, 174, 48, 24);
+  drawRoundedRectPath(ctx, 84, 88, 192, 48, 24);
   ctx.fill();
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '700 22px system-ui, -apple-system, sans-serif';
   ctx.textBaseline = 'middle';
-  ctx.fillText('THRESH', 124, 112);
+  ctx.fillText('MeetReady', 118, 112);
 
   const badgeText =
     payload.kind === 'STOPWATCH'
@@ -384,7 +384,7 @@ export async function renderShareCardPngBlob(opts: {
   ctx.fillRect(84, 1218, 912, 2);
   ctx.fillStyle = '#94A3B8';
   ctx.font = '600 20px ui-monospace, SFMono-Regular, monospace';
-  ctx.fillText('TIMED ON THRESH  ·  THRESH.FIT/SHARE', 84, 1244);
+  ctx.fillText('Timed on MeetReady  ·  meetready.app/share', 84, 1244);
 
   return new Promise((resolve) => {
     canvas.toBlob((blob) => resolve(blob), 'image/png');

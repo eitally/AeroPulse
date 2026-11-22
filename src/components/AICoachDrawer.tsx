@@ -136,7 +136,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
                   id="thresh-ai-coach-title"
                   className="text-sm font-bold text-slate-900 dark:text-slate-100 truncate"
                 >
-                  THRESH AI Coach
+                  MeetReady AI Coach
                 </h2>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-mono font-semibold ap-status-prime">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
@@ -377,7 +377,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
           <input
             ref={inputRef}
             type="text"
-            aria-label="Message THRESH AI Coach"
+            aria-label="Message MeetReady AI Coach"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask about cycling/running plans, sleep, or click Send for today's Rx..."

@@ -246,7 +246,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   } | null>(null);
 
   const originUrl =
-    typeof window !== 'undefined' ? window.location.origin : 'https://thresh.app';
+    typeof window !== 'undefined' ? window.location.origin : 'https://meetready.app';
   const formId = useId();
 
   const handleOrgTypeChange = (nextOrg: TeamOrgType) => {
@@ -2027,9 +2027,9 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                             ? `cc=${encodeURIComponent(m.parentGuardianEmail)}&`
                             : ''
                         }subject=${encodeURIComponent(
-                          `Join ${activeTeam.brand.name} on THRESH`
+                          `Join ${activeTeam.brand.name} on MeetReady`
                         )}&body=${encodeURIComponent(
-                          `Hi ${firstName},\n\nTap your personalized link to join ${activeTeam.brand.name} (${m.squadGroup}) on THRESH:\n${joinLink}\n\nTeam Join Code: ${activeTeam.brand.joinCode}`
+                          `Hi ${firstName},\n\nTap your personalized link to join ${activeTeam.brand.name} (${m.squadGroup}) on MeetReady:\n${joinLink}\n\nTeam Join Code: ${activeTeam.brand.joinCode}`
                         )}`
                       : null;
 

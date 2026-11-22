@@ -1,6 +1,6 @@
 /**
- * Canonical THRESH Brand Vectors — S2 "TL-2P1 Parallel-Breach Twin-Lane" Symbol × W-A "Threshold Horizon" Wordmark
- * + Dedicated 32×32 "FAV-F" High-Vis Volt Shield Favicon Monogram.
+ * Canonical MeetReady Brand Vectors — S2 "TL-2P1 Parallel-Breach Twin-Lane" Symbol × MeetReady Wordmark
+ * + Dedicated 32×32 "FAV-M" High-Vis Volt Shield Favicon Monogram.
  * Pure TypeScript constants (zero React / DOM dependencies) shared across React components,
  * Brand Asset Studio SVG/PNG exporters, QR join posters, and dynamic team favicons.
  */
@@ -17,9 +17,13 @@ export const S2_VOLT_ARC_PATH =
 export const S2_ARROW_NEEDLE_PATH =
   'M 63.13 60.50 L 92.53 31.11 L 84.40 26.51 L 108.44 21.56 L 103.49 45.60 L 98.89 37.47 L 69.50 66.87 A 10 10 0 1 1 63.13 60.50 Z M 63.80 70.00 A 3.8 3.8 0 1 0 56.20 70.00 A 3.8 3.8 0 1 0 63.80 70.00 Z';
 
-// Dedicated 32×32 FAV-F Threshold-Split Sheared "T" Silhouette (engineered for 16px browser tab legibility)
+// Dedicated 32×32 FAV-M Bold Geometric "M" Silhouette (engineered for 16px/32px browser tab legibility)
 export const FAV_F_SHIELD_T_PATH =
-  'M 6.5 6.5 H 26.8 L 25.3 12 H 5 Z M 13.4 14.5 H 19.6 L 17.8 25.5 H 11.6 Z';
+  'M 5.5 25.5 V 6.5 H 10.7 L 16 15.8 L 21.3 6.5 H 26.5 V 25.5 H 21.8 V 14.3 L 17.5 21.6 H 14.5 L 10.2 14.3 V 25.5 Z';
+export const FAV_F_SHIELD_M_PATH = FAV_F_SHIELD_T_PATH;
+
+export const MEETREADY_WORDMARK_FONT_FAMILY =
+  "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
 export const WA_WORDMARK_INK_PATHS: Array<{ d: string; evenOdd?: boolean }> = [
   { d: 'M 0 0 H 49.4 L 46.6 11.2 H 30.75 V 64 H 17.25 V 11.2 H 0 Z' },
@@ -55,17 +59,11 @@ export function buildS2SymbolInnerSvg(
 export function buildWAWordmarkInnerSvg(
   inkColor: string,
   accentColor: string,
-  transform = 'translate(134, 34) scale(0.89)'
+  transform = 'translate(132, 33) scale(0.96)'
 ): string {
-  const letterEls = WA_WORDMARK_INK_PATHS.map((item) =>
-    item.evenOdd
-      ? `<path d="${item.d}" fill-rule="evenodd" clip-rule="evenodd"/>`
-      : `<path d="${item.d}"/>`
-  ).join('');
   return [
     `<g transform="${transform}">`,
-    `<g fill="${inkColor}">${letterEls}</g>`,
-    `<path d="${WA_THRESHOLD_BAR_PATH}" fill="${accentColor}"/>`,
+    `<text x="0" y="46" font-family="${MEETREADY_WORDMARK_FONT_FAMILY}" font-size="56" font-weight="800" letter-spacing="-1.6"><tspan fill="${inkColor}">Meet</tspan><tspan fill="${accentColor}">Ready</tspan></text>`,
     `</g>`,
   ].join('');
 }

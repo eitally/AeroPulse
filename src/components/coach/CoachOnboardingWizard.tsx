@@ -69,7 +69,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
   const handleCreateTeam = async () => {
     const trimmed = teamName.trim() || 'Spring Track & Field';
     const shortName =
-      trimmed.replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 12).toUpperCase() || 'THRESH TF';
+      trimmed.replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 12).toUpperCase() || 'SQUAD TF';
     const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
     const defaultSafeSportShield = orgType === 'HIGH_SCHOOL' || orgType === 'RUNNING_CLUB';
 
@@ -169,7 +169,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
           <div>
             <div className="inline-flex items-center gap-1.5 text-2xs font-mono uppercase tracking-wider text-ap-cobalt dark:text-ap-volt font-bold">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>60-Second THRESH Team Setup · Step {step} of 3</span>
+              <span>60-Second MeetReady Team Setup · Step {step} of 3</span>
             </div>
             <h2 className="text-lg font-extrabold text-ap-ink dark:text-ap-chalk">
               {step === 1

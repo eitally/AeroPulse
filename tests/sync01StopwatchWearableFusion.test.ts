@@ -187,7 +187,7 @@ describe('SYNC-01 · Coach #stopwatch + Athlete Wearable Deduplication & Stream 
       expect(unified.maxHr).toBe(186);
       // Generic 'Afternoon Run' upgraded to descriptive #stopwatch session title
       expect(unified.name).toContain('6x400m Threshold + Kick');
-      expect(unified.deviceName).toBe('Garmin Forerunner 965 + THRESH Stopwatch');
+      expect(unified.deviceName).toBe('Garmin Forerunner 965 + MeetReady Stopwatch');
       // Coach #stopwatch wins track metadata & 0.01s splits
       expect(unified.subType).toBe('Track');
       expect(unified.footwearClass).toBe('CARBON_SUPER_SPIKE');

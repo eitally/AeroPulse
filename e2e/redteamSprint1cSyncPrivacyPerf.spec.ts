@@ -18,7 +18,7 @@ async function signInViaDevMagicLink(page: Page, email: string) {
   expect(payload.previewUrl).toBeTruthy();
   const parsed = new URL(payload.previewUrl);
   await page.goto(`${parsed.pathname}${parsed.search}`);
-  const confirmBtn = page.getByRole('button', { name: /Complete Sign-In to THRESH/i });
+  const confirmBtn = page.getByRole('button', { name: /Complete Sign-In to MeetReady/i });
   await expect(confirmBtn).toBeVisible({ timeout: 10000 });
   await Promise.all([
     page.waitForURL((u) => !u.pathname.includes('/api/auth/magic-link/verify')),
@@ -38,7 +38,7 @@ async function signInViaDevMagicLink(page: Page, email: string) {
   await confirmStep2Btn.click();
 
   const enterWorkspaceBtn = page.getByRole('button', {
-    name: /Skip for Now — Enter THRESH|Continue to THRESH/i,
+    name: /Skip for Now — Enter MeetReady|Continue to MeetReady/i,
   });
   await expect(enterWorkspaceBtn).toBeVisible({ timeout: 15000 });
   await enterWorkspaceBtn.click();

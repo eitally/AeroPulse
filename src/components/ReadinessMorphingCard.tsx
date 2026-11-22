@@ -850,7 +850,7 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
 
     const zwoContent = `<?xml version="1.0" encoding="UTF-8"?>
 <workout_file>
-  <author>THRESH Readiness Engine</author>
+  <author>MeetReady Readiness Engine</author>
   <name>${morphedWorkout.title.replace(/[<>&"]/g, '')}</name>
   <description>${morphedWorkout.rationale.replace(/[<>&"]/g, '')} (${sportCalibrationLabel})</description>
   <sportType>${sportMode === 'Cycling' ? 'bike' : 'run'}</sportType>
@@ -989,7 +989,7 @@ ${dataLines.join('\n')}
 
   return (
     <section className="relative rounded-2xl liquid-glass overflow-hidden">
-      {/* Signature 4px THRESH Volt Top Rail */}
+      {/* Signature 4px MeetReady Volt Top Rail */}
       <div className="absolute top-0 left-0 right-0 h-[4px] ap-brand-hairline pointer-events-none" />
 
       {/* Top Bar: Collapsible Summary Header */}
@@ -1570,7 +1570,7 @@ ${dataLines.join('\n')}
               }
               className="min-h-[44px] inline-flex items-center gap-1.5 px-2 text-xs font-semibold ap-text-brand hover:underline"
             >
-              <span>Ask THRESH Coach</span>
+              <span>Ask MeetReady Coach</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
             </div>

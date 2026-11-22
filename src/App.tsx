@@ -1270,7 +1270,7 @@ export default function App() {
     const cleanTag = primaryAthleteDisplayName
       .toUpperCase()
       .replace(/[^A-Z0-9]/g, '')
-      .slice(0, 6) || 'THRESH';
+      .slice(0, 6) || 'RUNNER';
     let hash = 0;
     for (let i = 0; i < cleanTag.length; i++) {
       hash = (hash * 31 + cleanTag.charCodeAt(i)) % 9000;
@@ -2126,7 +2126,7 @@ export default function App() {
           <React.Suspense
             fallback={
               <div className="min-h-screen flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                Loading THRESH Team Hub…
+                Loading MeetReady Team Hub…
               </div>
             }
           >
@@ -2148,7 +2148,7 @@ export default function App() {
     const hasWorkspace = isSampleDemoMode || (!isSessionLoggedOut && hasEnteredWorkspace && (hasStravaClientCredentials() || Boolean(currentUser)));
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
-        <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono text-white">Loading THRESH Brand Studio…</div>}>
+        <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono text-white">Loading MeetReady Brand Studio…</div>}>
           <BrandGuidePage isDark={isDark} onToggleDark={toggleQuickLightDark} hasActiveWorkspace={hasWorkspace} onExitBrand={() => closeBrand(hasWorkspace ? activeTab : undefined)} />
         </React.Suspense>
       </IconContext.Provider>
@@ -2159,7 +2159,7 @@ export default function App() {
     const hasWorkspace = isSampleDemoMode || (!isSessionLoggedOut && hasEnteredWorkspace && (hasStravaClientCredentials() || Boolean(currentUser)));
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
-        <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono">Loading THRESH Share…</div>}>
+        <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono">Loading MeetReady Share…</div>}>
           <ShareWorkoutPage
             sharedWorkout={sharedWorkout} isDark={isDark} onToggleDark={toggleQuickLightDark} hasActiveWorkspace={hasWorkspace}
             initialFtpWatts={athleteProfile.ftp} initialThresholdPaceSecsPerKm={athleteProfile.thresholdPaceSecsPerKm} initialUnit={distanceUnit}
@@ -2188,11 +2188,11 @@ export default function App() {
   ) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
-        <WorkspaceErrorBoundary fallbackTitle="THRESH Sign In">
+        <WorkspaceErrorBoundary fallbackTitle="MeetReady Sign In">
           <React.Suspense
             fallback={
               <div className="min-h-screen flex items-center justify-center text-xs font-mono text-white">
-                Loading THRESH…
+                Loading MeetReady…
               </div>
             }
           >

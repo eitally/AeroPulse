@@ -105,11 +105,11 @@ export const AuthOptionalAddonsStep: React.FC<AuthOptionalAddonsStepProps> = ({
                 <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                   {status.stravaConnected ? (
                     <>
-                      Strava is already handling your sign-in{syncWindow !== 'none' ? ' and workout sync' : ''}. Optionally link <strong>Garmin Connect</strong> or <strong>Intervals.icu</strong> for overnight HRV, Sleep Score, and Resting HR—or enter THRESH right now.
+                      Strava is already handling your sign-in{syncWindow !== 'none' ? ' and workout sync' : ''}. Optionally link <strong>Garmin Connect</strong> or <strong>Intervals.icu</strong> for overnight HRV, Sleep Score, and Resting HR—or enter MeetReady right now.
                     </>
                   ) : (
                     <>
-                      Your THRESH account is active. Optionally link <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong>, <strong>Wahoo</strong>, or <strong>Polar</strong> for automatic workout &amp; overnight HRV sync—or enter THRESH right now.
+                      Your MeetReady account is active. Optionally link <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong>, <strong>Wahoo</strong>, or <strong>Polar</strong> for automatic workout &amp; overnight HRV sync—or enter MeetReady right now.
                     </>
                   )}
                 </p>
@@ -407,8 +407,8 @@ export const AuthOptionalAddonsStep: React.FC<AuthOptionalAddonsStepProps> = ({
                   )}
                   <span>
                     {secondaryConnected
-                      ? 'Continue to THRESH →'
-                      : 'Skip for Now — Enter THRESH →'}
+                      ? 'Continue to MeetReady →'
+                      : 'Skip for Now — Enter MeetReady →'}
                   </span>
                 </button>
               </div>

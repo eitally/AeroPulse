@@ -8,14 +8,14 @@ web
 
 ## Users
 
-THRESH serves two co-equal primary user groups:
+MeetReady serves two co-equal primary user groups:
 
 1. **Self-coached endurance runners and cyclists** managing daily autonomic readiness, training load progression, threshold calibration, fatigue durability, structured workout planning, and race-day pacing/fueling across desktop and mobile web.
 2. **High school, NCAA collegiate, and club coaches plus their student-athletes** running team onboarding, squad-wide workout prescription, watchless trackside split timing, official meet result indexing, youth safeguarding, and compliance tracking in one shared workspace.
 
 ## Product Purpose
 
-THRESH unifies laboratory-grade endurance physiology, closed-loop daily workout adaptivity, and scholastic/collegiate team operations in a single installable web application and desktop cockpit. It exists so athletes and coaching staffs do not have to stitch together separate analytics charts, static training calendars, pace spreadsheets, and team communication sheets.
+MeetReady unifies laboratory-grade endurance physiology, closed-loop daily workout adaptivity, and scholastic/collegiate team operations in a single installable web application and desktop cockpit. It exists so athletes and coaching staffs do not have to stitch together separate analytics charts, static training calendars, pace spreadsheets, and team communication sheets.
 
 Success means:
 - Individual athletes sign in with one click via Strava, see honest physiological calibration without fabricated metrics, and know how to adjust today's session and week's load before stepping out the door.
@@ -25,7 +25,7 @@ Success means:
 
 Neighboring platforms isolate either raw telemetry charts (e.g., power/load curves without team operations or closed-loop daily workout morphing), social activity feeds (Strava without Banister load, orthopedic guardrails, or coaching pods), or basic team calendars (without 1Hz stream physics, durability curves, or automatic Strava roster claim matching).
 
-THRESH combines in one workflow:
+MeetReady combines in one workflow:
 - **Athlete-controlled, read-only Strava identity** with explicit sync windows (`90d`, `6mo`, `Full Archive`, or `Identity Only — 0 Workouts`) and optional Garmin Connect / Intervals.icu overnight wellness enrichment.
 - **Multi-system load & durability modeling**: Banister `42d CTL` / `7d ATL` / `TSB`, two-pass calibrated running `rTSS`, Monod-Scherrer `CP` / `W'`, Skiba 1Hz `W' Balance`, `0–40 kJ/kg` & `0–2,000 kcal` fatigue-sliced durability, 3-channel orthopedic load guardrails (Central / Run Impact / Bike Torque), and weekly training Git-diffs (`- Original / + Proposed`).
 - **Trackside & scholastic execution**: `/join/<slug>` printable locker-room QR posters, CSV roster auto-matching on Strava sign-in, auto-scaled Jack Daniels `VDOT` pacing pods (`Pods A–D`), a watchless `0.01s` multi-athlete split stopwatch, 1Hz unstructured "forgot-to-lap" interval recovery, NCAA indoor flat/banked/altitude conversions, GPS-to-official chip/FAT rubber-banding (`THV-...` race passports), U18 Safe-Sport weight shielding, and NCAA 20-Hour CARA compliance audits.
@@ -38,9 +38,9 @@ THRESH combines in one workflow:
 
 ## Capabilities and Constraints
 
-- **Multi-provider read-only identity & vaults**: Athletes, coaches, and parents sign in with **Google OAuth**, **WebAuthn Passkeys**, **Magic Link**, **Email OTP**, or **optional Strava OAuth** (deterministic HMAC session binding + `AES-256-GCM` encrypted token vault with serverless cookie backup and normalized PostgreSQL persistence). THRESH never writes to, modifies, or posts on an athlete's Strava account.
+- **Multi-provider read-only identity & vaults**: Athletes, coaches, and parents sign in with **Google OAuth**, **WebAuthn Passkeys**, **Magic Link**, **Email OTP**, or **optional Strava OAuth** (deterministic HMAC session binding + `AES-256-GCM` encrypted token vault with serverless cookie backup and normalized PostgreSQL persistence). MeetReady never writes to, modifies, or posts on an athlete's Strava account.
 - **Clean-Room Strava API firewall**: Third-party `'Strava'`-only raw activity payloads are stripped before building Google Gemini AI prompts or exposing peer teammate views (`server/cleanRoomFirewall.ts`). Peer teammates never receive another athlete's raw Strava activities.
-- **Optional secondary wellness connectors**: Garmin Connect and Intervals.icu are strictly optional add-ons for overnight `HRV rMSSD`, `Sleep Score`, `Resting HR`, and wellness metadata—never required to onboard or use THRESH. Multi-source activities within `±5 minutes` deduplicate automatically so `TSS` is never double-counted.
+- **Optional secondary wellness connectors**: Garmin Connect and Intervals.icu are strictly optional add-ons for overnight `HRV rMSSD`, `Sleep Score`, `Resting HR`, and wellness metadata—never required to onboard or use MeetReady. Multi-source activities within `±5 minutes` deduplicate automatically so `TSS` is never double-counted.
 - **Honest Day-1 calibration**: New accounts with zero workouts render an explicit `CALIBRATING` state and never fabricate synthetic `CTL`, `FTP`, or resting HR numbers.
 - **Athlete-controlled coach sharing & youth safeguarding**: Team athletes explicitly select their `CoachDataSharingTier` (`SUMMARY_ONLY`, `FULL_STREAMS`, or `LOAD_ONLY`). `HIGH_SCHOOL` rosters default U18 Safe-Sport weight shielding (`isMinorU18: true`) and Parent/Guardian CC `ON`; `COLLEGIATE` rosters default standard college grad years to adult settings unless an incoming U18 recruit year is specified.
 - **Strict performance & security gates**: Production builds (`npm run build && npm run check:bundle`) enforce a hard `< 220 KB` gzipped ceiling on the entry JS chunk (`scripts/checkBundleBudget.mjs`), zero leaked `.env` or screenshot files in `dist/`, and zero hardcoded personal API credentials.
@@ -49,8 +49,8 @@ THRESH combines in one workflow:
 
 ## Brand Commitments
 
-- **Canonical name**: **THRESH** (tagline in app metadata: *THRESH — Run & Ride Readiness*). Retire legacy `AeroPulse` naming in all user-facing copy, UI labels, and documentation (retaining internal legacy cache/storage cleanup keys only where required for backwards compatibility).
-- **Shipped brand marks**: Preserve the existing THRESH brand lockups and icon assets in `public/brand/thresh-lockup-dark.svg`, `public/brand/thresh-lockup-light.svg`, `public/brand/thresh-1ink-stencil.svg`, `public/brand/thresh-sticker-diecut.svg`, `public/icon.svg`, and `src/components/AeroPulseLogo.tsx`.
+- **Canonical name**: **MeetReady** (tagline in app metadata: *MeetReady — Run & Ride Readiness*). Retire legacy `AeroPulse` naming in all user-facing copy, UI labels, and documentation (retaining internal legacy cache/storage cleanup keys only where required for backwards compatibility).
+- **Shipped brand marks**: Preserve the existing MeetReady brand lockups and icon assets in `public/brand/meetready-lockup-dark.svg`, `public/brand/meetready-lockup-light.svg`, `public/brand/meetready-1ink-stencil.svg`, `public/brand/meetready-sticker-diecut.svg`, `public/icon.svg`, and `src/components/AeroPulseLogo.tsx`.
 - **Partner & trust commitments**: Honor official Strava connect button prominence (`>= 48px` height) and the explicit read-only Strava pledge during onboarding.
 - **Voice**: Direct, physiologically precise, coach-credible, and calm under fatigue or injury risk—never alarmist, gamified hype, or generic wellness fluff.
 

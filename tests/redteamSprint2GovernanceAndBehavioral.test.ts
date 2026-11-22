@@ -98,7 +98,7 @@ describe('Red-Team Sprint 2 Governance, Safety, Math & Resilience Suite', () => 
       });
     });
 
-    it('passes the strict ALL-CAPS THRESH brand casing guard with 0 leaks', () => {
+    it('passes the strict CamelCase MeetReady brand casing guard with 0 leaks', () => {
       const out = execFileSync('node', [path.join(ROOT, 'scripts/checkBrandCasing.mjs')], {
         encoding: 'utf8',
       });

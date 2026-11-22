@@ -31,7 +31,7 @@ export const INITIAL_CHAT_MESSAGES: CoachChatMessage[] = [
     id: 'msg-welcome',
     role: 'assistant',
     content:
-      'Welcome to **THRESH AI Coach**. Connect Garmin Connect, Intervals.icu, or upload `.FIT` / `.GPX` files to calibrate your morning readiness, Banister CTL/ATL/TSB load model, and structured daily prescriptions.',
+      'Welcome to **MeetReady AI Coach**. Connect Garmin Connect, Intervals.icu, or upload `.FIT` / `.GPX` files to calibrate your morning readiness, Banister CTL/ATL/TSB load model, and structured daily prescriptions.',
     timestamp: 'Ready',
     citedMetrics: [],
   },

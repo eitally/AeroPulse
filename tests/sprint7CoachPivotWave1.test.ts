@@ -240,8 +240,8 @@ describe('Spring Track Coach Pivot Wave 1', () => {
     );
     expect(adHtml).toContain('$0 / Season');
     expect(adHtml).toContain('$250');
-    expect(adHtml).toContain('procurement@thresh.fit');
-    expect(adHtml).not.toMatch(/\bThresh\b/);
+    expect(adHtml).toContain('procurement@meetready.app');
+    expect(adHtml).not.toMatch(/\b(?:THRESH|Thresh|MEETREADY|Meetready)\b/);
 
     const vercelJson = fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8');
     expect(vercelJson).toContain('/for-athletic-directors');

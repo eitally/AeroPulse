@@ -988,7 +988,7 @@ export async function pushWorkoutToGarminConnect(
     sportType,
     subSportType: null,
     workoutName: input.name.slice(0, 64),
-    description: (input.description || 'Prescribed by THRESH Readiness Engine').slice(
+    description: (input.description || 'Prescribed by MeetReady Readiness Engine').slice(
       0,
       512
     ),

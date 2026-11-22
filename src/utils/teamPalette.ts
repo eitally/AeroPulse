@@ -160,7 +160,7 @@ function selectButtonInk(bgHex: string): '#FFFFFF' | '#080A09' {
 
 /**
  * Generates WCAG 2.1 AA contrast-verified light & dark chrome variants for any
- * school or club color pair while keeping THRESH's physiological zone colors untouched.
+ * school or club color pair while keeping MeetReady's physiological zone colors untouched.
  */
 export function computeAccessibleTeamPalette(
   rawPrimaryHex: string,

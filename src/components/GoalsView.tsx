@@ -779,7 +779,7 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
                 : Math.round(val * 0.92),
       targetValue: val,
       unit: newUnit,
-      notes: newNotes.trim() || 'Custom performance target tracked by THRESH.',
+      notes: newNotes.trim() || 'Custom performance target tracked by MeetReady.',
     });
     setNewTitle('');
     setNewNotes('');

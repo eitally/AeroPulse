@@ -31,7 +31,7 @@ function resolveSyncOrigin(req: Request): string {
     const candidate = resolveSafeOrigin(`${proto}://${host}`);
     if (candidate) return candidate;
   }
-  return 'https://thresh-dev.vercel.app';
+  return 'https://meetready.app';
 }
 
 teamSyncRouter.post(

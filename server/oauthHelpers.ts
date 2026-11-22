@@ -66,7 +66,7 @@ export function renderThreshOAuthHtml(opts: {
   </head>
   <body style="font-family:system-ui,-apple-system,sans-serif;background:#0C1D14;color:#F8FAFC;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center;padding:24px;box-sizing:border-box;">
     <div style="background:#111915;border:2px solid #25573A;border-radius:18px;padding:28px 26px;max-width:420px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.45);">
-      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:10px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px;">THRESH · Telemetry Connector</div>
+      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:10px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px;">MeetReady · Telemetry Connector</div>
       <h2 style="margin:0 0 10px;color:${accent};font-size:18px;line-height:1.3;">${opts.heading}</h2>
       <p style="margin:0 0 ${ctaHtml ? '20px' : '0'};color:#CBD5E1;font-size:13px;line-height:1.55;">${opts.body}</p>
       ${ctaHtml}
@@ -76,7 +76,7 @@ export function renderThreshOAuthHtml(opts: {
 </html>`;
 }
 
-const CANONICAL_PROD_ORIGIN = 'https://thresh-dev.vercel.app';
+const CANONICAL_PROD_ORIGIN = 'https://meetready.app';
 const LEGACY_PROD_ORIGIN = 'https://aeropulse-eta.vercel.app';
 
 export function canonicalizeOrigin(origin: string): string {
@@ -131,7 +131,7 @@ function resolveStandardOAuthCallbackUrl(
     .trim()
     .replace(/[^a-zA-Z0-9.:-]/g, '');
   const canonicalHost =
-    rawHost.toLowerCase() === 'aeropulse-eta.vercel.app' ? 'thresh-dev.vercel.app' : rawHost;
+    rawHost.toLowerCase() === 'aeropulse-eta.vercel.app' ? 'meetready.app' : rawHost;
   return `${proto}://${canonicalHost || 'localhost:3000'}${callbackPath}`;
 }
 
@@ -265,6 +265,7 @@ export async function resolveValidatedStravaCallbackUrl(
     pushCandidate(`${appOrigin}/auth/strava/callback`);
   }
   pushCandidate(`${CANONICAL_PROD_ORIGIN}/auth/strava/callback`);
+  pushCandidate('https://thresh-dev.vercel.app/auth/strava/callback');
   pushCandidate(`${LEGACY_PROD_ORIGIN}/auth/strava/callback`);
 
   for (const candidate of fallbackCandidates) {

@@ -43,7 +43,7 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
       });
       await page.goto('/brand');
 
-      const heading = page.getByRole('heading', { name: /THRESH Brand Studio & Style Guide/i });
+      const heading = page.getByRole('heading', { name: /MeetReady Brand Studio & Style Guide/i });
       await expect(heading).toBeVisible({ timeout: 15000 });
       await expect(page.locator('html')).not.toHaveClass(/dark/);
 
@@ -69,7 +69,7 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
       page,
       context,
     }) => {
-      // 1. Unauthenticated StravaAuthGate footer -> /brand -> Enter THRESH
+      // 1. Unauthenticated StravaAuthGate footer -> /brand -> Enter MeetReady
       await context.clearCookies();
       await page.goto('/');
       await page.evaluate(() => localStorage.clear());
@@ -81,10 +81,10 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
 
       await expect(page).toHaveURL(/\/brand\/?$/);
       await expect(
-        page.getByRole('heading', { name: /THRESH Brand Studio & Style Guide/i })
+        page.getByRole('heading', { name: /MeetReady Brand Studio & Style Guide/i })
       ).toBeVisible();
 
-      await page.getByRole('button', { name: /Enter THRESH/i }).first().click();
+      await page.getByRole('button', { name: /Enter MeetReady/i }).first().click();
       await expect(page).toHaveURL(/\/$/);
       await expect(page.getByRole('button', { name: /Continue with Google/i })).toBeVisible();
 
@@ -112,7 +112,7 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
     }) => {
       await page.goto('/brand');
       await expect(
-        page.getByRole('heading', { name: /THRESH Brand Studio & Style Guide/i })
+        page.getByRole('heading', { name: /MeetReady Brand Studio & Style Guide/i })
       ).toBeVisible({ timeout: 15000 });
 
       // 1. Stress tester: click B&W Copier backdrop
@@ -120,12 +120,12 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
       await expect(page.getByText('Copier Gold Standard').first()).toBeVisible();
       await expect(page.getByText('Avoid on Copier').first()).toBeVisible();
 
-      // 2. Card SVG download (first card: thresh-lockup-dark.svg)
+      // 2. Card SVG download (first card: meetready-lockup-dark.svg)
       const [svgDownload] = await Promise.all([
         page.waitForEvent('download'),
         page.locator('article').first().getByRole('button', { name: /^\.SVG$/ }).click(),
       ]);
-      expect(svgDownload.suggestedFilename()).toBe('thresh-lockup-dark.svg');
+      expect(svgDownload.suggestedFilename()).toBe('meetready-lockup-dark.svg');
       const svgPath = await svgDownload.path();
       expect(fs.readFileSync(svgPath!, 'utf8')).toContain('<svg ');
 
@@ -134,7 +134,7 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
         page.waitForEvent('download'),
         page.locator('article').first().getByRole('button', { name: /^2x PNG$/ }).click(),
       ]);
-      expect(pngDownload.suggestedFilename()).toBe('thresh-lockup-dark-2x.png');
+      expect(pngDownload.suggestedFilename()).toBe('meetready-lockup-dark-2x.png');
       const pngPath = await pngDownload.path();
       expect(fs.statSync(pngPath!).size).toBeGreaterThan(2000);
 
@@ -143,19 +143,19 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
         page.waitForEvent('download'),
         page.getByRole('button', { name: /Download Complete Brand Kit \(\.zip\)/i }).click(),
       ]);
-      expect(zipDownload.suggestedFilename()).toBe('THRESH-Brand-Kit.zip');
+      expect(zipDownload.suggestedFilename()).toBe('MeetReady-Brand-Kit.zip');
       const zipPath = await zipDownload.path();
       expect(fs.statSync(zipPath!).size).toBeGreaterThan(10000);
 
-      // 5. Team x THRESH custom exporter (switch explicitly to Dark Stage for deterministic -dark.svg)
+      // 5. Team x MeetReady custom exporter (switch explicitly to Dark Stage for deterministic -dark.svg)
       await page.getByRole('button', { name: 'Dark Stage' }).click();
       const squadInput = page.getByLabel(/Squad Short Name/i);
       await squadInput.fill('PALY TRACK');
       const [teamSvgDownload] = await Promise.all([
         page.waitForEvent('download'),
-        page.getByRole('button', { name: /Download PALY TRACK × THRESH \(\.SVG\)/i }).click(),
+        page.getByRole('button', { name: /Download PALY TRACK × MeetReady \(\.SVG\)/i }).click(),
       ]);
-      expect(teamSvgDownload.suggestedFilename()).toBe('paly-track-x-thresh-dark.svg');
+      expect(teamSvgDownload.suggestedFilename()).toBe('paly-track-x-meetready-dark.svg');
       const teamSvgPath = await teamSvgDownload.path();
       expect(fs.readFileSync(teamSvgPath!, 'utf8')).toContain('PALY TRACK');
     });
@@ -175,7 +175,7 @@ test.describe('BRD-01 Public /brand Studio & Universal Footer Reach', () => {
       await page.goto('/brand');
 
       await expect(
-        page.getByRole('heading', { name: /THRESH Brand Studio & Style Guide/i })
+        page.getByRole('heading', { name: /MeetReady Brand Studio & Style Guide/i })
       ).toBeVisible({ timeout: 15000 });
 
       const overflow = await page.evaluate(

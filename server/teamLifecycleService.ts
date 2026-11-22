@@ -479,7 +479,7 @@ export async function transferTeamHeadCoachOwnership(params: {
     if (!nextHead) {
       return {
         ok: false,
-        error: 'Successor must have an active signed-in THRESH membership.',
+        error: 'Successor must have an active signed-in MeetReady membership.',
       };
     }
     currentHead.role = 'ASSISTANT_COACH';

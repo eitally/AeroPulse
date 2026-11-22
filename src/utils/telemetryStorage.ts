@@ -1174,7 +1174,7 @@ export function isSyntheticStopwatchActivity(act: UnifiedActivity | null | undef
   if (act.id.startsWith('stopwatch-workout-') || act.id.startsWith('stopwatch-race-')) {
     return true;
   }
-  if (String(act.deviceName || '').startsWith('THRESH Trackside Stopwatch')) {
+  if (String(act.deviceName || '').includes('Trackside Stopwatch')) {
     return true;
   }
   return Boolean(
@@ -1345,10 +1345,10 @@ function mergeStopwatchAndWearableActivity(
 
   const baseDevice = (wearableAct.deviceName || '').trim();
   const deviceName = baseDevice
-    ? baseDevice.includes('THRESH Stopwatch')
+    ? /\bStopwatch$/i.test(baseDevice)
       ? baseDevice
-      : `${baseDevice} + THRESH Stopwatch`
-    : 'Watch + THRESH Stopwatch';
+      : `${baseDevice} + MeetReady Stopwatch`
+    : 'Watch + MeetReady Stopwatch';
 
   const watchName = (wearableAct.name || '').trim();
   const resolvedName =
@@ -1633,7 +1633,10 @@ export function mergeActivitiesNonDestructive(
       subType: resolvedSubType,
       gearName: inc.gearName || prev.gearName,
       deviceName:
-        prev.deviceName?.includes('THRESH Stopwatch') && !inc.deviceName?.includes('THRESH Stopwatch')
+        (/Stopwatch$/i.test(prev.deviceName || '') ||
+          (prev.deviceName || '').includes('Trackside Stopwatch')) &&
+        !/Stopwatch$/i.test(inc.deviceName || '') &&
+        !(inc.deviceName || '').includes('Trackside Stopwatch')
           ? prev.deviceName
           : inc.deviceName || prev.deviceName,
       deviceWatts: inc.deviceWatts ?? prev.deviceWatts,

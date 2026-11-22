@@ -188,7 +188,7 @@ export function registerOAuthConnectorRoutes(
           heading: `${displayName} Connection Could Not Complete`,
           accentColor,
           body: escapeHtml(errMsg),
-          ctaLabel: 'Return to THRESH',
+          ctaLabel: 'Return to MeetReady',
           ctaHref: returnHref,
           ctaOnClick: POPUP_CLOSE_ONCLICK,
           scriptBody: buildPopupRelayScript(errJson),
@@ -204,7 +204,7 @@ export function registerOAuthConnectorRoutes(
           heading: `${displayName} Authorization Code Missing`,
           accentColor,
           body: `No authorization code was returned by ${displayName}.`,
-          ctaLabel: 'Return to THRESH',
+          ctaLabel: 'Return to MeetReady',
           ctaHref: returnHref,
         })
       );
@@ -220,7 +220,7 @@ export function registerOAuthConnectorRoutes(
           body: !verifiedState
             ? `OAuth state token was invalid or expired. Please re-initiate ${displayName} connection.`
             : `Browser OAuth verification cookie was missing or did not match. Please re-initiate ${displayName} connection.`,
-          ctaLabel: 'Return to THRESH',
+          ctaLabel: 'Return to MeetReady',
           ctaHref: returnHref,
         })
       );
@@ -275,11 +275,11 @@ export function registerOAuthConnectorRoutes(
 
       res.type('html').send(
         renderThreshOAuthHtml({
-          title: `${displayName} Connected · THRESH`,
+          title: `${displayName} Connected · MeetReady`,
           heading: `${displayName} Connected${exchanged.athleteName && !isGenericName(exchanged.athleteName) ? ` · ${escapeHtml(exchanged.athleteName)}` : ''}`,
           accentColor,
           body: successBody,
-          ctaLabel: 'Continue to THRESH',
+          ctaLabel: 'Continue to MeetReady',
           ctaHref: returnHref,
           scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
@@ -331,7 +331,7 @@ export function registerOAuthConnectorRoutes(
           heading: `${displayName} Connection Failed`,
           accentColor: '#FB7185',
           body: escapeHtml(errMsg),
-          ctaLabel: 'Return to THRESH',
+          ctaLabel: 'Return to MeetReady',
           ctaHref: returnHref,
           ctaOnClick: POPUP_CLOSE_ONCLICK,
           scriptBody: buildPopupRelayScript(errJson),

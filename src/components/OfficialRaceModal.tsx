@@ -198,7 +198,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
   const verifiedPassport = useMemo(
     () =>
       generateVerifiedRacePassport({
-        athleteName: athleteProfile?.name || 'THRESH Athlete',
+        athleteName: athleteProfile?.name || 'MeetReady Athlete',
         meetOrRaceName: quickMeetName,
         eventLabel: selectedQuickEventDef.label,
         platform: quickPlatform,
@@ -695,7 +695,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     className="min-h-[44px] sm:min-h-[36px] px-4 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-ap-obsidian text-xs font-bold transition-colors flex items-center gap-1.5 whitespace-nowrap"
                   >
                     <Trophy className="w-3.5 h-3.5" />
-                    <span>Import {selectedCandidateIds.length} Official Race{selectedCandidateIds.length === 1 ? '' : 's'} to THRESH</span>
+                    <span>Import {selectedCandidateIds.length} Official Race{selectedCandidateIds.length === 1 ? '' : 's'} to MeetReady</span>
                   </button>
                 </div>
 
@@ -1091,7 +1091,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                 </div>
               </div>
 
-              {/* GPS-to-Official Chip/FAT Rubber-Bander & Shareable THRESH Verified Race Passport */}
+              {/* GPS-to-Official Chip/FAT Rubber-Bander & Shareable MeetReady Verified Race Passport */}
               <div className="rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/80 p-4 space-y-3 text-xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
@@ -1127,7 +1127,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        const summaryText = `THRESH VERIFIED RACE PASSPORT [${verifiedPassport.verificationHash}]\n${verifiedPassport.athleteName} · ${verifiedPassport.meetOrRaceName} (${verifiedPassport.raceDate})\nEvent: ${verifiedPassport.eventLabel} (${verifiedPassport.certifiedDistanceMeters}m certified vs ${verifiedPassport.rawGpsDistanceMeters}m GPS, ${verifiedPassport.gpsDriftPct >= 0 ? '+' : ''}${verifiedPassport.gpsDriftPct}% drift)\nOfficial FAT/Chip: ${verifiedPassport.displayOfficialTime} · VDOT ${verifiedPassport.vdotScore.toFixed(1)} · Certified Pace ${formatPace(Math.round(verifiedPassport.certifiedPaceSecsPerKm), distanceUnit)}`;
+                        const summaryText = `MeetReady VERIFIED RACE PASSPORT [${verifiedPassport.verificationHash}]\n${verifiedPassport.athleteName} · ${verifiedPassport.meetOrRaceName} (${verifiedPassport.raceDate})\nEvent: ${verifiedPassport.eventLabel} (${verifiedPassport.certifiedDistanceMeters}m certified vs ${verifiedPassport.rawGpsDistanceMeters}m GPS, ${verifiedPassport.gpsDriftPct >= 0 ? '+' : ''}${verifiedPassport.gpsDriftPct}% drift)\nOfficial FAT/Chip: ${verifiedPassport.displayOfficialTime} · VDOT ${verifiedPassport.vdotScore.toFixed(1)} · Certified Pace ${formatPace(Math.round(verifiedPassport.certifiedPaceSecsPerKm), distanceUnit)}`;
                         navigator.clipboard.writeText(summaryText);
                         setCopiedPassport(true);
                         window.setTimeout(() => setCopiedPassport(false), 2500);

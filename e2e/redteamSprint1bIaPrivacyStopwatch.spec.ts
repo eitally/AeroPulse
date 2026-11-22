@@ -26,7 +26,7 @@ async function signInViaDevMagicLink(
   expect(payload.previewUrl).toBeTruthy();
   const parsed = new URL(payload.previewUrl);
   await page.goto(`${parsed.pathname}${parsed.search}`);
-  const confirmBtn = page.getByRole('button', { name: /Complete Sign-In to THRESH/i });
+  const confirmBtn = page.getByRole('button', { name: /Complete Sign-In to MeetReady/i });
   await expect(confirmBtn).toBeVisible({ timeout: 10000 });
   await Promise.all([
     page.waitForURL((u) => !u.pathname.includes('/api/auth/magic-link/verify')),
@@ -136,7 +136,7 @@ test.describe('Sprint 1B E2E: 4-Pillar IA, Standalone #progress, Post-Join Priva
     await expect(birthYearInput).toBeVisible({ timeout: 15000 });
     await birthYearInput.fill('1999');
     await page.getByRole('button', { name: /Join .*& Continue/i }).click();
-    await page.getByRole('button', { name: /Skip for Now|Continue to THRESH/i }).click();
+    await page.getByRole('button', { name: /Skip for Now|Continue to MeetReady/i }).click();
 
     // Join second team via API under the same browser cookie context & reload to populate myTeams(2)
     await page.request.post('/api/teams/join-claim', {

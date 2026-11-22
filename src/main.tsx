@@ -7,7 +7,7 @@ import './index.css';
 installVitePreloadErrorRecovery();
 
 createRoot(document.getElementById('root')!).render(
-  <WorkspaceErrorBoundary fallbackTitle="Reload THRESH Workspace">
+  <WorkspaceErrorBoundary fallbackTitle="Reload MeetReady Workspace">
     <App />
   </WorkspaceErrorBoundary>
 );

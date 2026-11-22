@@ -1,15 +1,15 @@
-# THRESH — Exercise Physiology & Mathematical Telemetry Reference
+# MeetReady — Exercise Physiology & Mathematical Telemetry Reference
 
-> **Non-Medical Disclaimer:** THRESH telemetry, readiness scores, ACWR guardrails, and ferritin/bone-stress alerts are informational coaching references only and do not constitute medical advice, diagnosis, or treatment. Consult a qualified healthcare provider before making medical or return-to-play decisions.
+> **Non-Medical Disclaimer:** MeetReady telemetry, readiness scores, ACWR guardrails, and ferritin/bone-stress alerts are informational coaching references only and do not constitute medical advice, diagnosis, or treatment. Consult a qualified healthcare provider before making medical or return-to-play decisions.
 
-This document specifies the exact mathematical formulations, physiological time constants, zone boundaries, seed-mark calibration models, and algorithmic classifiers implemented across THRESH's client, server, and Web Worker engines (`src/physiology/`, `src/components/charts/UPlotPMCDashboard.tsx`, `src/utils/telemetryStorage.ts`, and `src/workers/`).
+This document specifies the exact mathematical formulations, physiological time constants, zone boundaries, seed-mark calibration models, and algorithmic classifiers implemented across MeetReady's client, server, and Web Worker engines (`src/physiology/`, `src/components/charts/UPlotPMCDashboard.tsx`, `src/utils/telemetryStorage.ts`, and `src/workers/`).
 
 ---
 
 ## 0. Day-1 Calibration, Seed-Mark Threshold Solver & Two-Pass Strava `rTSS`
 
 ### 0.1 Honest Day-1 `CALIBRATING` State
-When a newly onboarded athlete has zero synced workouts (for example, choosing `Identity Only` in Step 2 of Strava onboarding before uploading `.FIT` files), THRESH starts the Banister impulse-response integrator at $\text{CTL}_0 = 0, \text{ATL}_0 = 0$ and reports `verdict = 'CALIBRATING'` (`readinessScore = 0`, `EF = —`)—never fabricating synthetic fitness, resting heart rate, or cardiac drift numbers.
+When a newly onboarded athlete has zero synced workouts (for example, choosing `Identity Only` in Step 2 of Strava onboarding before uploading `.FIT` files), MeetReady starts the Banister impulse-response integrator at $\text{CTL}_0 = 0, \text{ATL}_0 = 0$ and reports `verdict = 'CALIBRATING'` (`readinessScore = 0`, `EF = —`)—never fabricating synthetic fitness, resting heart rate, or cardiac drift numbers.
 
 ### 0.2 Seed-Mark Threshold Calibration (`calibrateThresholdsFromSeedMark`)
 During onboarding or CSV roster import, athletes or coaches can supply an optional seed mark:
@@ -25,7 +25,7 @@ Strava's API often omits power (`weighted_average_watts`) and `suffer_score` for
 
 ## 1. Banister Impulse-Response Model (`CTL`, `ATL`, `TSB`, `Ramp Rate`, `ACWR`)
 
-THRESH models chronic adaptation and acute fatigue using the Banister exponentially weighted moving average (EWMA) impulse-response equations.
+MeetReady models chronic adaptation and acute fatigue using the Banister exponentially weighted moving average (EWMA) impulse-response equations.
 
 ### 1.1 Chronic Training Load (`CTL` — Fitness)
 `CTL` uses a 42-day discrete EWMA decay constant ($\alpha_{\text{CTL}} = \frac{1}{42} \approx 0.02381$, discrete step approximation to continuous $1 - e^{-1/42} \approx 0.02353$) to quantify long-term aerobic base and structural durability:
@@ -63,7 +63,7 @@ $$\text{ACWR}_t = \frac{\text{ATL}_t}{\max(1, \text{CTL}_t)}$$
 
 ## 2. Daily Stacked Garmin Training Load Focus Classifier
 
-In `EChartsPMCDashboard.tsx` (`classifyActivityGarminLoad` and `buildDayLoadSegments`), THRESH classifies every individual workout into Garmin's three **Training Load Focus** pathways and stacks multiple same-day sessions chronologically (`AM` at the bottom of the bar → `PM` at the top).
+In `EChartsPMCDashboard.tsx` (`classifyActivityGarminLoad` and `buildDayLoadSegments`), MeetReady classifies every individual workout into Garmin's three **Training Load Focus** pathways and stacks multiple same-day sessions chronologically (`AM` at the bottom of the bar → `PM` at the top).
 
 ### 2.1 Color & Pathway Definitions
 
@@ -97,14 +97,14 @@ In `EChartsPMCDashboard.tsx` (`classifyActivityGarminLoad` and `buildDayLoadSegm
 ## 3. Coggan Power & Pace Stress Metrics (`NP`, `IF`, `VI`, `TSS`)
 
 ### 3.1 Normalized Power (`NP`)
-Given a 1Hz power stream $P(t)$, THRESH computes a 30-second rolling average $P_{30\text{s}}(t)$ and raises each sample to the 4th power (mirroring blood lactate accumulation relative to metabolic threshold):
+Given a 1Hz power stream $P(t)$, MeetReady computes a 30-second rolling average $P_{30\text{s}}(t)$ and raises each sample to the 4th power (mirroring blood lactate accumulation relative to metabolic threshold):
 
 $$P_{30\text{s}}(t) = \frac{1}{30} \sum_{k=t-29}^{t} P(k)$$
 
 $$\text{NP} = \left( \frac{1}{N} \sum_{t=30}^{N} \left[ P_{30\text{s}}(t) \right]^4 \right)^{1/4}$$
 
 ### 3.2 Intensity Factor (`IF`) & Variability Index (`VI`)
-THRESH dynamically selects either your **Outdoor FTP** or **Indoor / Smart-Trainer FTP** based on `activity.environment`:
+MeetReady dynamically selects either your **Outdoor FTP** or **Indoor / Smart-Trainer FTP** based on `activity.environment`:
 
 $$\text{IF} = \frac{\text{NP}}{\text{FTP}_{\text{env}}}, \qquad \text{VI} = \frac{\text{NP}}{P_{\text{avg}}}$$
 
@@ -144,7 +144,7 @@ $$W(t) = \text{CP} \cdot t + W' \quad \Longleftrightarrow \quad P(t) = \text{CP}
 - **$W'$ (Anaerobic Work Capacity, Joules / kJ)**: The finite supra-threshold energy battery available above $\text{CP}$ (typically $14\text{ kJ}$ to $28\text{ kJ}$).
 
 ### 5.2 Skiba Differential / Integral 1Hz $W'_{\text{bal}}(t)$
-During 1Hz stream inspection, THRESH tracks real-time anaerobic battery depletion when $P(t) > \text{CP}$ and exponential reconstitution when $P(t) < \text{CP}$:
+During 1Hz stream inspection, MeetReady tracks real-time anaerobic battery depletion when $P(t) > \text{CP}$ and exponential reconstitution when $P(t) < \text{CP}$:
 
 $$W'_{\text{bal}}(t) = \begin{cases} W'_{\text{bal}}(t-1) - \left(P(t) - \text{CP}\right) & \text{if } P(t) > \text{CP} \\[6pt] W' - \left(W' - W'_{\text{bal}}(t-1)\right) \cdot e^{-1 / \tau_{W'}} & \text{if } P(t) \le \text{CP} \end{cases}$$
 
@@ -166,7 +166,7 @@ $$\% \text{VO}_2\max(T) = 0.8 + 0.1894393 \cdot e^{-0.012778 \cdot T} + 0.298955
 $$\text{VDOT} = \frac{\text{VO}_2(v)}{\% \text{VO}_2\max(T)}$$
 
 ### 6.2 Riegel Fatigue-Factor Race Predictor
-For cross-distance race projections (`800m` up to `Marathon`), THRESH blends Daniels `VDOT` tables with Riegel's power-law endurance scaling:
+For cross-distance race projections (`800m` up to `Marathon`), MeetReady blends Daniels `VDOT` tables with Riegel's power-law endurance scaling:
 
 $$T_2 = T_1 \cdot \left( \frac{D_2}{D_1} \right)^{1.06}$$
 
@@ -182,7 +182,7 @@ $$\mu_{7\text{d}} = \frac{1}{7} \sum_{i=t-6}^{t} x_i, \qquad \sigma_{7\text{d}} 
 $$\text{HRV CV}_{7\text{d}}(\%) = \left( \frac{\sigma_{7\text{d}}}{\mu_{7\text{d}}} \right) \times 100\%$$
 
 ### 7.2 Closed-Loop Daily Readiness Morphing Rules
-THRESH's **Readiness Morphing Engine** combines morning `HRV rMSSD` vs. the 60-day normal band $[\text{Band}_{\text{low}}, \text{Band}_{\text{high}}]$, `HRV CV%`, `Resting HR` delta, `Sleep Score`, and `TSB`:
+MeetReady's **Readiness Morphing Engine** combines morning `HRV rMSSD` vs. the 60-day normal band $[\text{Band}_{\text{low}}, \text{Band}_{\text{high}}]$, `HRV CV%`, `Resting HR` delta, `Sleep Score`, and `TSB`:
 1. **`OPTIMAL` (Green)**: $\text{rMSSD}_t \ge \text{Band}_{\text{low}}$, $\text{TSB}_t \ge -22$, and $\text{Sleep Score} \ge 72$ → Execute full planned `Z4`/`Z5` prescription.
 2. **`MODULATED` (Amber — `-15% Load`)**: Mild autonomic dip ($\text{rMSSD}_t$ near lower band boundary or $-30 \le \text{TSB}_t < -22$) → Downshifts `VO2max` / `Threshold` intervals to controlled `Sweet Spot` / `Tempo` (`85–90% FTP`).
 3. **`RECOVERY` (Rose — Active Flush)**: Significant vagal suppression ($\text{rMSSD}_t < \text{Band}_{\text{low}}$, $\text{HRV CV}_{7\text{d}} > 8.5\%$, or $\text{TSB}_t < -30$) → Replaces high-intensity work with a $45\text{ min}$ `Z1`/`Z2` (`55–62% FTP`) parasympathetic recovery spin/jog.

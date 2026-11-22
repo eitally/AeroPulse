@@ -382,7 +382,7 @@ export async function recordTeamFieldMarks(params: {
           stravaPrCount: 0,
           segmentEfforts: [],
           isCompetitionDay: Boolean(rawEntry.isCompetition),
-          deviceName: 'THRESH Trackside Field Sheet',
+          deviceName: 'MeetReady Trackside Field Sheet',
         };
         targetMem.coachRecordedActivities = [
           mirroredAct,
@@ -558,7 +558,7 @@ export async function inviteTeamCoachingStaff(params: {
     );
     const rawInviteToken = crypto.randomBytes(16).toString('base64url');
     const nowIso = new Date().toISOString();
-    const cleanOrigin = (params.originUrl || 'https://thresh.fit').replace(/\/+$/, '');
+    const cleanOrigin = (params.originUrl || 'https://meetready.app').replace(/\/+$/, '');
     const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
 
     let emailStatus: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED' = 'READY_MANUAL_LINK';
@@ -566,9 +566,9 @@ export async function inviteTeamCoachingStaff(params: {
       const roleLabel = cleanSpecialty || role.replace(/_/g, ' ');
       const sendRes = await sendEmailViaResend({
         to: cleanEmail,
-        subject: `Coaching staff invite: ${doc.brand.name} (${roleLabel}) on THRESH`,
-        html: `<p>Hi <strong>${escapeHtml(cleanName)}</strong>,</p><p>You have been invited to join <strong>${escapeHtml(doc.brand.name)}</strong> on THRESH as <strong>${escapeHtml(roleLabel)}</strong>.</p><p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;padding:12px 20px;background:#C8FF00;color:#111318;font-weight:700;text-decoration:none;border-radius:10px;">Accept Coach Invite</a></p><p style="font-size:12px;color:#64748B;">Or paste team code: <strong>${escapeHtml(doc.brand.joinCode)}</strong></p>`,
-        text: `Hi ${cleanName}, you are invited to join ${doc.brand.name} on THRESH as ${roleLabel}. Accept here: ${inviteUrl} (Team code: ${doc.brand.joinCode})`,
+        subject: `Coaching staff invite: ${doc.brand.name} (${roleLabel}) on MeetReady`,
+        html: `<p>Hi <strong>${escapeHtml(cleanName)}</strong>,</p><p>You have been invited to join <strong>${escapeHtml(doc.brand.name)}</strong> on MeetReady as <strong>${escapeHtml(roleLabel)}</strong>.</p><p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;padding:12px 20px;background:#C8FF00;color:#111318;font-weight:700;text-decoration:none;border-radius:10px;">Accept Coach Invite</a></p><p style="font-size:12px;color:#64748B;">Or paste team code: <strong>${escapeHtml(doc.brand.joinCode)}</strong></p>`,
+        text: `Hi ${cleanName}, you are invited to join ${doc.brand.name} on MeetReady as ${roleLabel}. Accept here: ${inviteUrl} (Team code: ${doc.brand.joinCode})`,
       });
       emailStatus = sendRes.status;
     }

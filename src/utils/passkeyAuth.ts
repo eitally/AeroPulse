@@ -1,7 +1,7 @@
 import type { ThreshUser } from '../types';
 
 /**
- * THRESH Client-Side Passkey & WebAuthn Utilities
+ * MeetReady Client-Side Passkey & WebAuthn Utilities
  * Pure browser standard APIs with zero external vendor dependencies ($0 SaaS).
  */
 

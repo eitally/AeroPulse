@@ -200,7 +200,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const initialJoin = useMemo(() => detectInitialJoinParams(), []);
   const isEmbeddedWebView = useMemo(() => detectEmbeddedWebView(), []);
 
-  // THRESH User Identity State (Self-Hosted Auth: Google, Email Magic Link, Strava)
+  // MeetReady User Identity State (Self-Hosted Auth: Google, Email Magic Link, Strava)
   const [localUser, setLocalUser] = useState<ThreshUser | null>(
     currentUser || status.currentUser || null
   );
@@ -354,7 +354,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   }, [isMinorAthlete]);
 
   const currentHostname =
-    typeof window !== 'undefined' ? window.location.hostname : 'thresh.app';
+    typeof window !== 'undefined' ? window.location.hostname : 'meetready.app';
 
   const lacksActivityScope = Boolean(
     status.stravaConnected &&
@@ -381,7 +381,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [showCoppaModal]);
 
-  // Hydrate session if already signed in via THRESH session cookie
+  // Hydrate session if already signed in via MeetReady session cookie
   useEffect(() => {
     const search = typeof window !== 'undefined' ? window.location.search : '';
     const searchParams = new URLSearchParams(search);
@@ -850,7 +850,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       // Youth Protection Gate (COPPA < 13 block + Scholastic Safe-Sport)
       if (isUnder13) {
         setJoinError(
-          'THRESH self-serve accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.'
+          'MeetReady self-serve accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.'
         );
         return;
       }
@@ -1082,7 +1082,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 href="#top"
                 onClick={(e) => e.preventDefault()}
                 className="inline-flex items-center shrink-0 min-w-0"
-                aria-label="THRESH Home"
+                aria-label="MeetReady Home"
               >
                 <AeroPulseLogo size="sm" teamBrand={activeBrand} />
               </a>
@@ -1168,7 +1168,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     </div>
                     <div className="text-xs text-ap-ink/85 dark:text-ap-chalk/85">
                       Sign in (or explore the interactive sample) to add this{' '}
-                      {pendingSharedWorkout.sport} workout straight to your THRESH Calendar.
+                      {pendingSharedWorkout.sport} workout straight to your MeetReady Calendar.
                     </div>
                   </div>
                   <button
@@ -1206,7 +1206,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
                   <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight leading-[1.06] text-ap-ink dark:text-ap-chalk">
                     {activeBrand ? (
-                      `Join ${activeBrand.name} on THRESH`
+                      `Join ${activeBrand.name} on MeetReady`
                     ) : (
                       <>
                         Build fast teams.
@@ -1305,7 +1305,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     <div className="space-y-2.5">
                       <div
                         role="group"
-                        aria-label="Choose your THRESH role"
+                        aria-label="Choose your MeetReady role"
                         className="grid grid-cols-2 gap-1 p-1 rounded-full ap-pill-track"
                       >
                         <button
@@ -1566,7 +1566,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                         onClick={() => setShowCustomStravaKeys((prev) => !prev)}
                         className="w-full flex items-center justify-between text-xs font-semibold text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white cursor-pointer py-1"
                       >
-                        <span>Self-hosting THRESH? Configure Strava API Keys</span>
+                        <span>Self-hosting MeetReady? Configure Strava API Keys</span>
                         {showCustomStravaKeys ? (
                           <ChevronUp className="w-4 h-4 shrink-0" />
                         ) : (
@@ -1707,7 +1707,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 {/* Block 3: Symmetric 4-Point Coach vs Athlete Benefits Matrix */}
                 <section
                   data-testid="splash-benefits-matrix"
-                  aria-label="THRESH platform benefits"
+                  aria-label="MeetReady platform benefits"
                   className="order-3 lg:col-span-7 lg:col-start-1 lg:row-start-2 w-full border-t border-ap-frame/20 dark:border-ap-edge-dark pt-5 grid grid-cols-1 sm:grid-cols-2 gap-6"
                 >
                   <div className="space-y-2.5">
@@ -1763,8 +1763,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
             <footer className="mt-6 pt-3.5 border-t border-ap-frame/20 dark:border-ap-edge-dark flex flex-wrap items-center justify-between gap-2 text-xs text-ap-muted dark:text-ap-muted-dark">
               <div className="flex items-center gap-2">
-                <span className="font-extrabold text-ap-ink dark:text-ap-chalk tracking-wider">
-                  THRESH
+                <span className="font-extrabold text-ap-ink dark:text-ap-chalk tracking-tight">
+                  MeetReady
                 </span>
                 <span>· Track &amp; Field and Cross Country Platform</span>
               </div>
@@ -1902,7 +1902,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 [
                   {
                     id: 1 as const,
-                    label: '1. THRESH Sign-In',
+                    label: '1. MeetReady Sign-In',
                     mobileLabel: '1. Sign In',
                     locked: false,
                   },
@@ -1928,7 +1928,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   onClick={() => {
                     if (!s.locked) setStep(s.id);
                   }}
-                  title={s.locked ? 'Sign in with your THRESH account in Step 1 first' : s.label}
+                  title={s.locked ? 'Sign in with your MeetReady account in Step 1 first' : s.label}
                   className={`min-h-[44px] sm:min-h-[38px] min-w-0 px-1.5 sm:px-2.5 py-1 transition-all ap-track-tab ${
                     step === s.id
                       ? 'ap-nav-volt-active cursor-pointer'
@@ -2087,7 +2087,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
 
         <footer className="ap-card-inset rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs text-slate-600 dark:text-slate-300 relative z-10">
           <span className="font-mono text-2xs font-semibold text-slate-600 dark:text-slate-400">
-            THRESH — Run &amp; Ride Readiness
+            MeetReady — Run &amp; Ride Readiness
           </span>
           <div className="flex flex-wrap items-center gap-4 font-medium">
             <a
@@ -2181,7 +2181,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   1. Accounts require athletes to be 13 or older (Federal COPPA)
                 </div>
                 <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
-                  Athletes under age 13 cannot register personal THRESH logins or connect personal
+                  Athletes under age 13 cannot register personal MeetReady logins or connect personal
                   wearable accounts.
                 </p>
               </div>
@@ -2191,7 +2191,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   2. Under-13 athletes can still be timed trackside
                 </div>
                 <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
-                  Coaches use THRESH&apos;s Trackside Stopwatch and Field Events Sheet watchlessly
+                  Coaches use MeetReady&apos;s Trackside Stopwatch and Field Events Sheet watchlessly
                   to time races and record marks without creating child accounts or collecting child
                   emails.
                 </p>

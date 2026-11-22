@@ -47,7 +47,7 @@ function getVaultEncryptionKey(): Buffer {
   if (process.env.NODE_ENV === 'production' && !warnedMissingVaultKey) {
     warnedMissingVaultKey = true;
     console.warn(
-      '[THRESH Security] TOKEN_VAULT_KEY / SESSION_SECRET not set in production; deriving fallback vault key.'
+      '[MeetReady Security] TOKEN_VAULT_KEY / SESSION_SECRET not set in production; deriving fallback vault key.'
     );
   }
 

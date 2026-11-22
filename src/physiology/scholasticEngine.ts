@@ -445,7 +445,7 @@ export function formatPrintablePodSplitSheet(
   dateStr: string,
   pods: VdotTrainingPod[]
 ): string {
-  const header = `THRESH TRACKSIDE POD SHEET — ${workoutTitle.toUpperCase()} (${dateStr})`;
+  const header = `MeetReady TRACKSIDE POD SHEET — ${workoutTitle.toUpperCase()} (${dateStr})`;
   const divider = '='.repeat(Math.min(76, header.length));
   const lines = [header, divider];
 
@@ -581,7 +581,7 @@ export function formatMultiSetPrintableSplitSheet(
   cooldownLabel: string | null,
   pods: MultiSetPodPreview[]
 ): string {
-  const header = `THRESH TRACKSIDE SHEET — ${title.toUpperCase()} (${dateStr})`;
+  const header = `MeetReady TRACKSIDE SHEET — ${title.toUpperCase()} (${dateStr})`;
   const divider = '='.repeat(Math.min(76, header.length));
   const lines = [header, divider];
   if (warmupLabel) lines.push(`Warm-up:   ${warmupLabel}`);

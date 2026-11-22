@@ -422,10 +422,10 @@ describe('Plan Builder resilience, chunk-mismatch recovery & legacy origin elimi
     process.env.STRAVA_REDIRECT_URI = 'https://aeropulse-eta.vercel.app/auth/strava/callback';
     process.env.INTERVALS_REDIRECT_URI = 'https://aeropulse-eta.vercel.app/auth/intervals/callback';
     expect(resolveStravaCallbackUrl(makeMockRequest({}))).toBe(
-      'https://thresh-dev.vercel.app/auth/strava/callback'
+      'https://meetready.app/auth/strava/callback'
     );
     expect(resolveIntervalsCallbackUrl(makeMockRequest({}))).toBe(
-      'https://thresh-dev.vercel.app/auth/intervals/callback'
+      'https://meetready.app/auth/intervals/callback'
     );
 
     delete process.env.STRAVA_REDIRECT_URI;
@@ -433,9 +433,9 @@ describe('Plan Builder resilience, chunk-mismatch recovery & legacy origin elimi
     process.env.APP_URL = 'https://aeropulse-eta.vercel.app';
     expect(
       resolveStravaCallbackUrl(makeMockRequest({ origin: 'https://aeropulse-eta.vercel.app' }))
-    ).toBe('https://thresh-dev.vercel.app/auth/strava/callback');
+    ).toBe('https://meetready.app/auth/strava/callback');
     expect(resolveIntervalsCallbackUrl(makeMockRequest({}))).toBe(
-      'https://thresh-dev.vercel.app/auth/intervals/callback'
+      'https://meetready.app/auth/intervals/callback'
     );
   });
 });

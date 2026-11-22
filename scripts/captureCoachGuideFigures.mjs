@@ -30,12 +30,12 @@ async function sanitizeDisplayedOrigin(page) {
     while (walker.nextNode()) nodes.push(walker.currentNode);
     for (const n of nodes) {
       if (n.nodeValue && hostRegex.test(n.nodeValue)) {
-        n.nodeValue = n.nodeValue.replace(hostRegex, 'https://thresh.app');
+        n.nodeValue = n.nodeValue.replace(hostRegex, 'https://meetready.app');
       }
     }
     for (const el of document.querySelectorAll('input, textarea')) {
       if (el.value && hostRegex.test(el.value)) {
-        el.value = el.value.replace(hostRegex, 'https://thresh.app');
+        el.value = el.value.replace(hostRegex, 'https://meetready.app');
       }
     }
     void origin;

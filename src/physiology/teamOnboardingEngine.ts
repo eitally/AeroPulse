@@ -686,7 +686,7 @@ export function buildFreeNativeSmsUri(
   athleteFirstName?: string
 ): string {
   const greeting = athleteFirstName ? `Hi ${athleteFirstName} — ` : '';
-  const body = `${greeting}Coach ${teamBrand.coachDisplayName} invited you to join ${teamBrand.name} on THRESH. Tap to claim your spot (Code ${teamBrand.joinCode}): ${magicJoinUrl}`;
+  const body = `${greeting}Coach ${teamBrand.coachDisplayName} invited you to join ${teamBrand.name} on MeetReady. Tap to claim your spot (Code ${teamBrand.joinCode}): ${magicJoinUrl}`;
   return `sms:${phoneE164}?&body=${encodeURIComponent(body)}`;
 }
 

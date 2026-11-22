@@ -96,7 +96,7 @@ describe('UI-03 & UI-04 SVG Micro-Graphics, Today Stopwatch Link & Editorial Com
     expect(hero).toContain('<BracketedIntervalTape');
   });
 
-  it('UI-04: enforces pricing/copy discipline, ALL-CAPS THRESH branding, and replaces literal ● dingbats in updated surfaces', () => {
+  it('UI-04: enforces pricing/copy discipline, CamelCase MeetReady branding, and replaces literal ● dingbats in updated surfaces', () => {
     const teamPanel = readSrc('src/components/TeamManagementPanel.tsx');
     expect(teamPanel).not.toContain('free SMS');
     expect(teamPanel).not.toContain('Free SMS');
@@ -106,13 +106,14 @@ describe('UI-03 & UI-04 SVG Micro-Graphics, Today Stopwatch Link & Editorial Com
     expect(hero).not.toContain('● ');
 
     const morph = readSrc('src/components/ReadinessMorphingCard.tsx');
-    expect(morph).toContain('THRESH Readiness Engine');
-    expect(morph).toContain('Ask THRESH Coach');
+    expect(morph).toContain('MeetReady Readiness Engine');
+    expect(morph).toContain('Ask MeetReady Coach');
     expect(morph).not.toContain('Ask Thresh Coach');
+    expect(morph).not.toContain('Ask THRESH Coach');
     expect(morph).not.toContain('#2A9D8F');
 
     const rosterModal = readSrc('src/components/AthleteRosterModal.tsx');
-    expect(rosterModal).toContain('THRESH Coach Desk');
+    expect(rosterModal).toContain('MeetReady Coach Desk');
     expect(rosterModal).not.toContain('● Shield Active');
   });
 

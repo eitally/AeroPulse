@@ -1086,7 +1086,7 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
 }
 
 /**
- * Deterministic in-memory sample dataset for unauthenticated visitors exploring THRESH
+ * Deterministic in-memory sample dataset for unauthenticated visitors exploring MeetReady
  * before connecting Strava. Explicitly labeled as illustrative sample data and never
  * persisted to localStorage, IndexedDB, or server vaults.
  */

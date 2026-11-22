@@ -117,7 +117,7 @@ function getAppBaseUrl(req: Request): string {
         return resolved;
       }
     }
-    return 'https://thresh-dev.vercel.app';
+    return 'https://meetready.app';
   }
 
   return resolveSafeOrigin(headerOrigin) || 'http://localhost:3000';
@@ -248,7 +248,7 @@ async function finalizeUserAuthentication(
         email: user.email,
       });
     } catch (err) {
-      console.warn('[THRESH Auth] Anonymous teams migration warning:', err);
+      console.warn('[MeetReady Auth] Anonymous teams migration warning:', err);
     }
   }
 
@@ -260,7 +260,7 @@ async function finalizeUserAuthentication(
         athleteName: user.name,
       });
     } catch (err) {
-      console.warn('[THRESH Auth] Auto-link pending team invites warning:', err);
+      console.warn('[MeetReady Auth] Auto-link pending team invites warning:', err);
     }
   }
 
@@ -278,7 +278,7 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
       return res.json({ authenticated: false, user: null });
     }
 
-    // Try finding user by sub (canonical THRESH user ID)
+    // Try finding user by sub (canonical MeetReady user ID)
     let user: ThreshUser | null = null;
     if (claims.sub.startsWith('usr_')) {
       user = await getUserById(claims.sub);
@@ -318,7 +318,7 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
       sessionToken: issueSessionToken(claims.sub, claims.sid),
     });
   } catch (err) {
-    console.error('[THRESH Auth] /api/auth/me error:', err);
+    console.error('[MeetReady Auth] /api/auth/me error:', err);
     return res.status(500).json({ error: 'Failed retrieving session state.' });
   }
 });
@@ -382,7 +382,7 @@ authRouter.get('/api/auth/google/url', (req: Request, res: Response) => {
 
 /**
  * GET /api/auth/google/callback
- * Exchanges Google OAuth code for userinfo, creates/links THRESH account, sets session cookie.
+ * Exchanges Google OAuth code for userinfo, creates/links MeetReady account, sets session cookie.
  */
 authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) => {
   const code = String(req.query.code || '').trim();
@@ -425,7 +425,7 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
     });
 
     if (!tokenRes.ok) {
-      console.error('[THRESH Auth] Google token exchange failed:', await tokenRes.text());
+      console.error('[MeetReady Auth] Google token exchange failed:', await tokenRes.text());
       return res.redirect('/?auth_error=google_token_exchange_failed');
     }
 
@@ -447,7 +447,7 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
       picture?: string;
     };
 
-    // 3. Find or create THRESH user
+    // 3. Find or create MeetReady user
     const user = await findOrCreateUser('google', googleUser.sub, {
       email: googleUser.email,
       name: googleUser.name,
@@ -459,7 +459,7 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
 
     return res.redirect(buildAuthReturnRedirectUrl(stateClaims));
   } catch (err) {
-    console.error('[THRESH Auth] Google callback processing error:', err);
+    console.error('[MeetReady Auth] Google callback processing error:', err);
     return res.redirect('/?auth_error=internal_error');
   }
 });
@@ -513,7 +513,7 @@ authRouter.post('/api/auth/magic-link/send', async (req: Request, res: Response)
       previewUrl: exposeDev ? result.previewUrl : undefined,
     });
   } catch (err) {
-    console.error('[THRESH Auth] Failed generating magic link:', err);
+    console.error('[MeetReady Auth] Failed generating magic link:', err);
     return res.status(500).json({ error: 'Unable to dispatch sign-in email. Please try again.' });
   }
 });
@@ -540,29 +540,29 @@ authRouter.get('/api/auth/magic-link/verify', async (req: Request, res: Response
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Confirm Sign-In · THRESH</title>
+    <title>Confirm Sign-In · MeetReady</title>
   </head>
   <body style="font-family:system-ui,-apple-system,sans-serif;background:#080D0A;color:#F4F7F4;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;box-sizing:border-box;">
     <div style="background:#111A15;border:2px solid #25573A;border-radius:18px;padding:28px 26px;max-width:420px;width:100%;text-align:center;">
-      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">THRESH · Email Sign-In</div>
+      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">MeetReady · Email Sign-In</div>
       <h1 style="margin:0 0 10px;font-size:20px;line-height:1.3;">Complete Sign-In</h1>
-      <p style="margin:0 0 20px;color:#C8D8CE;font-size:14px;line-height:1.55;">Confirm your sign-in as <strong>${escapeHtml(previewPayload.email)}</strong> to open your THRESH workspace.</p>
+      <p style="margin:0 0 20px;color:#C8D8CE;font-size:14px;line-height:1.55;">Confirm your sign-in as <strong>${escapeHtml(previewPayload.email)}</strong> to open your MeetReady workspace.</p>
       <form method="POST" action="/api/auth/magic-link/verify">
         <input type="hidden" name="token" value="${escapeHtml(token)}" />
-        <button type="submit" style="width:100%;min-height:44px;background:#C8FF00;color:#080A09;border:none;border-radius:12px;padding:12px 20px;font-weight:800;font-size:14px;cursor:pointer;">Complete Sign-In to THRESH</button>
+        <button type="submit" style="width:100%;min-height:44px;background:#C8FF00;color:#080A09;border:none;border-radius:12px;padding:12px 20px;font-weight:800;font-size:14px;cursor:pointer;">Complete Sign-In to MeetReady</button>
       </form>
     </div>
   </body>
 </html>`);
   } catch (err) {
-    console.error('[THRESH Auth] Magic link preview error:', err);
+    console.error('[MeetReady Auth] Magic link preview error:', err);
     return res.redirect('/?auth_error=magic_link_verification_failed');
   }
 });
 
 /**
  * POST /api/auth/magic-link/verify
- * Atomically consumes the single-use token, creates/logs in the THRESH user, and sets session cookie.
+ * Atomically consumes the single-use token, creates/logs in the MeetReady user, and sets session cookie.
  */
 authRouter.post('/api/auth/magic-link/verify', async (req: Request, res: Response) => {
   const token = String(req.body?.token || req.query.token || '').trim();
@@ -585,7 +585,7 @@ authRouter.post('/api/auth/magic-link/verify', async (req: Request, res: Respons
     await finalizeUserAuthentication(req, res, user);
     return res.redirect(303, buildAuthReturnRedirectUrl(verifiedPayload.pendingJoin || null));
   } catch (err) {
-    console.error('[THRESH Auth] Magic link verification error:', err);
+    console.error('[MeetReady Auth] Magic link verification error:', err);
     return res.redirect(303, '/?auth_error=magic_link_verification_failed');
   }
 });
@@ -611,7 +611,7 @@ authRouter.post('/api/auth/passkey/register-options', async (req: Request, res: 
   const options = {
     challenge,
     rp: {
-      name: 'THRESH',
+      name: 'MeetReady',
       id: rpId,
     },
     user: {
@@ -637,7 +637,7 @@ authRouter.post('/api/auth/passkey/register-options', async (req: Request, res: 
 /**
  * POST /api/auth/passkey/register-verify
  * Cryptographically verifies WebAuthn attestation, enforces single-use challenges,
- * prevents unauthenticated linking to existing emails, and saves credential to THRESH account.
+ * prevents unauthenticated linking to existing emails, and saves credential to MeetReady account.
  */
 authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: Response) => {
   const { credential, challengeToken, email, name } = req.body || {};
@@ -724,7 +724,7 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
 
     return res.json({ ok: true, user, sessionToken });
   } catch (err) {
-    console.error('[THRESH Auth] Passkey registration verification error:', err);
+    console.error('[MeetReady Auth] Passkey registration verification error:', err);
     return res.status(500).json({ error: 'Failed completing passkey registration.' });
   }
 });
@@ -779,7 +779,7 @@ authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Respo
 
     const user = await getUserByProvider('passkey', credId);
     if (!user) {
-      return res.status(404).json({ error: 'No THRESH account associated with this passkey.' });
+      return res.status(404).json({ error: 'No MeetReady account associated with this passkey.' });
     }
 
     const passkey = user.passkeys?.find((p) => p.id === credId);
@@ -808,7 +808,7 @@ authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Respo
     const { sessionToken } = await finalizeUserAuthentication(req, res, user);
     return res.json({ ok: true, user, sessionToken });
   } catch (err) {
-    console.error('[THRESH Auth] Passkey auth verification error:', err);
+    console.error('[MeetReady Auth] Passkey auth verification error:', err);
     return res.status(500).json({ error: 'Failed verifying passkey.' });
   }
 });
@@ -840,7 +840,7 @@ authRouter.post('/api/auth/mock-login', async (req: Request, res: Response) => {
 
     return res.json({ ok: true, user });
   } catch (err) {
-    console.error('[THRESH Auth] Mock login failed:', err);
+    console.error('[MeetReady Auth] Mock login failed:', err);
     return res.status(500).json({ error: 'Failed logging in with mock credentials.' });
   }
 });
@@ -862,7 +862,7 @@ authRouter.get('/api/auth/mock-login', async (req: Request, res: Response) => {
     await finalizeUserAuthentication(req, res, user);
     return res.redirect('/?auth_just_signed_in=1');
   } catch (err) {
-    console.error('[THRESH Auth] Dev mock link failed:', err);
+    console.error('[MeetReady Auth] Dev mock link failed:', err);
     return res.redirect('/?auth_error=dev_mock_failed');
   }
 });
@@ -906,7 +906,7 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
     if (byStrava) userId = byStrava.id;
   }
   if (!userId) {
-    return res.status(400).json({ error: 'Please sign in with a THRESH account before changing email.' });
+    return res.status(400).json({ error: 'Please sign in with a MeetReady account before changing email.' });
   }
 
   const newEmail = String(req.body?.email || req.body?.newEmail || '').trim().toLowerCase();
@@ -944,7 +944,7 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
       newEmail: result.newEmail,
     });
   } catch (err) {
-    console.warn('[THRESH Auth] Team membership email update warning:', err);
+    console.warn('[MeetReady Auth] Team membership email update warning:', err);
   }
 
   const { sessionToken } = await finalizeUserAuthentication(req, res, result.user);
@@ -959,7 +959,7 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
 authRouter.post('/api/auth/birth-month', async (req: Request, res: Response) => {
   const claims = getVerifiedSessionClaims(req);
   if (!claims?.sub?.startsWith('usr_') || !isCanonicalAuthenticatedClaims(claims)) {
-    return res.status(401).json({ error: 'THRESH account required.' });
+    return res.status(401).json({ error: 'MeetReady account required.' });
   }
   const birthMonthYear = String(req.body?.birthMonthYear || '').trim();
   const incomingAge = resolveAthleteAgeTier({ birthMonthYear });
@@ -968,7 +968,7 @@ authRouter.post('/api/auth/birth-month', async (req: Request, res: Response) => 
   }
   if (incomingAge.isUnder13) {
     return res.status(400).json({
-      error: 'THRESH accounts require athletes to be 13 or older (COPPA).',
+      error: 'MeetReady accounts require athletes to be 13 or older (COPPA).',
     });
   }
 
@@ -1002,7 +1002,7 @@ authRouter.delete('/api/auth/account', async (req: Request, res: Response) => {
   if (confirmVal !== 'DELETE') {
     return res.status(400).json({
       ok: false,
-      error: 'Please pass confirm: "DELETE" to permanently delete your THRESH account.',
+      error: 'Please pass confirm: "DELETE" to permanently delete your MeetReady account.',
     });
   }
   await deleteThreshAccountPermanently(req, res);

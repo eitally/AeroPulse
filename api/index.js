@@ -310,6 +310,8 @@ function resolveSafeOrigin(rawOrigin) {
   }
 }
 var TRUSTED_PROD_CORS_ORIGINS = /* @__PURE__ */ new Set([
+  "https://meetready.app",
+  "https://www.meetready.app",
   "https://thresh-dev.vercel.app",
   "https://aeropulse-eta.vercel.app",
   "https://thresh.app",
@@ -512,7 +514,7 @@ function getVaultEncryptionKey() {
   if (process.env.NODE_ENV === "production" && !warnedMissingVaultKey) {
     warnedMissingVaultKey = true;
     console.warn(
-      "[THRESH Security] TOKEN_VAULT_KEY / SESSION_SECRET not set in production; deriving fallback vault key."
+      "[MeetReady Security] TOKEN_VAULT_KEY / SESSION_SECRET not set in production; deriving fallback vault key."
     );
   }
   const fallbackSeed = `thresh-local-vault:${os.hostname()}:${os.userInfo().username}`;
@@ -2239,7 +2241,7 @@ async function pushWorkoutToGarminConnect(session, input) {
     sportType,
     subSportType: null,
     workoutName: input.name.slice(0, 64),
-    description: (input.description || "Prescribed by THRESH Readiness Engine").slice(
+    description: (input.description || "Prescribed by MeetReady Readiness Engine").slice(
       0,
       512
     ),
@@ -5278,7 +5280,7 @@ function generateVerifiedRacePassport(input) {
   return {
     passportId: `passport-${Date.now()}`,
     verificationHash,
-    athleteName: input.athleteName || "THRESH Athlete",
+    athleteName: input.athleteName || "MeetReady Athlete",
     meetOrRaceName: input.meetOrRaceName || "Certified Championship Event",
     eventLabel: input.eventLabel || `${certDist}m`,
     platform: input.platform,
@@ -5789,7 +5791,7 @@ function encodeGarminFitWorkout(workout) {
   dataPayload.push(1);
   dataPayload.push(workout.sport === "Running" ? 1 : 2);
   writeUint16LE(dataPayload, workout.steps.length);
-  writeFixedAscii(dataPayload, workout.name || "THRESH Workout", 24);
+  writeFixedAscii(dataPayload, workout.name || "MeetReady Workout", 24);
   dataPayload.push(
     66,
     // Definition header, local mesg 2
@@ -6069,7 +6071,7 @@ webhooksAndExportRouter.post("/api/webhooks/:provider", (req, res, next) => {
 });
 webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
   const body = req.body && typeof req.body === "object" ? req.body : {};
-  const title = String(body.name || "THRESH Prescribed Session").trim();
+  const title = String(body.name || "MeetReady Prescribed Session").trim();
   const sport = body.sportCategory === "Running" ? "Running" : "Cycling";
   const ftp = Math.max(100, Number(body.ftp) || 280);
   const thresholdPaceSecsPerKm = Math.max(95, Number(body.thresholdPaceSecsPerKm) || 245);
@@ -6282,7 +6284,7 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
   };
   const zwoLines = [
     "<workout_file>",
-    "  <author>THRESH</author>",
+    "  <author>MeetReady</author>",
     `  <name>${title.replace(/[<>&]/g, "")}</name>`,
     `  <sportType>${sport === "Running" ? "run" : "bike"}</sportType>`,
     "  <workout>",
@@ -6356,7 +6358,7 @@ webhooksAndExportRouter.post("/api/physiology/race-simulator", (req, res) => {
 webhooksAndExportRouter.post("/api/physiology/race-passport", (req, res) => {
   const body = req.body && typeof req.body === "object" ? req.body : {};
   const passport = generateVerifiedRacePassport({
-    athleteName: String(body.athleteName || "THRESH Athlete"),
+    athleteName: String(body.athleteName || "MeetReady Athlete"),
     meetOrRaceName: String(body.meetOrRaceName || "Official Championship"),
     eventLabel: String(body.eventLabel || "5000m"),
     platform: body.platform || "Official FAT",
@@ -7719,7 +7721,7 @@ async function findOrCreateUser(provider, providerId, profile) {
   let user = await getUserByProvider(provider, providerId);
   if (user) {
     let changed = false;
-    if (profile.name && (!user.name || user.name === "THRESH Athlete")) {
+    if (profile.name && (!user.name || user.name === "MeetReady Athlete")) {
       user.name = profile.name;
       changed = true;
     }
@@ -7762,7 +7764,7 @@ async function findOrCreateUser(provider, providerId, profile) {
   const newUser = {
     id: newUserId,
     email: cleanEmail,
-    name: profile.name?.trim() || (cleanEmail ? cleanEmail.split("@")[0] : "THRESH Athlete"),
+    name: profile.name?.trim() || (cleanEmail ? cleanEmail.split("@")[0] : "MeetReady Athlete"),
     picture: profile.picture,
     role: "athlete",
     createdAt: now,
@@ -7837,7 +7839,7 @@ async function updateUserPrimaryEmail(userId, newEmail) {
   if (existingOwner && existingOwner.id !== user.id) {
     return {
       ok: false,
-      error: "That email is already linked to another THRESH account."
+      error: "That email is already linked to another MeetReady account."
     };
   }
   const oldEmail = (user.email || "").trim().toLowerCase();
@@ -7965,15 +7967,15 @@ async function sendMagicLinkEmail(email, verifyUrl) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || "THRESH <auth@thresh.fit>",
+          from: process.env.AUTH_EMAIL_FROM || "MeetReady <auth@meetready.app>",
           to: [email],
-          subject: "Sign in to THRESH",
+          subject: "Sign in to MeetReady",
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
-              <h2 style="color: #C8FF00; margin-top: 0;">Sign in to THRESH</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your THRESH endurance training cockpit. This link expires in 15 minutes.</p>
+              <h2 style="color: #C8FF00; margin-top: 0;">Sign in to MeetReady</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your MeetReady endurance training cockpit. This link expires in 15 minutes.</p>
               <div style="margin: 24px 0;">
-                <a href="${safeVerifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to THRESH</a>
+                <a href="${safeVerifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to MeetReady</a>
               </div>
               <p style="font-size: 12px; color: #64748B;">If you didn't request this email, you can safely ignore it.</p>
             </div>
@@ -7983,9 +7985,9 @@ async function sendMagicLinkEmail(email, verifyUrl) {
       if (res.ok) {
         return { sent: true };
       }
-      console.warn("[THRESH Auth] Resend email send failed:", await res.text());
+      console.warn("[MeetReady Auth] Resend email send failed:", await res.text());
     } catch (err) {
-      console.error("[THRESH Auth] Failed sending email via Resend:", err);
+      console.error("[MeetReady Auth] Failed sending email via Resend:", err);
     }
   }
   if (isProductionDeployment()) {
@@ -8011,7 +8013,7 @@ async function createPendingEmailChange(userId, newEmail) {
   if (existingOwner && existingOwner.id !== user.id) {
     return {
       ok: false,
-      error: "That email is already linked to another THRESH account."
+      error: "That email is already linked to another MeetReady account."
     };
   }
   const code = String(crypto6.randomInt(1e5, 1e6));
@@ -8032,13 +8034,13 @@ async function createPendingEmailChange(userId, newEmail) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || "THRESH <auth@thresh.fit>",
+          from: process.env.AUTH_EMAIL_FROM || "MeetReady <auth@meetready.app>",
           to: [cleanNewEmail],
-          subject: "Verify your new THRESH email address",
+          subject: "Verify your new MeetReady email address",
           html: `
             <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
               <h2 style="color: #C8FF00; margin-top: 0;">Confirm Email Change</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Enter this 6-digit verification code in THRESH to confirm moving your primary login email to <strong>${escapeHtml(cleanNewEmail)}</strong>:</p>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Enter this 6-digit verification code in MeetReady to confirm moving your primary login email to <strong>${escapeHtml(cleanNewEmail)}</strong>:</p>
               <div style="margin: 20px 0; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 0.2em; color: #C8FF00;">${escapeHtml(code)}</div>
               <p style="font-size: 12px; color: #64748B;">This code expires in 15 minutes. If you did not request this change, you can ignore this email.</p>
             </div>
@@ -8048,9 +8050,9 @@ async function createPendingEmailChange(userId, newEmail) {
       if (res.ok) {
         return { ok: true };
       }
-      console.warn("[THRESH Auth] Resend email-change dispatch failed:", await res.text());
+      console.warn("[MeetReady Auth] Resend email-change dispatch failed:", await res.text());
     } catch (err) {
-      console.error("[THRESH Auth] Failed sending email-change code via Resend:", err);
+      console.error("[MeetReady Auth] Failed sending email-change code via Resend:", err);
     }
   }
   if (isProductionDeployment()) {
@@ -8145,7 +8147,7 @@ async function sendEmailViaResend(params) {
       status: "READY_MANUAL_LINK"
     };
   }
-  const fromAddress = (process.env.RESEND_FROM_EMAIL || "THRESH Coaching <auth@thresh.fit>").trim();
+  const fromAddress = (process.env.RESEND_FROM_EMAIL || "MeetReady Coaching <auth@meetready.app>").trim();
   try {
     const payload = {
       from: fromAddress,
@@ -8199,7 +8201,7 @@ function buildTeamInviteEmailContent(params) {
   const safeCode = escapeHtml(brand.joinCode);
   const safeUrl = escapeHtml(magicJoinUrl);
   const safeSeed = seedMarkOrFtp ? escapeHtml(seedMarkOrFtp) : "";
-  const subject = `Coach ${brand.coachDisplayName} invited ${firstName} to join ${brand.name} on THRESH`;
+  const subject = `Coach ${brand.coachDisplayName} invited ${firstName} to join ${brand.name} on MeetReady`;
   const safeSportSection = brand.defaultSafeSportShield || hasParentCc ? `<div style="margin-top:20px;padding:14px 16px;border-radius:12px;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;font-size:13px;line-height:1.5;">
           <strong>Scholastic &amp; Safe-Sport Protections Enabled:</strong>
           <ul style="margin:6px 0 0;padding-left:18px;">
@@ -8213,14 +8215,14 @@ function buildTeamInviteEmailContent(params) {
 <body style="margin:0;padding:24px;background:#F7F6F2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#111318;">
   <div style="max-width:560px;margin:0 auto;background:#FFFFFF;border-radius:20px;overflow:hidden;border:1px solid #E5E7EB;">
     <div style="background:linear-gradient(135deg, ${palette.primaryOnLight} 0%, ${palette.secondaryOnLight} 100%);padding:24px 28px;color:#FFFFFF;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.9;">${safeShortName} \xD7 THRESH</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;opacity:0.9;">${safeShortName} \xD7 MeetReady</div>
       <h1 style="margin:6px 0 2px;font-size:22px;font-weight:800;letter-spacing:-0.02em;">${safeTeamName}</h1>
       <div style="font-size:13px;opacity:0.92;">Coach ${safeCoach} \xB7 ${safeSquad}</div>
     </div>
     <div style="padding:28px;">
       <p style="margin:0 0 14px;font-size:15px;line-height:1.55;">Hi <strong>${safeFirstName}</strong>,</p>
       <p style="margin:0 0 20px;font-size:15px;line-height:1.55;color:#374151;">
-        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on THRESH for workout pace groups, practice schedules, and split timing. Sign in with school Google or Email in one tap \u2014 no GPS watch or Strava required (optional watch sync anytime).
+        Coach <strong>${safeCoach}</strong> added you to <strong>${safeTeamName}</strong> (${safeSquad}) on MeetReady for workout pace groups, practice schedules, and split timing. Sign in with school Google or Email in one tap \u2014 no GPS watch or Strava required (optional watch sync anytime).
         ${safeSeed ? `<br/><span style="color:#065F46;font-size:13px;">Your initial zones are pre-seeded from <strong>${safeSeed}</strong>.</span>` : ""}
       </p>
       <div style="text-align:center;margin:24px 0;">
@@ -8239,7 +8241,7 @@ function buildTeamInviteEmailContent(params) {
   const text = [
     `Hi ${firstName},`,
     ``,
-    `Coach ${brand.coachDisplayName} invited you to join ${brand.name} (${squadGroup}) on THRESH.`,
+    `Coach ${brand.coachDisplayName} invited you to join ${brand.name} (${squadGroup}) on MeetReady.`,
     `Tap your personalized link to sign in with Google or Email and join in 45 seconds (no GPS watch or Strava needed): ${magicJoinUrl}`,
     `Team Join Code: ${brand.joinCode}`,
     brand.defaultSafeSportShield ? `Safe-Sport Protection: Body weight & W/kg are hidden by default.` : ``
@@ -8248,7 +8250,7 @@ function buildTeamInviteEmailContent(params) {
 }
 function buildParentConsentEmailContent(params) {
   const { brand, athleteName, parentConsentUrl } = params;
-  const subject = `Notice: ${athleteName} joined ${brand.name} on THRESH (Scholastic Safeguards Active)`;
+  const subject = `Notice: ${athleteName} joined ${brand.name} on MeetReady (Scholastic Safeguards Active)`;
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -8259,14 +8261,14 @@ function buildParentConsentEmailContent(params) {
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111318;background:#F4F6F3;margin:0;padding:24px 12px;">
   <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
     <div style="background:${brand.primaryHex};padding:24px;color:#FFFFFF;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">THRESH SCHOLASTIC SAFEGUARDING</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">MeetReady SCHOLASTIC SAFEGUARDING</div>
       <h1 style="margin:8px 0 4px;font-size:20px;font-weight:800;color:#FFFFFF;">Parent / Guardian Notice</h1>
       <div style="font-size:14px;opacity:0.9;">${escapeHtml(brand.name)} \xB7 Coach ${escapeHtml(brand.coachDisplayName)}</div>
     </div>
     <div style="padding:24px;">
       <p style="font-size:15px;margin:0 0 16px;">Hello,</p>
       <p style="font-size:14px;color:#374151;margin:0 0 16px;">
-        <strong>${escapeHtml(athleteName)}</strong> has joined the <strong>${escapeHtml(brand.name)}</strong> roster on THRESH for athletic training and workout tracking under Coach ${escapeHtml(brand.coachDisplayName)}.
+        <strong>${escapeHtml(athleteName)}</strong> has joined the <strong>${escapeHtml(brand.name)}</strong> roster on MeetReady for athletic training and workout tracking under Coach ${escapeHtml(brand.coachDisplayName)}.
       </p>
 
       <div style="background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:16px;margin:0 0 20px;">
@@ -8292,10 +8294,10 @@ function buildParentConsentEmailContent(params) {
 </body>
 </html>`;
   const text = [
-    `THRESH SCHOLASTIC SAFEGUARDING - Parent / Guardian Notice`,
+    `MeetReady SCHOLASTIC SAFEGUARDING - Parent / Guardian Notice`,
     ``,
     `Hello,`,
-    `${athleteName} has joined ${brand.name} on THRESH for athletic training under Coach ${brand.coachDisplayName}.`,
+    `${athleteName} has joined ${brand.name} on MeetReady for athletic training under Coach ${brand.coachDisplayName}.`,
     ``,
     `Active Safeguards:`,
     `- Safe-Sport Weight Shield: Body weight is hidden to prevent RED-S and disordered eating.`,
@@ -8320,16 +8322,16 @@ async function requestEmailOtpCode(rawEmail) {
   };
   await saveTenantVaultAsync(emailOtpVaultKey(email), record);
   const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:0 auto;padding:24px;border:1px solid #E5E7EB;border-radius:16px;background:#FFFFFF;">
-    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#14532D;text-transform:uppercase;">THRESH CROSS-DEVICE SIGN-IN</div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#14532D;text-transform:uppercase;">MeetReady CROSS-DEVICE SIGN-IN</div>
     <h2 style="margin:8px 0 12px;color:#111318;">Your 6-Digit Verification Code</h2>
     <div style="font-family:monospace;font-size:32px;font-weight:800;letter-spacing:0.16em;padding:14px 20px;background:#F3F4F6;border-radius:12px;text-align:center;color:#111318;">${escapeHtml(code)}</div>
-    <p style="font-size:13px;color:#4B5563;margin-top:14px;">Expires in 10 minutes. Enter this code in THRESH to sync your teams and athlete profile across devices.</p>
+    <p style="font-size:13px;color:#4B5563;margin-top:14px;">Expires in 10 minutes. Enter this code in MeetReady to sync your teams and athlete profile across devices.</p>
   </div>`;
   const res = await sendEmailViaResend({
     to: email,
-    subject: `${code} is your THRESH sign-in code`,
+    subject: `${code} is your MeetReady sign-in code`,
     html,
-    text: `Your THRESH verification code is ${code} (expires in 10 minutes).`
+    text: `Your MeetReady verification code is ${code} (expires in 10 minutes).`
   });
   const isProd = isProductionDeployment();
   if (!res.delivered && isProd) {
@@ -8454,7 +8456,7 @@ function pushSubsVaultKey(userSid) {
 async function getOrInitVapidKeys() {
   const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
   const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
-  const subject = process.env.VAPID_SUBJECT?.trim() || "mailto:support@thresh.fit";
+  const subject = process.env.VAPID_SUBJECT?.trim() || "mailto:support@meetready.app";
   if (envPublic && envPrivate) {
     return {
       publicKey: envPublic,
@@ -8616,12 +8618,12 @@ function resolvePushRecipientSidsForTeamEvent(params) {
   return Array.from(sids);
 }
 function buildSafePushPayload(params) {
-  const shortTeam = params.teamShortName || "THRESH";
+  const shortTeam = params.teamShortName || "MeetReady";
   const cleanSnippet = String(params.bodyText || "").replace(/\s+/g, " ").trim().slice(0, 110);
   const isStaffConfidential = params.channelScope === "COACHES_STAFF";
   const redactForLockScreen = isStaffConfidential || params.isMinorTarget && (params.channelScope === "DIRECT_TRANSPARENT" || params.kind === "WORKOUT_COMMENT");
-  const safeBody = isStaffConfidential ? `New coaching staff message from ${params.senderName} \u2014 tap to open in THRESH.` : redactForLockScreen ? `New SafeSport CC note from ${params.senderName} \u2014 tap to open in THRESH.` : `${params.senderName}: ${cleanSnippet}`;
-  const title = params.isEmergency || params.announcementCategory === "WEATHER" ? `THRESH Alert \xB7 ${shortTeam}` : `THRESH \xB7 ${shortTeam}`;
+  const safeBody = isStaffConfidential ? `New coaching staff message from ${params.senderName} \u2014 tap to open in MeetReady.` : redactForLockScreen ? `New SafeSport CC note from ${params.senderName} \u2014 tap to open in MeetReady.` : `${params.senderName}: ${cleanSnippet}`;
+  const title = params.isEmergency || params.announcementCategory === "WEATHER" ? `MeetReady Alert \xB7 ${shortTeam}` : `MeetReady \xB7 ${shortTeam}`;
   return {
     title,
     body: safeBody,
@@ -8957,7 +8959,7 @@ async function recordTeamFieldMarks(params) {
           stravaPrCount: 0,
           segmentEfforts: [],
           isCompetitionDay: Boolean(rawEntry.isCompetition),
-          deviceName: "THRESH Trackside Field Sheet"
+          deviceName: "MeetReady Trackside Field Sheet"
         };
         targetMem.coachRecordedActivities = [
           mirroredAct,
@@ -9085,16 +9087,16 @@ async function inviteTeamCoachingStaff(params) {
     );
     const rawInviteToken = crypto9.randomBytes(16).toString("base64url");
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const cleanOrigin = (params.originUrl || "https://thresh.fit").replace(/\/+$/, "");
+    const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
     const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
     let emailStatus = "READY_MANUAL_LINK";
     if (cleanEmail && isResendConfigured()) {
       const roleLabel = cleanSpecialty || role.replace(/_/g, " ");
       const sendRes = await sendEmailViaResend({
         to: cleanEmail,
-        subject: `Coaching staff invite: ${doc.brand.name} (${roleLabel}) on THRESH`,
-        html: `<p>Hi <strong>${escapeHtml(cleanName)}</strong>,</p><p>You have been invited to join <strong>${escapeHtml(doc.brand.name)}</strong> on THRESH as <strong>${escapeHtml(roleLabel)}</strong>.</p><p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;padding:12px 20px;background:#C8FF00;color:#111318;font-weight:700;text-decoration:none;border-radius:10px;">Accept Coach Invite</a></p><p style="font-size:12px;color:#64748B;">Or paste team code: <strong>${escapeHtml(doc.brand.joinCode)}</strong></p>`,
-        text: `Hi ${cleanName}, you are invited to join ${doc.brand.name} on THRESH as ${roleLabel}. Accept here: ${inviteUrl} (Team code: ${doc.brand.joinCode})`
+        subject: `Coaching staff invite: ${doc.brand.name} (${roleLabel}) on MeetReady`,
+        html: `<p>Hi <strong>${escapeHtml(cleanName)}</strong>,</p><p>You have been invited to join <strong>${escapeHtml(doc.brand.name)}</strong> on MeetReady as <strong>${escapeHtml(roleLabel)}</strong>.</p><p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;padding:12px 20px;background:#C8FF00;color:#111318;font-weight:700;text-decoration:none;border-radius:10px;">Accept Coach Invite</a></p><p style="font-size:12px;color:#64748B;">Or paste team code: <strong>${escapeHtml(doc.brand.joinCode)}</strong></p>`,
+        text: `Hi ${cleanName}, you are invited to join ${doc.brand.name} on MeetReady as ${roleLabel}. Accept here: ${inviteUrl} (Team code: ${doc.brand.joinCode})`
       });
       emailStatus = sendRes.status;
     }
@@ -9256,8 +9258,8 @@ async function postTeamMessage(params) {
         guardianEmailNotified = true;
         void sendEmailViaResend({
           to: targetMem.parentGuardianEmail,
-          subject: `[THRESH SafeSport CC] Coach message for ${targetMem.invitedName}`,
-          html: `<p><strong>${escapeHtml2(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml2(callerMem.role)}) sent a team message to ${escapeHtml2(targetMem.invitedName)}:</p><blockquote>${escapeHtml2(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under THRESH SafeSport MAAPP two-adult transparency.</p>`,
+          subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
+          html: `<p><strong>${escapeHtml2(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml2(callerMem.role)}) sent a team message to ${escapeHtml2(targetMem.invitedName)}:</p><blockquote>${escapeHtml2(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
           text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`
         });
       }
@@ -11020,7 +11022,7 @@ async function syncAthleteSnapshotAcrossTeams(params) {
           if (guardianEmail && isResendConfigured()) {
             const sendRes = await sendEmailViaResend({
               to: guardianEmail,
-              subject: `[THRESH Safety Alert] ${mem.invitedName} \xB7 ${doc.brand.shortName}`,
+              subject: `[MeetReady Safety Alert] ${mem.invitedName} \xB7 ${doc.brand.shortName}`,
               html: `<p>${escapeHtml(alertSummary)}</p><p>Logged inside ${escapeHtml(doc.brand.name)} under U18 Safe-Sport &amp; Guardian visibility.</p>`,
               text: `${alertSummary}
 Team: ${doc.brand.name}`
@@ -11089,7 +11091,7 @@ async function recordGuardianSafetyAlert(params) {
     if (guardianEmail && isResendConfigured()) {
       const sendRes = await sendEmailViaResend({
         to: guardianEmail,
-        subject: `[THRESH Safety Alert] ${target.invitedName} \xB7 ${doc.brand.shortName}`,
+        subject: `[MeetReady Safety Alert] ${target.invitedName} \xB7 ${doc.brand.shortName}`,
         html: `<p>${escapeHtml(cleanSummary)}</p><p>Reported via ${escapeHtml(doc.brand.name)} Safeguarding Desk.</p>`,
         text: `${cleanSummary}
 Team: ${doc.brand.name}`
@@ -11225,7 +11227,7 @@ async function deleteTeamWorkoutLibraryTemplate(params) {
 async function listTeamWorkoutComments(params) {
   const doc = await loadTeamDocRaw(params.teamId);
   if (!doc) return { ok: false, error: "Team not found." };
-  const summary = projectTeamSummaryForCaller(doc, params.callerSid, "https://thresh.app");
+  const summary = projectTeamSummaryForCaller(doc, params.callerSid, "https://meetready.app");
   if (!summary) return { ok: false, error: "Membership required." };
   const allVisible = summary.workoutComments || [];
   const filtered = params.targetMembershipId ? allVisible.filter((c) => c.targetMembershipId === params.targetMembershipId) : allVisible;
@@ -11292,7 +11294,7 @@ async function postTeamWorkoutComment(params) {
     if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
       void sendEmailViaResend({
         to: targetMem.parentGuardianEmail,
-        subject: `[THRESH Guardian CC] Coach note for ${targetMem.invitedName}`,
+        subject: `[MeetReady Guardian CC] Coach note for ${targetMem.invitedName}`,
         html: `<p><strong>${escapeHtml(comment.authorName)}</strong> commented on ${escapeHtml(targetMem.invitedName)}&apos;s ${escapeHtml(comment.workoutDate)} workout:</p><blockquote>${escapeHtml(cleanBody)}</blockquote>`,
         text: `${comment.authorName} commented on ${targetMem.invitedName}'s ${comment.workoutDate} workout: ${cleanBody}`
       });
@@ -11986,7 +11988,7 @@ async function claimTeamJoinInvite(params) {
     if (ageCheck.isUnder13) {
       return {
         ok: false,
-        error: "THRESH accounts require athletes to be 13 or older (COPPA). Coaches can time U13 athletes watchlessly using Trackside Stopwatch without child accounts."
+        error: "MeetReady accounts require athletes to be 13 or older (COPPA). Coaches can time U13 athletes watchlessly using Trackside Stopwatch without child accounts."
       };
     }
     const effectiveParentEmail = isStaffInvite ? void 0 : params.parentGuardianEmail?.trim().toLowerCase() || mem?.parentGuardianEmail?.trim().toLowerCase();
@@ -12518,7 +12520,7 @@ async function transferTeamHeadCoachOwnership(params) {
     if (!nextHead) {
       return {
         ok: false,
-        error: "Successor must have an active signed-in THRESH membership."
+        error: "Successor must have an active signed-in MeetReady membership."
       };
     }
     currentHead.role = "ASSISTANT_COACH";
@@ -12782,7 +12784,7 @@ function resolveRequestOrigin(req) {
     const candidate = resolveSafeOrigin(`${proto}://${host}`);
     if (candidate) return candidate;
   }
-  return "https://thresh.app";
+  return "https://meetready.app";
 }
 teamRouter.post("/api/auth/email/send-otp", async (req, res) => {
   try {
@@ -13658,11 +13660,11 @@ teamRouter.get("/api/teams/parent-consent", async (req, res) => {
     if (!preview.ok) {
       res.status(400).send(`<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Parent Consent Link Error \xB7 THRESH</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<head><meta charset="utf-8"><title>Parent Consent Link Error \xB7 MeetReady</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px 16px;max-width:480px;margin:0 auto;text-align:center;color:#1F2937;">
   <h2 style="color:#DC2626;">Invalid or Expired Link</h2>
   <p>${escapeHtml(preview.error || "This consent link could not be verified.")}</p>
-  <a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Return to THRESH</a>
+  <a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Return to MeetReady</a>
 </body>
 </html>`);
       return;
@@ -13676,7 +13678,7 @@ teamRouter.get("/api/teams/parent-consent", async (req, res) => {
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Parent &amp; Guardian Consent \xB7 THRESH</title>
+  <title>Parent &amp; Guardian Consent \xB7 MeetReady</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
 </head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F4F6F3;padding:40px 16px;margin:0;color:#111318;">
@@ -13724,7 +13726,7 @@ teamRouter.post(
           return;
         }
         if (wantsHtml) {
-          res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2>Child Data Removed</h2><p>Membership and synced biometrics for <strong>${escapeHtml(decl.athleteName || "Athlete")}</strong> on <strong>${escapeHtml(decl.teamName || "Team")}</strong> have been revoked and cleared.</p><a href="/">Return to THRESH</a></body></html>`);
+          res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2>Child Data Removed</h2><p>Membership and synced biometrics for <strong>${escapeHtml(decl.athleteName || "Athlete")}</strong> on <strong>${escapeHtml(decl.teamName || "Team")}</strong> have been revoked and cleared.</p><a href="/">Return to MeetReady</a></body></html>`);
           return;
         }
         res.json({ ...decl, declined: true });
@@ -13736,7 +13738,7 @@ teamRouter.post(
         return;
       }
       if (wantsHtml) {
-        res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2 style="color:#15803D;">Safeguarding Acknowledged</h2><p>Parental acknowledgment for <strong>${escapeHtml(result.athleteName || "Athlete")}</strong> on <strong>${escapeHtml(result.teamName || "Team")}</strong> has been confirmed.</p><a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Visit THRESH</a></body></html>`);
+        res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2 style="color:#15803D;">Safeguarding Acknowledged</h2><p>Parental acknowledgment for <strong>${escapeHtml(result.athleteName || "Athlete")}</strong> on <strong>${escapeHtml(result.teamName || "Team")}</strong> has been confirmed.</p><a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Visit MeetReady</a></body></html>`);
         return;
       }
       res.json({ ...result });
@@ -14425,7 +14427,7 @@ teamRouter.post("/api/push/test", async (req, res) => {
     const result = await dispatchPushPayloadToUsers({
       recipientSids: [claims.sid],
       payload: {
-        title: "THRESH Practice Alerts Active",
+        title: "MeetReady Practice Alerts Active",
         body: "Device push notifications are connected for coach messages and weather updates.",
         tag: "thresh-test",
         url: "/?openMessages=1",
@@ -14556,7 +14558,7 @@ async function syncTeamIcsCalendar(params) {
         normalizedUrl,
         {
           headers: {
-            "User-Agent": "THRESH-CalendarSync/2.1 (+https://thresh-dev.vercel.app)",
+            "User-Agent": "MeetReady-CalendarSync/2.1 (+https://meetready.app)",
             Accept: "text/calendar, text/plain, */*;q=0.8"
           },
           signal: controller.signal
@@ -14972,7 +14974,7 @@ function resolveSyncOrigin(req) {
     const candidate = resolveSafeOrigin(`${proto}://${host}`);
     if (candidate) return candidate;
   }
-  return "https://thresh-dev.vercel.app";
+  return "https://meetready.app";
 }
 teamSyncRouter.post(
   "/api/teams/:teamId/external-sync/config",
@@ -15776,7 +15778,7 @@ function getAppBaseUrl(req) {
         return resolved;
       }
     }
-    return "https://thresh-dev.vercel.app";
+    return "https://meetready.app";
   }
   return resolveSafeOrigin(headerOrigin) || "http://localhost:3000";
 }
@@ -15879,7 +15881,7 @@ async function finalizeUserAuthentication(req, res, user) {
         email: user.email
       });
     } catch (err) {
-      console.warn("[THRESH Auth] Anonymous teams migration warning:", err);
+      console.warn("[MeetReady Auth] Anonymous teams migration warning:", err);
     }
   }
   if (user.email) {
@@ -15890,7 +15892,7 @@ async function finalizeUserAuthentication(req, res, user) {
         athleteName: user.name
       });
     } catch (err) {
-      console.warn("[THRESH Auth] Auto-link pending team invites warning:", err);
+      console.warn("[MeetReady Auth] Auto-link pending team invites warning:", err);
     }
   }
   return { userSid, sessionToken };
@@ -15935,7 +15937,7 @@ authRouter.get("/api/auth/me", async (req, res) => {
       sessionToken: issueSessionToken(claims.sub, claims.sid)
     });
   } catch (err) {
-    console.error("[THRESH Auth] /api/auth/me error:", err);
+    console.error("[MeetReady Auth] /api/auth/me error:", err);
     return res.status(500).json({ error: "Failed retrieving session state." });
   }
 });
@@ -16016,7 +16018,7 @@ authRouter.get("/api/auth/google/callback", async (req, res) => {
       })
     });
     if (!tokenRes.ok) {
-      console.error("[THRESH Auth] Google token exchange failed:", await tokenRes.text());
+      console.error("[MeetReady Auth] Google token exchange failed:", await tokenRes.text());
       return res.redirect("/?auth_error=google_token_exchange_failed");
     }
     const tokenData = await tokenRes.json();
@@ -16035,7 +16037,7 @@ authRouter.get("/api/auth/google/callback", async (req, res) => {
     await finalizeUserAuthentication(req, res, user);
     return res.redirect(buildAuthReturnRedirectUrl(stateClaims));
   } catch (err) {
-    console.error("[THRESH Auth] Google callback processing error:", err);
+    console.error("[MeetReady Auth] Google callback processing error:", err);
     return res.redirect("/?auth_error=internal_error");
   }
 });
@@ -16073,7 +16075,7 @@ authRouter.post("/api/auth/magic-link/send", async (req, res) => {
       previewUrl: exposeDev ? result.previewUrl : void 0
     });
   } catch (err) {
-    console.error("[THRESH Auth] Failed generating magic link:", err);
+    console.error("[MeetReady Auth] Failed generating magic link:", err);
     return res.status(500).json({ error: "Unable to dispatch sign-in email. Please try again." });
   }
 });
@@ -16093,22 +16095,22 @@ authRouter.get("/api/auth/magic-link/verify", async (req, res) => {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Confirm Sign-In \xB7 THRESH</title>
+    <title>Confirm Sign-In \xB7 MeetReady</title>
   </head>
   <body style="font-family:system-ui,-apple-system,sans-serif;background:#080D0A;color:#F4F7F4;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;box-sizing:border-box;">
     <div style="background:#111A15;border:2px solid #25573A;border-radius:18px;padding:28px 26px;max-width:420px;width:100%;text-align:center;">
-      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">THRESH \xB7 Email Sign-In</div>
+      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">MeetReady \xB7 Email Sign-In</div>
       <h1 style="margin:0 0 10px;font-size:20px;line-height:1.3;">Complete Sign-In</h1>
-      <p style="margin:0 0 20px;color:#C8D8CE;font-size:14px;line-height:1.55;">Confirm your sign-in as <strong>${escapeHtml(previewPayload.email)}</strong> to open your THRESH workspace.</p>
+      <p style="margin:0 0 20px;color:#C8D8CE;font-size:14px;line-height:1.55;">Confirm your sign-in as <strong>${escapeHtml(previewPayload.email)}</strong> to open your MeetReady workspace.</p>
       <form method="POST" action="/api/auth/magic-link/verify">
         <input type="hidden" name="token" value="${escapeHtml(token)}" />
-        <button type="submit" style="width:100%;min-height:44px;background:#C8FF00;color:#080A09;border:none;border-radius:12px;padding:12px 20px;font-weight:800;font-size:14px;cursor:pointer;">Complete Sign-In to THRESH</button>
+        <button type="submit" style="width:100%;min-height:44px;background:#C8FF00;color:#080A09;border:none;border-radius:12px;padding:12px 20px;font-weight:800;font-size:14px;cursor:pointer;">Complete Sign-In to MeetReady</button>
       </form>
     </div>
   </body>
 </html>`);
   } catch (err) {
-    console.error("[THRESH Auth] Magic link preview error:", err);
+    console.error("[MeetReady Auth] Magic link preview error:", err);
     return res.redirect("/?auth_error=magic_link_verification_failed");
   }
 });
@@ -16130,7 +16132,7 @@ authRouter.post("/api/auth/magic-link/verify", async (req, res) => {
     await finalizeUserAuthentication(req, res, user);
     return res.redirect(303, buildAuthReturnRedirectUrl(verifiedPayload.pendingJoin || null));
   } catch (err) {
-    console.error("[THRESH Auth] Magic link verification error:", err);
+    console.error("[MeetReady Auth] Magic link verification error:", err);
     return res.redirect(303, "/?auth_error=magic_link_verification_failed");
   }
 });
@@ -16148,7 +16150,7 @@ authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
   const options = {
     challenge,
     rp: {
-      name: "THRESH",
+      name: "MeetReady",
       id: rpId
     },
     user: {
@@ -16243,7 +16245,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
     const { sessionToken } = await finalizeUserAuthentication(req, res, user);
     return res.json({ ok: true, user, sessionToken });
   } catch (err) {
-    console.error("[THRESH Auth] Passkey registration verification error:", err);
+    console.error("[MeetReady Auth] Passkey registration verification error:", err);
     return res.status(500).json({ error: "Failed completing passkey registration." });
   }
 });
@@ -16282,7 +16284,7 @@ authRouter.post("/api/auth/passkey/auth-verify", async (req, res) => {
     }
     const user = await getUserByProvider("passkey", credId);
     if (!user) {
-      return res.status(404).json({ error: "No THRESH account associated with this passkey." });
+      return res.status(404).json({ error: "No MeetReady account associated with this passkey." });
     }
     const passkey = user.passkeys?.find((p) => p.id === credId);
     if (!passkey || !passkey.publicKeySpkiBase64) {
@@ -16307,7 +16309,7 @@ authRouter.post("/api/auth/passkey/auth-verify", async (req, res) => {
     const { sessionToken } = await finalizeUserAuthentication(req, res, user);
     return res.json({ ok: true, user, sessionToken });
   } catch (err) {
-    console.error("[THRESH Auth] Passkey auth verification error:", err);
+    console.error("[MeetReady Auth] Passkey auth verification error:", err);
     return res.status(500).json({ error: "Failed verifying passkey." });
   }
 });
@@ -16329,7 +16331,7 @@ authRouter.post("/api/auth/mock-login", async (req, res) => {
     }
     return res.json({ ok: true, user });
   } catch (err) {
-    console.error("[THRESH Auth] Mock login failed:", err);
+    console.error("[MeetReady Auth] Mock login failed:", err);
     return res.status(500).json({ error: "Failed logging in with mock credentials." });
   }
 });
@@ -16345,7 +16347,7 @@ authRouter.get("/api/auth/mock-login", async (req, res) => {
     await finalizeUserAuthentication(req, res, user);
     return res.redirect("/?auth_just_signed_in=1");
   } catch (err) {
-    console.error("[THRESH Auth] Dev mock link failed:", err);
+    console.error("[MeetReady Auth] Dev mock link failed:", err);
     return res.redirect("/?auth_error=dev_mock_failed");
   }
 });
@@ -16375,7 +16377,7 @@ authRouter.post("/api/auth/change-email", async (req, res) => {
     if (byStrava) userId = byStrava.id;
   }
   if (!userId) {
-    return res.status(400).json({ error: "Please sign in with a THRESH account before changing email." });
+    return res.status(400).json({ error: "Please sign in with a MeetReady account before changing email." });
   }
   const newEmail = String(req.body?.email || req.body?.newEmail || "").trim().toLowerCase();
   const verificationCode = String(req.body?.verificationCode || req.body?.code || "").trim();
@@ -16409,7 +16411,7 @@ authRouter.post("/api/auth/change-email", async (req, res) => {
       newEmail: result.newEmail
     });
   } catch (err) {
-    console.warn("[THRESH Auth] Team membership email update warning:", err);
+    console.warn("[MeetReady Auth] Team membership email update warning:", err);
   }
   const { sessionToken } = await finalizeUserAuthentication(req, res, result.user);
   return res.json({ ok: true, user: result.user, sessionToken });
@@ -16417,7 +16419,7 @@ authRouter.post("/api/auth/change-email", async (req, res) => {
 authRouter.post("/api/auth/birth-month", async (req, res) => {
   const claims = getVerifiedSessionClaims(req);
   if (!claims?.sub?.startsWith("usr_") || !isCanonicalAuthenticatedClaims(claims)) {
-    return res.status(401).json({ error: "THRESH account required." });
+    return res.status(401).json({ error: "MeetReady account required." });
   }
   const birthMonthYear = String(req.body?.birthMonthYear || "").trim();
   const incomingAge = resolveAthleteAgeTier({ birthMonthYear });
@@ -16426,7 +16428,7 @@ authRouter.post("/api/auth/birth-month", async (req, res) => {
   }
   if (incomingAge.isUnder13) {
     return res.status(400).json({
-      error: "THRESH accounts require athletes to be 13 or older (COPPA)."
+      error: "MeetReady accounts require athletes to be 13 or older (COPPA)."
     });
   }
   const existingUser = await getUserById(claims.sub);
@@ -16453,7 +16455,7 @@ authRouter.delete("/api/auth/account", async (req, res) => {
   if (confirmVal !== "DELETE") {
     return res.status(400).json({
       ok: false,
-      error: 'Please pass confirm: "DELETE" to permanently delete your THRESH account.'
+      error: 'Please pass confirm: "DELETE" to permanently delete your MeetReady account.'
     });
   }
   await deleteThreshAccountPermanently(req, res);
@@ -16567,7 +16569,7 @@ var SERVER_ZONE_COLORS = [
   "#D97706",
   // Z3 Ochre Tempo
   "#EA580C",
-  // Z4 THRESH Vermilion
+  // Z4 Threshold Vermilion
   "#DC2626",
   // Z5 VO2 Crimson
   "#7C3AED",
@@ -16894,7 +16896,7 @@ function renderThreshOAuthHtml(opts) {
   </head>
   <body style="font-family:system-ui,-apple-system,sans-serif;background:#0C1D14;color:#F8FAFC;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center;padding:24px;box-sizing:border-box;">
     <div style="background:#111915;border:2px solid #25573A;border-radius:18px;padding:28px 26px;max-width:420px;width:100%;box-shadow:0 20px 40px rgba(0,0,0,0.45);">
-      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:10px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px;">THRESH \xB7 Telemetry Connector</div>
+      <div style="display:inline-block;padding:4px 10px;border-radius:999px;background:#163022;border:1px solid #25573A;color:#C8FF00;font-size:10px;font-weight:800;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px;">MeetReady \xB7 Telemetry Connector</div>
       <h2 style="margin:0 0 10px;color:${accent};font-size:18px;line-height:1.3;">${opts.heading}</h2>
       <p style="margin:0 0 ${ctaHtml ? "20px" : "0"};color:#CBD5E1;font-size:13px;line-height:1.55;">${opts.body}</p>
       ${ctaHtml}
@@ -16903,7 +16905,7 @@ function renderThreshOAuthHtml(opts) {
   </body>
 </html>`;
 }
-var CANONICAL_PROD_ORIGIN = "https://thresh-dev.vercel.app";
+var CANONICAL_PROD_ORIGIN = "https://meetready.app";
 var LEGACY_PROD_ORIGIN = "https://aeropulse-eta.vercel.app";
 function canonicalizeOrigin(origin) {
   return origin.toLowerCase() === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN : origin;
@@ -16943,7 +16945,7 @@ function resolveStandardOAuthCallbackUrl(req, envVarName, callbackPath) {
   const rawHost = String(
     req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
   ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
-  const canonicalHost = rawHost.toLowerCase() === "aeropulse-eta.vercel.app" ? "thresh-dev.vercel.app" : rawHost;
+  const canonicalHost = rawHost.toLowerCase() === "aeropulse-eta.vercel.app" ? "meetready.app" : rawHost;
   return `${proto}://${canonicalHost || "localhost:3000"}${callbackPath}`;
 }
 function resolveStravaCallbackUrl(req) {
@@ -17045,6 +17047,7 @@ async function resolveValidatedStravaCallbackUrl(req, clientId) {
     pushCandidate(`${appOrigin}/auth/strava/callback`);
   }
   pushCandidate(`${CANONICAL_PROD_ORIGIN}/auth/strava/callback`);
+  pushCandidate("https://thresh-dev.vercel.app/auth/strava/callback");
   pushCandidate(`${LEGACY_PROD_ORIGIN}/auth/strava/callback`);
   for (const candidate of fallbackCandidates) {
     const candidateProbe = await probeStravaRedirectUri(clientId, candidate);
@@ -18292,7 +18295,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
       await linkProviderToUser(canonicalUserId, "strava", opts.athleteId, { name: cleanName });
       await connectServiceToUser(canonicalUserId, "strava", opts.athleteId, cleanName);
     } catch (err) {
-      console.warn("[THRESH Auth] Linking Strava to existing ThreshUser warning:", err);
+      console.warn("[MeetReady Auth] Linking Strava to existing ThreshUser warning:", err);
     }
   }
   return { canonicalSid, scopeKey, sessionToken, store, linkedUserId: canonicalUserId };
@@ -18410,7 +18413,7 @@ var stravaCallbackHandler = async (req, res) => {
           heading: isCancelled ? "Strava Sign-In Cancelled" : "Strava Authorization Declined",
           accentColor: isCancelled ? "#FBBF24" : "#FB7185",
           body: escapeHtml(friendlyErr),
-          ctaLabel: "Return to THRESH",
+          ctaLabel: "Return to MeetReady",
           ctaHref: returnHref,
           ctaOnClick: "if (window.opener || window.name === 'strava_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
           scriptBody: buildStravaCallbackScript({ serializedPayload: cancelJson })
@@ -18427,7 +18430,7 @@ var stravaCallbackHandler = async (req, res) => {
           heading: "Missing Strava Code",
           accentColor: "#FB7185",
           body: "No authorization code was returned by Strava. Please try connecting again.",
-          ctaLabel: "Return to THRESH",
+          ctaLabel: "Return to MeetReady",
           ctaHref: buildReturnOnboardingUrl(verifiedState)
         })
       );
@@ -18443,7 +18446,7 @@ var stravaCallbackHandler = async (req, res) => {
           heading: "Invalid OAuth State",
           accentColor: "#FB7185",
           body: !verifiedState ? "The security verification token has expired or is invalid. Please return and initiate connection again." : "The browser OAuth state cookie is missing or does not match. Please return and initiate connection again.",
-          ctaLabel: "Return to THRESH",
+          ctaLabel: "Return to MeetReady",
           ctaHref: "/"
         })
       );
@@ -18536,7 +18539,7 @@ var stravaCallbackHandler = async (req, res) => {
           name: !isGenericName(athleteName) ? athleteName : void 0
         });
       } catch (err) {
-        console.warn("[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:", err);
+        console.warn("[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:", err);
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -18642,11 +18645,11 @@ var stravaCallbackHandler = async (req, res) => {
     } catch (e) {}`;
     res.status(200).type("html").send(
       renderThreshOAuthHtml({
-        title: "Strava Connected \xB7 THRESH",
+        title: "Strava Connected \xB7 MeetReady",
         heading: `Strava Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
         accentColor: "#10B981",
-        body: !hasPendingTeamJoin ? "Strava connected! Opening your THRESH training workspace\u2026" : "Your Strava account is linked. Return to THRESH to complete your team roster setup.",
-        ctaLabel: "Continue to THRESH",
+        body: !hasPendingTeamJoin ? "Strava connected! Opening your MeetReady training workspace\u2026" : "Your Strava account is linked. Return to MeetReady to complete your team roster setup.",
+        ctaLabel: "Continue to MeetReady",
         ctaHref: returnUrl,
         scriptBody: buildStravaCallbackScript({
           serializedPayload: oauthSuccessPayload,
@@ -18671,7 +18674,7 @@ var stravaCallbackHandler = async (req, res) => {
         heading: "Strava Connection Failed",
         accentColor: "#FB7185",
         body: escapeHtml(friendlyErr),
-        ctaLabel: "Return to THRESH",
+        ctaLabel: "Return to MeetReady",
         ctaHref: buildReturnOnboardingUrl(verifiedState, { auth_error: friendlyErr }),
         ctaOnClick: "if (window.opener || window.name === 'strava_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: buildStravaCallbackScript({ serializedPayload: errJson })
@@ -18874,7 +18877,7 @@ stravaRouter.post("/api/strava/exchange-code", async (req, res) => {
           name: !isGenericName(athleteName) ? athleteName : void 0
         });
       } catch (err) {
-        console.warn("[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:", err);
+        console.warn("[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:", err);
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -18998,7 +19001,7 @@ stravaRouter.post("/api/strava/token", async (req, res) => {
           name: !isGenericName(athleteName) ? athleteName : void 0
         });
       } catch (err) {
-        console.warn("[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:", err);
+        console.warn("[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:", err);
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -19331,7 +19334,7 @@ stravaRouter.post("/api/activities/:id/kudos", (req, res) => {
       kudoers: [],
       comments: []
     };
-    const resolvedName = req.body?.authorName || athleteName || "THRESH Athlete";
+    const resolvedName = req.body?.authorName || athleteName || "MeetReady Athlete";
     const [first, ...rest] = String(resolvedName).trim().split(" ");
     const last = rest.join(" ") || "";
     if ((action === "comment" || action === "add_comment") && commentText && String(commentText).trim()) {
@@ -19354,7 +19357,7 @@ stravaRouter.post("/api/activities/:id/kudos", (req, res) => {
           existingKudoers.unshift({
             firstname: first,
             lastname: last,
-            city: "THRESH Club"
+            city: "MeetReady Club"
           });
         }
       } else {
@@ -20058,7 +20061,7 @@ var intervalsCallbackHandler = async (req, res) => {
         heading: "Intervals.icu Connection Could Not Complete",
         accentColor: "#FB7185",
         body: escapeHtml(errMsg),
-        ctaLabel: "Return to THRESH",
+        ctaLabel: "Return to MeetReady",
         ctaHref: "/#fitness?openDataSources=1",
         ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {
@@ -20084,7 +20087,7 @@ var intervalsCallbackHandler = async (req, res) => {
         heading: "Intervals.icu Authorization Code Missing",
         accentColor: "#FB7185",
         body: "No authorization code was returned by Intervals.icu.",
-        ctaLabel: "Return to THRESH",
+        ctaLabel: "Return to MeetReady",
         ctaHref: "/#fitness?openDataSources=1"
       })
     );
@@ -20097,7 +20100,7 @@ var intervalsCallbackHandler = async (req, res) => {
         heading: "Security Verification Failed",
         accentColor: "#FB7185",
         body: !verifiedState ? "OAuth state token was invalid or expired. Please re-initiate Intervals.icu connection." : "Browser OAuth verification cookie was missing or did not match. Please re-initiate Intervals.icu connection.",
-        ctaLabel: "Return to THRESH",
+        ctaLabel: "Return to MeetReady",
         ctaHref: "/#fitness?openDataSources=1"
       })
     );
@@ -20161,11 +20164,11 @@ var intervalsCallbackHandler = async (req, res) => {
     });
     res.type("html").send(
       renderThreshOAuthHtml({
-        title: "Intervals.icu Connected \xB7 THRESH",
+        title: "Intervals.icu Connected \xB7 MeetReady",
         heading: `Intervals.icu Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
         accentColor: "#10B981",
         body: "Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and training data are ready to sync.",
-        ctaLabel: "Continue to THRESH",
+        ctaLabel: "Continue to MeetReady",
         ctaHref: "/#fitness?openDataSources=1",
         scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
@@ -20218,7 +20221,7 @@ var intervalsCallbackHandler = async (req, res) => {
         heading: "Intervals.icu Connection Failed",
         accentColor: "#FB7185",
         body: escapeHtml(errMsg),
-        ctaLabel: "Return to THRESH",
+        ctaLabel: "Return to MeetReady",
         ctaHref: "/#fitness?openDataSources=1",
         ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
         scriptBody: `(function() {
@@ -20983,7 +20986,7 @@ function registerOAuthConnectorRoutes(router, config) {
           heading: `${displayName} Connection Could Not Complete`,
           accentColor,
           body: escapeHtml(errMsg),
-          ctaLabel: "Return to THRESH",
+          ctaLabel: "Return to MeetReady",
           ctaHref: returnHref,
           ctaOnClick: POPUP_CLOSE_ONCLICK,
           scriptBody: buildPopupRelayScript(errJson)
@@ -20998,7 +21001,7 @@ function registerOAuthConnectorRoutes(router, config) {
           heading: `${displayName} Authorization Code Missing`,
           accentColor,
           body: `No authorization code was returned by ${displayName}.`,
-          ctaLabel: "Return to THRESH",
+          ctaLabel: "Return to MeetReady",
           ctaHref: returnHref
         })
       );
@@ -21011,7 +21014,7 @@ function registerOAuthConnectorRoutes(router, config) {
           heading: "Security Verification Failed",
           accentColor,
           body: !verifiedState ? `OAuth state token was invalid or expired. Please re-initiate ${displayName} connection.` : `Browser OAuth verification cookie was missing or did not match. Please re-initiate ${displayName} connection.`,
-          ctaLabel: "Return to THRESH",
+          ctaLabel: "Return to MeetReady",
           ctaHref: returnHref
         })
       );
@@ -21059,11 +21062,11 @@ function registerOAuthConnectorRoutes(router, config) {
       });
       res.type("html").send(
         renderThreshOAuthHtml({
-          title: `${displayName} Connected \xB7 THRESH`,
+          title: `${displayName} Connected \xB7 MeetReady`,
           heading: `${displayName} Connected${exchanged.athleteName && !isGenericName(exchanged.athleteName) ? ` \xB7 ${escapeHtml(exchanged.athleteName)}` : ""}`,
           accentColor,
           body: successBody,
-          ctaLabel: "Continue to THRESH",
+          ctaLabel: "Continue to MeetReady",
           ctaHref: returnHref,
           scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
@@ -21115,7 +21118,7 @@ function registerOAuthConnectorRoutes(router, config) {
           heading: `${displayName} Connection Failed`,
           accentColor: "#FB7185",
           body: escapeHtml(errMsg),
-          ctaLabel: "Return to THRESH",
+          ctaLabel: "Return to MeetReady",
           ctaHref: returnHref,
           ctaOnClick: POPUP_CLOSE_ONCLICK,
           scriptBody: buildPopupRelayScript(errJson)
@@ -21924,7 +21927,7 @@ I've prepared ready-to-schedule workouts below. Tap **Add to Plan** on any worko
         name: cfg.name,
         sportCategory: cfg.sport,
         environmentPreference: "OUTDOOR",
-        description: `Prescribed by THRESH AI Coach based on ${hrvStatus || "calibrated"} readiness.`,
+        description: `Prescribed by MeetReady AI Coach based on ${hrvStatus || "calibrated"} readiness.`,
         plannedLoad: cfg.load,
         plannedDurationSecs: cfg.dur,
         targetZoneSummary: `${cfg.load} TSS \xB7 AI Prescribed`,
@@ -22001,7 +22004,7 @@ async function resolveCallerYouthSafeguardStatus(req, telemetrySummary) {
       }
     }
     if (claims?.sid) {
-      const teams = await listTeamsForUser(claims.sid, "https://thresh.app").catch(() => []);
+      const teams = await listTeamsForUser(claims.sid, "https://meetready.app").catch(() => []);
       for (const t of teams) {
         if (t.brand?.defaultSafeSportShield) {
           forceZeroWeight = true;
@@ -22065,7 +22068,7 @@ coachRouter.post("/api/coach/options", async (req, res) => {
       return;
     }
     const prompt = `
-You are THRESH AI Coach, an elite endurance sports physiologist and dual-sport running & cycling coach.
+You are MeetReady AI Coach, an elite endurance sports physiologist and dual-sport running & cycling coach.
 Generate 3 distinct, actionable daily workout options for today based on the athlete's live first-party Garmin health, sleep, HRV status, Training Status, and calibrated threshold telemetry:
 - Preferred Sport for Today: ${sportPreference}
 - Preferred Environment: ${environmentPreference} (e.g., OUTDOOR road/trail vs INDOOR Smart Trainer/Treadmill)
@@ -22177,7 +22180,7 @@ ATHLETE QUESTION OR PROGRAM REQUEST:
 ${message}
 `,
       config: {
-        systemInstruction: `You are THRESH AI Coach, an elite exercise physiologist and dual-sport running & cycling performance coach inside THRESH (THRESH \u2014 Run & Ride Readiness).
+        systemInstruction: `You are MeetReady AI Coach, an elite exercise physiologist and dual-sport running & cycling performance coach inside MeetReady (MeetReady \u2014 Run & Ride Readiness).
 1. Ground every answer in the athlete's actual clean-room metrics provided in the snapshot: Sleep Score & Duration, 7d Sleep Debt, HRV Status & rMSSD (ms) vs baseline corridor, Training Status, Resting HR, CTL/ATL/TSB, Load Ratio (ACWR), calibrated Cycling FTP/eFTP, Running Threshold Pace, and first-party workouts. Never invent metrics that are missing or null\u2014state clearly when calibration is needed.
 2. Whenever the user asks about today's workout, tomorrow's session, or a multi-day / weekly cycling or running training plan, ALWAYS populate "proposedWorkouts" with 1 to 7 concrete, ready-to-schedule workouts (with exact YYYY-MM-DD dates starting from ${todayStr}, sportCategory "Cycling" or "Running", environmentPreference "OUTDOOR" or "INDOOR", plannedDurationSecs, plannedLoad, and step workoutSyntax lines starting with "- ").`,
         responseMimeType: "application/json",
@@ -22994,7 +22997,7 @@ garminRouter.post("/api/garmin/workout/push", async (req, res) => {
     }
     const body = req.body || {};
     const date = String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
-    const name = String(body.name || "THRESH Daily Prescription");
+    const name = String(body.name || "MeetReady Daily Prescription");
     const sportCategory = body.sportCategory || "Cycling";
     const ftpWatts = Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250);
     const lthrBpm = Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165);

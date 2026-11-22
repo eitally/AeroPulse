@@ -89,7 +89,7 @@ test.describe('Simplified Coach Onboarding & Illustrated Coach Guide (Desktop & 
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
     await page.goto('/docs/coach.html');
-    await expect(page.getByRole('heading', { name: 'THRESH Coach User Guide' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'MeetReady Coach User Guide' })).toBeVisible({
       timeout: 15000,
     });
 

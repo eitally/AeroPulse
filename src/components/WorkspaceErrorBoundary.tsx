@@ -71,7 +71,7 @@ export class WorkspaceErrorBoundary extends React.Component<
     const isChunkMismatch = isDynamicChunkLoadError(error);
     const title =
       this.props.fallbackTitle ||
-      (isChunkMismatch ? 'Refreshing Updated THRESH View' : 'Workspace View Needs Recovery');
+      (isChunkMismatch ? 'Refreshing Updated MeetReady View' : 'Workspace View Needs Recovery');
 
     return (
       <section
@@ -87,8 +87,8 @@ export class WorkspaceErrorBoundary extends React.Component<
             </h2>
             <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300">
               {isChunkMismatch
-                ? 'A newer THRESH build was deployed while this tab was open. Reload to sync the updated view and return right here.'
-                : 'Something interrupted this view while rendering. Retry the panel or reload the latest THRESH build.'}
+                ? 'A newer MeetReady build was deployed while this tab was open. Reload to sync the updated view and return right here.'
+                : 'Something interrupted this view while rendering. Retry the panel or reload the latest MeetReady build.'}
             </p>
           </div>
         </div>

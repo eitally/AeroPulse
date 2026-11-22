@@ -36,7 +36,7 @@ async function signInViaDevMagicLink(
   expect(payload.previewUrl).toBeTruthy();
   const parsed = new URL(payload.previewUrl);
   await page.goto(`${parsed.pathname}${parsed.search}`);
-  const confirmBtn = page.getByRole('button', { name: /Complete Sign-In to THRESH/i });
+  const confirmBtn = page.getByRole('button', { name: /Complete Sign-In to MeetReady/i });
   await expect(confirmBtn).toBeVisible({ timeout: 10000 });
   await Promise.all([
     page.waitForURL((u) => !u.pathname.includes('/api/auth/magic-link/verify')),
@@ -137,7 +137,7 @@ test.describe('Athlete Team Lifecycle, Age Compliance & Account Deletion (Deskto
     await page.getByRole('button', { name: new RegExp(`Join .*& Continue`, 'i') }).click();
 
     // Step 3 -> enter main workspace
-    const skipBtn = page.getByRole('button', { name: /Skip for Now|Continue to THRESH/i });
+    const skipBtn = page.getByRole('button', { name: /Skip for Now|Continue to MeetReady/i });
     await expect(skipBtn).toBeVisible({ timeout: 15000 });
     await skipBtn.click();
 

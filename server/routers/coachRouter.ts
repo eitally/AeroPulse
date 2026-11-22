@@ -340,7 +340,7 @@ export function buildDeterministicCoachChatResponse(
         name: cfg.name,
         sportCategory: cfg.sport,
         environmentPreference: 'OUTDOOR',
-        description: `Prescribed by THRESH AI Coach based on ${hrvStatus || 'calibrated'} readiness.`,
+        description: `Prescribed by MeetReady AI Coach based on ${hrvStatus || 'calibrated'} readiness.`,
         plannedLoad: cfg.load,
         plannedDurationSecs: cfg.dur,
         targetZoneSummary: `${cfg.load} TSS · AI Prescribed`,
@@ -428,7 +428,7 @@ async function resolveCallerYouthSafeguardStatus(
       }
     }
     if (claims?.sid) {
-      const teams = await listTeamsForUser(claims.sid, 'https://thresh.app').catch(() => []);
+      const teams = await listTeamsForUser(claims.sid, 'https://meetready.app').catch(() => []);
       for (const t of teams) {
         if (t.brand?.defaultSafeSportShield) {
           forceZeroWeight = true;
@@ -502,7 +502,7 @@ coachRouter.post('/api/coach/options', async (req: Request, res: Response) => {
     }
 
     const prompt = `
-You are THRESH AI Coach, an elite endurance sports physiologist and dual-sport running & cycling coach.
+You are MeetReady AI Coach, an elite endurance sports physiologist and dual-sport running & cycling coach.
 Generate 3 distinct, actionable daily workout options for today based on the athlete's live first-party Garmin health, sleep, HRV status, Training Status, and calibrated threshold telemetry:
 - Preferred Sport for Today: ${sportPreference}
 - Preferred Environment: ${environmentPreference} (e.g., OUTDOOR road/trail vs INDOOR Smart Trainer/Treadmill)
@@ -629,7 +629,7 @@ ATHLETE QUESTION OR PROGRAM REQUEST:
 ${message}
 `,
       config: {
-        systemInstruction: `You are THRESH AI Coach, an elite exercise physiologist and dual-sport running & cycling performance coach inside THRESH (THRESH — Run & Ride Readiness).
+        systemInstruction: `You are MeetReady AI Coach, an elite exercise physiologist and dual-sport running & cycling performance coach inside MeetReady (MeetReady — Run & Ride Readiness).
 1. Ground every answer in the athlete's actual clean-room metrics provided in the snapshot: Sleep Score & Duration, 7d Sleep Debt, HRV Status & rMSSD (ms) vs baseline corridor, Training Status, Resting HR, CTL/ATL/TSB, Load Ratio (ACWR), calibrated Cycling FTP/eFTP, Running Threshold Pace, and first-party workouts. Never invent metrics that are missing or null—state clearly when calibration is needed.
 2. Whenever the user asks about today's workout, tomorrow's session, or a multi-day / weekly cycling or running training plan, ALWAYS populate "proposedWorkouts" with 1 to 7 concrete, ready-to-schedule workouts (with exact YYYY-MM-DD dates starting from ${todayStr}, sportCategory "Cycling" or "Running", environmentPreference "OUTDOOR" or "INDOOR", plannedDurationSecs, plannedLoad, and step workoutSyntax lines starting with "- ").`,
         responseMimeType: 'application/json',

@@ -53,7 +53,7 @@ const CATEGORY_TABS: Array<{ id: CategoryFilter; label: string }> = [
 const NAV_SECTIONS: Array<{ id: ActiveNavSection; label: string }> = [
   { id: 'brand-assets', label: 'Assets & Icons' },
   { id: 'brand-colors', label: 'Color Scheme / Map' },
-  { id: 'brand-cobrand', label: 'Team × THRESH' },
+  { id: 'brand-cobrand', label: 'Team × MeetReady' },
   { id: 'brand-typography-usage', label: 'Typography & Press' },
 ];
 
@@ -175,13 +175,13 @@ export default function BrandGuidePage({
     try {
       const pngEntries: Record<string, Uint8Array> = {};
       const keyPngTargets = [
-        { id: 'thresh-lockup-dark', w: 944, h: 248, name: 'thresh-lockup-dark-2x.png' },
-        { id: 'thresh-lockup-light', w: 944, h: 248, name: 'thresh-lockup-light-2x.png' },
-        { id: 'thresh-sticker-diecut', w: 944, h: 248, name: 'thresh-sticker-diecut-2x.png' },
-        { id: 'thresh-1ink-stencil', w: 944, h: 248, name: 'thresh-1ink-stencil-2x.png' },
-        { id: 'thresh-1ink-stencil-white', w: 944, h: 248, name: 'thresh-1ink-stencil-white-2x.png' },
-        { id: 'thresh-icon-square-fullbleed', w: 512, h: 512, name: 'thresh-icon-square-512.png' },
-        { id: 'thresh-og-1200x630', w: 1200, h: 630, name: 'thresh-og-1200x630.png' },
+        { id: 'meetready-lockup-dark', w: 944, h: 248, name: 'meetready-lockup-dark-2x.png' },
+        { id: 'meetready-lockup-light', w: 944, h: 248, name: 'meetready-lockup-light-2x.png' },
+        { id: 'meetready-sticker-diecut', w: 944, h: 248, name: 'meetready-sticker-diecut-2x.png' },
+        { id: 'meetready-1ink-stencil', w: 944, h: 248, name: 'meetready-1ink-stencil-2x.png' },
+        { id: 'meetready-1ink-stencil-white', w: 944, h: 248, name: 'meetready-1ink-stencil-white-2x.png' },
+        { id: 'meetready-icon-square-fullbleed', w: 512, h: 512, name: 'meetready-icon-square-512.png' },
+        { id: 'meetready-og-1200x630', w: 1200, h: 630, name: 'meetready-og-1200x630.png' },
       ];
 
       for (const target of keyPngTargets) {
@@ -199,9 +199,9 @@ export default function BrandGuidePage({
       const copyBuffer = new Uint8Array(zipBytes.byteLength);
       copyBuffer.set(zipBytes);
       const zipBlob = new Blob([copyBuffer.buffer], { type: 'application/zip' });
-      triggerBlobDownload(zipBlob, 'THRESH-Brand-Kit.zip');
+      triggerBlobDownload(zipBlob, 'MeetReady-Brand-Kit.zip');
       setKitStatusNote(
-        `Downloaded THRESH-Brand-Kit.zip (${Object.keys(pngEntries).length} PNGs + 17 SVGs + JSON tokens).`
+        `Downloaded MeetReady-Brand-Kit.zip (${Object.keys(pngEntries).length} PNGs + 17 SVGs + JSON tokens).`
       );
     } finally {
       setIsZipBuilding(false);
@@ -225,7 +225,7 @@ export default function BrandGuidePage({
                 type="button"
                 onClick={onExitBrand}
                 className="min-h-[44px] sm:min-h-[40px] inline-flex items-center text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-600 dark:focus:ring-lime-400 rounded-lg"
-                aria-label={hasActiveWorkspace ? 'Back to THRESH cockpit' : 'Return to THRESH'}
+                aria-label={hasActiveWorkspace ? 'Back to MeetReady cockpit' : 'Return to MeetReady'}
               >
                 <AeroPulseLogo size="sm" />
               </button>
@@ -266,7 +266,7 @@ export default function BrandGuidePage({
                   </>
                 ) : (
                   <>
-                    <span>Enter THRESH</span>
+                    <span>Enter MeetReady</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </>
                 )}
@@ -291,7 +291,7 @@ export default function BrandGuidePage({
                         id="brand-hero-heading"
                         className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white"
                       >
-                        THRESH Brand Studio &amp; Style Guide
+                        MeetReady Brand Studio &amp; Style Guide
                       </h1>
                       <span className="ap-status-prime px-2.5 py-0.5 rounded-full font-mono text-2xs font-bold">
                         PUBLIC · NO LOGIN REQUIRED
@@ -342,12 +342,12 @@ export default function BrandGuidePage({
                   </div>
                 </div>
 
-                {/* Live S2 × W-A Geometric Construction Specimen */}
+                {/* Live S2 × MeetReady Geometric Construction Specimen */}
                 <div className="lg:col-span-6 ap-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-2xs font-bold uppercase text-slate-700 dark:text-slate-300 inline-flex items-center gap-1.5">
                       <Gauge className="w-4 h-4 ap-text-brand" />
-                      <span>S2 × W-A Modular Architecture</span>
+                      <span>S2 × MeetReady Modular Architecture</span>
                     </span>
                     <span className="font-mono text-2xs font-bold ap-telemetry-label">
                       472 × 124 · 0° OPTICAL CALIPER
@@ -364,7 +364,7 @@ export default function BrandGuidePage({
                     <div className="relative w-full max-w-[472px]">
                       <ThreshFullVectorLockup
                         className="w-full h-auto block"
-                        ariaLabel="THRESH official geometric construction specimen"
+                        ariaLabel="MeetReady official geometric construction specimen"
                       />
 
                       {showBlueprint && (
@@ -451,10 +451,10 @@ export default function BrandGuidePage({
                   <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-600 dark:text-slate-400">
                     <span>
                       {showBlueprint
-                        ? 'TL-2P1 (60,70) r=[22.2..25, 31..45] 315°∥ · FAV-F 16px · W-A stem=13.5 bar=11.2'
-                        : 'Minimum clear space: 0.5× symbol height (TL-2P1 + W-A)'}
+                        ? 'TL-2P1 (60,70) r=[22.2..25, 31..45] 315°∥ · FAV-M 16px · Two-tone MeetReady'
+                        : 'Minimum clear space: 0.5× symbol height (TL-2P1 + MeetReady)'}
                     </span>
-                    <span className="ap-telemetry-label">Pure vector paths — zero skew/font distortion</span>
+                    <span className="ap-telemetry-label">Two-tone CamelCase — zero distortion</span>
                   </div>
                 </div>
               </div>
@@ -576,7 +576,7 @@ export default function BrandGuidePage({
                         : 'ap-status-strained';
 
                   const isSquare = asset.width === asset.height;
-                  const isBanner = asset.id === 'thresh-og-1200x630';
+                  const isBanner = asset.id === 'meetready-og-1200x630';
 
                   return (
                     <article
@@ -706,7 +706,7 @@ export default function BrandGuidePage({
             {/* Section B: 3-Tier Color Map */}
             <BrandColorMapSection isDark={isDark} />
 
-            {/* Section C: Live Team × THRESH Co-Branding Lab */}
+            {/* Section C: Live Team × MeetReady Co-Branding Lab */}
             <BrandCobrandLabSection isDark={isDark} />
 
             {/* Section D: Typography Scale, 0.01s Tabular Demo & Brand Policy */}
@@ -717,7 +717,7 @@ export default function BrandGuidePage({
               <div className="flex items-center gap-2.5">
                 <AeroPulseLogo size="sm" />
                 <span className="hidden sm:inline font-mono text-2xs">
-                  THRESH — Run &amp; Ride Readiness · Stadium Track System
+                  MeetReady — Track &amp; Field · Cross Country · Stadium Track System
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-3 font-medium">
@@ -738,7 +738,7 @@ export default function BrandGuidePage({
                   onClick={onExitBrand}
                   className="min-h-[44px] sm:min-h-0 inline-flex items-center font-bold ap-text-brand hover:underline cursor-pointer"
                 >
-                  {hasActiveWorkspace ? '← Return to THRESH Cockpit' : 'Enter THRESH →'}
+                  {hasActiveWorkspace ? '← Return to MeetReady Cockpit' : 'Enter MeetReady →'}
                 </button>
               </div>
             </footer>

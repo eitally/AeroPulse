@@ -474,7 +474,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await page.goto('/docs/');
 
       // Verify Docs title & content
-      await expect(page).toHaveTitle(/THRESH — Documentation/i);
+      await expect(page).toHaveTitle(/MeetReady — Documentation/i);
       const mainHeading = page.locator('h1, h2').first();
       await expect(mainHeading).toBeVisible();
 

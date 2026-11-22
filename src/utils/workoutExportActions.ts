@@ -84,8 +84,8 @@ export function buildZwoWorkoutXml(opts: WorkoutExportOptions): string {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <workout_file>
-  <author>THRESH</author>
-  <name>${escapeXml(opts.name || 'THRESH Workout')}</name>
+  <author>MeetReady</author>
+  <name>${escapeXml(opts.name || 'MeetReady Workout')}</name>
   <description>${escapeXml(desc)}</description>
   <sportType>${sportType}</sportType>
   <workout>
@@ -126,7 +126,7 @@ export function buildErgWorkoutText(opts: WorkoutExportOptions): string {
   return `[COURSE HEADER]
 VERSION = 2
 UNITS = ENGLISH
-DESCRIPTION = ${opts.name || 'THRESH Workout'} (Calibrated to ${safeFtp}W FTP)
+DESCRIPTION = ${opts.name || 'MeetReady Workout'} (Calibrated to ${safeFtp}W FTP)
 FILE NAME = ${filePrefix}${slug}.erg
 FTP = ${safeFtp}
 MINUTES WATTS
@@ -152,7 +152,7 @@ export function exportWorkoutAsFit(
 
   downloadGarminFitWorkoutFile(
     {
-      name: opts.name || 'THRESH Workout',
+      name: opts.name || 'MeetReady Workout',
       sport: fitSport,
       steps:
         steps.length > 0

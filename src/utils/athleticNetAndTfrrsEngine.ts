@@ -463,7 +463,7 @@ function inferVenueCategoryFromMeetText(text: string): PracticeVenueCategory {
 }
 
 /**
- * Parses an Athletic.net / Sidearm Sports RFC 5545 .ics calendar feed into THRESH Meet events.
+ * Parses an Athletic.net / Sidearm Sports RFC 5545 .ics calendar feed into MeetReady Meet events.
  */
 export function parseIcsCalendarToMeets(
   icsText: string,
@@ -1250,7 +1250,7 @@ export function parseExternalMeetResults(
 }
 
 /**
- * Matches parsed meet result rows against an existing THRESH team roster and generates
+ * Matches parsed meet result rows against an existing MeetReady team roster and generates
  * official race candidates & full UnifiedActivity objects with VDOT calibration.
  */
 export function matchExternalResultsToRoster(
@@ -1365,12 +1365,12 @@ export function detectExternalPasteKind(rawText: string): ExternalPasteKind {
 }
 
 /**
- * Builds the 1-Click "Send to THRESH" Bookmarklet URL coaches & parents drag to their
+ * Builds the 1-Click "Send to MeetReady" Bookmarklet URL coaches & parents drag to their
  * bookmarks bar to capture Athletic.net or TFRRS DOM tables right inside their live browser tab.
  */
 export function buildThreshExternalSyncBookmarklet(appOrigin: string): string {
-  const safeOrigin = String(appOrigin || 'https://thresh-dev.vercel.app').replace(/\/+$/, '');
-  const code = `(function(){try{var u=location.href,h=location.hostname.toLowerCase(),p=h.indexOf('tfrrs')!==-1?'TFRRS':'ATHLETIC_NET',ath=[],seen={},rows=document.querySelectorAll('table tr,.athlete-row,[data-athlete-id]');for(var i=0;i<rows.length;i++){var r=rows[i],a=r.querySelector('a[href*="AID="],a[href*="/athletes/"],a[href*="/athlete/"]');var id='';if(a){var m=a.href.match(/(?:AID=|athletes?\\/)(\\d{4,10})/i);if(m)id=m[1];}var txt=(r.innerText||'').replace(/\\s+/g,' ').trim();if(txt.length>4&&txt.length<260&&!seen[txt]){seen[txt]=1;ath.push({name:a?(a.textContent||'').trim():txt.split(/\\t|\\s{2,}/)[0],externalAthleteId:id||undefined,externalProfileUrl:a?a.href:undefined,seedMark:(txt.match(/\\b\\d{1,2}:\\d{2}(?:\\.\\d{1,2})?[a-zA-Z]*\\b/)||[])[0]});}}var payload={schema:'THRESH_SYNC_V1',sourcePlatform:p,pageUrl:u,pageTitle:document.title,capturedAt:new Date().toISOString(),athletes:ath.slice(0,200),rawTextFallback:document.body.innerText.slice(0,30000)};var clip='THRESH_SYNC_V1:'+JSON.stringify(payload);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(clip).catch(function(){});}var w=window.open('${safeOrigin}/#coach-sync','thresh_coach_sync');var n=0,t=setInterval(function(){n++;if(!w||n>20){clearInterval(t);return;}try{w.postMessage({type:'THRESH_EXTERNAL_SYNC_V1',payload:payload},'${safeOrigin}');}catch(e){}},350);}catch(e){alert('THRESH Sync could not read this page: '+e);}})();`;
+  const safeOrigin = String(appOrigin || 'https://meetready.app').replace(/\/+$/, '');
+  const code = `(function(){try{var u=location.href,h=location.hostname.toLowerCase(),p=h.indexOf('tfrrs')!==-1?'TFRRS':'ATHLETIC_NET',ath=[],seen={},rows=document.querySelectorAll('table tr,.athlete-row,[data-athlete-id]');for(var i=0;i<rows.length;i++){var r=rows[i],a=r.querySelector('a[href*="AID="],a[href*="/athletes/"],a[href*="/athlete/"]');var id='';if(a){var m=a.href.match(/(?:AID=|athletes?\\/)(\\d{4,10})/i);if(m)id=m[1];}var txt=(r.innerText||'').replace(/\\s+/g,' ').trim();if(txt.length>4&&txt.length<260&&!seen[txt]){seen[txt]=1;ath.push({name:a?(a.textContent||'').trim():txt.split(/\\t|\\s{2,}/)[0],externalAthleteId:id||undefined,externalProfileUrl:a?a.href:undefined,seedMark:(txt.match(/\\b\\d{1,2}:\\d{2}(?:\\.\\d{1,2})?[a-zA-Z]*\\b/)||[])[0]});}}var payload={schema:'THRESH_SYNC_V1',sourcePlatform:p,pageUrl:u,pageTitle:document.title,capturedAt:new Date().toISOString(),athletes:ath.slice(0,200),rawTextFallback:document.body.innerText.slice(0,30000)};var clip='THRESH_SYNC_V1:'+JSON.stringify(payload);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(clip).catch(function(){});}var w=window.open('${safeOrigin}/#coach-sync','thresh_coach_sync');var n=0,t=setInterval(function(){n++;if(!w||n>20){clearInterval(t);return;}try{w.postMessage({type:'THRESH_EXTERNAL_SYNC_V1',payload:payload},'${safeOrigin}');}catch(e){}},350);}catch(e){alert('MeetReady Sync could not read this page: '+e);}})();`;
   return `javascript:${encodeURIComponent(code)}`;
 }
 

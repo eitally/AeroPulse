@@ -127,7 +127,7 @@ try {
   const srv = jsMod.default.listen(0);
   const port = srv.address().port;
   const probe = await fetch(
-    `http://127.0.0.1:${port}/api/strava/auth/url?origin=https%3A%2F%2Fthresh.vercel.app&mode=cloud&state=smoketest1234`,
+    `http://127.0.0.1:${port}/api/strava/auth/url?origin=https%3A%2F%2Fmeetready.app&mode=cloud&state=smoketest1234`,
     { headers: { 'x-strava-client-id': '10001', 'x-strava-client-secret': 'smoke_secret' } }
   );
   srv.close();
@@ -143,11 +143,11 @@ try {
 
 const brandLeaks = findMixedCaseBrandLeaks(process.cwd());
 if (brandLeaks.length > 0) {
-  console.error('[Brand Casing Check] FAIL — mixed-case "Thresh" detected:');
+  console.error('[Brand Casing Check] FAIL — non-canonical brand casing detected (must be CamelCase "MeetReady"):');
   for (const leak of brandLeaks) {
     console.error(`  ${leak.file}:${leak.line}: ${leak.text}`);
   }
   process.exit(1);
 }
-console.log('[Brand Casing Check] PASS — 0 mixed-case "Thresh" leaks.');
+console.log('[Brand Casing Check] PASS — 0 non-canonical brand casing leaks.');
 console.log('[Bundle Budget] PASS — entry bundle within budget and dist/ clean.');

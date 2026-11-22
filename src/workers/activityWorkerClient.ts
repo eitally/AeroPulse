@@ -214,7 +214,7 @@ export function buildSample1HzGpxString(
   const startMs = Date.now() - durationSecs * 1000;
   const lines: string[] = [
     `<?xml version="1.0" encoding="UTF-8"?>`,
-    `<gpx creator="THRESH Telemetry Engine" version="1.1" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">`,
+    `<gpx creator="MeetReady Telemetry Engine" version="1.1" xmlns="http://www.topografix.com/GPX/1/1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">`,
     `  <metadata><time>${new Date(startMs).toISOString()}</time></metadata>`,
     `  <trk>`,
     `    <name>${title}</name>`,
