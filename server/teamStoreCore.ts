@@ -414,6 +414,14 @@ export function projectTeamSummaryForCaller(
       ...(isStaffViewer && Array.isArray(m.coachEventGroups) && m.coachEventGroups.length > 0
         ? { coachEventGroups: m.coachEventGroups }
         : {}),
+      ...((isStaffViewer || isSelf) && m.coachSpecialtyTitle
+        ? { coachSpecialtyTitle: m.coachSpecialtyTitle }
+        : {}),
+      ...((isStaffViewer || isSelf) &&
+      Array.isArray(m.assignedAthleteMembershipIds) &&
+      m.assignedAthleteMembershipIds.length > 0
+        ? { assignedAthleteMembershipIds: m.assignedAthleteMembershipIds }
+        : {}),
       invitedName: m.invitedName,
       graduationYear: m.graduationYear,
       birthYear: isCoach || isSelf ? m.birthYear : undefined,
@@ -576,6 +584,13 @@ export function projectTeamSummaryForCaller(
     ...(myMembership.eventGroup ? { myEventGroup: myMembership.eventGroup } : {}),
     ...(Array.isArray(myMembership.coachEventGroups) && myMembership.coachEventGroups.length > 0
       ? { myCoachEventGroups: myMembership.coachEventGroups }
+      : {}),
+    ...(myMembership.coachSpecialtyTitle
+      ? { myCoachSpecialtyTitle: myMembership.coachSpecialtyTitle }
+      : {}),
+    ...(Array.isArray(myMembership.assignedAthleteMembershipIds) &&
+    myMembership.assignedAthleteMembershipIds.length > 0
+      ? { myAssignedAthleteMembershipIds: myMembership.assignedAthleteMembershipIds }
       : {}),
     myMembershipId: myMembership.membershipId,
     totalInvited,

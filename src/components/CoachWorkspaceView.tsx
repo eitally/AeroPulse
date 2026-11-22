@@ -27,6 +27,7 @@ import {
 } from '../physiology/scholasticEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
+import { doesCoachOwnAthlete } from '../physiology/teamOnboardingEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
 import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
@@ -410,8 +411,106 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     [combinedRoster]
   );
 
+  const staffMembers = useMemo(
+    () =>
+      (activeTeam?.memberships || []).filter(
+        (m) =>
+          m.status !== 'REVOKED' &&
+          m.role !== 'ATHLETE' &&
+          m.role !== 'PARENT_FOLLOWER'
+      ),
+    [activeTeam?.memberships]
+  );
+
+  const isScopedSelfCoach = Boolean(
+    activeTeam?.myRole === 'ASSISTANT_COACH' &&
+      ((activeTeam.myCoachEventGroups && activeTeam.myCoachEventGroups.length > 0) ||
+        (activeTeam.myAssignedAthleteMembershipIds &&
+          activeTeam.myAssignedAthleteMembershipIds.length > 0))
+  );
+
+  const [coachLensId, setCoachLensId] = useState<string>(() =>
+    isScopedSelfCoach ? 'MY_SCOPE' : 'ALL_TEAM'
+  );
+
+  useEffect(() => {
+    setCoachLensId(isScopedSelfCoach ? 'MY_SCOPE' : 'ALL_TEAM');
+  }, [activeTeam?.brand.teamId, isScopedSelfCoach]);
+
+  const activeLensScope = useMemo<{
+    groups?: CoachEventGroup[];
+    athleteIds?: string[];
+  }>(() => {
+    if (coachLensId === 'MY_SCOPE' && activeTeam) {
+      return {
+        groups: activeTeam.myCoachEventGroups,
+        athleteIds: activeTeam.myAssignedAthleteMembershipIds,
+      };
+    }
+    if (coachLensId !== 'ALL_TEAM') {
+      const staff = staffMembers.find((s) => s.membershipId === coachLensId);
+      if (staff) {
+        return {
+          groups: staff.coachEventGroups,
+          athleteIds: staff.assignedAthleteMembershipIds,
+        };
+      }
+    }
+    return {};
+  }, [coachLensId, activeTeam, staffMembers]);
+
+  const effectiveAllowedEventGroups = useMemo<CoachEventGroup[] | undefined>(
+    () =>
+      activeLensScope.groups && activeLensScope.groups.length > 0
+        ? activeLensScope.groups
+        : undefined,
+    [activeLensScope.groups]
+  );
+  const defaultCoachEventGroup = effectiveAllowedEventGroups?.[0];
+
+  const scopedConnectedAthletes = useMemo(() => {
+    if (
+      (!activeLensScope.groups || activeLensScope.groups.length === 0) &&
+      (!activeLensScope.athleteIds || activeLensScope.athleteIds.length === 0)
+    ) {
+      return connectedAthletesOnly;
+    }
+    return connectedAthletesOnly.filter((ath) => {
+      const memId = ath.id.startsWith('team-mem-')
+        ? ath.id.slice('team-mem-'.length)
+        : ath.id;
+      return doesCoachOwnAthlete({
+        coachEventGroups: activeLensScope.groups,
+        assignedAthleteMembershipIds: activeLensScope.athleteIds,
+        athleteEventGroup: ath.eventGroup,
+        athleteMembershipId: memId,
+      });
+    });
+  }, [connectedAthletesOnly, activeLensScope]);
+
+  const scopedStopwatchRoster = useMemo(() => {
+    if (
+      (!activeLensScope.groups || activeLensScope.groups.length === 0) &&
+      (!activeLensScope.athleteIds || activeLensScope.athleteIds.length === 0)
+    ) {
+      return combinedRoster;
+    }
+    return combinedRoster.filter((ath) => {
+      if (ath.id === 'SELF') return true;
+      const memId = ath.id.startsWith('team-mem-')
+        ? ath.id.slice('team-mem-'.length)
+        : ath.id;
+      return doesCoachOwnAthlete({
+        coachEventGroups: activeLensScope.groups,
+        assignedAthleteMembershipIds: activeLensScope.athleteIds,
+        athleteEventGroup: ath.eventGroup,
+        athleteMembershipId: memId,
+      });
+    });
+  }, [combinedRoster, activeLensScope]);
+
   const podRoster = useMemo<VdotPodRosterInput[]>(() => {
-    const activePodAthletes = connectedAthletesOnly.filter(
+    const activePodAthletes = scopedConnectedAthletes.filter(
       (a) => a.teamMemberStatus !== 'INJURED'
     );
     if (activePodAthletes.length === 0) {
@@ -428,11 +527,11 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
       name: a.name,
       thresholdPaceSecsPerKm: a.athleteProfile.thresholdPaceSecsPerKm || 250,
     }));
-  }, [connectedAthletesOnly, primaryAthleteDisplayName, selfProfile.thresholdPaceSecsPerKm]);
+  }, [scopedConnectedAthletes, primaryAthleteDisplayName, selfProfile.thresholdPaceSecsPerKm]);
 
   const relayCandidates = useMemo(
     () =>
-      connectedAthletesOnly
+      scopedConnectedAthletes
         .filter((a) => a.teamMemberStatus !== 'INJURED')
         .map((a) => ({
           id: a.id,
@@ -446,7 +545,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 ? 'M'
                 : undefined),
         })),
-    [connectedAthletesOnly]
+    [scopedConnectedAthletes]
   );
 
   const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(false);
@@ -487,17 +586,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     [selfProfile, activeTeam]
   );
 
-  const assistantAllowedEventGroups = useMemo<CoachEventGroup[] | undefined>(() => {
-    if (
-      activeTeam?.myRole === 'ASSISTANT_COACH' &&
-      Array.isArray(activeTeam.myCoachEventGroups) &&
-      activeTeam.myCoachEventGroups.length > 0
-    ) {
-      return activeTeam.myCoachEventGroups;
-    }
-    return undefined;
-  }, [activeTeam?.myCoachEventGroups, activeTeam?.myRole]);
-
   const drawerAthlete = useMemo(
     () =>
       drawerAthleteId
@@ -519,7 +607,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
 
   const flaggedTriageCount = useMemo(() => {
     const digest = buildCoachSquadExecutionDigest({
-      roster: connectedAthletesOnly,
+      roster: scopedConnectedAthletes,
       selfFallback: {
         id: 'SELF',
         name: primaryAthleteDisplayName || 'Coach / Demo Athlete',
@@ -532,9 +620,9 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     });
     const flaggedIds = new Set<string>();
     for (const r of digest.rows) {
-      if (r.attentionReason !== 'ON_TRACK') flaggedIds.add(r.athleteId);
+      if (!r.isSelfFallback && r.attentionReason !== 'ON_TRACK') flaggedIds.add(r.athleteId);
     }
-    for (const ath of connectedAthletesOnly) {
+    for (const ath of scopedConnectedAthletes) {
       const latestW =
         ath.wellnessDays && ath.wellnessDays.length > 0
           ? ath.wellnessDays[ath.wellnessDays.length - 1]
@@ -557,7 +645,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     }
     return flaggedIds.size;
   }, [
-    connectedAthletesOnly,
+    scopedConnectedAthletes,
     primaryAthleteDisplayName,
     effectivePlannedEvents,
     effectiveActivities,
@@ -629,6 +717,34 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                     </option>
                   ))}
                   <option value="">Personal Mode</option>
+                </select>
+              )}
+
+              {activeTeam && (staffMembers.length > 1 || isScopedSelfCoach) && (
+                <select
+                  data-testid="coach-scope-lens-select"
+                  aria-label="Coach Scope Lens"
+                  value={coachLensId}
+                  onChange={(e) => setCoachLensId(e.target.value)}
+                  className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
+                >
+                  {isScopedSelfCoach && (
+                    <option value="MY_SCOPE">
+                      My Group ({activeTeam.myCoachSpecialtyTitle || effectiveAllowedEventGroups?.join(', ') || 'Scoped'})
+                    </option>
+                  )}
+                  <option value="ALL_TEAM">All Coaches (Full Team)</option>
+                  {staffMembers
+                    .filter(
+                      (s) =>
+                        (s.coachEventGroups && s.coachEventGroups.length > 0) ||
+                        (s.assignedAthleteMembershipIds && s.assignedAthleteMembershipIds.length > 0)
+                    )
+                    .map((s) => (
+                      <option key={s.membershipId} value={s.membershipId}>
+                        {s.invitedName} — {s.coachSpecialtyTitle || s.coachEventGroups?.join('/')}
+                      </option>
+                    ))}
                 </select>
               )}
 
@@ -712,14 +828,14 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               </span>
             </button>
           ) : (
-            connectedAthletesOnly.length > 0 && (
+            scopedConnectedAthletes.length > 0 && (
               <button
                 type="button"
                 onClick={() => setSubTab('ROSTER')}
                 className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
               >
                 <span className="truncate">
-                  All {connectedAthletesOnly.length} connected athletes clear for full training today
+                  All {scopedConnectedAthletes.length} connected athletes clear for full training today
                 </span>
                 <span className="font-mono text-2xs ap-text-brand shrink-0 underline">
                   Open 7d Squad Triage →
@@ -772,10 +888,11 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               <CoachClipboardWorkoutBuilder
                 activeTeam={activeTeam}
                 myTeams={myTeams}
-                connectedAthletes={connectedAthletesOnly}
+                connectedAthletes={scopedConnectedAthletes}
                 primaryAthleteDisplayName={primaryAthleteDisplayName}
                 selfProfile={selfProfile}
                 complexityTier={complexityTier}
+                defaultEventGroup={defaultCoachEventGroup}
                 onTeamsUpdated={onTeamsUpdated}
                 onCreatePlannedEvent={onCreatePlannedEvent}
                 onOpenStopwatchSubTab={() => {
@@ -799,7 +916,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 activeTeam={activeTeam}
                 myTeams={myTeams}
                 complexityTier={complexityTier}
-                allowedEventGroups={assistantAllowedEventGroups}
+                allowedEventGroups={effectiveAllowedEventGroups}
                 onLaunchStopwatch={() => {
                   setTracksideMode('STOPWATCH');
                   setSubTab('STOPWATCH');
@@ -958,7 +1075,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 <TracksideStopwatchView
                   selfName={primaryAthleteDisplayName}
                   selfProfile={selfProfile}
-                  roster={combinedRoster}
+                  roster={scopedStopwatchRoster}
                   myTeams={myTeams}
                   activeTeamId={activeTeamId}
                   onSaveStopwatchActivities={onSaveStopwatchActivities}
@@ -981,8 +1098,9 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 <TracksideFieldEventsSheet
                   activeTeam={activeTeam}
                   myTeams={myTeams}
-                  rosterAthletes={connectedAthletesOnly}
-                  allowedEventGroups={assistantAllowedEventGroups}
+                  rosterAthletes={scopedConnectedAthletes}
+                  allowedEventGroups={effectiveAllowedEventGroups}
+                  defaultEventGroup={defaultCoachEventGroup}
                   distanceUnit={distanceUnit}
                   onTeamsUpdated={onTeamsUpdated}
                 />
@@ -996,7 +1114,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
       {subTab === 'ROSTER' && (
         <div className="space-y-3">
           <CoachExecutionDigestPanel
-            roster={connectedAthletesOnly}
+            roster={scopedConnectedAthletes}
             selfFallback={{
               id: 'SELF',
               name: primaryAthleteDisplayName || 'Coach / Demo Athlete',
@@ -1011,7 +1129,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
             onTeamsUpdated={onTeamsUpdated}
             primaryAthleteDisplayName={primaryAthleteDisplayName}
             complexityTier={complexityTier}
-            eventGroupFilter={assistantAllowedEventGroups}
+            eventGroupFilter={effectiveAllowedEventGroups}
             onQuickInspectDrawer={(athId) => setDrawerAthleteId(athId)}
             onInspectAthlete={(athId) => {
               onSelectAthleteViewport(athId);

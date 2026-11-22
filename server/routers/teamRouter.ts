@@ -1,11 +1,19 @@
 import express, { type Request, type Response } from 'express';
 import {
   deleteTeamAnnouncement,
+  inviteTeamCoachingStaff,
   postTeamAnnouncement,
   recordTeamAttendanceBatch,
   recordTeamFieldMarks,
   updateAssistantCoachEventGroups,
 } from '../teamFieldAndDailyOpsService.ts';
+import {
+  dispatchPushPayloadToUsers,
+  getOrInitVapidKeys,
+  listUserPushSubscriptions,
+  removeUserPushSubscription,
+  saveUserPushSubscription,
+} from '../pushNotificationService.ts';
 import {
   acknowledgeTeamMessage,
   flagTeamMessageForReview,
@@ -1625,7 +1633,11 @@ teamRouter.patch('/api/teams/:teamId/members/:membershipId/coach-groups', async 
       return;
     }
     const originUrl = resolveRequestOrigin(req);
-    const body = (req.body || {}) as { coachEventGroups?: unknown };
+    const body = (req.body || {}) as {
+      coachEventGroups?: unknown;
+      coachSpecialtyTitle?: unknown;
+      assignedAthleteMembershipIds?: unknown;
+    };
     const coachEventGroups = Array.isArray(body.coachEventGroups)
       ? body.coachEventGroups.map((g) => String(g) as import('../../src/types.ts').CoachEventGroup)
       : [];
@@ -1634,6 +1646,14 @@ teamRouter.patch('/api/teams/:teamId/members/:membershipId/coach-groups', async 
       teamId: String(req.params.teamId || ''),
       membershipId: String(req.params.membershipId || ''),
       coachEventGroups,
+      ...(body.coachSpecialtyTitle !== undefined
+        ? { coachSpecialtyTitle: String(body.coachSpecialtyTitle || '') }
+        : {}),
+      ...(Array.isArray(body.assignedAthleteMembershipIds)
+        ? {
+            assignedAthleteMembershipIds: body.assignedAthleteMembershipIds.map((id) => String(id)),
+          }
+        : {}),
       originUrl,
     });
     if (!result.ok) {
@@ -1807,6 +1827,195 @@ teamRouter.patch('/api/teams/:teamId/messaging-policy', async (req: Request, res
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed updating messaging policy.',
+    });
+  }
+});
+
+// ============================================================================
+// 19. Wave 4 Multi-Coach Coaching Staff Invites & Web Push Device Notifications
+// ============================================================================
+
+teamRouter.post('/api/teams/:teamId/staff/invite', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      staffName?: unknown;
+      staffEmail?: unknown;
+      role?: unknown;
+      coachSpecialtyTitle?: unknown;
+      coachEventGroups?: unknown;
+      assignedAthleteMembershipIds?: unknown;
+    };
+    const coachEventGroups = Array.isArray(body.coachEventGroups)
+      ? body.coachEventGroups.map((g) => String(g) as import('../../src/types.ts').CoachEventGroup)
+      : undefined;
+    const assignedAthleteMembershipIds = Array.isArray(body.assignedAthleteMembershipIds)
+      ? body.assignedAthleteMembershipIds.map((id) => String(id))
+      : undefined;
+
+    const result = await inviteTeamCoachingStaff({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      staffName: String(body.staffName || ''),
+      staffEmail: typeof body.staffEmail === 'string' ? body.staffEmail : undefined,
+      role:
+        typeof body.role === 'string'
+          ? (body.role as import('../../src/types.ts').TeamMemberRole)
+          : undefined,
+      coachSpecialtyTitle:
+        typeof body.coachSpecialtyTitle === 'string' ? body.coachSpecialtyTitle : undefined,
+      coachEventGroups,
+      assignedAthleteMembershipIds,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(400).json({
+        ok: false,
+        error: result.error || 'Unable to invite coaching staff member.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      member: result.member,
+      inviteUrl: result.inviteUrl,
+      emailStatus: result.emailStatus,
+      team: result.team,
+      teams,
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed inviting coaching staff member.',
+    });
+  }
+});
+
+teamRouter.get('/api/push/vapid-public-key', async (_req: Request, res: Response) => {
+  try {
+    const keys = await getOrInitVapidKeys();
+    res.json({ ok: true, publicKey: keys.publicKey });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed initializing Web Push VAPID keys.',
+    });
+  }
+});
+
+teamRouter.get('/api/push/status', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const subs = await listUserPushSubscriptions(claims.sid);
+    res.json({
+      ok: true,
+      subscriptionCount: subs.length,
+      subscriptions: subs.map((s) => ({
+        id: s.id,
+        endpointPreview: `${s.endpoint.slice(0, 42)}…`,
+        userAgent: s.userAgent,
+        updatedAt: s.updatedAt,
+        muteQuietHours: Boolean(s.muteQuietHours),
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed loading push subscription status.',
+    });
+  }
+});
+
+teamRouter.post('/api/push/subscribe', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const body = (req.body || {}) as {
+      endpoint?: unknown;
+      keys?: { p256dh?: unknown; auth?: unknown };
+      userAgent?: unknown;
+      muteQuietHours?: unknown;
+    };
+    const result = await saveUserPushSubscription({
+      userSid: claims.sid,
+      endpoint: String(body.endpoint || ''),
+      keys: {
+        p256dh: String(body.keys?.p256dh || ''),
+        auth: String(body.keys?.auth || ''),
+      },
+      userAgent: typeof body.userAgent === 'string' ? body.userAgent : req.get('user-agent'),
+      muteQuietHours: body.muteQuietHours === true,
+    });
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error || 'Invalid push subscription.' });
+      return;
+    }
+    const subs = await listUserPushSubscriptions(claims.sid);
+    res.json({ ok: true, subscriptionCount: subs.length });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed saving device push subscription.',
+    });
+  }
+});
+
+teamRouter.delete('/api/push/subscribe', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const body = (req.body || {}) as { endpoint?: unknown };
+    const result = await removeUserPushSubscription({
+      userSid: claims.sid,
+      endpoint: typeof body.endpoint === 'string' ? body.endpoint : undefined,
+    });
+    res.json({ ok: true, remainingCount: result.remainingCount });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed removing device push subscription.',
+    });
+  }
+});
+
+teamRouter.post('/api/push/test', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const result = await dispatchPushPayloadToUsers({
+      recipientSids: [claims.sid],
+      payload: {
+        title: 'THRESH Practice Alerts Active',
+        body: 'Device push notifications are connected for coach messages and weather updates.',
+        tag: 'thresh-test',
+        url: '/?openMessages=1',
+        isEmergency: false,
+      },
+    });
+    res.json({ ok: true, deliveredCount: result.deliveredCount, prunedCount: result.prunedCount });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed sending test notification.',
     });
   }
 });

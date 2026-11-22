@@ -1,6 +1,8 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Bell,
+  BellRinging,
   Check,
   Download,
   Flag,
@@ -17,6 +19,13 @@ import {
   postTeamMessageApi,
   updateTeamMessagingPolicyApi,
 } from '../../utils/teamLifecycleApi';
+import {
+  fetchPushStatus,
+  isIosStandaloneHintNeeded,
+  sendTestWebPush,
+  subscribeToThreshWebPush,
+  unsubscribeFromThreshWebPush,
+} from '../../utils/pushNotificationsClient';
 import type {
   CoachEventGroup,
   TeamMessageChannelScope,
@@ -73,6 +82,25 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   const [sending, setSending] = useState<boolean>(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusInfo, setStatusInfo] = useState<string | null>(null);
+  const [pushEnabled, setPushEnabled] = useState<boolean>(false);
+  const [pushCount, setPushCount] = useState<number>(0);
+  const [pushLoading, setPushLoading] = useState<boolean>(false);
+  const [pushNotice, setPushNotice] = useState<string | null>(null);
+  const iosStandaloneNeeded = useMemo(() => isIosStandaloneHintNeeded(), []);
+  const isSampleDemo = Boolean(activeTeam?.brand.teamId.startsWith('demo_team_'));
+
+  useEffect(() => {
+    if (!isOpen || isSampleDemo) return;
+    let cancelled = false;
+    void fetchPushStatus().then((status) => {
+      if (cancelled) return;
+      setPushEnabled(status.permission === 'granted' && status.subscriptionCount > 0);
+      setPushCount(status.subscriptionCount);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, isSampleDemo]);
 
   const isStaff = Boolean(
     activeTeam &&
@@ -321,6 +349,55 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleToggleDevicePush = async () => {
+    setPushLoading(true);
+    setPushNotice(null);
+    setStatusError(null);
+    try {
+      if (pushEnabled) {
+        if (!isSampleDemo) {
+          await unsubscribeFromThreshWebPush();
+        }
+        setPushEnabled(false);
+        setPushCount(0);
+        setPushNotice('Device push alerts paused for this browser.');
+      } else {
+        const res = await subscribeToThreshWebPush({
+          muteQuietHours: true,
+          isSampleDemoMode: isSampleDemo,
+        });
+        if (!res.ok) {
+          setStatusError(res.error || 'Unable to enable device push alerts.');
+        } else {
+          setPushEnabled(true);
+          setPushCount(res.subscriptionCount || 1);
+          setPushNotice(
+            res.demoLocalOnly
+              ? 'Demo Push Alerts active (sign in on a live team to sync Web Push to phones).'
+              : 'Device push alerts enabled for messages, comments & weather alerts.'
+          );
+        }
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    setPushLoading(true);
+    setStatusError(null);
+    try {
+      const res = await sendTestWebPush();
+      if (!res.ok) {
+        setStatusError(res.error || 'Could not send test push alert.');
+      } else {
+        setPushNotice(`Test notification dispatched to ${res.deliveredCount || 1} device(s).`);
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
   return (
     <div
       role="dialog"
@@ -372,6 +449,61 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+
+        {/* Device Push Alerts Bar */}
+        <div className="px-4 py-2.5 border-b border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ap-ink dark:text-ap-chalk">
+              {pushEnabled ? (
+                <BellRinging className="w-4 h-4 ap-text-brand shrink-0" weight="fill" />
+              ) : (
+                <Bell className="w-4 h-4 text-ap-muted dark:text-ap-muted-dark shrink-0" />
+              )}
+              <span>Device Push Notifications</span>
+              {pushEnabled && (
+                <span className="px-2 py-0.5 rounded-full ap-status-prime text-2xs font-mono font-bold">
+                  ON{pushCount > 1 ? ` (${pushCount})` : ''}
+                </span>
+              )}
+            </div>
+            <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-snug">
+              {pushNotice ||
+                (iosStandaloneNeeded
+                  ? 'iPhone/iPad: tap Share → Add to Home Screen first to enable lock-screen alerts.'
+                  : 'Get instant alerts for coach messages, workout notes & lightning weather. Minor/staff details hidden on lock screens.')}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {pushEnabled && !isSampleDemo && (
+              <button
+                type="button"
+                disabled={pushLoading}
+                data-testid="send-test-push-btn"
+                onClick={() => void handleSendTestPush()}
+                className="min-h-[44px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-bold cursor-pointer disabled:opacity-50"
+              >
+                Test Alert
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={pushLoading}
+              data-testid="toggle-device-push-btn"
+              aria-pressed={pushEnabled}
+              onClick={() => void handleToggleDevicePush()}
+              className={`min-h-[44px] px-3.5 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                pushEnabled ? 'ap-nav-volt-active' : 'ap-btn-volt'
+              }`}
+            >
+              {pushEnabled ? (
+                <BellRinging className="w-4 h-4" weight="bold" />
+              ) : (
+                <Bell className="w-4 h-4" weight="bold" />
+              )}
+              <span>{pushLoading ? 'Updating…' : pushEnabled ? 'Push Alerts ON' : 'Enable Device Push'}</span>
+            </button>
+          </div>
         </div>
 
         {/* Channel Rail */}
@@ -499,7 +631,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                     <span className="font-bold text-ap-ink dark:text-ap-chalk">
                       {msg.senderName}{' '}
                       <span className="text-ap-muted dark:text-ap-muted-dark font-normal">
-                        ({msg.senderRole})
+                        ({activeTeam.memberships.find((m) => m.membershipId === msg.senderMembershipId)?.coachSpecialtyTitle || msg.senderRole})
                       </span>
                       {msg.targetAthleteName ? ` → ${msg.targetAthleteName}` : ''}
                     </span>

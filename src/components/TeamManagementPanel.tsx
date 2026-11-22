@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useId, useMemo, useRef, useState } from 'react';
 import {
   CalendarPlus,
   Check,
@@ -55,6 +55,15 @@ import {
   updateMemberStatusApi,
 } from '../utils/teamLifecycleApi';
 import { AeroPulseLogo } from './AeroPulseLogo';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+
+const CoachingStaffPanel = lazyWithRetry(
+  () =>
+    import('./coach/CoachingStaffPanel').then((m) => ({
+      default: m.CoachingStaffPanel,
+    })),
+  { chunkKey: 'CoachingStaffPanel', restoreTab: 'coach' }
+);
 
 interface TeamManagementPanelProps {
   selfName: string;
@@ -1769,6 +1778,15 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
               )}
             </div>
           )}
+
+          <Suspense fallback={null}>
+            <CoachingStaffPanel
+              activeTeam={activeTeam}
+              myTeams={myTeams}
+              isSampleDemoMode={isSampleDemoMode}
+              onTeamsUpdated={onTeamsUpdated}
+            />
+          </Suspense>
 
           {/* Live Team Roster & Onboarding Funnel Status Table */}
           {(() => {
