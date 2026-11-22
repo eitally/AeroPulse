@@ -7,7 +7,11 @@ export const LEGACY_AEROPULSE_HOST = 'aeropulse-eta.vercel.app';
 const CHUNK_RELOAD_GUARD_STORAGE_KEY = 'thresh_chunk_reload_guard_v1';
 const RESTORE_TAB_STORAGE_KEY = 'thresh_restore_tab_v1';
 const CHUNK_RELOAD_COOLDOWN_MS = 15_000;
-const STALE_SW_UI_CACHES = ['thresh-ui-assets-network-first-v3', 'aeropulse-ui-assets-swr'] as const;
+const STALE_SW_UI_CACHES = [
+  'meetready-pages-network-first-v1',
+  'thresh-ui-assets-network-first-v3',
+  'aeropulse-ui-assets-swr',
+] as const;
 
 const VALID_ACTIVE_TABS: readonly ActiveTab[] = [
   'calendar',
@@ -79,34 +83,57 @@ export function isDynamicChunkLoadError(error: unknown): boolean {
     combined.includes('error loading dynamically imported module') ||
     combined.includes('unable to preload css') ||
     combined.includes('chunkloaderror') ||
-    combined.includes('dynamically imported module')
+    combined.includes('dynamically imported module') ||
+    combined.includes('is not a valid javascript mime type') ||
+    combined.includes('strict mime type checking') ||
+    combined.includes('load failed') ||
+    combined.includes('does not provide an export named') ||
+    combined.includes('unexpected token')
   );
 }
 
 /**
  * Deletes stale Service Worker UI/chunk caches and requests an SW update (or unregisters
- * completely if somehow executing on legacy aeropulse-eta.vercel.app). Never throws.
+ * completely on legacy domains or forced reload recovery). Never throws.
  */
-export async function purgeStaleRuntimeChunkCaches(): Promise<void> {
+export async function purgeStaleRuntimeChunkCaches(options?: {
+  forceUnregisterSw?: boolean;
+}): Promise<void> {
   if (typeof window === 'undefined') return;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
   const tasks: Promise<unknown>[] = [];
 
   if ('caches' in window && window.caches) {
+    const cacheStorage = window.caches;
     for (const cacheName of STALE_SW_UI_CACHES) {
-      tasks.push(window.caches.delete(cacheName).catch(() => false));
+      tasks.push(cacheStorage.delete(cacheName).catch(() => false));
+    }
+    if (typeof cacheStorage.keys === 'function') {
+      tasks.push(
+        cacheStorage
+          .keys()
+          .then((names) =>
+            Promise.all(
+              names
+                .filter((name) => /^(?:workbox-precache|thresh-|meetready-|aeropulse-)/i.test(name))
+                .map((name) => cacheStorage.delete(name).catch(() => false))
+            )
+          )
+          .catch(() => undefined)
+      );
     }
   }
 
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator && navigator.serviceWorker) {
     const isLegacyHost = window.location?.hostname === LEGACY_AEROPULSE_HOST;
+    const shouldUnregister = Boolean(isLegacyHost || options?.forceUnregisterSw);
     tasks.push(
       navigator.serviceWorker
         .getRegistrations()
         .then((regs) =>
           Promise.all(
             regs.map((reg) =>
-              (isLegacyHost ? reg.unregister() : reg.update()).catch(() => undefined)
+              (shouldUnregister ? reg.unregister() : reg.update()).catch(() => undefined)
             )
           )
         )
@@ -160,7 +187,10 @@ export function triggerChunkSkewReload(chunkKey: string, restoreTab?: ActiveTab)
     window.setTimeout(resolve, 250);
   });
 
-  void Promise.race([purgeStaleRuntimeChunkCaches(), cacheTimeout]).finally(() => {
+  void Promise.race([
+    purgeStaleRuntimeChunkCaches({ forceUnregisterSw: true }),
+    cacheTimeout,
+  ]).finally(() => {
     try {
       if (targetUrl === window.location.href && Boolean(window.location.hash)) {
         window.location.reload();

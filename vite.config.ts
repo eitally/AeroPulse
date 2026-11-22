@@ -54,7 +54,7 @@ export default defineConfig(() => {
         workbox: {
           importScripts: ['/sw-push.js'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}'],
+          globPatterns: ['**/*.{js,css,ico,png,svg,woff,woff2,webmanifest}'],
           globIgnores: [
             '**/brand/**',
             '**/docs/**',
@@ -98,17 +98,29 @@ export default defineConfig(() => {
           cleanupOutdatedCaches: true,
           clientsClaim: true,
           skipWaiting: true,
-          navigateFallback: '/index.html',
-          navigateFallbackDenylist: [
-            /^\/api\//,
-            /^\/auth\//,
-            /^\/docs(\/|$)/,
-            /^\/(?:demo|ad|meet|clinic|flyer|sticker)(?:\/|$)/,
-            /^\/go\//,
-            /^\/share\/?$/,
-            /^\/(legal|privacy|terms|subprocessors|procurement|for-athletic-directors)(\/|$)/,
-          ],
+          navigateFallback: null,
           runtimeCaching: [
+            {
+              // Network-First for SPA HTML navigations so fresh deploys never serve stale index.html -> 404 hashed chunks
+              urlPattern: ({ request, url }) =>
+                request.mode === 'navigate' &&
+                !/^\/(?:api|auth|docs|legal|privacy|terms|subprocessors|procurement|for-athletic-directors|demo|ad|meet|clinic|flyer|sticker|go)(?:\/|$)/i.test(
+                  url.pathname
+                ) &&
+                !/^\/share\/?$/i.test(url.pathname),
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'meetready-pages-network-first-v1',
+                networkTimeoutSeconds: 3,
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 60 * 24 * 7,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               // Network-First for UI scripts, stylesheets, HTML documents, and Web Worker chunks
               // Never intercept /api/* or /auth/* in the Service Worker so OAuth callbacks & API calls go directly to the network

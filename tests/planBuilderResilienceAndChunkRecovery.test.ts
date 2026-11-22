@@ -143,8 +143,50 @@ describe('Plan Builder resilience, chunk-mismatch recovery & legacy origin elimi
     ).toBe(true);
     expect(isDynamicChunkLoadError(new Error('Importing a module script failed.'))).toBe(true);
     expect(isDynamicChunkLoadError(new Error('Unable to preload CSS for /assets/GoalsView.css'))).toBe(true);
+    expect(
+      isDynamicChunkLoadError(
+        new TypeError("'text/plain' is not a valid JavaScript MIME type")
+      )
+    ).toBe(true);
+    expect(isDynamicChunkLoadError(new TypeError('Load failed'))).toBe(true);
+    expect(
+      isDynamicChunkLoadError(
+        new SyntaxError(
+          "The requested module '/assets/StravaAuthGate.js' does not provide an export named 'StravaAuthGate'"
+        )
+      )
+    ).toBe(true);
     expect(isDynamicChunkLoadError(new Error('ChunkLoadError: Loading chunk 12 failed'))).toBe(true);
     expect(isDynamicChunkLoadError(new TypeError('Cannot read properties of undefined'))).toBe(false);
+  });
+
+  it('purges workbox-precache caches via caches.keys() and unregisters SW when forceUnregisterSw is enabled', async () => {
+    const deleted: string[] = [];
+    const unregisterSpy = vi.fn().mockResolvedValue(true);
+    const updateSpy = vi.fn().mockResolvedValue(undefined);
+    const customWindow = {
+      location: { hostname: 'meetready.app' },
+      caches: {
+        keys: vi.fn(async () => ['workbox-precache-v2-https://meetready.app/', 'other-cache']),
+        delete: vi.fn(async (name: string) => {
+          deleted.push(name);
+          return true;
+        }),
+      },
+    };
+    const customNav = {
+      serviceWorker: {
+        getRegistrations: vi.fn(async () => [{ unregister: unregisterSpy, update: updateSpy }]),
+      },
+    };
+    (globalThis as { window: unknown }).window = customWindow;
+    Object.defineProperty(globalThis, 'navigator', { value: customNav, configurable: true });
+
+    await purgeStaleRuntimeChunkCaches({ forceUnregisterSw: true });
+    expect(deleted).toContain('workbox-precache-v2-https://meetready.app/');
+    expect(deleted).not.toContain('other-cache');
+    expect(unregisterSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).not.toHaveBeenCalled();
   });
 
   it('canonicalizes legacy aeropulse-eta.vercel.app URLs to thresh-dev.vercel.app while keeping other origins unchanged', () => {

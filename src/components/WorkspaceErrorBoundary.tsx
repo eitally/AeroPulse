@@ -41,7 +41,8 @@ export class WorkspaceErrorBoundary extends React.Component<
     }
   }
 
-  componentDidCatch(error: Error): void {
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
+    console.error('[MeetReady Boundary]', error, errorInfo);
     if (isDynamicChunkLoadError(error)) {
       triggerChunkSkewReload(
         `boundary-${this.props.restoreTab || 'app'}`,
@@ -55,7 +56,7 @@ export class WorkspaceErrorBoundary extends React.Component<
   };
 
   private handleReloadLatestBuild = (): void => {
-    void purgeStaleRuntimeChunkCaches().finally(() => {
+    void purgeStaleRuntimeChunkCaches({ forceUnregisterSw: true }).finally(() => {
       if (typeof window !== 'undefined') {
         window.location.reload();
       }
@@ -90,6 +91,14 @@ export class WorkspaceErrorBoundary extends React.Component<
                 ? 'A newer MeetReady build was deployed while this tab was open. Reload to sync the updated view and return right here.'
                 : 'Something interrupted this view while rendering. Retry the panel or reload the latest MeetReady build.'}
             </p>
+            <details className="pt-1 text-2xs font-mono text-slate-500 dark:text-slate-400">
+              <summary className="cursor-pointer select-none hover:underline">
+                Technical details
+              </summary>
+              <div className="mt-1 rounded-lg bg-slate-100 dark:bg-ap-carbon px-2.5 py-1.5 break-all">
+                {error.name}: {error.message}
+              </div>
+            </details>
           </div>
         </div>
 

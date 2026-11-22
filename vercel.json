@@ -20,6 +20,12 @@
       "headers": [
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate, private" }
       ]
+    },
+    {
+      "source": "/(sw|registerSW).js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
     }
   ],
   "crons": [
