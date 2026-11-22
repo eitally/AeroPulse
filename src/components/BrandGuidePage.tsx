@@ -342,15 +342,15 @@ export default function BrandGuidePage({
                   </div>
                 </div>
 
-                {/* Live S2 × MeetReady Geometric Construction Specimen */}
+                {/* Live Break-Lane M × Outlined MeetReady Geometric Construction Specimen */}
                 <div className="lg:col-span-6 ap-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-2xs font-bold uppercase text-slate-700 dark:text-slate-300 inline-flex items-center gap-1.5">
                       <Gauge className="w-4 h-4 ap-text-brand" />
-                      <span>S2 × MeetReady Modular Architecture</span>
+                      <span>Break-Lane M × MeetReady Architecture</span>
                     </span>
                     <span className="font-mono text-2xs font-bold ap-telemetry-label">
-                      472 × 124 · 0° OPTICAL CALIPER
+                      472 × 124 · Outlined Vector Master
                     </span>
                   </div>
 
@@ -374,7 +374,7 @@ export default function BrandGuidePage({
                           aria-hidden="true"
                           className="absolute inset-0 w-full h-full pointer-events-none"
                         >
-                          {/* 1R Clear-Space Perimeter Frame */}
+                          {/* Safe Clear-Space Perimeter Frame */}
                           <rect
                             x="2"
                             y="2"
@@ -386,57 +386,43 @@ export default function BrandGuidePage({
                             strokeWidth="1"
                             strokeDasharray="4 3"
                           />
-                          {/* S2 Concentric Chronometer Rings (cx=64.8, cy=63.1, rIn=30.4, rOut=44.1) */}
-                          <circle
-                            cx="64.8"
-                            cy="63.1"
-                            r="44.1"
+                          {/* Cap-Height & Baseline Alignment Guides */}
+                          <line
+                            x1="12"
+                            y1="39"
+                            x2="462"
+                            y2="39"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
-                            strokeOpacity="0.45"
+                            strokeOpacity="0.4"
                             strokeWidth="0.9"
                             strokeDasharray="3 3"
                           />
-                          <circle
-                            cx="64.8"
-                            cy="63.1"
-                            r="30.4"
-                            stroke={isDark ? '#38BDF8' : '#0284C7'}
-                            strokeOpacity="0.4"
-                            strokeWidth="0.8"
-                          />
-                          <circle
-                            cx="64.8"
-                            cy="63.1"
-                            r="24.5"
-                            stroke={isDark ? '#C8FF00' : '#357A00'}
-                            strokeOpacity="0.45"
-                            strokeWidth="0.7"
-                            strokeDasharray="2 2"
-                          />
-                          {/* Center Crosshair + 315deg Piercing Threshold Breach Axis */}
-                          <line
-                            x1="64.8"
-                            y1="6"
-                            x2="64.8"
-                            y2="118"
-                            stroke={isDark ? '#38BDF8' : '#0284C7'}
-                            strokeOpacity="0.5"
-                            strokeWidth="0.9"
-                          />
                           <line
                             x1="12"
-                            y1="63.1"
-                            x2="122"
-                            y2="63.1"
+                            y1="84"
+                            x2="462"
+                            y2="84"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
-                            strokeOpacity="0.5"
+                            strokeOpacity="0.4"
                             strokeWidth="0.9"
+                            strokeDasharray="3 3"
                           />
-                          {/* Vertical Separation Axis at W-A Threshold Horizon Entry */}
+                          {/* Parallel Surging Launch Axis */}
                           <line
-                            x1="134"
+                            x1="56"
+                            y1="114"
+                            x2="118"
+                            y2="8"
+                            stroke={isDark ? '#C8FF00' : '#1C5436'}
+                            strokeOpacity="0.55"
+                            strokeWidth="1"
+                            strokeDasharray="3 2"
+                          />
+                          {/* Symbol-to-Wordmark Separation Axis */}
+                          <line
+                            x1="130"
                             y1="10"
-                            x2="134"
+                            x2="130"
                             y2="114"
                             stroke={isDark ? '#FBBF24' : '#D97706'}
                             strokeOpacity="0.85"
@@ -451,10 +437,10 @@ export default function BrandGuidePage({
                   <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-600 dark:text-slate-400">
                     <span>
                       {showBlueprint
-                        ? 'TL-2P1 (60,70) r=[22.2..25, 31..45] 315°∥ · FAV-M 16px · Two-tone MeetReady'
-                        : 'Minimum clear space: 0.5× symbol height (TL-2P1 + MeetReady)'}
+                        ? 'Flat 2-Ink Break-Lane M · >=1.2mm Embroidery Satin Floor · Outlined Plus Jakarta Sans'
+                        : 'Minimum clear space: 0.5× mark height · Zero <text> font dependencies'}
                     </span>
-                    <span className="ap-telemetry-label">Two-tone CamelCase — zero distortion</span>
+                    <span className="ap-telemetry-label">Monolithic Single-Ink Wordmark</span>
                   </div>
                 </div>
               </div>
@@ -690,10 +676,10 @@ export default function BrandGuidePage({
                   <SquaresFour className="w-5 h-5 ap-text-brand shrink-0 mt-0.5" />
                   <div className="space-y-0.5 text-xs text-slate-700 dark:text-slate-300">
                     <div className="font-display font-bold text-slate-950 dark:text-white">
-                      True Compound-Path 1-Ink Stencils Verified for Print &amp; Cutters
+                      True Outlined Vector Stencils &amp; Flat-Fill Embroidery Masters
                     </div>
                     <p className="leading-relaxed">
-                      All 5 monochrome stencil variants (<code className="font-mono">Obsidian Black</code>, <code className="font-mono">Reversed White</code>, <code className="font-mono">Track Volt</code>, and unframed <code className="font-mono">Gauge Symbols</code>) split gauge arcs mathematically around the needle moat and outline the tick as a closed capsule path — zero fake white strokes, zero masks, and zero plotter self-intersections.
+                      Every monochrome stencil (<code className="font-mono">Obsidian Black</code>, <code className="font-mono">Reversed White</code>, <code className="font-mono">Track Volt</code>, and standalone <code className="font-mono">Break-Lane M</code>) ships with 100% outlined closed <code className="font-mono">&lt;path&gt;</code> contours — zero <code className="font-mono">&lt;text&gt;</code> font dependencies, zero gradients on embroidery masters, zero masks, and zero plotter self-intersections.
                     </p>
                   </div>
                 </div>
@@ -717,7 +703,7 @@ export default function BrandGuidePage({
               <div className="flex items-center gap-2.5">
                 <AeroPulseLogo size="sm" />
                 <span className="hidden sm:inline font-mono text-2xs">
-                  MeetReady — Track &amp; Field · Cross Country · Stadium Track System
+                  MeetReady — Every mark. Every mile. Meet ready.
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-3 font-medium">

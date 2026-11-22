@@ -212,14 +212,35 @@ export async function renderShareCardPngBlob(opts: {
   drawRoundedRectPath(ctx, 44, 44, 992, 1262, 32);
   ctx.stroke();
 
-  // 2. Top Header: MeetReady Wordmark + Category/Hashtag Pill
-  ctx.fillStyle = '#1C5436';
-  drawRoundedRectPath(ctx, 84, 88, 192, 48, 24);
+  // 2. Top Header: Break-Lane M Emblem + MeetReady Wordmark + Category Pill
+  ctx.fillStyle = '#0B120E';
+  drawRoundedRectPath(ctx, 84, 88, 224, 48, 24);
   ctx.fill();
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = '700 22px system-ui, -apple-system, sans-serif';
+  ctx.strokeStyle = 'rgba(52, 194, 119, 0.55)';
+  ctx.lineWidth = 1.5;
+  drawRoundedRectPath(ctx, 84, 88, 224, 48, 24);
+  ctx.stroke();
+
+  // Draw crisp flat 2-ink 1B-Pro Break-Lane M at (104, 98), scale 0.24
+  ctx.save();
+  ctx.translate(103, 98);
+  ctx.scale(0.24, 0.24);
+  ctx.fillStyle = '#34C277';
+  ctx.beginPath();
+  ctx.moveTo(10, 108); ctx.lineTo(36, 36); ctx.lineTo(49.5, 36); ctx.lineTo(23.5, 108); ctx.closePath();
+  ctx.moveTo(30, 108); ctx.lineTo(56, 36); ctx.lineTo(70, 36); ctx.lineTo(80, 55); ctx.lineTo(65.5, 84); ctx.lineTo(59.1, 62); ctx.lineTo(42.5, 108); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#C8FF00';
+  ctx.beginPath();
+  ctx.moveTo(61, 108); ctx.lineTo(99, 32); ctx.lineTo(80, 23); ctx.lineTo(116, 7); ctx.lineTo(121, 41); ctx.lineTo(110, 36); ctx.lineTo(74, 108); ctx.closePath();
+  ctx.moveTo(95, 108); ctx.lineTo(95, 82); ctx.lineTo(112, 48); ctx.lineTo(112, 108); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#F4F7F4';
+  ctx.font = '800 22px system-ui, -apple-system, sans-serif';
   ctx.textBaseline = 'middle';
-  ctx.fillText('MeetReady', 118, 112);
+  ctx.fillText('MeetReady', 142, 113);
 
   const badgeText =
     payload.kind === 'STOPWATCH'
@@ -250,7 +271,7 @@ export async function renderShareCardPngBlob(opts: {
   ctx.fillStyle = '#94A3B8';
   ctx.font = '500 24px system-ui, -apple-system, sans-serif';
   const subParts = [
-    payload.teamName || 'First-Party Session Prescription',
+    payload.teamName || 'Track, Field & XC Session',
     payload.date || getLocalDateIso(),
     payload.authorLabel ? `By ${payload.authorLabel}` : null,
   ].filter(Boolean);
@@ -270,7 +291,7 @@ export async function renderShareCardPngBlob(opts: {
         ]
       : [
           { label: 'DURATION', value: `${durationMins} min` },
-          { label: 'TARGET LOAD', value: `${preview.estimatedLoad} TSS` },
+          { label: 'TARGET LOAD', value: `${preview.estimatedLoad} LOAD` },
           {
             label: payload.sport === 'Cycling' ? 'ANCHOR FTP' : 'THRESHOLD',
             value:
@@ -384,7 +405,7 @@ export async function renderShareCardPngBlob(opts: {
   ctx.fillRect(84, 1218, 912, 2);
   ctx.fillStyle = '#94A3B8';
   ctx.font = '600 20px ui-monospace, SFMono-Regular, monospace';
-  ctx.fillText('Timed on MeetReady  ·  meetready.app/share', 84, 1244);
+  ctx.fillText('Built for Meet Day  ·  meetready.app', 84, 1244);
 
   return new Promise((resolve) => {
     canvas.toBlob((blob) => resolve(blob), 'image/png');
@@ -403,11 +424,11 @@ export async function downloadShareCardPng(opts: {
     opts.payload.title
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '') || 'thresh-card';
+      .replace(/^-|-$/g, '') || 'meetready-card';
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `thresh-${opts.payload.kind === 'STOPWATCH' ? 'stopwatch-' : ''}${slug}.png`;
+  a.download = `meetready-${opts.payload.kind === 'STOPWATCH' ? 'stopwatch-' : ''}${slug}.png`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

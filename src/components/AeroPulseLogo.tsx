@@ -2,22 +2,29 @@ import React from 'react';
 import type { TeamBrandConfig } from '../types';
 import { computeAccessibleTeamPalette } from '../utils/teamPalette';
 import {
+  BREAK_LANE_M_ARROW_PATH,
+  BREAK_LANE_M_LANES_PATH,
   FAV_F_SHIELD_T_PATH,
-  MEETREADY_WORDMARK_FONT_FAMILY,
+  FAV_M_ARROW_PATH,
+  FAV_M_LANES_PATH,
+  FAV_M_SINGLE_INK_PATH,
+  MEETREADY_WORDMARK_OUTLINE_PATH,
   S2_ARROW_NEEDLE_PATH,
   S2_PINE_ARC_PATH,
   S2_VOLT_ARC_PATH,
-  WA_THRESHOLD_BAR_PATH,
-  WA_WORDMARK_INK_PATHS,
 } from '../utils/brandVectors';
 
 export {
+  BREAK_LANE_M_ARROW_PATH,
+  BREAK_LANE_M_LANES_PATH,
   FAV_F_SHIELD_T_PATH,
+  FAV_M_ARROW_PATH,
+  FAV_M_LANES_PATH,
+  FAV_M_SINGLE_INK_PATH,
+  MEETREADY_WORDMARK_OUTLINE_PATH,
   S2_ARROW_NEEDLE_PATH,
   S2_PINE_ARC_PATH,
   S2_VOLT_ARC_PATH,
-  WA_THRESHOLD_BAR_PATH,
-  WA_WORDMARK_INK_PATHS,
 };
 
 export type BrandSurfaceMode = 'auto' | 'on-light' | 'on-dark';
@@ -38,22 +45,22 @@ function getSurfaceThemeVarsClass(
 ): string {
   if (surface === 'on-dark') {
     return isTeamOverride
-      ? '[--thresh-pine:#64748B] [--thresh-ink:#F4F7F4]'
-      : '[--thresh-pine:#399663] [--thresh-volt:#C8FF00] [--thresh-ink:#F4F7F4]';
+      ? '[--thresh-pine:#CBD5E1] [--thresh-ink:#F4F7F4]'
+      : '[--thresh-pine:#34C277] [--thresh-volt:#C8FF00] [--thresh-ink:#F4F7F4]';
   }
   if (surface === 'on-light') {
     return isTeamOverride
-      ? '[--thresh-pine:#334155] [--thresh-ink:#101411]'
-      : '[--thresh-pine:#1C5436] [--thresh-volt:#357A00] [--thresh-ink:#101411]';
+      ? '[--thresh-pine:#1E293B] [--thresh-ink:#0B120E]'
+      : '[--thresh-pine:#0B120E] [--thresh-volt:#1C5436] [--thresh-ink:#0B120E]';
   }
   return isTeamOverride
-    ? '[--thresh-pine:#334155] dark:[--thresh-pine:#64748B] [--thresh-ink:#101411] dark:[--thresh-ink:#F4F7F4]'
-    : '[--thresh-pine:#1C5436] dark:[--thresh-pine:#399663] [--thresh-volt:#357A00] dark:[--thresh-volt:#C8FF00] [--thresh-ink:#101411] dark:[--thresh-ink:#F4F7F4]';
+    ? '[--thresh-pine:#1E293B] dark:[--thresh-pine:#CBD5E1] [--thresh-ink:#0B120E] dark:[--thresh-ink:#F4F7F4]'
+    : '[--thresh-pine:#0B120E] dark:[--thresh-pine:#34C277] [--thresh-volt:#1C5436] dark:[--thresh-volt:#C8FF00] [--thresh-ink:#0B120E] dark:[--thresh-ink:#F4F7F4]';
 }
 
 /**
- * Standalone 1:1 MeetReady Symbol Mark (`S2 Redline Breach`, 128×128).
- * Chronometer precision ring broken at 45° by a piercing threshold arrow-needle.
+ * Standalone 1:1 MeetReady Symbol Mark (`Break-Lane M`, 128×128).
+ * Flat 2-ink solid paths engineered for high-contrast dark mode & clean physical embroidery.
  */
 export const ThreshMark: React.FC<{
   className?: string;
@@ -83,10 +90,14 @@ export const ThreshMark: React.FC<{
       role="img"
       aria-label={ariaLabel}
     >
-      <path d={S2_PINE_ARC_PATH} fill={pineFill} />
-      <path d={S2_VOLT_ARC_PATH} fill={voltFill} />
       <path
-        d={S2_ARROW_NEEDLE_PATH}
+        d={BREAK_LANE_M_LANES_PATH}
+        fill={pineFill}
+        fillRule="evenodd"
+        clipRule="evenodd"
+      />
+      <path
+        d={BREAK_LANE_M_ARROW_PATH}
         fill={voltFill}
         fillRule="evenodd"
         clipRule="evenodd"
@@ -96,7 +107,7 @@ export const ThreshMark: React.FC<{
 };
 
 /**
- * Standalone MeetReady Two-Tone CamelCase Wordmark (`Meet` + `Ready`, 364×64).
+ * Standalone Monolithic Outlined MeetReady Wordmark (326×64, zero <text> nodes).
  */
 export const ThreshWordmark: React.FC<{
   className?: string;
@@ -109,49 +120,29 @@ export const ThreshWordmark: React.FC<{
 }> = ({
   className = 'h-6 w-auto',
   surface = 'auto',
-  accentColor = '#C8FF00',
-  showVoltBar = true,
   isTeamOverride = false,
   oneInkColor,
   ariaLabel = 'MeetReady',
 }) => {
   const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
   const inkFill = oneInkColor ?? 'var(--thresh-ink)';
-  const barFill = oneInkColor
-    ? oneInkColor
-    : showVoltBar
-      ? isTeamOverride
-        ? accentColor
-        : 'var(--thresh-volt)'
-      : inkFill;
 
   return (
     <svg
-      viewBox="0 0 364 64"
+      viewBox="0 0 326 64"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={`${oneInkColor ? '' : themeVarsClass} ${className}`}
       role="img"
       aria-label={ariaLabel}
     >
-      <text
-        x="0"
-        y="46"
-        fontFamily={MEETREADY_WORDMARK_FONT_FAMILY}
-        fontSize="56"
-        fontWeight="800"
-        letterSpacing="-1.6"
-      >
-        <tspan fill={inkFill}>Meet</tspan>
-        <tspan fill={barFill}>Ready</tspan>
-      </text>
+      <path d={MEETREADY_WORDMARK_OUTLINE_PATH} fill={inkFill} fillRule="nonzero" />
     </svg>
   );
 };
 
 /**
- * Full MeetReady Lockup SVG (`S2 Redline Breach` × `MeetReady`).
- * Accepts `surface="on-dark"` so footer / dark-surround placements stay high contrast in Light Mode.
+ * Full MeetReady Lockup SVG (`Break-Lane M` × Outlined Monolithic `MeetReady`).
  */
 export const ThreshFullVectorLockup: React.FC<{
   className?: string;
@@ -167,7 +158,7 @@ export const ThreshFullVectorLockup: React.FC<{
   ariaLabel = 'MeetReady',
 }) => {
   const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
-  const activeGaugeColor = isTeamOverride ? accentColor : 'var(--thresh-volt)';
+  const activeArrowColor = isTeamOverride ? accentColor : 'var(--thresh-volt)';
 
   return (
     <svg
@@ -178,38 +169,36 @@ export const ThreshFullVectorLockup: React.FC<{
       role="img"
       aria-label={ariaLabel}
     >
-      {/* Standalone S2 Redline Breach Symbol */}
-      <g transform="translate(6, -5.5) scale(0.98)">
-        <path d={S2_PINE_ARC_PATH} fill="var(--thresh-pine)" />
-        <path d={S2_VOLT_ARC_PATH} fill={activeGaugeColor} />
+      {/* Flat 2-ink Surging Break-Lane M Symbol */}
+      <g transform="translate(6, 5) scale(0.94)">
         <path
-          d={S2_ARROW_NEEDLE_PATH}
-          fill={activeGaugeColor}
+          d={BREAK_LANE_M_LANES_PATH}
+          fill="var(--thresh-pine)"
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+        <path
+          d={BREAK_LANE_M_ARROW_PATH}
+          fill={activeArrowColor}
           fillRule="evenodd"
           clipRule="evenodd"
         />
       </g>
 
-      {/* CamelCase Two-Tone MeetReady Wordmark */}
-      <g transform="translate(132, 33) scale(0.96)">
-        <text
-          x="0"
-          y="46"
-          fontFamily={MEETREADY_WORDMARK_FONT_FAMILY}
-          fontSize="56"
-          fontWeight="800"
-          letterSpacing="-1.6"
-        >
-          <tspan fill="var(--thresh-ink)">Meet</tspan>
-          <tspan fill={activeGaugeColor}>Ready</tspan>
-        </text>
+      {/* Monolithic Outlined MeetReady Wordmark (zero <text> font dependency) */}
+      <g transform="translate(135, 34)">
+        <path
+          d={MEETREADY_WORDMARK_OUTLINE_PATH}
+          fill="var(--thresh-ink)"
+          fillRule="nonzero"
+        />
       </g>
     </svg>
   );
 };
 
 /**
- * Compact 32x32 MeetReady "High-Vis Volt Shield" Squircle Icon Mark for 16px/32px browser favicons and small tiles.
+ * Compact 32x32 MeetReady Break-Lane M Squircle Icon (matches public/icon.svg 1:1).
  */
 export const ThreshSquareTrackIcon: React.FC<{
   className?: string;
@@ -222,8 +211,25 @@ export const ThreshSquareTrackIcon: React.FC<{
   inkColor = '#080A09',
   isTeamOverride = false,
 }) => {
-  const tileFill = isTeamOverride ? accentColor : '#C8FF00';
-  const primaryMark = isTeamOverride ? inkColor : '#080A09';
+  if (isTeamOverride) {
+    return (
+      <svg
+        viewBox="0 0 32 32"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={className}
+        aria-hidden="true"
+      >
+        <rect width="32" height="32" rx="7" fill={accentColor} />
+        <path
+          d={FAV_M_SINGLE_INK_PATH}
+          fill={inkColor}
+          fillRule="evenodd"
+          clipRule="evenodd"
+        />
+      </svg>
+    );
+  }
 
   return (
     <svg
@@ -233,10 +239,16 @@ export const ThreshSquareTrackIcon: React.FC<{
       className={className}
       aria-hidden="true"
     >
-      <rect width="32" height="32" rx="7" fill={tileFill} />
+      <rect width="32" height="32" rx="7" fill="#0B120E" />
       <path
-        d={FAV_F_SHIELD_T_PATH}
-        fill={primaryMark}
+        d={FAV_M_LANES_PATH}
+        fill="#34C277"
+        fillRule="evenodd"
+        clipRule="evenodd"
+      />
+      <path
+        d={FAV_M_ARROW_PATH}
+        fill="#C8FF00"
         fillRule="evenodd"
         clipRule="evenodd"
       />
@@ -281,7 +293,7 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
 
   const cobrandSvgHeightClass =
     size === 'sm'
-      ? 'h-7 sm:h-8 w-auto'
+      ? 'h-6 sm:h-[26px] w-auto'
       : size === 'lg'
         ? 'h-10 sm:h-12 w-auto'
         : 'h-8 sm:h-9 w-auto';
@@ -445,10 +457,10 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
           className={`block text-2xs font-mono font-semibold mt-1 tracking-wider uppercase truncate ${
             surface === 'on-dark'
               ? 'text-[#C8FF00]'
-              : 'text-[#3F6212] dark:text-[#C8FF00]'
+              : 'text-[#1C5436] dark:text-[#C8FF00]'
           }`}
         >
-          {teamBrand?.mascotOrMotto ? teamBrand.mascotOrMotto : 'RUN & RIDE READINESS'}
+          {teamBrand?.mascotOrMotto ? teamBrand.mascotOrMotto : 'EVERY MARK. EVERY MILE.'}
         </span>
       )}
     </div>

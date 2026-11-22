@@ -27,6 +27,22 @@ async function startServer() {
   const serveBuiltDist =
     process.env.NODE_ENV === 'production' || process.env.SERVE_BUILT_DIST === '1';
 
+  const vanityRedirects: Record<string, string> = {
+    '/demo': '/?sample=coach&utm_source=print&utm_medium=qr&utm_campaign=demo',
+    '/ad': '/for-athletic-directors?utm_source=print&utm_medium=qr&utm_campaign=ad_brief',
+    '/meet': '/?role=coach&utm_source=print&utm_medium=banner&utm_campaign=meet_day',
+    '/clinic': '/?role=coach&utm_source=event&utm_medium=qr&utm_campaign=clinic',
+    '/flyer': '/?role=coach&utm_source=print&utm_medium=flyer&utm_campaign=pilot_2026',
+    '/sticker': '/?utm_source=merch&utm_medium=sticker&utm_campaign=varsity_crest',
+    '/go/clipboard': '/docs/coach.html?utm_source=print&utm_medium=clipboard_qr&utm_campaign=pod_sheet',
+    '/share': '/?role=coach&utm_source=share&utm_medium=card&utm_campaign=share_card',
+  };
+  for (const [sourcePath, destination] of Object.entries(vanityRedirects)) {
+    app.get([sourcePath, `${sourcePath}/`], (_req, res) => {
+      res.redirect(302, destination);
+    });
+  }
+
   const publicPath = path.resolve(__dirname, 'public');
   app.use(express.static(publicPath));
   app.get(['/docs', '/docs/'], (_req, res) => {

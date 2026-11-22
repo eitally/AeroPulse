@@ -183,7 +183,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       role="dialog"
       aria-modal="true"
       data-testid="meet-day-packet-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
     >
       <div className="w-full max-w-4xl max-h-[90vh] rounded-2xl bg-white dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border border-ap-edge flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}

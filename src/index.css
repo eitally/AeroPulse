@@ -291,14 +291,14 @@ html.dark.ap-midnight-slate .ap-brand-hairline {
   font-weight: 800;
 }
 
-/* Signature #1 Stadium Track -14° Velocity-Sheared Navigation Tabs & Lane Callouts */
+/* Orthogonal Track Navigation Tabs (skew retained strictly on .ap-lane-badge pills) */
 .ap-track-tab {
-  transform: skewX(-14deg);
-  border-radius: 0.425rem;
+  transform: none;
+  border-radius: 0.75rem;
 }
 
 .ap-track-tab-inner {
-  transform: skewX(14deg);
+  transform: none;
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;

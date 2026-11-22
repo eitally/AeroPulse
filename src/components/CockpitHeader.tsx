@@ -254,10 +254,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
 
   return (
     <div className="sticky top-[max(0.25rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1.5 sm:pt-2">
-      <header className="rounded-2xl liquid-glass-header px-2.5 sm:px-5 py-1.5 sm:py-2">
-        <div className="flex flex-nowrap items-center justify-between gap-1.5 sm:gap-3">
+      <header className="rounded-2xl liquid-glass-header px-2.5 sm:px-3.5 py-1.5 sm:py-2">
+        <div className="flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2">
           {/* 1. Brand Wordmark (Co-Branded when Team Active) + Multi-Team Switcher + Telemetry Sync Pill */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 shrink">
+          <div className="flex items-center gap-1.5 2xl:gap-2.5 min-w-0 shrink">
             <a
               href="#fitness"
               aria-label={
@@ -275,10 +275,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 <AeroPulseLogo size="sm" teamBrand={activeTeam.brand} />
               ) : (
                 <>
-                  <span className="inline-flex min-[420px]:hidden">
+                  <span className="inline-flex min-[380px]:hidden">
                     <AeroPulseLogo size="sm" mode="mark-only" teamBrand={null} />
                   </span>
-                  <span className="hidden min-[420px]:inline-flex">
+                  <span className="hidden min-[380px]:inline-flex">
                     <AeroPulseLogo size="sm" mode="horizontal" teamBrand={null} />
                   </span>
                 </>
@@ -305,7 +305,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 }}
                 className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl text-2xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   activeTab === 'coach'
-                    ? 'ap-nav-volt-active'
+                    ? 'ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] border-ap-frame/30 dark:border-ap-edge-dark'
                     : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
                 }`}
                 title={
@@ -323,7 +323,9 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 ) : (
                   <>
                     <Users className="w-3.5 h-3.5 ap-text-brand" />
-                    <span>Coach</span>
+                    <span className={activeViewedAthleteId !== 'SELF' ? 'hidden 2xl:inline' : undefined}>
+                      Coach
+                    </span>
                   </>
                 )}
               </button>
@@ -414,7 +416,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           {/* 2. Center: 4-Pillar Athlete Nav (Today | Training Calendar | Progress | Plan Builder) OR Coach Mode 4 Tabs */}
           <nav
             aria-label="Primary workspaces"
-            className="hidden md:flex items-center gap-1 lg:gap-1.5 px-1 py-1 shrink-0"
+            className="hidden md:flex items-center gap-1 px-1 py-1 shrink-0"
           >
             {activeTab === 'coach' && onSelectCoachSubTab ? (
               (
@@ -492,7 +494,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       e.preventDefault();
                       setActiveTab(item.id);
                     }}
-                    className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3.5 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
+                    className={`min-h-[38px] inline-flex items-center px-2 2xl:px-3 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
                       isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
                     }`}
                   >
@@ -510,7 +512,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           </nav>
 
           {/* Right: Live Floating Stopwatch Pill + Athlete Switcher + Data Sources + AI Coach + Theme + Account */}
-          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             {activeTab !== 'stopwatch' && !(activeTab === 'coach' && coachSubTab === 'STOPWATCH') && (
               <div className="hidden sm:inline-flex shrink-0">
                 <TracksideLiveHeaderPill
@@ -537,7 +539,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     setSelectedActivity(null);
                   }}
                   aria-label="Switch Active Athlete Profile"
-                  className="bg-transparent text-2xs font-mono font-semibold text-slate-800 dark:text-slate-100 cursor-pointer pr-0.5 max-w-[130px] truncate rounded"
+                  className="bg-transparent text-2xs font-mono font-semibold text-slate-800 dark:text-slate-100 cursor-pointer pr-0.5 max-w-[84px] 2xl:max-w-[130px] truncate rounded"
                 >
                   <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
                     {primaryAthleteDisplayName} (You)
@@ -561,7 +563,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 data-testid="open-team-messages-btn"
                 onClick={onOpenTeamMessages}
                 aria-label="Open Team Messaging"
-                className="relative min-h-[44px] w-[44px] sm:w-auto sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 py-1 sm:px-3 rounded-xl ap-btn-secondary text-xs font-semibold whitespace-nowrap cursor-pointer shrink-0"
+                className="relative min-h-[44px] w-[44px] sm:w-auto sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 py-1 sm:px-2.5 rounded-xl ap-btn-secondary text-xs font-semibold whitespace-nowrap cursor-pointer shrink-0"
               >
                 <MessageSquare className="w-4 h-4 sm:w-3.5 sm:h-3.5 ap-text-brand" />
                 <span className="hidden sm:inline">Team Chat</span>
@@ -578,7 +580,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               type="button"
               onClick={onOpenCoach}
               aria-label="Open AI Coach"
-              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 sm:px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-ap-volt border border-ap-frame text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer shadow-xs"
+              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 2xl:px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-ap-volt border border-ap-frame text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer shadow-xs"
             >
               <Bot className="w-4 h-4 sm:w-3.5 sm:h-3.5" weight="fill" />
               <span className="hidden sm:inline">AI Coach</span>
@@ -892,51 +894,22 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       </div>
                     )}
 
-                    {/* Daytime & Sundown P2 Midnight Slate Appearance */}
+                    {/* Unified Light / Dark / Auto Appearance Control */}
                     {onSelectDaytimePalette && onSelectSundownPolicy && (
                       <div className="px-2 pt-1.5 space-y-2 border-t border-slate-200/70 dark:border-white/10">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-slate-600 dark:text-slate-300 font-medium">
-                            Daytime Theme
-                          </span>
-                          <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
-                            {(
-                              [
-                                { id: 'DAYLIGHT', label: 'Daylight' },
-                                { id: 'TRACK_PINE', label: 'Track Pine' },
-                              ] as const
-                            ).map((opt) => (
-                              <button
-                                key={opt.id}
-                                type="button"
-                                role="menuitemradio"
-                                aria-checked={daytimePalette === opt.id}
-                                onClick={() => onSelectDaytimePalette(opt.id)}
-                                className={`min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md transition-all cursor-pointer ${
-                                  daytimePalette === opt.id
-                                    ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
-                                    : 'text-slate-500 dark:text-slate-400'
-                                }`}
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center justify-between gap-2">
                           <span
                             className="text-slate-600 dark:text-slate-300 font-medium"
-                            title={`Automatically transitions to Midnight Slate around local sunset (~${sunsetLabel12h})`}
+                            title={`Auto switches to Midnight Slate around local sunset (~${sunsetLabel12h})`}
                           >
-                            Sundown ({sunsetLabel12h})
+                            Appearance
                           </span>
                           <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
                             {(
                               [
-                                { id: 'AUTO_MIDNIGHT_SLATE', label: 'Auto Dark' },
-                                { id: 'ALWAYS_MIDNIGHT_SLATE', label: 'Always Dark' },
-                                { id: 'DAYTIME_ONLY', label: 'Off' },
+                                { id: 'DAYTIME_ONLY', label: 'Light' },
+                                { id: 'ALWAYS_MIDNIGHT_SLATE', label: 'Dark' },
+                                { id: 'AUTO_MIDNIGHT_SLATE', label: 'Auto' },
                               ] as const
                             ).map((opt) => (
                               <button
@@ -945,7 +918,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                                 role="menuitemradio"
                                 aria-checked={sundownPolicy === opt.id}
                                 onClick={() => onSelectSundownPolicy(opt.id)}
-                                className={`min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md transition-all cursor-pointer ${
+                                className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                                   sundownPolicy === opt.id
                                     ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
                                     : 'text-slate-500 dark:text-slate-400'
@@ -957,16 +930,36 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                           </div>
                         </div>
 
-                        <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                          <span>Active palette</span>
-                          <span className="font-semibold text-slate-800 dark:text-slate-200">
-                            {activeThemeVariant === 'MIDNIGHT_SLATE'
-                              ? 'Midnight Slate'
-                              : activeThemeVariant === 'TRACK_PINE'
-                                ? 'Track Pine'
-                                : 'Daylight'}
-                          </span>
-                        </div>
+                        {sundownPolicy !== 'ALWAYS_MIDNIGHT_SLATE' && (
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-slate-600 dark:text-slate-300 font-medium">
+                              Daytime Tint
+                            </span>
+                            <div className="flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs">
+                              {(
+                                [
+                                  { id: 'DAYLIGHT', label: 'Daylight' },
+                                  { id: 'TRACK_PINE', label: 'Track Pine' },
+                                ] as const
+                              ).map((opt) => (
+                                <button
+                                  key={opt.id}
+                                  type="button"
+                                  role="menuitemradio"
+                                  aria-checked={daytimePalette === opt.id}
+                                  onClick={() => onSelectDaytimePalette(opt.id)}
+                                  className={`min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md transition-all cursor-pointer ${
+                                    daytimePalette === opt.id
+                                      ? 'liquid-capsule-active text-slate-900 dark:text-white font-semibold'
+                                      : 'text-slate-500 dark:text-slate-400'
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 

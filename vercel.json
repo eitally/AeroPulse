@@ -28,6 +28,48 @@
       "schedule": "0 12 * * *"
     }
   ],
+  "redirects": [
+    {
+      "source": "/demo",
+      "destination": "/?sample=coach&utm_source=print&utm_medium=qr&utm_campaign=demo",
+      "permanent": false
+    },
+    {
+      "source": "/ad",
+      "destination": "/for-athletic-directors?utm_source=print&utm_medium=qr&utm_campaign=ad_brief",
+      "permanent": false
+    },
+    {
+      "source": "/meet",
+      "destination": "/?role=coach&utm_source=print&utm_medium=banner&utm_campaign=meet_day",
+      "permanent": false
+    },
+    {
+      "source": "/clinic",
+      "destination": "/?role=coach&utm_source=event&utm_medium=qr&utm_campaign=clinic",
+      "permanent": false
+    },
+    {
+      "source": "/flyer",
+      "destination": "/?role=coach&utm_source=print&utm_medium=flyer&utm_campaign=pilot_2026",
+      "permanent": false
+    },
+    {
+      "source": "/sticker",
+      "destination": "/?utm_source=merch&utm_medium=sticker&utm_campaign=varsity_crest",
+      "permanent": false
+    },
+    {
+      "source": "/go/clipboard",
+      "destination": "/docs/coach.html?utm_source=print&utm_medium=clipboard_qr&utm_campaign=pod_sheet",
+      "permanent": false
+    },
+    {
+      "source": "/share",
+      "destination": "/?role=coach&utm_source=share&utm_medium=card&utm_campaign=share_card",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

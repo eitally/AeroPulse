@@ -448,7 +448,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
       {/* Top Circadian Header Bar */}
       <div className="relative px-4 sm:px-5 py-3 border-b border-emerald-900/15 dark:border-[#254431] bg-[#EDF4EF]/85 dark:bg-[#0D1711]/90 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2.5 min-w-0">
-          <h1 className="text-sm sm:text-base font-extrabold tracking-tight text-slate-900 dark:text-white">
+          <h1 className="text-base sm:text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
             {mode === 'TONIGHT'
               ? 'Tonight Closeout & Tomorrow Lock-In'
               : mode === 'MORNING'
@@ -780,7 +780,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 Morning Readiness
               </h2>
               <div className="inline-flex items-center gap-1.5 font-mono tabular-nums">
-                <span className="ap-kpi-value text-base sm:text-lg text-ap-ink dark:text-white">
+                <span className="ap-kpi-value text-2xl sm:text-3xl font-extrabold text-ap-ink dark:text-white">
                   {productivity.verdict === 'CALIBRATING' || productivity.readinessScore === 0
                     ? '—'
                     : `${productivity.readinessScore}/100`}
@@ -896,9 +896,19 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                   </div>
                 </div>
 
-                <div className="col-span-2 lg:col-span-1 pt-2 font-sans text-2xs text-ap-muted dark:text-ap-muted-dark">
-                  Optional: link Garmin, Wahoo, Polar, or Intervals.icu for overnight HRV &amp; sleep.
-                </div>
+                {onOpenAthleteProfileModal ? (
+                  <button
+                    type="button"
+                    onClick={onOpenAthleteProfileModal}
+                    className="col-span-2 lg:col-span-1 pt-2 min-h-[44px] sm:min-h-[32px] text-left font-sans text-2xs font-medium text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-volt underline underline-offset-2 cursor-pointer transition-colors"
+                  >
+                    Link Garmin, Wahoo, Polar, or Intervals.icu for overnight HRV &amp; sleep →
+                  </button>
+                ) : (
+                  <div className="col-span-2 lg:col-span-1 pt-2 font-sans text-2xs text-ap-muted dark:text-ap-muted-dark">
+                    Optional: link Garmin, Wahoo, Polar, or Intervals.icu for overnight HRV &amp; sleep.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-ap-cobalt/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1">
@@ -1314,7 +1324,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         }
                         onOpenTracksideStopwatch();
                       }}
-                      className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-ap-cobalt hover:bg-[#163022] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-mono font-bold cursor-pointer transition-colors"
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-mono font-bold cursor-pointer transition-colors"
                     >
                       <Timer className="w-3.5 h-3.5" weight="bold" />
                       <span>Time on Track</span>

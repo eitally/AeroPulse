@@ -221,7 +221,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
   return (
     <div className="min-h-screen ap-page text-slate-900 dark:text-slate-100 transition-colors">
       {/* Top Bar */}
-      <header className="sticky top-0 z-30 border-b border-stone-200/80 dark:border-white/10 bg-white/85 dark:bg-[#0D110F]/85 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-ap-frame/20 dark:border-white/10 bg-white dark:bg-[#0D110F]">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <AeroPulseLogo size="sm" />
@@ -517,7 +517,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
                     <span className="text-lg font-extrabold font-mono tabular-nums ap-text-brand">
                       {sharedWorkout.kind === 'STOPWATCH'
                         ? sharedWorkout.splits?.[0]?.lapTime || '--:--'
-                        : `${preview.estimatedLoad} TSS`}
+                        : `${preview.estimatedLoad} LOAD`}
                     </span>
                   </div>
                 </div>

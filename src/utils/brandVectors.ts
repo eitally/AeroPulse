@@ -1,69 +1,63 @@
 /**
- * Canonical MeetReady Brand Vectors — S2 "TL-2P1 Parallel-Breach Twin-Lane" Symbol × MeetReady Wordmark
- * + Dedicated 32×32 "FAV-M" High-Vis Volt Shield Favicon Monogram.
- * Pure TypeScript constants (zero React / DOM dependencies) shared across React components,
- * Brand Asset Studio SVG/PNG exporters, QR join posters, and dynamic team favicons.
+ * Canonical MeetReady Brand Vectors — Direction 1B-Pro ("Surging Break-Lane M") × Outlined MeetReady Wordmark
+ * - Flat 2-ink solid fills (ZERO gradients) for clean machine embroidery, vinyl cutting & screen-printing.
+ * - 100% pure <path> geometric outlines extracted from Plus Jakarta Sans ExtraBold (ZERO <text> font dependency).
+ * Pure TypeScript constants shared across React components, Brand Asset Studio exporters, QR posters & favicons.
  */
 
-// TL-2P1 Outer Pine Arc (R=31..45) + Inner Pine Inside-Lane Rail (R=22.2..25.0), collinear 315° parallel breach (d = -9.8px)
-export const S2_PINE_ARC_PATH =
-  'M 28.18 101.82 A 45 45 0 0 1 84.13 31.99 L 73.87 42.27 A 31 31 0 0 0 38.08 91.92 Z M 42.32 87.68 A 25 25 0 0 1 69.33 46.81 L 67.16 48.98 A 22.2 22.2 0 0 0 44.30 85.70 Z';
+// Dark-ground: #34C277 Luminous Emerald · Light-ground: #0B120E Obsidian
+export const BREAK_LANE_M_LANES_PATH =
+  'M 10 108 L 36 36 L 49.5 36 L 23.5 108 Z M 30 108 L 56 36 L 70 36 L 80 55 L 65.5 84 L 59.1 62 L 42.5 108 Z';
 
-// TL-2P1 Outer Volt Arc (R=31..45) + Inner Volt Passing-Lane Rail (R=22.2..25.0), collinear 315° parallel breach (d = +9.8px)
-export const S2_VOLT_ARC_PATH =
-  'M 97.99 45.87 A 45 45 0 0 1 91.82 101.82 L 81.92 91.92 A 31 31 0 0 0 87.73 56.13 Z M 83.19 60.67 A 25 25 0 0 1 77.68 87.68 L 75.70 85.70 A 22.2 22.2 0 0 0 81.02 62.84 Z';
+// Dark-ground: #C8FF00 Track Volt · Light-ground: #1C5436 Stadium Pine
+export const BREAK_LANE_M_ARROW_PATH =
+  'M 61 108 L 99 32 L 80 23 L 116 7 L 121 41 L 110 36 L 74 108 Z M 95 108 L 95 82 L 112 48 L 112 108 Z';
 
-// Unified Hub (60,70 r=10) + true evenodd center pinhole (r=3.8) + +2.5px forward-reaching 315° Arrow-Needle
-export const S2_ARROW_NEEDLE_PATH =
-  'M 63.13 60.50 L 92.53 31.11 L 84.40 26.51 L 108.44 21.56 L 103.49 45.60 L 98.89 37.47 L 69.50 66.87 A 10 10 0 1 1 63.13 60.50 Z M 63.80 70.00 A 3.8 3.8 0 1 0 56.20 70.00 A 3.8 3.8 0 1 0 63.80 70.00 Z';
+// Dedicated 32x32 unified Surging Break-Lane M icon paths (zero brand split vs 128x128 emblem)
+export const FAV_M_LANES_PATH = 'M 2.68 28.62 L 8.92 11.34 L 12.16 11.34 L 5.92 28.62 Z M 7.48 28.62 L 13.72 11.34 L 17.08 11.34 L 19.48 15.90 L 16 22.86 L 14.46 17.58 L 10.48 28.62 Z';
+export const FAV_M_ARROW_PATH = 'M 14.92 28.62 L 24.04 10.38 L 19.48 8.22 L 28.12 4.38 L 29.32 12.54 L 26.68 11.34 L 18.04 28.62 Z M 23.08 28.62 L 23.08 22.38 L 27.16 14.22 L 27.16 28.62 Z';
+export const FAV_M_SINGLE_INK_PATH = 'M 2.68 28.62 L 8.92 11.34 L 12.16 11.34 L 5.92 28.62 Z M 7.48 28.62 L 13.72 11.34 L 17.08 11.34 L 19.48 15.90 L 16 22.86 L 14.46 17.58 L 10.48 28.62 Z M 14.92 28.62 L 24.04 10.38 L 19.48 8.22 L 28.12 4.38 L 29.32 12.54 L 26.68 11.34 L 18.04 28.62 Z M 23.08 28.62 L 23.08 22.38 L 27.16 14.22 L 27.16 28.62 Z';
 
-// Dedicated 32×32 FAV-M Bold Geometric "M" Silhouette (engineered for 16px/32px browser tab legibility)
-export const FAV_F_SHIELD_T_PATH =
-  'M 5.5 25.5 V 6.5 H 10.7 L 16 15.8 L 21.3 6.5 H 26.5 V 25.5 H 21.8 V 14.3 L 17.5 21.6 H 14.5 L 10.2 14.3 V 25.5 Z';
-export const FAV_F_SHIELD_M_PATH = FAV_F_SHIELD_T_PATH;
+// Backward-compatible symbol aliases
+export const S2_PINE_ARC_PATH = BREAK_LANE_M_LANES_PATH;
+export const S2_VOLT_ARC_PATH = BREAK_LANE_M_ARROW_PATH;
+export const S2_ARROW_NEEDLE_PATH = '';
+export const FAV_F_SHIELD_T_PATH = FAV_M_SINGLE_INK_PATH;
+export const FAV_F_SHIELD_M_PATH = FAV_M_SINGLE_INK_PATH;
+
+// Outlined geometric sans monolithic wordmark ('MeetReady' at 58px inside 324x64 box, baseline y=50)
+// Rendered with fill-rule="nonzero" so TrueType overlapping junctions render solid without XOR notches.
+export const MEETREADY_WORDMARK_OUTLINE_PATH =
+  'M3.83 50 L3.83 6.79 L12.53 6.79 L28.71 28.25 L24.65 28.25 L40.37 6.79 L49.07 6.79 L49.07 50 L40.08 50 L40.08 16.71 L43.67 17.52 L27.03 38.98 L25.87 38.98 L9.80 17.52 L12.82 16.71 L12.82 50 Z M70.18 50.70 Q65.13 50.70 61.42 48.46 Q57.71 46.23 55.68 42.46 Q53.65 38.69 53.65 34.11 Q53.65 29.35 55.77 25.64 Q57.88 21.93 61.48 19.78 Q65.08 17.64 69.60 17.64 Q73.37 17.64 76.27 18.82 Q79.17 20.01 81.17 22.16 Q83.17 24.31 84.22 27.12 Q85.26 29.93 85.26 33.24 Q85.26 34.17 85.17 35.06 Q85.09 35.96 84.85 36.60 L61.13 36.60 L61.13 30.22 L79.92 30.22 L75.81 33.24 Q76.39 30.74 75.75 28.80 Q75.11 26.86 73.52 25.73 Q71.92 24.60 69.60 24.60 Q67.34 24.60 65.71 25.70 Q64.09 26.80 63.28 28.95 Q62.47 31.09 62.64 34.17 Q62.41 36.83 63.28 38.86 Q64.15 40.89 65.95 42.02 Q67.74 43.16 70.30 43.16 Q72.62 43.16 74.27 42.23 Q75.92 41.30 76.85 39.68 L83.81 42.98 Q82.88 45.30 80.88 47.04 Q78.88 48.78 76.15 49.74 Q73.43 50.70 70.18 50.70 Z M104.81 50.70 Q99.76 50.70 96.05 48.46 Q92.34 46.23 90.31 42.46 Q88.28 38.69 88.28 34.11 Q88.28 29.35 90.39 25.64 Q92.51 21.93 96.11 19.78 Q99.70 17.64 104.23 17.64 Q108 17.64 110.90 18.82 Q113.80 20.01 115.80 22.16 Q117.80 24.31 118.84 27.12 Q119.89 29.93 119.89 33.24 Q119.89 34.17 119.80 35.06 Q119.71 35.96 119.48 36.60 L95.76 36.60 L95.76 30.22 L114.55 30.22 L110.43 33.24 Q111.01 30.74 110.37 28.80 Q109.74 26.86 108.14 25.73 Q106.55 24.60 104.23 24.60 Q101.96 24.60 100.34 25.70 Q98.72 26.80 97.90 28.95 Q97.09 31.09 97.27 34.17 Q97.03 36.83 97.90 38.86 Q98.77 40.89 100.57 42.02 Q102.37 43.16 104.92 43.16 Q107.24 43.16 108.90 42.23 Q110.55 41.30 111.48 39.68 L118.44 42.98 Q117.51 45.30 115.51 47.04 Q113.51 48.78 110.78 49.74 Q108.05 50.70 104.81 50.70 Z M139.55 50.35 Q133.81 50.35 130.65 47.24 Q127.48 44.14 127.48 38.57 L127.48 25.87 L122.15 25.87 L122.15 18.33 L122.44 18.33 Q124.87 18.33 126.18 17.11 Q127.48 15.90 127.48 13.46 L127.48 11.14 L136.18 11.14 L136.18 18.33 L143.61 18.33 L143.61 25.87 L136.18 25.87 L136.18 37.99 Q136.18 39.62 136.76 40.69 Q137.34 41.76 138.56 42.29 Q139.78 42.81 141.58 42.81 Q141.98 42.81 142.51 42.75 Q143.03 42.69 143.61 42.63 L143.61 50 Q142.74 50.12 141.64 50.23 Q140.53 50.35 139.55 50.35 Z M150.28 50 L150.28 6.79 L166.81 6.79 Q171.27 6.79 174.73 8.36 Q178.18 9.92 180.15 13 Q182.12 16.07 182.12 20.59 Q182.12 25 180.09 28.11 Q178.06 31.21 174.64 32.77 L184.50 50 L174.41 50 L163.73 30.92 L169.53 34.34 L159.27 34.34 L159.27 50 Z M159.27 26.51 L166.87 26.51 Q168.78 26.51 170.17 25.76 Q171.56 25 172.35 23.67 Q173.13 22.33 173.13 20.59 Q173.13 18.80 172.35 17.46 Q171.56 16.13 170.17 15.37 Q168.78 14.62 166.87 14.62 L159.27 14.62 Z M202.77 50.70 Q197.72 50.70 194.01 48.46 Q190.30 46.23 188.27 42.46 Q186.24 38.69 186.24 34.11 Q186.24 29.35 188.36 25.64 Q190.47 21.93 194.07 19.78 Q197.66 17.64 202.19 17.64 Q205.96 17.64 208.86 18.82 Q211.76 20.01 213.76 22.16 Q215.76 24.31 216.80 27.12 Q217.85 29.93 217.85 33.24 Q217.85 34.17 217.76 35.06 Q217.67 35.96 217.44 36.60 L193.72 36.60 L193.72 30.22 L212.51 30.22 L208.39 33.24 Q208.97 30.74 208.34 28.80 Q207.70 26.86 206.10 25.73 Q204.51 24.60 202.19 24.60 Q199.93 24.60 198.30 25.70 Q196.68 26.80 195.87 28.95 Q195.05 31.09 195.23 34.17 Q195 36.83 195.87 38.86 Q196.74 40.89 198.53 42.02 Q200.33 43.16 202.88 43.16 Q205.20 43.16 206.86 42.23 Q208.51 41.30 209.44 39.68 L216.40 42.98 Q215.47 45.30 213.47 47.04 Q211.47 48.78 208.74 49.74 Q206.02 50.70 202.77 50.70 Z M231.94 50.70 Q228.52 50.70 226.03 49.59 Q223.53 48.49 222.20 46.43 Q220.86 44.37 220.86 41.53 Q220.86 38.86 222.08 36.80 Q223.30 34.75 225.82 33.35 Q228.35 31.96 232.12 31.38 L241.80 29.82 L241.80 36.20 L233.68 37.65 Q231.83 37.99 230.84 38.84 Q229.85 39.68 229.85 41.24 Q229.85 42.69 230.96 43.50 Q232.06 44.32 233.68 44.32 Q235.83 44.32 237.45 43.39 Q239.08 42.46 239.97 40.87 Q240.87 39.27 240.87 37.36 L240.87 29.12 Q240.87 27.32 239.45 26.10 Q238.03 24.89 235.60 24.89 Q233.28 24.89 231.51 26.16 Q229.74 27.44 228.93 29.53 L221.97 26.22 Q222.89 23.55 224.92 21.64 Q226.95 19.72 229.80 18.68 Q232.64 17.64 236 17.64 Q240 17.64 243.08 19.09 Q246.15 20.54 247.86 23.12 Q249.57 25.70 249.57 29.12 L249.57 50 L241.45 50 L241.45 44.90 L243.43 44.55 Q242.03 46.64 240.35 48 Q238.67 49.36 236.58 50.03 Q234.49 50.70 231.94 50.70 Z M269.93 50.70 Q265.29 50.70 261.64 48.49 Q257.98 46.29 255.87 42.52 Q253.75 38.75 253.75 34.17 Q253.75 29.53 255.90 25.79 Q258.04 22.04 261.70 19.84 Q265.35 17.64 269.87 17.64 Q273.35 17.64 276.05 18.94 Q278.75 20.25 280.31 22.62 L278.98 24.36 L278.98 6.09 L287.68 6.09 L287.68 50 L279.56 50 L279.56 44.20 L280.37 46 Q278.75 48.32 275.96 49.51 Q273.18 50.70 269.93 50.70 Z M270.98 42.87 Q273.35 42.87 275.15 41.76 Q276.95 40.66 277.96 38.69 Q278.98 36.72 278.98 34.17 Q278.98 31.61 277.96 29.64 Q276.95 27.67 275.15 26.57 Q273.35 25.47 270.98 25.47 Q268.60 25.47 266.71 26.60 Q264.83 27.73 263.78 29.67 Q262.74 31.61 262.74 34.17 Q262.74 36.72 263.78 38.69 Q264.83 40.66 266.71 41.76 Q268.60 42.87 270.98 42.87 Z M296.79 62.76 Q295.39 62.76 294.09 62.53 Q292.78 62.30 291.80 61.77 L291.80 54.64 Q292.61 54.87 293.71 55.05 Q294.81 55.22 295.74 55.22 Q298.29 55.22 299.40 54.03 Q300.50 52.84 301.19 51.33 L303.34 46.40 L303.22 53.65 L289.30 18.33 L298.64 18.33 L307.86 43.45 L304.38 43.45 L313.61 18.33 L322.94 18.33 L309.37 52.96 Q308.10 56.21 306.24 58.41 Q304.38 60.61 302.04 61.69 Q299.69 62.76 296.79 62.76 Z';
 
 export const MEETREADY_WORDMARK_FONT_FAMILY =
   "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif";
 
-export const WA_WORDMARK_INK_PATHS: Array<{ d: string; evenOdd?: boolean }> = [
-  { d: 'M 0 0 H 49.4 L 46.6 11.2 H 30.75 V 64 H 17.25 V 11.2 H 0 Z' },
-  { d: 'M 56 0 H 69.5 V 26.4 H 95.5 V 0 H 109 V 64 H 95.5 V 37.6 H 69.5 V 64 H 56 Z' },
-  {
-    d: 'M 121 0 H 155.8 A 19.2 19.2 0 0 1 155.8 38.4 H 134.5 V 64 H 121 Z M 134.5 11.2 V 27.2 H 155.0 A 8 8 0 0 0 155.0 11.2 Z',
-    evenOdd: true,
-  },
-  { d: 'M 149.5 41.6 H 163.7 L 176.2 64 H 161.6 Z' },
-  { d: 'M 186 0 H 236 V 11.2 H 199.5 V 52.8 H 236 V 64 H 186 Z' },
-  {
-    d: 'M 296.4 0 L 293.6 11.2 H 264.8 A 7.6 7.6 0 0 0 264.8 26.4 H 280.6 A 18.8 18.8 0 0 1 280.6 64 H 247.6 L 250.4 52.8 H 279.2 A 7.6 7.6 0 0 0 279.2 37.6 H 263.4 A 18.8 18.8 0 0 1 263.4 0 Z',
-  },
-  { d: 'M 310 0 H 323.5 V 26.4 H 349.5 V 0 H 363 V 64 H 349.5 V 37.6 H 323.5 V 64 H 310 Z' },
-];
-
-export const WA_THRESHOLD_BAR_PATH = 'M 205 26.4 H 236.4 L 233.6 37.6 H 205 Z';
-
-export function buildS2SymbolInnerSvg(
-  pineColor: string,
-  accentColor: string,
-  transform = 'translate(6, -5.5) scale(0.98)'
+export function buildBreakLaneMSymbolInnerSvg(
+  laneColor: string,
+  arrowColor: string,
+  transform = 'translate(6, 5) scale(0.94)'
 ): string {
   return [
     `<g transform="${transform}">`,
-    `<path d="${S2_PINE_ARC_PATH}" fill="${pineColor}"/>`,
-    `<path d="${S2_VOLT_ARC_PATH}" fill="${accentColor}"/>`,
-    `<path d="${S2_ARROW_NEEDLE_PATH}" fill="${accentColor}" fill-rule="evenodd" clip-rule="evenodd"/>`,
+    `<path d="${BREAK_LANE_M_LANES_PATH}" fill="${laneColor}" fill-rule="evenodd" clip-rule="evenodd"/>`,
+    `<path d="${BREAK_LANE_M_ARROW_PATH}" fill="${arrowColor}" fill-rule="evenodd" clip-rule="evenodd"/>`,
     `</g>`,
   ].join('');
 }
 
-export function buildWAWordmarkInnerSvg(
+export function buildMeetReadyWordmarkInnerSvg(
   inkColor: string,
-  accentColor: string,
-  transform = 'translate(132, 33) scale(0.96)'
+  _accentColor?: string,
+  transform = 'translate(135, 34)'
 ): string {
   return [
     `<g transform="${transform}">`,
-    `<text x="0" y="46" font-family="${MEETREADY_WORDMARK_FONT_FAMILY}" font-size="56" font-weight="800" letter-spacing="-1.6"><tspan fill="${inkColor}">Meet</tspan><tspan fill="${accentColor}">Ready</tspan></text>`,
+    `<path d="${MEETREADY_WORDMARK_OUTLINE_PATH}" fill="${inkColor}" fill-rule="nonzero"/>`,
     `</g>`,
   ].join('');
 }
+
+// Legacy helper aliases preserved for internal callers
+export const buildS2SymbolInnerSvg = buildBreakLaneMSymbolInnerSvg;
+export const buildWAWordmarkInnerSvg = buildMeetReadyWordmarkInnerSvg;

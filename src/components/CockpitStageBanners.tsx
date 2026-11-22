@@ -383,7 +383,9 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
             <button
               type="button"
               onClick={() => onExitSampleDemo(!isCoachMode)}
-              className="ap-btn-strava !min-h-[44px] sm:!min-h-[32px] px-3 py-1 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer"
+              className={`${
+                isCoachMode ? 'ap-btn-primary' : 'ap-btn-strava rounded-xl'
+              } !min-h-[44px] sm:!min-h-[32px] px-3 py-1 text-xs font-semibold whitespace-nowrap cursor-pointer`}
             >
               {isCoachMode ? 'Start Free Pilot' : 'Connect with Strava'}
             </button>
@@ -402,7 +404,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
           <div className="rounded-2xl liquid-glass border-[#28573B]/35 dark:border-[#25573A] px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <div className="text-xs text-slate-700 dark:text-slate-200 max-w-xl">
               <span className="font-bold ap-text-brand">Connect your training data:</span>{' '}
-              Sign in with Strava for automatic run &amp; ride sync, or connect Garmin Connect / Intervals.icu for daily HRV &amp; sleep readiness.
+              Sign in with Strava for automatic workout &amp; activity sync, or connect Garmin Connect / Intervals.icu for daily HRV &amp; sleep readiness.
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button

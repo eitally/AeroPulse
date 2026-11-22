@@ -190,6 +190,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
   const [showEnvPhysicsPanel, setShowEnvPhysicsPanel] = useState<boolean>(false);
   const [showToolsDrawer, setShowToolsDrawer] = useState<boolean>(false);
+  const [mobileSetupExpanded, setMobileSetupExpanded] = useState<boolean>(false);
   const [lastTappedRunnerId, setLastTappedRunnerId] = useState<string | null>(null);
   const tapFlashTimerRef = useRef<number | null>(null);
   const lastRunnerTapMsRef = useRef<Map<string, number>>(new Map());
@@ -839,6 +840,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   }, [recordChuteTap, chuteQueueSecs.length, playFeedback]);
 
   const handleGunToggle = useCallback(() => {
+    if (!stopwatchRunning) {
+      setMobileSetupExpanded(false);
+    }
     toggleStartPause();
     playFeedback('GUN');
     setLiveAnnouncement(stopwatchRunning ? 'Stopwatch paused' : 'Stopwatch started');
@@ -967,7 +971,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-');
     link.href = url;
-    link.download = `thresh-stopwatch-${sessionType.toLowerCase()}-${slug}-${dateStamp}.csv`;
+    link.download = `meetready-stopwatch-${sessionType.toLowerCase()}-${slug}-${dateStamp}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1755,7 +1759,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         <button
           type="button"
           onClick={clearChuteQueue}
-          className="min-h-[36px] px-2.5 rounded-lg ap-card-inset text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark cursor-pointer ml-auto"
+          className="min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg ap-card-inset text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark cursor-pointer ml-auto"
         >
           Clear Queue
         </button>
@@ -1836,7 +1840,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             data-testid="stopwatch-header-beep-toggle"
             aria-pressed={soundEnabled}
             onClick={() => setSoundEnabled(!soundEnabled)}
-            className={`min-h-[36px] inline-flex items-center gap-1 px-2 rounded-lg text-2xs font-mono font-bold border cursor-pointer shrink-0 ${
+            className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2 rounded-lg text-2xs font-mono font-bold border cursor-pointer shrink-0 ${
               soundEnabled
                 ? 'ap-status-info'
                 : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
@@ -1853,12 +1857,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         </div>
       </div>
 
-      <section className="sticky top-0 md:top-[56px] z-20 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
+      <section className="sticky top-[60px] md:top-[64px] z-20 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
         {/* HUD Row 1: Clock + Gun + Undo + Chute */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div
             data-testid="stopwatch-master-clock"
-            className="rounded-xl bg-white dark:bg-[#0B120E] text-ap-obsidian dark:text-ap-volt border border-stone-300 dark:border-ap-frame px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
+            className="rounded-xl bg-white dark:bg-[#0B120E] text-ap-obsidian dark:text-ap-volt border border-ap-frame/30 dark:border-ap-frame px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
           >
             {formatStopwatchClockMs(stopwatchElapsedMs)}
           </div>
@@ -1914,13 +1918,31 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 )}
               </button>
             )}
+
+            {(stopwatchRunning || stopwatchElapsedMs > 0) && (
+              <button
+                type="button"
+                data-testid="stopwatch-mobile-setup-toggle"
+                aria-expanded={mobileSetupExpanded}
+                onClick={() => setMobileSetupExpanded((prev) => !prev)}
+                className="md:hidden min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl ap-card-inset text-xs font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
+              >
+                <span>{mobileSetupExpanded ? 'Hide Setup' : 'Setup'}</span>
+              </button>
+            )}
           </div>
         </div>
 
         {chuteQueueStripNode}
 
         {/* HUD Row 2: Preset + Recovery + Pod Select + View Switcher + Env/Tools */}
-        <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-900/10 dark:border-white/10">
+        <div
+          className={`${
+            (!stopwatchRunning && stopwatchElapsedMs === 0) || mobileSetupExpanded
+              ? 'flex'
+              : 'hidden md:flex'
+          } flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-900/10 dark:border-white/10`}
+        >
           <div className="min-w-[140px] flex-1 sm:flex-initial sm:w-52">
             {renderPresetSelect(false)}
           </div>
@@ -1968,7 +1990,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               }}
               className={`min-h-[44px] sm:min-h-[38px] px-2.5 rounded-xl text-2xs font-mono font-bold border cursor-pointer ${
                 onlyOnTrack && pinnedRunnerIds.length > 0
-                  ? 'ap-nav-volt-active border-transparent'
+                  ? 'liquid-capsule-active border-ap-frame/30 dark:border-ap-volt/50'
                   : 'ap-card-inset text-ap-ink dark:text-ap-chalk border-transparent'
               }`}
             >
@@ -2137,7 +2159,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                     onClick={() => setCustomDistOverride(dist)}
                     className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer ${
                       isSelected
-                        ? 'ap-nav-volt-active'
+                        ? 'liquid-capsule-active text-ap-ink dark:text-white'
                         : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                     }`}
                   >
@@ -2174,9 +2196,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                       : [...prev, t.runnerId]
                   )
                 }
-                className={`min-h-[32px] px-2.5 rounded-lg font-semibold cursor-pointer ${
+                className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-semibold cursor-pointer ${
                   pinned
-                    ? 'ap-nav-volt-active'
+                    ? 'liquid-capsule-active text-ap-ink dark:text-white'
                     : 'ap-card-inset text-ap-ink dark:text-ap-chalk'
                 }`}
               >
@@ -2191,7 +2213,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 setPinnedRunnerIds([]);
                 setOnlyOnTrack(false);
               }}
-              className="min-h-[32px] px-2 rounded-lg font-mono text-ap-muted dark:text-ap-muted-dark underline cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-2 rounded-lg font-mono text-ap-muted dark:text-ap-muted-dark underline cursor-pointer"
             >
               Clear Heat
             </button>

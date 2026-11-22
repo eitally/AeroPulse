@@ -24,9 +24,13 @@ test.describe('MeetReady Homepage v3 — Editorial Split Stage (Desktop & Mobile
       timeout: 15000,
     });
     await expect(
-      page.getByRole('heading', { name: /Build fast teams\.\s*Protect every athlete\./i })
+      page.getByRole('heading', { name: /Every event\. Every mark\.\s*One team platform\./i })
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: /Sign In or Get Started/i })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: /Start Your Free Team Pilot/i })
+    ).toBeVisible();
+    await expect(page.getByTestId('hero-trust-strip')).toBeVisible();
+    await expect(page.getByTestId('hero-static-product-preview')).toBeVisible();
 
     // Ensure inline fake athlete telemetry preview is permanently gone from splash
     await expect(page.getByTestId('homepage-live-cockpit-preview')).toHaveCount(0);
@@ -48,6 +52,7 @@ test.describe('MeetReady Homepage v3 — Editorial Split Stage (Desktop & Mobile
     await expect(matrix).toContainText('SafeSport two-adult messaging & push alerts');
     await expect(matrix).toContainText('For Athletes');
     await expect(matrix).toContainText('Verified official meet & race history');
+    await expect(matrix).toContainText("Guardian-CC'd coach workout feedback");
     await expect(matrix).not.toContainText('Team OS');
     await expect(matrix).not.toContainText('60s');
 
@@ -60,7 +65,7 @@ test.describe('MeetReady Homepage v3 — Editorial Split Stage (Desktop & Mobile
 
     // Responsive geometry & >=44px mobile touch targets
     const heroBox = await page
-      .getByRole('heading', { name: /Build fast teams\.\s*Protect every athlete\./i })
+      .getByRole('heading', { name: /Every event\. Every mark\.\s*One team platform\./i })
       .boundingBox();
     const authBox = await authCard.boundingBox();
     expect(heroBox).not.toBeNull();
@@ -95,6 +100,7 @@ test.describe('MeetReady Homepage v3 — Editorial Split Stage (Desktop & Mobile
     // Toggle Coach <-> Athlete role helper
     await expect(page.getByTestId('homepage-role-helper')).toContainText('Team Setup');
     await page.getByTestId('onboarding-role-athlete').click();
+    await expect(page.getByRole('heading', { name: /Join Team or Start Free/i })).toBeVisible();
     await expect(page.getByTestId('homepage-role-helper')).toContainText('join your team');
     await page.getByTestId('onboarding-role-coach').click();
 
