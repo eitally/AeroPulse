@@ -33,7 +33,7 @@ test.describe('Red-Team Sprint 2: Legal/Procurement, Coach Features, Goals & Off
 
     await page.goto('/');
     await page.getByTestId('onboarding-role-coach').click();
-    await page.getByRole('button', { name: /Explore Live Sample Cockpit/i }).click();
+    await page.getByTestId('explore-coach-sample-btn').click();
 
     await expect(page.getByTestId('coach-workspace-view')).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('coach-clipboard-builder')).toBeVisible({ timeout: 15000 });

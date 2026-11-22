@@ -95,7 +95,7 @@ test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () 
     await signOutBtn.click();
 
     await expect(
-      page.getByRole('heading', { name: /Sign in or create account/i })
+      page.getByRole('heading', { name: /Sign In or Get Started/i })
     ).toBeVisible({ timeout: 15000 });
 
     const storageAfterLogout = await page.evaluate(() => ({

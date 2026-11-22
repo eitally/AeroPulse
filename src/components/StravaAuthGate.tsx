@@ -1,22 +1,20 @@
 import React, { Suspense, useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
-  ArrowRight,
   Check,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
   Copy,
   ExternalLink,
-  KeyRound,
-  Lightning,
+  Info,
   Lock,
   LogOut,
   Moon,
   RefreshCw,
-  Send,
   ShieldCheck,
   Sun,
   Users,
+  X,
 } from './icons/PhosphorIcons';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
@@ -42,14 +40,8 @@ import {
 } from '../physiology/teamOnboardingEngine';
 import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import { applyTeamBrandToDocument } from '../utils/teamBrandDom';
-import {
-  authenticateWithPasskey,
-  isPasskeySupported,
-  registerPasskey,
-} from '../utils/passkeyAuth';
 import { AeroPulseLogo, ThreshBrandWatermark } from './AeroPulseLogo';
 import { SEED_EVENT_PILLS, StravaChevronMark } from './auth/authGateShared';
-import { AuthLandingPreviewCard } from './auth/AuthLandingPreviewCard';
 import { AuthOnboardingStepTwo } from './auth/AuthOnboardingStepTwo';
 import { AuthOptionalAddonsStep } from './auth/AuthOptionalAddonsStep';
 import {
@@ -208,7 +200,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const initialJoin = useMemo(() => detectInitialJoinParams(), []);
   const isEmbeddedWebView = useMemo(() => detectEmbeddedWebView(), []);
 
-  // THRESH User Identity State (Self-Hosted Auth: Google, Passkey, Magic Link, Strava)
+  // THRESH User Identity State (Self-Hosted Auth: Google, Email Magic Link, Strava)
   const [localUser, setLocalUser] = useState<ThreshUser | null>(
     currentUser || status.currentUser || null
   );
@@ -216,14 +208,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [magicLinkDevUrl, setMagicLinkDevUrl] = useState<string | null>(null);
   const [isSendingMagicLink, setIsSendingMagicLink] = useState(false);
-  const [isPasskeyAuthenticating, setIsPasskeyAuthenticating] = useState(false);
-  const [showPasskeyRegister, setShowPasskeyRegister] = useState(false);
-  const [passkeyRegEmail, setPasskeyRegEmail] = useState(initialJoin.email || '');
-  const [isPasskeyRegistering, setIsPasskeyRegistering] = useState(false);
-  const [passkeyError, setPasskeyError] = useState<string | null>(null);
-  const [passkeySupported, setPasskeySupported] = useState<boolean>(true);
-  const [showAltAuthMethods, setShowAltAuthMethods] = useState<boolean>(false);
   const [isGoogleRedirecting, setIsGoogleRedirecting] = useState(false);
+  const [showCoppaModal, setShowCoppaModal] = useState(false);
   const [onboardingRole, setOnboardingRole] = useState<'ATHLETE' | 'COACH'>(() => {
     try {
       if (typeof window !== 'undefined') {
@@ -240,7 +226,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       return initialJoin.codeOrSlug ? 'ATHLETE' : 'COACH';
     }
   });
-  const [showFitDrawer, setShowFitDrawer] = useState(false);
   const teamCodeInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingSharedWorkout, setPendingSharedWorkout] = useState(() =>
     peekPendingSharedWorkout()
@@ -386,12 +371,15 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     }
   }, [currentUser, athleteName, athleteEmail]);
 
-  // Check WebAuthn passkey availability
+  // Allow Escape key to dismiss the COPPA 13+ explainer modal
   useEffect(() => {
-    void isPasskeySupported()
-      .then(setPasskeySupported)
-      .catch(() => setPasskeySupported(false));
-  }, []);
+    if (!showCoppaModal) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowCoppaModal(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showCoppaModal]);
 
   // Hydrate session if already signed in via THRESH session cookie
   useEffect(() => {
@@ -652,62 +640,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       setJoinError('Failed to initialize Google sign-in.');
     } finally {
       setIsGoogleRedirecting(false);
-    }
-  };
-
-  const handlePasskeySignIn = async () => {
-    selectOnboardingRole(onboardingRole);
-    setIsPasskeyAuthenticating(true);
-    setPasskeyError(null);
-    setJoinError(null);
-    try {
-      const result = await authenticateWithPasskey();
-      if (result.ok && result.user) {
-        setLocalUser(result.user);
-        if (result.user.name && !athleteName) setAthleteName(result.user.name);
-        if (result.user.email && !athleteEmail) setAthleteEmail(result.user.email);
-        onAuthenticatedUser?.(result.user);
-        setStepNotice(`Signed in with Passkey (${result.user.name || result.user.email})!`);
-        setStep(2);
-      } else {
-        setPasskeyError(result.error || 'Passkey authentication failed.');
-        setShowPasskeyRegister(true);
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setPasskeyError(msg);
-      setShowPasskeyRegister(true);
-    } finally {
-      setIsPasskeyAuthenticating(false);
-    }
-  };
-
-  const handlePasskeyRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!passkeyRegEmail.trim()) return;
-    setIsPasskeyRegistering(true);
-    setPasskeyError(null);
-    try {
-      const result = await registerPasskey(
-        passkeyRegEmail.trim(),
-        athleteName.trim() || undefined
-      );
-      if (result.ok && result.user) {
-        setLocalUser(result.user);
-        if (result.user.name && !athleteName) setAthleteName(result.user.name);
-        if (result.user.email && !athleteEmail) setAthleteEmail(result.user.email);
-        onAuthenticatedUser?.(result.user);
-        setShowPasskeyRegister(false);
-        setStepNotice('Passkey registered and signed in!');
-        setStep(2);
-      } else {
-        setPasskeyError(result.error || 'Passkey registration failed.');
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setPasskeyError(msg);
-    } finally {
-      setIsPasskeyRegistering(false);
     }
   };
 
@@ -1114,28 +1046,15 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     isConnectingGarmin ||
     isConnectingIntervals ||
     isGoogleRedirecting ||
-    isPasskeyAuthenticating ||
-    isPasskeyRegistering ||
     isSendingMagicLink;
 
   const secondaryConnected = Boolean(isGarminConnected || status.intervalsConnected);
   const showByoStravaSection = Boolean(
     showCustomStravaKeys || (errorMessage && /STRAVA_CLIENT_ID|not configured/i.test(errorMessage))
   );
-  const isPasskeyDrawerOpen = Boolean(
-    showAltAuthMethods || showPasskeyRegister || magicLinkSent || passkeyError
-  );
   const isTeamCodeDrawerOpen = Boolean(showTeamCodeDrawer || activeBrand);
 
-  const handleTogglePasskeyDrawer = () => {
-    setShowTeamCodeDrawer(false);
-    setShowFitDrawer(false);
-    setShowAltAuthMethods((prev) => !prev);
-  };
-
   const handleOpenTeamCodeDrawer = (alwaysOpen = false, shouldFocus = false) => {
-    setShowAltAuthMethods(false);
-    setShowFitDrawer(false);
     setShowTeamCodeDrawer((prev) => (alwaysOpen ? true : !prev));
     if (shouldFocus && typeof window !== 'undefined') {
       window.setTimeout(() => {
@@ -1144,15 +1063,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     }
   };
 
-  const handleToggleFitDrawer = () => {
-    setShowAltAuthMethods(false);
-    setShowTeamCodeDrawer(false);
-    setShowFitDrawer((prev) => !prev);
-  };
-
   const isSlateVariant =
     typeof document !== 'undefined' &&
-    document.documentElement.classList.contains('theme-slate');
+    document.documentElement.classList.contains('ap-midnight-slate');
 
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-clip py-2.5 sm:py-3.5 px-2.5 sm:px-6 flex flex-col justify-center">
@@ -1161,10 +1074,10 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
       </a>
 
       {step === 1 ? (
-        <div className="max-w-[1360px] w-full mx-auto">
-          <div className="ap-content-stage px-3.5 py-3.5 sm:px-6 sm:py-4">
-            {/* Mock A Shared Header */}
-            <header className="flex items-center justify-between gap-2 pb-2.5 mb-3 border-b border-[#CBDAD0] dark:border-[#233B2D]">
+        <div className="max-w-[1320px] w-full mx-auto">
+          <div className="ap-content-stage px-4 py-4 sm:px-8 sm:py-6">
+            {/* Editorial Minimal Header */}
+            <header className="flex items-center justify-between gap-2 pb-3.5 mb-5 border-b border-ap-frame/20 dark:border-ap-edge-dark">
               <a
                 href="#top"
                 onClick={(e) => e.preventDefault()}
@@ -1174,63 +1087,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 <AeroPulseLogo size="sm" teamBrand={activeBrand} />
               </a>
 
-              <nav className="flex items-center gap-1.5 sm:gap-2" aria-label="Primary actions">
-                {onEnterSampleDemo && (
-                  <button
-                    type="button"
-                    onClick={() => onEnterSampleDemo(onboardingRole)}
-                    className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-ap-turf items-center cursor-pointer transition-colors"
-                  >
-                    Sample Demo
-                  </button>
-                )}
-                <a
-                  href="/docs/coach.html"
-                  className="hidden md:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-ap-turf items-center transition-colors"
-                >
-                  Coach Guide
-                </a>
-                <a
-                  href="/for-athletic-directors"
-                  className="hidden lg:inline-flex min-h-[36px] px-3 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-[#E9EFE9] dark:hover:bg-ap-turf items-center transition-colors"
-                >
-                  For ADs
-                </a>
-                <button
-                  type="button"
-                  data-testid="header-team-code-btn"
-                  onClick={() => handleOpenTeamCodeDrawer(false, true)}
-                  aria-expanded={isTeamCodeDrawerOpen}
-                  className={`min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    activeBrand
-                      ? 'ap-nav-volt-active'
-                      : 'ap-card-inset text-slate-900 dark:text-slate-100 hover:bg-[#DFE8DF] dark:hover:bg-ap-turf'
-                  }`}
-                >
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      activeBrand
-                        ? 'bg-ap-cobalt'
-                        : 'bg-[#3F6212] dark:bg-[#A3E635]'
-                    }`}
-                  />
-                  <span>
-                    {activeBrand ? (
-                      activeBrand.shortName
-                    ) : (
-                      <>
-                        <span className="hidden sm:inline">Have a </span>Team Code
-                        <span className="hidden sm:inline">?</span>
-                      </>
-                    )}
-                  </span>
-                </button>
+              <nav className="flex items-center gap-2" aria-label="Primary actions">
                 {onToggleDark && (
                   <button
                     type="button"
                     onClick={onToggleDark}
                     aria-label="Toggle color theme"
-                    className="min-h-[44px] sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-slate-900 dark:text-slate-100 inline-flex items-center justify-center cursor-pointer transition-colors"
+                    className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] px-2.5 rounded-lg ap-card-inset hover:opacity-90 text-ap-ink dark:text-ap-chalk inline-flex items-center justify-center cursor-pointer transition-opacity"
                     title={
                       isDark
                         ? 'Switch to Daylight Chalk'
@@ -1239,15 +1102,41 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                           : 'Switch to Track Pine Dark'
                     }
                   >
-                    <span className="font-mono text-2xs font-bold tracking-wider">
-                      {isDark ? (isSlateVariant ? 'Midnight' : 'Dark') : 'Daylight'}
-                    </span>
+                    {isDark ? (
+                      <Sun className="w-4 h-4 text-ap-volt" weight="fill" />
+                    ) : (
+                      <Moon className="w-4 h-4 text-ap-ink" weight="fill" />
+                    )}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  data-testid="header-team-code-btn"
+                  onClick={() => handleOpenTeamCodeDrawer(false, true)}
+                  aria-expanded={isTeamCodeDrawerOpen}
+                  className={`min-h-[44px] sm:min-h-[36px] px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    activeBrand
+                      ? 'ap-nav-volt-active'
+                      : 'ap-card-inset text-ap-ink dark:text-ap-chalk hover:opacity-90'
+                  }`}
+                >
+                  <span>{activeBrand ? activeBrand.shortName : 'Team Code'}</span>
+                </button>
+
+                {onEnterSampleDemo && (
+                  <button
+                    type="button"
+                    onClick={() => onEnterSampleDemo('COACH')}
+                    className="hidden md:inline-flex min-h-[36px] px-2.5 text-sm font-semibold text-ap-ink dark:text-ap-chalk underline underline-offset-4 hover:opacity-80 items-center cursor-pointer"
+                  >
+                    Explore Coach Sample
                   </button>
                 )}
               </nav>
             </header>
 
-            <main id="main-content" tabIndex={-1} className="space-y-3.5 focus:outline-none">
+            <main id="main-content" tabIndex={-1} className="space-y-4 focus:outline-none">
               {(errorMessage || joinError) && (
                 <div
                   role="alert"
@@ -1274,11 +1163,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                   className="rounded-2xl ap-status-prime px-4 py-3 flex items-center justify-between gap-3 text-xs"
                 >
                   <div className="min-w-0">
-                    <div className="font-bold text-slate-900 dark:text-white truncate">
+                    <div className="font-bold text-ap-ink dark:text-white truncate">
                       Saved for your calendar: {pendingSharedWorkout.title}
                     </div>
-                    <div className="text-xs text-slate-700 dark:text-slate-200">
-                      Sign in with Strava (or explore interactive demo) to add this{' '}
+                    <div className="text-xs text-ap-ink/85 dark:text-ap-chalk/85">
+                      Sign in (or explore the interactive sample) to add this{' '}
                       {pendingSharedWorkout.sport} workout straight to your THRESH Calendar.
                     </div>
                   </div>
@@ -1302,19 +1191,33 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                 </div>
               )}
 
-              {/* Mock A: 7 + 5 Live Instrument Split */}
-              <div className="flex flex-col lg:grid lg:grid-cols-12 gap-3.5 lg:gap-x-7 lg:gap-y-3.5 items-start">
-                {/* Block 1: Hero Headline + Subhead */}
-                <div className="order-1 lg:col-span-7 lg:col-start-1 lg:row-start-1 w-full">
-                  <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight leading-[1.08] text-ap-ink dark:text-ap-chalk">
-                    {activeBrand
-                      ? `Join ${activeBrand.name} on THRESH`
-                      : onboardingRole === 'COACH'
-                        ? 'Run your track & XC squad from one clipboard.'
-                        : "Know today's readiness before you step on the line."}
+              {/* Direction A: Editorial Split Stage (60 / 40) */}
+              <div className="flex flex-col lg:grid lg:grid-cols-12 gap-5 lg:gap-x-10 lg:gap-y-6 items-start">
+                {/* Block 1: Headline + No Advertising Ever + Interactive Sample Card */}
+                <div className="order-1 lg:col-span-7 lg:col-start-1 lg:row-start-1 w-full space-y-4">
+                  {!activeBrand && (
+                    <div
+                      data-testid="splash-overline"
+                      className="inline-block font-mono text-xs font-bold tracking-[0.14em] uppercase text-ap-muted dark:text-ap-muted-dark border-b border-ap-frame/30 dark:border-ap-edge-dark pb-1"
+                    >
+                      TRACK &amp; FIELD · CROSS COUNTRY
+                    </div>
+                  )}
+
+                  <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight leading-[1.06] text-ap-ink dark:text-ap-chalk">
+                    {activeBrand ? (
+                      `Join ${activeBrand.name} on THRESH`
+                    ) : (
+                      <>
+                        Build fast teams.
+                        <br />
+                        Protect every athlete.
+                      </>
+                    )}
                   </h1>
+
                   {activeBrand && (
-                    <div className="mt-2">
+                    <div>
                       <span className="ap-lane-badge">
                         <span className="ap-lane-badge-inner">
                           {`Team Roster Invite · ${activeBrand.joinCode}`}
@@ -1322,75 +1225,123 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       </span>
                     </div>
                   )}
-                  <p className="mt-2 text-sm sm:text-base leading-relaxed text-[#1F3528] dark:text-[#C8D8CE]">
+
+                  <p className="text-sm sm:text-base leading-relaxed text-ap-ink/85 dark:text-ap-chalk/85 max-w-2xl">
                     {activeBrand
-                      ? `Sign in to verify your athlete identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
-                      : onboardingRole === 'COACH'
-                        ? 'Sprints, hurdles, jumps, pole vault, throws, distance & XC — onboard your full squad in 2 minutes, catch injury overload early, and log 0.01s splits or field marks on the infield.'
-                        : 'THRESH turns wearable workouts, .FIT files, and trackside splits into daily workout modulation for solo athletes, and real-time injury triage for entire teams.'}
+                      ? `Sign in to verify your identity for Coach ${activeBrand.coachDisplayName}'s roster. You'll finish team setup on the next screen.`
+                      : 'Coach rosters, trackside timing, and structured workouts alongside SafeSport protection and daily athlete readiness.'}
                   </p>
+
+                  {/* No Advertising Shield & Try Interactive Sample Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                    <div
+                      data-testid="no-ads-guarantee-card"
+                      className="ap-card rounded-2xl p-4 sm:p-5 flex items-start gap-3"
+                    >
+                      <ShieldCheck
+                        className="w-7 h-7 text-ap-emerald shrink-0 mt-0.5"
+                        weight="fill"
+                      />
+                      <div className="space-y-1 min-w-0">
+                        <h2 className="text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
+                          No Advertising. Ever.
+                        </h2>
+                        <p className="text-xs leading-relaxed text-ap-muted dark:text-ap-muted-dark">
+                          We never sell athlete data or show ads — zero ad tracking for coaches,
+                          athletes, or families.
+                        </p>
+                      </div>
+                    </div>
+
+                    {onEnterSampleDemo && (
+                      <div
+                        data-testid="splash-sample-card"
+                        className="ap-card-inset rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="font-mono text-2xs font-bold tracking-[0.1em] uppercase text-ap-muted dark:text-ap-muted-dark">
+                            TRY THE INTERACTIVE SAMPLE
+                          </div>
+                          <p className="text-xs leading-relaxed text-ap-ink/85 dark:text-ap-chalk/85">
+                            Explore a populated high school track squad with stopwatch, field sheet
+                            &amp; messaging — no login needed.
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            data-testid="explore-coach-sample-btn"
+                            onClick={() => onEnterSampleDemo('COACH')}
+                            className="min-h-[44px] px-4 py-2 rounded-full bg-ap-volt hover:brightness-95 text-ap-obsidian font-extrabold text-sm inline-flex items-center gap-1.5 cursor-pointer transition-all"
+                          >
+                            <span>Explore Coach Sample →</span>
+                          </button>
+                          <button
+                            type="button"
+                            data-testid="try-athlete-sample-btn"
+                            onClick={() => onEnterSampleDemo('ATHLETE')}
+                            className="min-h-[44px] px-1 text-xs sm:text-sm font-semibold text-ap-ink dark:text-ap-chalk underline underline-offset-4 hover:opacity-80 cursor-pointer"
+                          >
+                            Try Athlete View
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                {/* Block 2: Sticky Sign-In / Create Account Card (Order 2 on Mobile above-fold!) */}
+                {/* Block 2: Unified Single Login / Get Started Card */}
                 <aside
-                  aria-label="Sign in or create account"
+                  aria-label="Sign in or get started"
                   data-testid="homepage-auth-card"
-                  className="order-2 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:row-span-3 lg:sticky lg:top-4 w-full liquid-glass rounded-2xl p-4 sm:p-5 space-y-3"
+                  className="order-2 lg:col-span-5 lg:col-start-8 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-6 w-full ap-card rounded-2xl p-5 sm:p-6 shadow-sm space-y-4"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 className="text-lg sm:text-xl font-extrabold tracking-tight text-ap-ink dark:text-ap-chalk">
-                      Sign in or create account
-                    </h2>
-                    <span className="ap-lane-badge ap-badge-volt shrink-0">
-                      <span className="ap-lane-badge-inner">
-                        {onboardingRole === 'COACH' && !activeBrand
-                          ? 'FREE SPRING PILOT · $250/YR PO'
-                          : 'FREE FOR ATHLETES'}
-                      </span>
-                    </span>
-                  </div>
+                  <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-center text-ap-ink dark:text-ap-chalk">
+                    Sign In or Get Started
+                  </h2>
 
                   {!activeBrand && (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5">
                       <div
                         role="group"
                         aria-label="Choose your THRESH role"
-                        className="grid grid-cols-2 gap-1 p-1 rounded-xl ap-pill-track"
+                        className="grid grid-cols-2 gap-1 p-1 rounded-full ap-pill-track"
                       >
                         <button
                           type="button"
                           data-testid="onboarding-role-coach"
                           aria-pressed={onboardingRole === 'COACH'}
                           onClick={() => selectOnboardingRole('COACH')}
-                          className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                          className={`min-h-[44px] sm:min-h-[40px] px-3 rounded-full text-xs sm:text-sm font-bold cursor-pointer transition-colors ${
                             onboardingRole === 'COACH'
-                              ? 'ap-pill-active'
+                              ? 'bg-ap-ink text-white dark:bg-ap-chalk dark:text-ap-obsidian'
                               : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                           }`}
                         >
-                          I&apos;m a Coach
+                          Coach
                         </button>
                         <button
                           type="button"
                           data-testid="onboarding-role-athlete"
                           aria-pressed={onboardingRole === 'ATHLETE'}
                           onClick={() => selectOnboardingRole('ATHLETE')}
-                          className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-lg text-xs sm:text-sm font-bold cursor-pointer transition-[background-color,color,box-shadow,border-color] duration-150 ${
+                          className={`min-h-[44px] sm:min-h-[40px] px-3 rounded-full text-xs sm:text-sm font-bold cursor-pointer transition-colors ${
                             onboardingRole === 'ATHLETE'
-                              ? 'ap-pill-active'
+                              ? 'bg-ap-ink text-white dark:bg-ap-chalk dark:text-ap-obsidian'
                               : 'text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
                           }`}
                         >
-                          I&apos;m an Athlete
+                          Athlete
                         </button>
                       </div>
                       <p
                         data-testid="homepage-role-helper"
-                        className="text-xs sm:text-sm leading-snug text-[#1F3528] dark:text-[#C8D8CE]"
+                        className="text-xs leading-snug text-ap-muted dark:text-ap-muted-dark"
                       >
                         {onboardingRole === 'COACH'
-                          ? 'Create a school, college, or club workspace in 60 seconds · Students & Parents $0.'
-                          : 'Sync 90 days of workouts or join your team roster.'}
+                          ? 'First visit? Sign in below to create your account and start Team Setup.'
+                          : 'First visit? Sign in below to sync workouts or join your team.'}
                       </p>
                     </div>
                   )}
@@ -1445,245 +1396,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       );
                     })()}
 
-                  {(() => {
-                    const isGoogleFirst =
-                      (!activeBrand && onboardingRole === 'COACH') ||
-                      (Boolean(activeBrand) &&
-                        (activeBrand?.orgType === 'HIGH_SCHOOL' ||
-                          activeBrand?.orgType === 'RUNNING_CLUB'));
-
-                    const googleCtaNode = (
-                      <div key="google" className="space-y-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void handleGoogleSignIn()}
-                          disabled={busy || isGoogleRedirecting}
-                          className={`w-full rounded-xl flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer transition-colors ${
-                            isGoogleFirst
-                              ? 'min-h-[50px] py-2.5 px-4 bg-[#1B3A2B] dark:bg-ap-volt text-white dark:text-ap-obsidian font-extrabold text-base hover:brightness-95'
-                              : 'min-h-[48px] py-2.5 px-4 bg-white dark:bg-ap-chalk text-ap-ink shadow-[inset_0_0_0_1px_#C5D4CA] dark:shadow-none font-bold text-sm hover:brightness-95'
-                          }`}
-                        >
-                          {isGoogleRedirecting ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <GoogleGIcon className="w-[18px] h-[18px]" />
-                          )}
-                          <span>
-                            {isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}
-                          </span>
-                        </button>
-                        {isGoogleFirst && (
-                          <p className="text-xs text-center text-ap-muted dark:text-ap-muted-dark">
-                            {activeBrand
-                              ? 'No GPS watch or Strava needed — sign in with School Google or Email'
-                              : 'Fastest for HS & Club Coaches · Use Google, Passkey, or Email'}
-                          </p>
-                        )}
-                      </div>
-                    );
-
-                    const stravaCtaNode = (
-                      <div key="strava" className="space-y-1.5">
-                        <button
-                          type="button"
-                          onClick={() => void handleStravaLaunchClick('cloud', false)}
-                          disabled={busy}
-                          className={`w-full rounded-xl flex items-center justify-center gap-2.5 disabled:opacity-60 cursor-pointer transition-colors ${
-                            !isGoogleFirst
-                              ? 'min-h-[50px] py-2.5 px-4 bg-[#C23800] hover:bg-[#A83000] text-white font-extrabold text-base'
-                              : 'min-h-[46px] py-2 px-4 bg-white dark:bg-[#111A15] text-ap-ink dark:text-ap-chalk shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] hover:bg-[#F1F5F2] dark:hover:bg-ap-turf font-bold text-sm'
-                          }`}
-                        >
-                          {isRedirecting ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <StravaChevronMark className="w-[18px] h-[18px]" />
-                          )}
-                          <span>
-                            {isRedirecting
-                              ? 'Opening Strava Sign-In…'
-                              : activeBrand
-                                ? `Connect with Strava to Join ${activeBrand.shortName}`
-                                : 'Connect with Strava'}
-                          </span>
-                        </button>
-                        <p className="text-xs text-center text-ap-muted dark:text-ap-muted-dark">
-                          {activeBrand
-                            ? 'Optional Strava sync — no GPS watch needed.'
-                            : isGoogleFirst
-                              ? 'Optional for coaches who also log personal training on Strava'
-                              : 'Read-only 90d import · Never posts or edits activities'}
-                        </p>
-                      </div>
-                    );
-
-                    return isGoogleFirst ? [googleCtaNode, stravaCtaNode] : [stravaCtaNode, googleCtaNode];
-                  })()}
-
-                  {/* 3-Up Progressive Disclosure Pills */}
-                  <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-                    <button
-                      type="button"
-                      data-testid="homepage-drawer-passkey-btn"
-                      aria-expanded={isPasskeyDrawerOpen}
-                      onClick={handleTogglePasskeyDrawer}
-                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-ap-ink dark:text-ap-chalk text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
-                        isPasskeyDrawerOpen
-                          ? '!border-[#3F6212] dark:!border-[#A3E635]'
-                          : ''
-                      }`}
-                    >
-                      Passkey / Email
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="homepage-drawer-teamcode-btn"
-                      aria-expanded={isTeamCodeDrawerOpen}
-                      onClick={() => handleOpenTeamCodeDrawer(false, false)}
-                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-ap-ink dark:text-ap-chalk text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
-                        isTeamCodeDrawerOpen
-                          ? '!border-[#3F6212] dark:!border-[#A3E635]'
-                          : ''
-                      }`}
-                    >
-                      Team Code
-                    </button>
-                    <button
-                      type="button"
-                      data-testid="homepage-drawer-fit-btn"
-                      aria-expanded={showFitDrawer}
-                      onClick={handleToggleFitDrawer}
-                      className={`min-h-[44px] px-2 rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf text-ap-ink dark:text-ap-chalk text-xs font-bold cursor-pointer transition-[background-color,border-color,box-shadow] duration-150 ${
-                        showFitDrawer ? '!border-[#3F6212] dark:!border-[#A3E635]' : ''
-                      }`}
-                    >
-                      .FIT / .ZIP
-                    </button>
-                  </div>
-
-                  {/* Drawer 1: Passkey / Email Magic Link */}
-                  {isPasskeyDrawerOpen && (
-                    <div
-                      data-testid="homepage-drawer-passkey"
-                      className="rounded-xl ap-card-inset p-3 space-y-2.5"
-                    >
-                      {passkeySupported && (
-                        <button
-                          type="button"
-                          onClick={() => void handlePasskeySignIn()}
-                          disabled={busy || isPasskeyAuthenticating}
-                          className="w-full min-h-[44px] px-3 rounded-xl bg-white dark:bg-[#111A15] text-ap-ink dark:text-ap-chalk font-bold text-xs flex items-center justify-center gap-2 hover:brightness-95 cursor-pointer transition-colors"
-                        >
-                          {isPasskeyAuthenticating ? (
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          ) : (
-                            <KeyRound className="w-3.5 h-3.5 text-[#3F6212] dark:text-[#A3E635]" />
-                          )}
-                          <span>
-                            {isPasskeyAuthenticating
-                              ? 'Authenticating with Touch / Face ID…'
-                              : 'Sign in with Passkey (Touch / Face ID)'}
-                          </span>
-                        </button>
-                      )}
-
-                      {showPasskeyRegister && (
-                        <form
-                          onSubmit={handlePasskeyRegister}
-                          className="rounded-lg bg-white dark:bg-[#111A15] p-2.5 space-y-2 text-xs"
-                        >
-                          <div className="flex items-center justify-between font-semibold text-ap-ink dark:text-white">
-                            <span>Register Passkey for this device</span>
-                            <button
-                              type="button"
-                              onClick={() => setShowPasskeyRegister(false)}
-                              className="text-xs font-mono text-ap-muted dark:text-ap-muted-dark hover:underline cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                          {passkeyError && (
-                            <p className="text-xs text-rose-600 dark:text-rose-400">
-                              {passkeyError}
-                            </p>
-                          )}
-                          <div className="flex flex-col sm:flex-row gap-2">
-                            <input
-                              type="email"
-                              required
-                              value={passkeyRegEmail}
-                              onChange={(e) => setPasskeyRegEmail(e.target.value)}
-                              placeholder="Enter your email to link passkey"
-                              className="flex-1 min-h-[44px] rounded-xl ap-card-inset px-3 text-xs text-ap-ink dark:text-white"
-                            />
-                            <button
-                              type="submit"
-                              disabled={isPasskeyRegistering || !passkeyRegEmail.trim()}
-                              className="min-h-[44px] px-3 rounded-xl bg-ap-volt text-ap-obsidian font-extrabold text-xs shrink-0 cursor-pointer"
-                            >
-                              {isPasskeyRegistering ? 'Registering…' : 'Save Passkey'}
-                            </button>
-                          </div>
-                        </form>
-                      )}
-
-                      <form onSubmit={handleSendMagicLink} className="space-y-2">
-                        <div className="flex gap-2">
-                          <input
-                            type="email"
-                            required
-                            value={magicLinkEmail}
-                            onChange={(e) => {
-                              setMagicLinkEmail(e.target.value);
-                              setMagicLinkSent(false);
-                            }}
-                            placeholder="you@school-or-club.org"
-                            aria-label="Email address for magic sign-in link"
-                            className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-semibold text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted/70 dark:placeholder:text-ap-muted-dark/70"
-                          />
-                          <button
-                            type="submit"
-                            disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
-                            className="min-h-[44px] px-3.5 rounded-xl bg-ap-volt hover:bg-[#b5eb00] text-ap-obsidian font-extrabold text-xs inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer disabled:opacity-60 transition-colors"
-                          >
-                            {isSendingMagicLink ? (
-                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Send className="w-3.5 h-3.5" />
-                            )}
-                            <span>{isSendingMagicLink ? 'Sending…' : 'Send Link'}</span>
-                          </button>
-                        </div>
-                        {magicLinkSent && (
-                          <div className="rounded-xl bg-[#DCFCE7] dark:bg-[#122B1B] text-[#166534] dark:text-[#4ADE80] p-3 text-xs space-y-1.5">
-                            <div className="flex items-center gap-2 font-bold">
-                              <CheckCircle2 className="w-4 h-4 shrink-0" />
-                              <span>Check your inbox for a secure sign-in link!</span>
-                            </div>
-                            <p className="text-xs opacity-90">
-                              We sent a 15-minute login token to <strong>{magicLinkEmail}</strong>.
-                            </p>
-                            {magicLinkDevUrl && (
-                              <div className="pt-1">
-                                <span className="font-mono text-xs uppercase tracking-wider opacity-80 mr-2">
-                                  Dev Link:
-                                </span>
-                                <a
-                                  href={magicLinkDevUrl}
-                                  className="text-xs font-bold underline hover:opacity-80"
-                                >
-                                  Complete Sign-In Now →
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </form>
-                    </div>
-                  )}
-
-                  {/* Drawer 2: Team Code Quick-Join */}
                   {isTeamCodeDrawerOpen && (
                     <div
                       data-testid="homepage-drawer-teamcode"
@@ -1701,52 +1413,154 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                             setInviteToken('');
                           }}
                           placeholder="e.g. WGXC-26"
-                          className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-[#111A15] shadow-[inset_0_0_0_1px_#CBDAD0] dark:shadow-[inset_0_0_0_1px_#233B2D] focus:outline-none focus:shadow-[inset_0_0_0_1.5px_#3F6212] dark:focus:shadow-[inset_0_0_0_1.5px_#A3E635] px-3 text-sm font-mono font-bold uppercase placeholder:normal-case tracking-wider text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted/70 dark:placeholder:text-ap-muted-dark/70"
+                          className="flex-1 min-w-0 min-h-[44px] rounded-xl bg-white dark:bg-ap-carbon border border-ap-frame/25 dark:border-ap-edge-dark px-3 text-sm font-mono font-bold uppercase placeholder:normal-case tracking-wider text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted/70 dark:placeholder:text-ap-muted-dark/70 focus:outline-none focus:ring-2 focus:ring-ap-volt-ink dark:focus:ring-ap-volt"
                         />
                         <button
                           type="button"
                           disabled={isLoadingPreview}
                           onClick={() => {
                             if (!joinCodeInput.trim()) {
-                              setJoinError('Enter a 6-character Team Join Code from your coach (e.g. WGXC-26).');
+                              setJoinError(
+                                'Enter a 6-character Team Join Code from your coach (e.g. WGXC-26).'
+                              );
                               teamCodeInputRef.current?.focus();
                               return;
                             }
                             void lookupTeamPreview(joinCodeInput, inviteToken);
                           }}
-                          className="min-h-[44px] px-3.5 rounded-xl bg-ap-volt hover:bg-[#b5eb00] text-ap-obsidian font-extrabold text-xs shrink-0 cursor-pointer transition-colors"
+                          className="min-h-[44px] px-3.5 rounded-xl bg-ap-volt hover:brightness-95 text-ap-obsidian font-extrabold text-xs shrink-0 cursor-pointer transition-all"
                         >
                           {isLoadingPreview ? 'Checking…' : 'Join Squad'}
                         </button>
                       </div>
-                      <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
-                        No watch required to join. Connect Strava or Garmin anytime.
-                      </p>
                     </div>
                   )}
 
-                  {/* Drawer 3: Local .FIT / .ZIP Offline Mode */}
-                  {showFitDrawer && (
-                    <div
-                      data-testid="homepage-drawer-fit"
-                      className="rounded-xl ap-card-inset p-3 space-y-1.5"
+                  {/* Always-Visible Unified Email Entry */}
+                  <form onSubmit={handleSendMagicLink} className="space-y-2.5">
+                    <label
+                      htmlFor={`${formId}-splash-email`}
+                      className="block text-xs font-semibold text-ap-ink dark:text-ap-chalk"
                     >
-                      <button
-                        type="button"
-                        onClick={() => setShowArchiveWizard(true)}
-                        className="w-full min-h-[44px] px-3.5 rounded-xl bg-ap-volt hover:bg-[#b5eb00] text-ap-obsidian font-extrabold text-xs cursor-pointer transition-colors"
-                      >
-                        Open Local .FIT / .ZIP Archive (Zero-Cloud Mode)
-                      </button>
-                      <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
-                        Unpack Garmin, Strava, Polar, or Wahoo files locally in your browser.
-                      </p>
-                    </div>
-                  )}
+                      Email
+                    </label>
+                    <input
+                      id={`${formId}-splash-email`}
+                      type="email"
+                      required
+                      value={magicLinkEmail}
+                      onChange={(e) => {
+                        setMagicLinkEmail(e.target.value);
+                        setMagicLinkSent(false);
+                      }}
+                      placeholder="coach@school.edu"
+                      aria-label="Email address"
+                      className="w-full min-h-[44px] rounded-xl bg-white dark:bg-ap-carbon border border-ap-frame/25 dark:border-ap-edge-dark px-3.5 text-sm font-medium text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted/70 dark:placeholder:text-ap-muted-dark/70 focus:outline-none focus:ring-2 focus:ring-ap-volt-ink dark:focus:ring-ap-volt"
+                    />
+                    <button
+                      type="submit"
+                      data-testid="continue-with-email-btn"
+                      disabled={busy || isSendingMagicLink || !magicLinkEmail.trim()}
+                      className="w-full min-h-[46px] px-4 rounded-xl bg-ap-ink text-white dark:bg-ap-chalk dark:text-ap-obsidian font-extrabold text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 hover:opacity-90 transition-opacity"
+                    >
+                      {isSendingMagicLink && <RefreshCw className="w-4 h-4 animate-spin" />}
+                      <span>{isSendingMagicLink ? 'Sending Sign-In Link…' : 'Continue with Email'}</span>
+                    </button>
+
+                    {magicLinkSent && (
+                      <div className="rounded-xl ap-status-prime p-3 text-xs space-y-1.5">
+                        <div className="flex items-center gap-2 font-bold">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span>Check your inbox for a secure sign-in link!</span>
+                        </div>
+                        <p className="text-xs opacity-90">
+                          Sent a 15-minute link to <strong>{magicLinkEmail}</strong>.
+                        </p>
+                        {magicLinkDevUrl && (
+                          <div className="pt-1">
+                            <span className="font-mono text-xs uppercase tracking-wider opacity-80 mr-2">
+                              Dev Link:
+                            </span>
+                            <a
+                              href={magicLinkDevUrl}
+                              className="text-xs font-bold underline hover:opacity-80"
+                            >
+                              Complete Sign-In Now →
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </form>
+
+                  <div className="relative flex items-center py-0.5">
+                    <div className="flex-grow border-t border-ap-frame/20 dark:border-ap-edge-dark" />
+                    <span className="px-3 text-xs font-medium text-ap-muted dark:text-ap-muted-dark">
+                      or
+                    </span>
+                    <div className="flex-grow border-t border-ap-frame/20 dark:border-ap-edge-dark" />
+                  </div>
+
+                  {/* Unified Strava & Google OAuth Buttons */}
+                  <div className="space-y-2.5">
+                    {(() => {
+                      const isGoogleFirst =
+                        (!activeBrand && onboardingRole === 'COACH') ||
+                        (Boolean(activeBrand) &&
+                          (activeBrand?.orgType === 'HIGH_SCHOOL' ||
+                            activeBrand?.orgType === 'RUNNING_CLUB'));
+
+                      const googleCtaNode = (
+                        <button
+                          key="google"
+                          type="button"
+                          onClick={() => void handleGoogleSignIn()}
+                          disabled={busy || isGoogleRedirecting}
+                          className="w-full min-h-[46px] py-2.5 px-4 rounded-xl bg-white dark:bg-ap-carbon border border-ap-frame/25 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk font-bold text-sm flex items-center justify-center gap-2.5 disabled:opacity-60 hover:bg-ap-chalk dark:hover:bg-ap-turf cursor-pointer transition-colors"
+                        >
+                          {isGoogleRedirecting ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <GoogleGIcon className="w-[18px] h-[18px]" />
+                          )}
+                          <span>
+                            {isGoogleRedirecting ? 'Connecting to Google…' : 'Continue with Google'}
+                          </span>
+                        </button>
+                      );
+
+                      const stravaCtaNode = (
+                        <button
+                          key="strava"
+                          type="button"
+                          onClick={() => void handleStravaLaunchClick('cloud', false)}
+                          disabled={busy}
+                          className="w-full min-h-[46px] py-2.5 px-4 rounded-xl bg-white dark:bg-ap-carbon border border-ap-frame/25 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk font-bold text-sm flex items-center justify-center gap-2.5 disabled:opacity-60 hover:bg-ap-chalk dark:hover:bg-ap-turf cursor-pointer transition-colors"
+                        >
+                          {isRedirecting ? (
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <StravaChevronMark className="w-[18px] h-[18px]" />
+                          )}
+                          <span>
+                            {isRedirecting
+                              ? 'Opening Strava Sign-In…'
+                              : activeBrand
+                                ? `Connect with Strava to Join ${activeBrand.shortName}`
+                                : 'Connect with Strava'}
+                          </span>
+                        </button>
+                      );
+
+                      return isGoogleFirst
+                        ? [googleCtaNode, stravaCtaNode]
+                        : [stravaCtaNode, googleCtaNode];
+                    })()}
+                  </div>
 
                   {/* Self-Hosted BYO Strava Keys (Hidden when production server has STRAVA_CLIENT_ID configured) */}
                   {showByoStravaSection && (
-                    <div className="pt-2 border-t border-[#CBDAD0] dark:border-[#233B2D]">
+                    <div className="pt-2 border-t border-ap-frame/20 dark:border-ap-edge-dark">
                       <button
                         type="button"
                         onClick={() => setShowCustomStravaKeys((prev) => !prev)}
@@ -1761,8 +1575,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       </button>
 
                       {showCustomStravaKeys && (
-                        <div className="mt-2 rounded-xl bg-[#E9EFE9] dark:bg-[#080D0A] p-3.5 space-y-3 text-xs">
-                          <ol className="space-y-2 text-[#1F3528] dark:text-[#C8D8CE] list-decimal list-inside leading-relaxed">
+                        <div className="mt-2 rounded-xl ap-card-inset p-3.5 space-y-3 text-xs">
+                          <ol className="space-y-2 text-ap-ink/85 dark:text-ap-chalk/85 list-decimal list-inside leading-relaxed">
                             <li>
                               Open{' '}
                               <a
@@ -1775,7 +1589,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                 <ExternalLink className="w-3 h-3" />
                               </a>{' '}
                               and set <strong>Authorization Callback Domain</strong> to:
-                              <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 font-mono">
+                              <div className="mt-1.5 flex items-center justify-between gap-2 rounded-lg bg-white dark:bg-ap-carbon px-3 py-1.5 font-mono">
                                 <span className="font-bold text-ap-ink dark:text-white truncate">
                                   {currentHostname}
                                 </span>
@@ -1786,7 +1600,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                 >
                                   {copiedDomain ? (
                                     <>
-                                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                                      <Check className="w-3.5 h-3.5 text-ap-emerald" />
                                       <span>Copied</span>
                                     </>
                                   ) : (
@@ -1810,7 +1624,7 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                 value={stravaClientId}
                                 onChange={(e) => setStravaClientId(e.target.value)}
                                 placeholder="Client ID (e.g. 123456)"
-                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-slate-100"
+                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-ap-carbon px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-ap-chalk"
                               />
                               <input
                                 type="password"
@@ -1820,13 +1634,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                 placeholder={
                                   status.stravaClientId ? 'Client Secret (saved)' : 'Client Secret'
                                 }
-                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-slate-100"
+                                className="w-full min-h-[44px] sm:min-h-[40px] rounded-lg bg-white dark:bg-ap-carbon px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-ap-chalk"
                               />
                             </div>
                             <button
                               type="submit"
                               disabled={busy || !stravaClientId.trim()}
-                              className="w-full min-h-[44px] rounded-lg bg-[#C23800] hover:bg-[#A83000] text-white disabled:opacity-50 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                              className="w-full min-h-[44px] rounded-lg bg-ap-ink text-white dark:bg-ap-chalk dark:text-ap-obsidian disabled:opacity-50 font-semibold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
                             >
                               <span>Save Keys &amp; Authorize Strava</span>
                               <ExternalLink className="w-3.5 h-3.5" />
@@ -1854,14 +1668,14 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                                     }
                                   }}
                                   placeholder="Paste Refresh Token or http://localhost/...?code=..."
-                                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg bg-white dark:bg-[#111A15] px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-slate-100"
+                                  className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg bg-white dark:bg-ap-carbon px-3 py-1.5 text-xs font-mono text-ap-ink dark:text-ap-chalk"
                                 />
                                 <button
                                   type="submit"
                                   disabled={
                                     busy || (!manualCodeInput.trim() && !directRefreshToken.trim())
                                   }
-                                  className="w-full min-h-[44px] rounded-lg bg-[#DFE8DF] dark:bg-ap-turf text-xs font-bold cursor-pointer"
+                                  className="w-full min-h-[44px] rounded-lg ap-card-inset text-xs font-bold cursor-pointer"
                                 >
                                   Verify &amp; Connect
                                 </button>
@@ -1873,52 +1687,97 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                     </div>
                   )}
 
-                  {/* Zero-Auth Sample Demo Row */}
-                  {onEnterSampleDemo && (
+                  {/* Clickable COPPA 13+ Compliance Link (Only subtext on Login Card) */}
+                  <div className="pt-1 flex justify-center">
                     <button
                       type="button"
-                      onClick={() => onEnterSampleDemo(onboardingRole)}
-                      className="w-full min-h-[52px] rounded-xl ap-card-inset hover:bg-[#DFE8DF] dark:hover:bg-ap-turf px-2.5 sm:px-3.5 py-2.5 flex items-center justify-between gap-2 text-left cursor-pointer transition-colors"
+                      data-testid="coppa-explainer-trigger"
+                      onClick={() => setShowCoppaModal(true)}
+                      className="min-h-[44px] px-2 inline-flex items-center gap-1.5 text-xs text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk cursor-pointer transition-colors"
                     >
-                      <span className="min-w-0">
-                        <span className="block text-xs font-semibold text-ap-muted dark:text-ap-muted-dark">
-                          New here?
-                        </span>
-                        <span className="block text-xs sm:text-sm font-extrabold text-ap-ink dark:text-ap-chalk">
-                          Explore Live Sample Cockpit{'\u00A0'}→
-                        </span>
-                      </span>
-                      <span className="ap-lane-badge ap-badge-volt shrink-0">
-                        <span className="ap-lane-badge-inner">SAMPLE DEMO</span>
+                      <Info className="w-4 h-4 shrink-0" />
+                      <span>
+                        COPPA 13+ · <span className="underline underline-offset-2">What this means</span>{' '}
+                        ›
                       </span>
                     </button>
-                  )}
+                  </div>
                 </aside>
 
-                <AuthLandingPreviewCard
-                  onboardingRole={onboardingRole}
-                  onSelectOnboardingRole={selectOnboardingRole}
-                />
+                {/* Block 3: Symmetric 4-Point Coach vs Athlete Benefits Matrix */}
+                <section
+                  data-testid="splash-benefits-matrix"
+                  aria-label="THRESH platform benefits"
+                  className="order-3 lg:col-span-7 lg:col-start-1 lg:row-start-2 w-full border-t border-ap-frame/20 dark:border-ap-edge-dark pt-5 grid grid-cols-1 sm:grid-cols-2 gap-6"
+                >
+                  <div className="space-y-2.5">
+                    <h2 className="text-sm sm:text-base font-extrabold text-ap-ink dark:text-ap-chalk">
+                      For Coaches
+                    </h2>
+                    <ul className="space-y-2 text-xs sm:text-sm text-ap-ink/85 dark:text-ap-chalk/85">
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>Automated roster &amp; event-group setup</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>Easy Athletic.net &amp; TFRRS official results sync</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>Trackside stopwatch &amp; field events sheet</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>SafeSport two-adult messaging &amp; push alerts</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <h2 className="text-sm sm:text-base font-extrabold text-ap-ink dark:text-ap-chalk">
+                      For Athletes
+                    </h2>
+                    <ul className="space-y-2 text-xs sm:text-sm text-ap-ink/85 dark:text-ap-chalk/85">
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>Readiness &amp; workload without clutter</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>Track splits &amp; PR progression</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>Verified official meet &amp; race history</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <Check className="w-4 h-4 text-ap-emerald shrink-0 mt-0.5" weight="bold" />
+                        <span>Direct coach workout feedback</span>
+                      </li>
+                    </ul>
+                  </div>
+                </section>
               </div>
             </main>
 
-            <footer className="mt-3 pt-2.5 border-t border-[#CBDAD0] dark:border-[#233B2D] flex flex-wrap items-center justify-between gap-2 text-xs text-ap-muted dark:text-ap-muted-dark">
+            <footer className="mt-6 pt-3.5 border-t border-ap-frame/20 dark:border-ap-edge-dark flex flex-wrap items-center justify-between gap-2 text-xs text-ap-muted dark:text-ap-muted-dark">
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-ap-ink dark:text-ap-chalk tracking-wider">
                   THRESH
                 </span>
-                <span>· Endurance Readiness &amp; Team Performance Lab</span>
+                <span>· Track &amp; Field and Cross Country Platform</span>
               </div>
               <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-x-4 gap-y-0 font-semibold -my-1.5 sm:my-0">
                 <a
                   href="/docs/"
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline"
                 >
                   Guide &amp; Docs
                 </a>
                 <a
                   href="/docs/coach.html"
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline"
                 >
                   Coach Guide
                 </a>
@@ -1930,37 +1789,37 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
                       onOpenBrandStudio();
                     }
                   }}
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline cursor-pointer"
                 >
                   Brand &amp; Style Guide
                 </a>
                 <a
                   href="/privacy"
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline"
                 >
                   Privacy
                 </a>
                 <a
                   href="/terms"
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline"
                 >
                   Terms
                 </a>
                 <a
                   href="/for-athletic-directors"
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline"
                 >
                   For ADs
                 </a>
                 <a
                   href="/procurement"
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline"
                 >
                   Schools &amp; NCAA
                 </a>
                 <a
                   href="/docs/#sec-safesport"
-                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-[#1F3528] dark:text-[#C8D8CE] hover:underline"
+                  className="min-h-[44px] sm:min-h-[32px] inline-flex items-center text-ap-ink/85 dark:text-ap-chalk/85 hover:underline"
                 >
                   Safe-Sport Shield
                 </a>
@@ -2281,6 +2140,96 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
             />
           </Suspense>
         </WorkspaceErrorBoundary>
+      )}
+
+      {showCoppaModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="coppa-explainer-title"
+          data-testid="coppa-explainer-modal"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCoppaModal(false);
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+        >
+          <div className="w-full max-w-lg ap-card rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-ap-emerald shrink-0" weight="fill" />
+                <h2
+                  id="coppa-explainer-title"
+                  className="text-base sm:text-lg font-extrabold text-ap-ink dark:text-ap-chalk"
+                >
+                  COPPA 13+ &amp; Youth Athlete Protection
+                </h2>
+              </div>
+              <button
+                type="button"
+                data-testid="coppa-explainer-close"
+                aria-label="Close COPPA explanation"
+                onClick={() => setShowCoppaModal(false)}
+                className="min-h-[44px] min-w-[44px] -m-1.5 rounded-xl ap-card-inset inline-flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs sm:text-sm leading-relaxed text-ap-ink/90 dark:text-ap-chalk/90">
+              <div className="rounded-xl ap-card-inset p-3.5 space-y-1">
+                <div className="font-bold text-ap-ink dark:text-ap-chalk">
+                  1. Accounts require athletes to be 13 or older (Federal COPPA)
+                </div>
+                <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
+                  Athletes under age 13 cannot register personal THRESH logins or connect personal
+                  wearable accounts.
+                </p>
+              </div>
+
+              <div className="rounded-xl ap-card-inset p-3.5 space-y-1">
+                <div className="font-bold text-ap-ink dark:text-ap-chalk">
+                  2. Under-13 athletes can still be timed trackside
+                </div>
+                <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
+                  Coaches use THRESH&apos;s Trackside Stopwatch and Field Events Sheet watchlessly
+                  to time races and record marks without creating child accounts or collecting child
+                  emails.
+                </p>
+              </div>
+
+              <div className="rounded-xl ap-card-inset p-3.5 space-y-1">
+                <div className="font-bold text-ap-ink dark:text-ap-chalk">
+                  3. Ages 13–17 enforce Parent / Guardian visibility (SafeSport MAAPP)
+                </div>
+                <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
+                  High school and youth athletes aged 13–17 automatically include Guardian CC on
+                  coach–athlete messages and workout comments — private 1:1 adult–minor messaging is
+                  never allowed.
+                </p>
+              </div>
+
+              <div className="rounded-xl ap-card-inset p-3.5 space-y-1">
+                <div className="font-bold text-ap-ink dark:text-ap-chalk">
+                  4. SafeSport Weight Shield &amp; No Advertising. Ever.
+                </div>
+                <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
+                  Body weight, BMI, and power-to-weight ratios are stripped from team views by
+                  default, and athlete data is never used for advertising or sold to third parties.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setShowCoppaModal(false)}
+                className="min-h-[44px] px-4 rounded-xl bg-ap-volt hover:brightness-95 text-ap-obsidian font-extrabold text-xs cursor-pointer"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
