@@ -23,6 +23,8 @@ import type {
   TeamExternalSyncConfig,
   TeamMemberRole,
   TeamMembershipRecord,
+  TeamMessageRecord,
+  TeamMessagingPolicy,
   TeamPlanTier,
   TeamSummaryWithRole,
   TeamWorkoutComment,
@@ -87,6 +89,8 @@ export interface StoredTeamDocument {
   attendanceByDate?: Record<string, Record<string, TeamAttendanceRecord>>;
   announcements?: TeamAnnouncementRecord[];
   fieldMarkLogs?: FieldEventLogRecord[];
+  teamMessages?: TeamMessageRecord[];
+  messagingPolicy?: TeamMessagingPolicy;
   anonymousLinkOpens?: number;
   updatedAt: string;
 }
@@ -523,6 +527,45 @@ export function projectTeamSummaryForCaller(
       ? doc.fieldMarkLogs || []
       : (doc.fieldMarkLogs || []).filter((f) => f.membershipId === myMembership.membershipId);
 
+  const visibleTeamMessages: TeamMessageRecord[] = (doc.teamMessages || []).filter((msg) => {
+    if (isStaffViewer) return true;
+    if (msg.channelScope === 'COACHES_STAFF') return false;
+    if (msg.channelScope === 'ALL_TEAM') return true;
+    if (msg.channelScope === 'EVENT_GROUP') {
+      if (isParentFollower) {
+        if (!msg.eventGroup) return true;
+        return doc.memberships.some(
+          (child) =>
+            linkedChildMembershipIds?.has(child.membershipId) &&
+            (!child.eventGroup || child.eventGroup === msg.eventGroup)
+        );
+      }
+      return !msg.eventGroup || !myMembership.eventGroup || msg.eventGroup === myMembership.eventGroup;
+    }
+    if (msg.channelScope === 'DIRECT_TRANSPARENT') {
+      if (isParentFollower) {
+        return Boolean(
+          msg.guardianCcApplied &&
+            msg.targetMembershipId &&
+            linkedChildMembershipIds?.has(msg.targetMembershipId)
+        );
+      }
+      return Boolean(msg.targetMembershipId && msg.targetMembershipId === myMembership.membershipId);
+    }
+    return false;
+  });
+
+  const resolvedMessagingPolicy: TeamMessagingPolicy = {
+    athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+    quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
+    requireGuardianCcForMinors: Boolean(
+      doc.brand.orgType === 'HIGH_SCHOOL' ||
+        doc.brand.defaultSafeSportShield ||
+        (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
+    ),
+  };
+
   return {
     brand: {
       ...doc.brand,
@@ -547,6 +590,8 @@ export function projectTeamSummaryForCaller(
     ...(isStaffViewer && doc.attendanceByDate ? { attendanceByDate: doc.attendanceByDate } : {}),
     announcements: visibleAnnouncements,
     ...(isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks }),
+    teamMessages: visibleTeamMessages,
+    messagingPolicy: resolvedMessagingPolicy,
   };
 }
 

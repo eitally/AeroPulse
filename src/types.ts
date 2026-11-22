@@ -1668,6 +1668,8 @@ export interface TeamSummaryWithRole {
   attendanceByDate?: Record<string, Record<string, TeamAttendanceRecord>>;
   announcements?: TeamAnnouncementRecord[];
   fieldMarkLogs?: FieldEventLogRecord[];
+  teamMessages?: TeamMessageRecord[];
+  messagingPolicy?: TeamMessagingPolicy;
 }
 
 export interface TeamInvitePreviewPayload {
@@ -1821,6 +1823,43 @@ export interface TeamAnnouncementRecord {
   publishToParentHub: boolean;
   authorName: string;
   createdAt: string;
+}
+
+export type TeamMessageChannelScope =
+  | 'ALL_TEAM'
+  | 'EVENT_GROUP'
+  | 'COACHES_STAFF'
+  | 'DIRECT_TRANSPARENT';
+
+export interface TeamMessageRecord {
+  id: string;
+  teamId: string;
+  channelId: string;
+  channelScope: TeamMessageChannelScope;
+  eventGroup?: CoachEventGroup;
+  targetMembershipId?: string;
+  targetAthleteName?: string;
+  senderSid: string;
+  senderMembershipId: string;
+  senderName: string;
+  senderRole: TeamMemberRole;
+  body: string;
+  createdAt: string;
+  guardianCcApplied: boolean;
+  guardianEmailNotified?: boolean;
+  secondAdultVisible: boolean;
+  sentDuringQuietHours?: boolean;
+  isEmergencyOverride?: boolean;
+  acknowledgedByMembershipIds?: string[];
+  flaggedForAdminReview?: boolean;
+  flaggedReason?: string;
+}
+
+export interface TeamMessagingPolicy {
+  athleteRepliesEnabled: boolean;
+  quietHoursStartHour: number;
+  quietHoursEndHour: number;
+  requireGuardianCcForMinors: boolean;
 }
 
 

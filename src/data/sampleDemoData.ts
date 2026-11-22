@@ -8,6 +8,8 @@ import type {
   TargetGoal,
   TeamBroadcastWorkout,
   TeamMembershipRecord,
+  TeamMessageRecord,
+  TeamMessagingPolicy,
   TeamSummaryWithRole,
   TeamWorkoutComment,
   TeamWorkoutLibraryTemplate,
@@ -905,6 +907,79 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
     },
   ];
 
+  const teamMessages: TeamMessageRecord[] = [
+    {
+      id: 'demo-msg-all-1',
+      teamId,
+      channelId: 'team:all',
+      channelScope: 'ALL_TEAM',
+      senderSid: 'demo-coach-sid',
+      senderMembershipId: 'demo-mem-coach',
+      senderName: 'Coach Morales',
+      senderRole: 'HEAD_COACH',
+      body: 'Track practice starts 3:15 PM sharp today. Bring training flats AND spikes for curve exchanges.',
+      createdAt: `${todayIso}T09:00:00Z`,
+      guardianCcApplied: true,
+      secondAdultVisible: true,
+      acknowledgedByMembershipIds: ['demo-mem-ath-01', 'demo-mem-ath-02'],
+    },
+    {
+      id: 'demo-msg-sprints-1',
+      teamId,
+      channelId: 'group:SPRINTS',
+      channelScope: 'EVENT_GROUP',
+      eventGroup: 'SPRINTS',
+      senderSid: 'demo-coach-sid',
+      senderMembershipId: 'demo-mem-coach',
+      senderName: 'Coach Morales',
+      senderRole: 'HEAD_COACH',
+      body: 'Sprints & 4x100m crew: blind handoff tape marks at 18 steps in Lane 4 today.',
+      createdAt: `${todayIso}T09:15:00Z`,
+      guardianCcApplied: true,
+      secondAdultVisible: true,
+      acknowledgedByMembershipIds: ['demo-mem-coach'],
+    },
+    {
+      id: 'demo-msg-staff-1',
+      teamId,
+      channelId: 'staff:only',
+      channelScope: 'COACHES_STAFF',
+      senderSid: 'demo-coach-sid',
+      senderMembershipId: 'demo-mem-coach',
+      senderName: 'Coach Morales',
+      senderRole: 'HEAD_COACH',
+      body: 'Staff note: Maya Chen flagged mild right shin tightness this morning; cap her on grass tempo today.',
+      createdAt: `${todayIso}T09:20:00Z`,
+      guardianCcApplied: false,
+      secondAdultVisible: true,
+      acknowledgedByMembershipIds: ['demo-mem-coach'],
+    },
+    {
+      id: 'demo-msg-dm-1',
+      teamId,
+      channelId: 'dm:demo-mem-ath-02',
+      channelScope: 'DIRECT_TRANSPARENT',
+      targetMembershipId: 'demo-mem-ath-02',
+      targetAthleteName: 'Maya Chen',
+      senderSid: 'demo-coach-sid',
+      senderMembershipId: 'demo-mem-coach',
+      senderName: 'Coach Morales',
+      senderRole: 'HEAD_COACH',
+      body: 'Saw your shin soreness note — switch to pool/bike flush today. Guardian CC included.',
+      createdAt: `${todayIso}T09:25:00Z`,
+      guardianCcApplied: true,
+      secondAdultVisible: true,
+      acknowledgedByMembershipIds: ['demo-mem-coach'],
+    },
+  ];
+
+  const messagingPolicy: TeamMessagingPolicy = {
+    athleteRepliesEnabled: true,
+    quietHoursStartHour: 21,
+    quietHoursEndHour: 6,
+    requireGuardianCcForMinors: true,
+  };
+
   return {
     brand: {
       teamId,
@@ -944,6 +1019,8 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
     workoutLibrary,
     workoutComments,
     guardianSafetyAlerts,
+    teamMessages,
+    messagingPolicy,
   };
 }
 

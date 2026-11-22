@@ -109,6 +109,13 @@ const CoachOnboardingWizard = lazyWithRetry(
     })),
   { chunkKey: 'CoachOnboardingWizard', restoreTab: 'coach' }
 );
+const MeetDayHeatAndFlightModal = lazyWithRetry(
+  () =>
+    import('./coach/MeetDayHeatAndFlightModal').then((m) => ({
+      default: m.MeetDayHeatAndFlightModal,
+    })),
+  { chunkKey: 'MeetDayHeatAndFlightModal', restoreTab: 'coach' }
+);
 
 export interface CoachWorkspaceViewProps {
   subTab: CoachWorkspaceSubTab;
@@ -464,6 +471,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   };
   const [tracksideMode, setTracksideMode] = useState<'STOPWATCH' | 'FIELD'>('STOPWATCH');
   const [showOnboardingWizard, setShowOnboardingWizard] = useState<boolean>(false);
+  const [showMeetDayModal, setShowMeetDayModal] = useState<boolean>(false);
   const [drawerAthleteId, setDrawerAthleteId] = useState<string | null>(null);
   const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
   const [caraStrengthHours, setCaraStrengthHours] = useState<number>(0);
@@ -631,6 +639,15 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
               >
                 60s Setup
+              </button>
+
+              <button
+                type="button"
+                data-testid="coach-open-meet-packet-btn"
+                onClick={() => setShowMeetDayModal(true)}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
+              >
+                Meet Packet
               </button>
 
               <button
@@ -1295,6 +1312,19 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 onSelectAthleteViewport(athId);
                 onOpenAthleteToday();
               }}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
+
+      {showMeetDayModal && (
+        <WorkspaceErrorBoundary fallbackTitle="Meet-Day Entries & Packet" restoreTab="coach">
+          <Suspense fallback={null}>
+            <MeetDayHeatAndFlightModal
+              isOpen={showMeetDayModal}
+              onClose={() => setShowMeetDayModal(false)}
+              activeTeam={activeTeam}
+              connectedAthletes={connectedAthletesOnly}
             />
           </Suspense>
         </WorkspaceErrorBoundary>

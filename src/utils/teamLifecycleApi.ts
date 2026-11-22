@@ -16,6 +16,9 @@ import type {
   TeamAnnouncementCategory,
   TeamAnnouncementRecord,
   TeamAttendanceStatus,
+  TeamMessageChannelScope,
+  TeamMessageRecord,
+  TeamMessagingPolicy,
 } from '../types.ts';
 import { getSavedIntervalsHeaders } from './telemetryStorage.ts';
 
@@ -354,4 +357,81 @@ export async function updateAssistantCoachEventGroupsApi(params: {
       body: JSON.stringify({ coachEventGroups: params.coachEventGroups }),
     },
   );
+}
+
+export async function postTeamMessageApi(params: {
+  teamId: string;
+  channelScope: TeamMessageChannelScope;
+  eventGroup?: CoachEventGroup;
+  targetMembershipId?: string;
+  body: string;
+  guardianCc?: boolean;
+  clientLocalHour?: number;
+  isEmergencyOverride?: boolean;
+}) {
+  return requestLifecycleJson<{
+    message?: TeamMessageRecord;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({
+      channelScope: params.channelScope,
+      eventGroup: params.eventGroup,
+      targetMembershipId: params.targetMembershipId,
+      body: params.body,
+      guardianCc: params.guardianCc,
+      clientLocalHour: params.clientLocalHour,
+      isEmergencyOverride: params.isEmergencyOverride,
+    }),
+  });
+}
+
+export async function acknowledgeTeamMessageApi(params: {
+  teamId: string;
+  messageId: string;
+}) {
+  return requestLifecycleJson<{
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(
+    `/api/teams/${encodeURIComponent(params.teamId)}/messages/${encodeURIComponent(params.messageId)}/ack`,
+    { method: 'POST', body: '{}' },
+  );
+}
+
+export async function flagTeamMessageApi(params: {
+  teamId: string;
+  messageId: string;
+  reason?: string;
+}) {
+  return requestLifecycleJson<{
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(
+    `/api/teams/${encodeURIComponent(params.teamId)}/messages/${encodeURIComponent(params.messageId)}/flag`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ reason: params.reason }),
+    },
+  );
+}
+
+export async function updateTeamMessagingPolicyApi(params: {
+  teamId: string;
+  athleteRepliesEnabled?: boolean;
+  quietHoursStartHour?: number;
+  quietHoursEndHour?: number;
+}) {
+  return requestLifecycleJson<{
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/messaging-policy`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      athleteRepliesEnabled: params.athleteRepliesEnabled,
+      quietHoursStartHour: params.quietHoursStartHour,
+      quietHoursEndHour: params.quietHoursEndHour,
+    }),
+  });
 }

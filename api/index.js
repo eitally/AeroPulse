@@ -7580,6 +7580,37 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     return Boolean(myMembership.eventGroup) && ann.targetEventGroups.includes(myMembership.eventGroup);
   });
   const visibleFieldMarks = isParentFollower ? [] : isStaffViewer ? doc.fieldMarkLogs || [] : (doc.fieldMarkLogs || []).filter((f) => f.membershipId === myMembership.membershipId);
+  const visibleTeamMessages = (doc.teamMessages || []).filter((msg) => {
+    if (isStaffViewer) return true;
+    if (msg.channelScope === "COACHES_STAFF") return false;
+    if (msg.channelScope === "ALL_TEAM") return true;
+    if (msg.channelScope === "EVENT_GROUP") {
+      if (isParentFollower) {
+        if (!msg.eventGroup) return true;
+        return doc.memberships.some(
+          (child) => linkedChildMembershipIds?.has(child.membershipId) && (!child.eventGroup || child.eventGroup === msg.eventGroup)
+        );
+      }
+      return !msg.eventGroup || !myMembership.eventGroup || msg.eventGroup === myMembership.eventGroup;
+    }
+    if (msg.channelScope === "DIRECT_TRANSPARENT") {
+      if (isParentFollower) {
+        return Boolean(
+          msg.guardianCcApplied && msg.targetMembershipId && linkedChildMembershipIds?.has(msg.targetMembershipId)
+        );
+      }
+      return Boolean(msg.targetMembershipId && msg.targetMembershipId === myMembership.membershipId);
+    }
+    return false;
+  });
+  const resolvedMessagingPolicy = {
+    athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+    quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
+    requireGuardianCcForMinors: Boolean(
+      doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
+    )
+  };
   return {
     brand: {
       ...doc.brand,
@@ -7601,7 +7632,9 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     guardianSafetyAlerts: visibleSafetyAlerts,
     ...isStaffViewer && doc.attendanceByDate ? { attendanceByDate: doc.attendanceByDate } : {},
     announcements: visibleAnnouncements,
-    ...isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks }
+    ...isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks },
+    teamMessages: visibleTeamMessages,
+    messagingPolicy: resolvedMessagingPolicy
   };
 }
 async function listTeamsForUser(callerSid, originUrl) {
@@ -7920,6 +7953,12 @@ async function updateAssistantCoachEventGroups(params) {
     };
   });
 }
+
+// server/teamMessagingService.ts
+import crypto9 from "crypto";
+
+// server/teamEmailAndOtpService.ts
+import crypto8 from "crypto";
 
 // server/authService.ts
 import crypto7 from "crypto";
@@ -8373,11 +8412,7 @@ function verifyPasskeyChallengeToken(token) {
   }
 }
 
-// server/teamLifecycleService.ts
-import crypto11 from "crypto";
-
 // server/teamEmailAndOtpService.ts
-import crypto8 from "crypto";
 function emailOtpVaultKey(email) {
   const hash = crypto8.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
   return `email_otp_${hash}`;
@@ -8690,6 +8725,265 @@ async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid) {
   };
 }
 
+// server/teamMessagingService.ts
+function escapeHtml2(raw) {
+  return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function defaultPolicyForDoc(doc) {
+  return {
+    athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+    quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
+    requireGuardianCcForMinors: Boolean(
+      doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
+    )
+  };
+}
+function isWithinQuietHours(hour, startHour, endHour) {
+  if (typeof hour !== "number" || !Number.isFinite(hour) || hour < 0 || hour > 23) return false;
+  if (startHour === endHour) return false;
+  if (startHour > endHour) {
+    return hour >= startHour || hour < endHour;
+  }
+  return hour >= startHour && hour < endHour;
+}
+async function postTeamMessage(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: "Active team membership is required to send messages." };
+    }
+    const cleanBody = String(params.body || "").trim().slice(0, 800);
+    if (!cleanBody) {
+      return { ok: false, status: 400, error: "Message body is required." };
+    }
+    const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+    const isParentFollower = callerMem.role === "PARENT_FOLLOWER";
+    const policy = defaultPolicyForDoc(doc);
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    if (params.channelScope === "COACHES_STAFF" && !isStaff) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff."
+      };
+    }
+    if (isParentFollower && params.channelScope === "EVENT_GROUP") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Parents may view announcements or message coaching staff transparently."
+      };
+    }
+    if (callerMem.role === "ATHLETE" && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP") && !policy.athleteRepliesEnabled) {
+      return {
+        ok: false,
+        status: 403,
+        error: "This team channel is currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
+      };
+    }
+    let channelId = "team:all";
+    let resolvedEventGroup;
+    let targetMembershipId;
+    let targetAthleteName;
+    let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
+    let guardianEmailNotified = false;
+    if (params.channelScope === "COACHES_STAFF") {
+      channelId = "staff:only";
+      guardianCcApplied = false;
+    } else if (params.channelScope === "EVENT_GROUP") {
+      resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
+      channelId = `group:${resolvedEventGroup}`;
+    } else if (params.channelScope === "DIRECT_TRANSPARENT") {
+      const targetMem = callerMem.role === "ATHLETE" ? callerMem : doc.memberships.find(
+        (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED" && m.role === "ATHLETE"
+      );
+      if (!targetMem) {
+        return {
+          ok: false,
+          status: 404,
+          error: "Select a valid athlete on the roster for a transparent SafeSport message."
+        };
+      }
+      const ageResolved = resolveAthleteAgeTier({
+        birthMonthYear: targetMem.birthMonthYear,
+        birthYear: targetMem.birthYear,
+        orgType: doc.brand.orgType,
+        graduationYear: targetMem.graduationYear
+      });
+      const targetIsProtectedMinor = Boolean(
+        (ageResolved.ageTier === "UNKNOWN" ? targetMem.isMinorU18 : ageResolved.isMinorU18) || doc.brand.orgType === "HIGH_SCHOOL"
+      );
+      if ((targetIsProtectedMinor || policy.requireGuardianCcForMinors) && (params.privateDirectToMinor === true || params.guardianCc === false)) {
+        return {
+          ok: false,
+          status: 403,
+          error: "SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian CC and coaching staff oversight are mandatory."
+        };
+      }
+      channelId = `dm:${targetMem.membershipId}`;
+      targetMembershipId = targetMem.membershipId;
+      targetAthleteName = targetMem.invitedName;
+      guardianCcApplied = Boolean(
+        targetIsProtectedMinor || doc.brand.enableParentGuardianCc || targetMem.parentGuardianEmail
+      );
+      if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
+        guardianEmailNotified = true;
+        void sendEmailViaResend({
+          to: targetMem.parentGuardianEmail,
+          subject: `[THRESH SafeSport CC] Coach message for ${targetMem.invitedName}`,
+          html: `<p><strong>${escapeHtml2(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml2(callerMem.role)}) sent a team message to ${escapeHtml2(targetMem.invitedName)}:</p><blockquote>${escapeHtml2(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under THRESH SafeSport MAAPP two-adult transparency.</p>`,
+          text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`
+        });
+      }
+    }
+    const quietHoursActive = isWithinQuietHours(
+      params.clientLocalHour,
+      policy.quietHoursStartHour,
+      policy.quietHoursEndHour
+    );
+    const record = {
+      id: `msg_${crypto9.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      channelId,
+      channelScope: params.channelScope,
+      ...resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {},
+      ...targetMembershipId ? { targetMembershipId } : {},
+      ...targetAthleteName ? { targetAthleteName } : {},
+      senderSid: params.callerSid,
+      senderMembershipId: callerMem.membershipId,
+      senderName: callerMem.invitedName || doc.brand.coachDisplayName,
+      senderRole: callerMem.role,
+      body: cleanBody,
+      createdAt: nowIso,
+      guardianCcApplied,
+      ...guardianEmailNotified ? { guardianEmailNotified: true } : {},
+      secondAdultVisible: true,
+      ...quietHoursActive && !params.isEmergencyOverride ? { sentDuringQuietHours: true } : {},
+      ...params.isEmergencyOverride ? { isEmergencyOverride: true } : {},
+      acknowledgedByMembershipIds: [callerMem.membershipId]
+    };
+    doc.teamMessages = [record, ...doc.teamMessages || []].slice(0, 500);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGE_SENT",
+      targetId: targetMembershipId || channelId,
+      metadata: {
+        channelScope: params.channelScope,
+        guardianCcApplied,
+        secondAdultVisible: true,
+        sentDuringQuietHours: Boolean(record.sentDuringQuietHours),
+        isEmergencyOverride: Boolean(record.isEmergencyOverride)
+      }
+    });
+    return {
+      ok: true,
+      message: record,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function acknowledgeTeamMessage(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    if (!projected) return { ok: false, status: 403, error: "Membership required." };
+    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
+    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
+    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
+    if (!target) return { ok: false, status: 404, error: "Message not found." };
+    const existingAcks = new Set(target.acknowledgedByMembershipIds || []);
+    existingAcks.add(projected.myMembershipId);
+    target.acknowledgedByMembershipIds = Array.from(existingAcks);
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function flagTeamMessageForReview(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    if (!projected) return { ok: false, status: 403, error: "Membership required." };
+    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
+    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
+    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
+    if (!target) return { ok: false, status: 404, error: "Message not found." };
+    const cleanReason = String(params.reason || "Flagged for athletic administrator review").trim().slice(0, 200);
+    target.flaggedForAdminReview = true;
+    target.flaggedReason = cleanReason;
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGE_FLAGGED",
+      targetId: target.id,
+      metadata: {
+        channelId: target.channelId,
+        reason: cleanReason
+      }
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function updateTeamMessagingPolicy(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only Head Coaches or Athletic Admins may change team messaging rules."
+      };
+    }
+    const current = defaultPolicyForDoc(doc);
+    doc.messagingPolicy = {
+      athleteRepliesEnabled: typeof params.athleteRepliesEnabled === "boolean" ? params.athleteRepliesEnabled : current.athleteRepliesEnabled,
+      quietHoursStartHour: typeof params.quietHoursStartHour === "number" && params.quietHoursStartHour >= 0 && params.quietHoursStartHour <= 23 ? Math.round(params.quietHoursStartHour) : current.quietHoursStartHour,
+      quietHoursEndHour: typeof params.quietHoursEndHour === "number" && params.quietHoursEndHour >= 0 && params.quietHoursEndHour <= 23 ? Math.round(params.quietHoursEndHour) : current.quietHoursEndHour,
+      requireGuardianCcForMinors: Boolean(
+        doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || current.requireGuardianCcForMinors
+      )
+    };
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGING_POLICY_UPDATED",
+      targetId: params.teamId,
+      metadata: doc.messagingPolicy
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+
+// server/teamLifecycleService.ts
+import crypto12 from "crypto";
+
 // server/athleteArchiveHelper.ts
 async function archiveCoachActivitiesForMember(member, activities) {
   if (!Array.isArray(activities) || activities.length === 0) return;
@@ -8740,7 +9034,7 @@ async function archiveCoachActivitiesForMember(member, activities) {
 }
 
 // server/teamService.ts
-import crypto10 from "crypto";
+import crypto11 from "crypto";
 
 // src/utils/officialRaceSynthesizer.ts
 var OFFICIAL_RACE_EVENTS = [
@@ -9497,7 +9791,7 @@ function normalizeAthleteMatchKey(name) {
 }
 
 // server/teamWorkoutAndGovernanceService.ts
-import crypto9 from "crypto";
+import crypto10 from "crypto";
 
 // src/physiology/safeSportPatternWatchEngine.ts
 var DAY_MS = 864e5;
@@ -9811,7 +10105,7 @@ async function broadcastWorkoutToTeamSquad(params) {
     const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
     const meetingNotes = params.meetingNotes ? String(params.meetingNotes).trim().slice(0, 240) : void 0;
     const workout = {
-      broadcastId: `bw_${crypto9.randomBytes(6).toString("hex")}`,
+      broadcastId: `bw_${crypto10.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup,
       ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -9882,7 +10176,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
       const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
       const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : void 0;
       return {
-        broadcastId: `bw_${crypto9.randomBytes(6).toString("hex")}`,
+        broadcastId: `bw_${crypto10.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         targetSquadGroup,
         ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -10300,7 +10594,7 @@ Team: ${doc.brand.name}`
             deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
           }
           const alertRecord = {
-            id: `gsa_${crypto9.randomBytes(6).toString("hex")}`,
+            id: `gsa_${crypto10.randomBytes(6).toString("hex")}`,
             teamId: doc.brand.teamId,
             targetMembershipId: mem.membershipId,
             athleteName: mem.invitedName,
@@ -10369,7 +10663,7 @@ Team: ${doc.brand.name}`
       deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
     }
     const alertRecord = {
-      id: `gsa_${crypto9.randomBytes(6).toString("hex")}`,
+      id: `gsa_${crypto10.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: target.membershipId,
       athleteName: target.invitedName,
@@ -10431,9 +10725,9 @@ async function saveTeamWorkoutLibraryTemplate(params) {
     }
     const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "SWIMMING" || params.template.category === "TRIATHLON" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto9.randomBytes(6).toString("hex")}`;
+    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto10.randomBytes(6).toString("hex")}`;
     const record = {
-      id: id || `wlib_${crypto9.randomBytes(6).toString("hex")}`,
+      id: id || `wlib_${crypto10.randomBytes(6).toString("hex")}`,
       name: cleanName,
       category: validCat,
       sportCategory: params.template.sportCategory || "Running",
@@ -10547,7 +10841,7 @@ async function postTeamWorkoutComment(params) {
       targetIsProtectedMinor || doc.brand.enableParentGuardianCc && targetMem.parentGuardianEmail
     );
     const comment = {
-      id: `cmt_${crypto9.randomBytes(6).toString("hex")}`,
+      id: `cmt_${crypto10.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: targetMem.membershipId,
       targetAthleteName: targetMem.invitedName,
@@ -10793,13 +11087,13 @@ async function createTeamForCoach(params) {
   const cleanShort = String(params.shortName || "").trim().slice(0, 22) || cleanName.split(/\s+/).slice(0, 2).join(" ").toUpperCase().slice(0, 14);
   let slug = slugifyTeamName(cleanName);
   if (dir.bySlug[slug]) {
-    slug = `${slug}-${crypto10.randomInt(10, 99)}`;
+    slug = `${slug}-${crypto11.randomInt(10, 99)}`;
   }
   let joinCode = generateTeamJoinCode(cleanShort);
   if (dir.byJoinCode[joinCode]) {
-    joinCode = generateTeamJoinCode(cleanShort, crypto10.randomInt(10, 99));
+    joinCode = generateTeamJoinCode(cleanShort, crypto11.randomInt(10, 99));
   }
-  const teamId = `tm_${crypto10.randomBytes(8).toString("hex")}`;
+  const teamId = `tm_${crypto11.randomBytes(8).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const defaultSafeSportShield = typeof params.defaultSafeSportShield === "boolean" ? params.defaultSafeSportShield : orgDefaults.defaultSafeSportShield;
   const enableParentGuardianCc = typeof params.enableParentGuardianCc === "boolean" ? params.enableParentGuardianCc : orgDefaults.enableParentGuardianCc;
@@ -10824,7 +11118,7 @@ async function createTeamForCoach(params) {
     createdAt: nowIso
   };
   const coachMembership = {
-    membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
     teamId,
     userSid: params.callerSid,
     role: "HEAD_COACH",
@@ -10967,8 +11261,8 @@ async function bulkCreateAndSendInvites(params) {
       )) {
         continue;
       }
-      const rawToken = crypto10.randomBytes(12).toString("base64url");
-      const membershipId = `mem_${crypto10.randomBytes(6).toString("hex")}`;
+      const rawToken = crypto11.randomBytes(12).toString("base64url");
+      const membershipId = `mem_${crypto11.randomBytes(6).toString("hex")}`;
       const emailParam = cleanEmail ? `&email=${encodeURIComponent(cleanEmail)}` : "";
       const magicJoinUrl = `${cleanOrigin}/join/${latestDoc.brand.slug}?t=${rawToken}${emailParam}`;
       const parentCc = latestDoc.brand.enableParentGuardianCc && row.parentGuardianEmail ? row.parentGuardianEmail.trim().toLowerCase() : void 0;
@@ -11094,7 +11388,7 @@ async function resendPendingTeamInvites(params) {
       continue;
     }
     if (!m.rawInviteToken) {
-      m.rawInviteToken = crypto10.randomBytes(12).toString("base64url");
+      m.rawInviteToken = crypto11.randomBytes(12).toString("base64url");
       m.inviteTokenHash = hashToken(m.rawInviteToken);
     }
     const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : "";
@@ -11259,7 +11553,7 @@ async function claimTeamJoinInvite(params) {
     const resolvedSharingTier = isDeferredMinorParentEmail ? "LOAD_ONLY" : params.sharingTier || "SUMMARY_ONLY";
     if (!mem) {
       mem = {
-        membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         stravaAthleteId: cleanStravaId,
@@ -11325,7 +11619,7 @@ async function claimTeamJoinInvite(params) {
     if (mem.isMinorU18 && mem.parentGuardianEmail) {
       let rawConsentToken = "";
       if (!mem.parentConsentTokenHash) {
-        rawConsentToken = crypto10.randomBytes(16).toString("base64url");
+        rawConsentToken = crypto11.randomBytes(16).toString("base64url");
         mem.parentConsentTokenHash = hashToken(rawConsentToken);
         mem.parentConsentToken = void 0;
       }
@@ -11973,7 +12267,7 @@ async function issueOrResendParentConsentLink(params) {
     if (cleanIncomingEmail) {
       mem.parentGuardianEmail = cleanIncomingEmail;
     }
-    const rawConsentToken = crypto11.randomBytes(16).toString("base64url");
+    const rawConsentToken = crypto12.randomBytes(16).toString("base64url");
     mem.parentConsentTokenHash = hashToken(rawConsentToken);
     mem.parentConsentToken = void 0;
     if (mem.parentConsentStatus !== "ACKNOWLEDGED") {
@@ -13398,12 +13692,146 @@ teamRouter.patch("/api/teams/:teamId/members/:membershipId/coach-groups", async 
     });
   }
 });
+teamRouter.post("/api/teams/:teamId/messages", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const scope = String(body.channelScope || "ALL_TEAM");
+    const result = await postTeamMessage({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      channelScope: scope,
+      eventGroup: typeof body.eventGroup === "string" ? body.eventGroup : void 0,
+      targetMembershipId: typeof body.targetMembershipId === "string" ? body.targetMembershipId : void 0,
+      body: String(body.body || ""),
+      privateDirectToMinor: body.privateDirectToMinor === true,
+      guardianCc: typeof body.guardianCc === "boolean" ? body.guardianCc : void 0,
+      clientLocalHour: typeof body.clientLocalHour === "number" ? body.clientLocalHour : void 0,
+      isEmergencyOverride: body.isEmergencyOverride === true,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to send message."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, message: result.message, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed sending team message."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/messages/:messageId/ack", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await acknowledgeTeamMessage({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      messageId: String(req.params.messageId || ""),
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to acknowledge message."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed acknowledging message."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/messages/:messageId/flag", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await flagTeamMessageForReview({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      messageId: String(req.params.messageId || ""),
+      reason: typeof body.reason === "string" ? body.reason : void 0,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to flag message."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed flagging message."
+    });
+  }
+});
+teamRouter.patch("/api/teams/:teamId/messaging-policy", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await updateTeamMessagingPolicy({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      athleteRepliesEnabled: typeof body.athleteRepliesEnabled === "boolean" ? body.athleteRepliesEnabled : void 0,
+      quietHoursStartHour: typeof body.quietHoursStartHour === "number" ? body.quietHoursStartHour : void 0,
+      quietHoursEndHour: typeof body.quietHoursEndHour === "number" ? body.quietHoursEndHour : void 0,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to update messaging policy."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed updating messaging policy."
+    });
+  }
+});
 
 // server/routers/teamSyncRouter.ts
 import express4 from "express";
 
 // server/athleticSyncService.ts
-import crypto12 from "crypto";
+import crypto13 from "crypto";
 function assertCoachMembership(doc, callerSid) {
   const mem = doc.memberships.find(
     (m) => m.userSid === callerSid && m.status !== "REVOKED"
@@ -13432,7 +13860,7 @@ function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
     const estDist = meet.distanceMeters || 5e3;
     const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
     additions.push({
-      broadcastId: `meet_${crypto12.randomBytes(6).toString("hex")}`,
+      broadcastId: `meet_${crypto13.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup: "ALL",
       date: cleanDate,
@@ -13641,10 +14069,10 @@ function findOrCreateExternalMembership(doc, candidate) {
     candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
   );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-  const rawToken = crypto12.randomBytes(12).toString("base64url");
+  const rawToken = crypto13.randomBytes(12).toString("base64url");
   const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
   const createdMem = {
-    membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
     role: "ATHLETE",
     squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
@@ -13661,7 +14089,7 @@ function findOrCreateExternalMembership(doc, candidate) {
     status: "INVITED",
     emailDeliveryStatus: "READY_MANUAL_LINK",
     rawInviteToken: rawToken,
-    inviteTokenHash: crypto12.createHash("sha256").update(rawToken).digest("hex"),
+    inviteTokenHash: crypto13.createHash("sha256").update(rawToken).digest("hex"),
     invitedAt: nowIso,
     liveSnapshot: {
       updatedAt: nowIso,
@@ -13727,7 +14155,7 @@ async function applyExternalTeamSyncBatch(params) {
     );
     if (duplicate) continue;
     const activity = synthesizeOfficialRaceActivity({
-      id: `ext-meet-${crypto12.randomBytes(5).toString("hex")}`,
+      id: `ext-meet-${crypto13.randomBytes(5).toString("hex")}`,
       date: row.date,
       meetName: row.meetName,
       eventLabel: row.eventLabel,
@@ -13887,7 +14315,7 @@ async function followTeamAsParentOrFan(params) {
     if (!mem) {
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       mem = {
-        membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         role: "PARENT_FOLLOWER",
@@ -14111,10 +14539,10 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
 
 // server/routers/authRouter.ts
 import express5 from "express";
-import crypto14 from "crypto";
+import crypto15 from "crypto";
 
 // server/webauthnVerify.ts
-import crypto13 from "crypto";
+import crypto14 from "crypto";
 function readCborLength(buf, addtl, offset) {
   if (addtl < 24) {
     return { length: addtl, nextOffset: offset };
@@ -14225,7 +14653,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 1 || !Buffer.isBuffer(xBuf) || !Buffer.isBuffer(yBuf)) {
       throw new Error("Invalid COSE EC2 P-256 public key parameters.");
     }
-    const pubKey = crypto13.createPublicKey({
+    const pubKey = crypto14.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -14246,7 +14674,7 @@ function coseKeyMapToSpki(coseMap) {
     if (!Buffer.isBuffer(nBuf) || !Buffer.isBuffer(eBuf)) {
       throw new Error("Invalid COSE RSA public key parameters.");
     }
-    const pubKey = crypto13.createPublicKey({
+    const pubKey = crypto14.createPublicKey({
       key: {
         kty: "RSA",
         n: nBuf.toString("base64url"),
@@ -14266,7 +14694,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 6 || !Buffer.isBuffer(xBuf)) {
       throw new Error("Invalid COSE Ed25519 public key parameters.");
     }
-    const pubKey = crypto13.createPublicKey({
+    const pubKey = crypto14.createPublicKey({
       key: {
         kty: "OKP",
         crv: "Ed25519",
@@ -14313,9 +14741,9 @@ function assertRpIdHashAndFlags(authData, expectedRpId, requireAtFlag) {
   if (!Buffer.isBuffer(authData) || authData.length < minLen) {
     throw new Error("Truncated WebAuthn authenticatorData.");
   }
-  const expectedRpHash = crypto13.createHash("sha256").update(expectedRpId).digest();
+  const expectedRpHash = crypto14.createHash("sha256").update(expectedRpId).digest();
   const actualRpHash = authData.subarray(0, 32);
-  if (!crypto13.timingSafeEqual(actualRpHash, expectedRpHash)) {
+  if (!crypto14.timingSafeEqual(actualRpHash, expectedRpHash)) {
     throw new Error("WebAuthn RP ID hash mismatch.");
   }
   const flags = authData.readUInt8(32);
@@ -14418,15 +14846,15 @@ function verifyWebAuthnAssertion(params) {
         error: "Passkey record lacks stored public key."
       };
     }
-    const pubKey = crypto13.createPublicKey({
+    const pubKey = crypto14.createPublicKey({
       key: Buffer.from(params.publicKeySpkiBase64, "base64"),
       format: "der",
       type: "spki"
     });
-    const clientDataHash = crypto13.createHash("sha256").update(clientDataBytes).digest();
+    const clientDataHash = crypto14.createHash("sha256").update(clientDataBytes).digest();
     const signedData = Buffer.concat([authData, clientDataHash]);
     const algDigest = params.coseAlg === -8 ? null : "sha256";
-    const isValidSig = crypto13.verify(algDigest, signedData, pubKey, sigBuf);
+    const isValidSig = crypto14.verify(algDigest, signedData, pubKey, sigBuf);
     if (!isValidSig) {
       return {
         verified: false,
@@ -15096,8 +15524,8 @@ authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
   const rpId = getRpId(req);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
-  const challenge = crypto14.randomBytes(32).toString("base64url");
-  const userId = crypto14.randomBytes(16).toString("base64url");
+  const challenge = crypto15.randomBytes(32).toString("base64url");
+  const userId = crypto15.randomBytes(16).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "register",
@@ -15207,7 +15635,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
 });
 authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
   const rpId = getRpId(req);
-  const challenge = crypto14.randomBytes(32).toString("base64url");
+  const challenge = crypto15.randomBytes(32).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "auth"
@@ -15419,7 +15847,7 @@ authRouter.delete("/api/auth/account", async (req, res) => {
 
 // server/routers/configRouter.ts
 import { Router as Router6 } from "express";
-import crypto17 from "crypto";
+import crypto18 from "crypto";
 import fs7 from "fs";
 
 // server/secretManager.ts
@@ -15817,7 +16245,7 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
 }
 
 // server/oauthHelpers.ts
-import crypto15 from "crypto";
+import crypto16 from "crypto";
 function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
   const verified = getVerifiedSessionClaims(req);
   if (verified?.sid) {
@@ -15830,7 +16258,7 @@ function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
     );
     return { sid: verified.sid, sessionToken: sessionToken2 };
   }
-  const sid = crypto15.randomBytes(16).toString("hex");
+  const sid = crypto16.randomBytes(16).toString("hex");
   const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return { sid, sessionToken };
@@ -16367,7 +16795,7 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 
 // server/routers/stravaRouter.ts
 import express6 from "express";
-import crypto16 from "crypto";
+import crypto17 from "crypto";
 import fs6 from "fs";
 
 // server/stravaIdUtils.ts
@@ -17173,7 +17601,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = (prevClaims?.sub === canonicalUserId ? prevClaims.sid : void 0) || (opts.expectedUserId === canonicalUserId ? opts.expectedSid : void 0) || deriveUserSessionSid(canonicalUserId);
     sessionSubject = canonicalUserId;
   } else {
-    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto16.randomBytes(16).toString("hex");
+    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto17.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
   if (opts.athleteId) {
@@ -21344,7 +21772,7 @@ configRouter.post("/api/auth/session", (req, res) => {
     res.json({ ok: true, sessionToken: refreshedToken, authLevel: "verified" });
     return;
   }
-  const anonSub = `anon_${crypto17.randomBytes(8).toString("hex")}`;
+  const anonSub = `anon_${crypto18.randomBytes(8).toString("hex")}`;
   const sessionToken = setSessionCookie(req, res, anonSub, void 0, "anon");
   res.json({ ok: true, sessionToken, authLevel: "anon" });
 });

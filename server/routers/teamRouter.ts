@@ -7,6 +7,12 @@ import {
   updateAssistantCoachEventGroups,
 } from '../teamFieldAndDailyOpsService.ts';
 import {
+  acknowledgeTeamMessage,
+  flagTeamMessageForReview,
+  postTeamMessage,
+  updateTeamMessagingPolicy,
+} from '../teamMessagingService.ts';
+import {
   escapeHtml,
   getVerifiedSessionClaims,
   isCanonicalAuthenticatedClaims,
@@ -1643,6 +1649,164 @@ teamRouter.patch('/api/teams/:teamId/members/:membershipId/coach-groups', async 
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed updating assistant coach groups.',
+    });
+  }
+});
+
+// ============================================================================
+// 18. Wave 3 SafeSport MAAPP Coach–Athlete Transparent Messaging
+// ============================================================================
+
+teamRouter.post('/api/teams/:teamId/messages', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      channelScope?: unknown;
+      eventGroup?: unknown;
+      targetMembershipId?: unknown;
+      body?: unknown;
+      privateDirectToMinor?: unknown;
+      guardianCc?: unknown;
+      clientLocalHour?: unknown;
+      isEmergencyOverride?: unknown;
+    };
+    const scope = String(body.channelScope || 'ALL_TEAM') as import('../../src/types.ts').TeamMessageChannelScope;
+    const result = await postTeamMessage({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      channelScope: scope,
+      eventGroup: typeof body.eventGroup === 'string' ? body.eventGroup : undefined,
+      targetMembershipId: typeof body.targetMembershipId === 'string' ? body.targetMembershipId : undefined,
+      body: String(body.body || ''),
+      privateDirectToMinor: body.privateDirectToMinor === true,
+      guardianCc: typeof body.guardianCc === 'boolean' ? body.guardianCc : undefined,
+      clientLocalHour: typeof body.clientLocalHour === 'number' ? body.clientLocalHour : undefined,
+      isEmergencyOverride: body.isEmergencyOverride === true,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to send message.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, message: result.message, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed sending team message.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/messages/:messageId/ack', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await acknowledgeTeamMessage({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      messageId: String(req.params.messageId || ''),
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to acknowledge message.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed acknowledging message.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/messages/:messageId/flag', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as { reason?: unknown };
+    const result = await flagTeamMessageForReview({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      messageId: String(req.params.messageId || ''),
+      reason: typeof body.reason === 'string' ? body.reason : undefined,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to flag message.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed flagging message.',
+    });
+  }
+});
+
+teamRouter.patch('/api/teams/:teamId/messaging-policy', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      athleteRepliesEnabled?: unknown;
+      quietHoursStartHour?: unknown;
+      quietHoursEndHour?: unknown;
+    };
+    const result = await updateTeamMessagingPolicy({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      athleteRepliesEnabled:
+        typeof body.athleteRepliesEnabled === 'boolean' ? body.athleteRepliesEnabled : undefined,
+      quietHoursStartHour:
+        typeof body.quietHoursStartHour === 'number' ? body.quietHoursStartHour : undefined,
+      quietHoursEndHour:
+        typeof body.quietHoursEndHour === 'number' ? body.quietHoursEndHour : undefined,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to update messaging policy.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed updating messaging policy.',
     });
   }
 });

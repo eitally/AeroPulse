@@ -31,8 +31,16 @@ const UserGuideModal = lazyWithRetry(
   () => import('./UserGuideModal').then((m) => ({ default: m.UserGuideModal })),
   { chunkKey: 'UserGuideModal' }
 );
+const TeamMessagingDrawer = lazyWithRetry(
+  () => import('./coach/TeamMessagingDrawer').then((m) => ({ default: m.TeamMessagingDrawer })),
+  { chunkKey: 'TeamMessagingDrawer' }
+);
 
 export interface CockpitModalsProps {
+  // Team Messaging Drawer
+  isTeamMessagesOpen?: boolean;
+  onCloseTeamMessages?: () => void;
+
   // AI Coach Drawer
   isCoachDrawerOpen: boolean;
   onCloseCoachDrawer: () => void;
@@ -61,6 +69,8 @@ export interface CockpitModalsProps {
 }
 
 export const CockpitModals: React.FC<CockpitModalsProps> = ({
+  isTeamMessagesOpen = false,
+  onCloseTeamMessages,
   isCoachDrawerOpen,
   onCloseCoachDrawer,
   isProfileModalOpen,
@@ -159,8 +169,24 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
     onOpenAICoachFromGuide,
   } = useTeamCoach();
 
+  const activeModalTeam =
+    myTeams.find((t) => t.brand.teamId === activeTeamId) || myTeams[0] || null;
+
   return (
     <WorkspaceErrorBoundary resetKey="cockpit-modals" fallbackTitle="Modal Needs Recovery">
+      {isTeamMessagesOpen && onCloseTeamMessages && (
+        <Suspense fallback={null}>
+          <TeamMessagingDrawer
+            isOpen={isTeamMessagesOpen}
+            onClose={onCloseTeamMessages}
+            activeTeam={activeModalTeam}
+            myTeams={myTeams}
+            onTeamsUpdated={onTeamsUpdated}
+            viewerMode={activeViewName === 'coach' ? 'COACH' : 'ATHLETE'}
+          />
+        </Suspense>
+      )}
+
       {isCoachDrawerOpen && (
         <Suspense fallback={null}>
           <AICoachDrawer
