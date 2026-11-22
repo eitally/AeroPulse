@@ -3,7 +3,7 @@ import {
   escapeTextForSafeAttr,
 } from './teamPalette';
 import {
-  FAV_F_SHIELD_T_PATH,
+  FAV_M_SINGLE_INK_PATH,
 } from './brandVectors';
 import type { TeamBrandConfig } from '../types';
 
@@ -26,7 +26,7 @@ export function buildTeamFaviconDataUri(
   const safeTile = escapeTextForSafeAttr(tileFill);
   const safeInk = escapeTextForSafeAttr(inkFill);
   const safeBorder = escapeTextForSafeAttr(borderStroke);
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none"><rect x="0.75" y="0.75" width="30.5" height="30.5" rx="6.5" fill="${safeTile}" stroke="${safeBorder}" stroke-width="1.5"/><path d="${FAV_F_SHIELD_T_PATH}" fill="${safeInk}" fill-rule="evenodd" clip-rule="evenodd"/></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none"><rect x="0.75" y="0.75" width="30.5" height="30.5" rx="6.5" fill="${safeTile}" stroke="${safeBorder}" stroke-width="1.5"/><path d="${FAV_M_SINGLE_INK_PATH}" fill="${safeInk}" fill-rule="evenodd" clip-rule="evenodd"/></svg>`;
   return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
@@ -44,8 +44,8 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
 
   if (!brand) {
     if (existing) existing.remove();
-    if (faviconEl && faviconEl.getAttribute('href') !== '/icon.svg?v=5') {
-      faviconEl.setAttribute('href', '/icon.svg?v=5');
+    if (faviconEl && faviconEl.getAttribute('href') !== '/icon.svg?v=6') {
+      faviconEl.setAttribute('href', '/icon.svg?v=6');
     }
     return;
   }

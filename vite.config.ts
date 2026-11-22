@@ -23,9 +23,9 @@ export default defineConfig(() => {
           name: 'MeetReady — Track & Field & Cross Country',
           short_name: 'MeetReady',
           description:
-            'Coach clipboard, auto-scaled distance pace pods, watchless 0.01s trackside stopwatch, and 1Hz endurance physiology for teams and athletes.',
-          theme_color: '#0C1D14',
-          background_color: '#0C1D14',
+            'Every mark. Every mile. Meet ready. Watchless 0.01s offline splits, field events sheet, auto-scaled pace pods, and U18 SafeSport guardrails for Track, Field & Cross Country.',
+          theme_color: '#163022',
+          background_color: '#163022',
           display: 'standalone',
           orientation: 'any',
           start_url: '/',
@@ -103,6 +103,9 @@ export default defineConfig(() => {
             /^\/api\//,
             /^\/auth\//,
             /^\/docs(\/|$)/,
+            /^\/(?:demo|ad|meet|clinic|flyer|sticker)(?:\/|$)/,
+            /^\/go\//,
+            /^\/share\/?$/,
             /^\/(legal|privacy|terms|subprocessors|procurement|for-athletic-directors)(\/|$)/,
           ],
           runtimeCaching: [

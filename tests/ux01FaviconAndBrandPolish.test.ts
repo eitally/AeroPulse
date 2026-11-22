@@ -3,90 +3,100 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildTeamFaviconDataUri } from '../src/utils/teamBrandDom';
 import {
-  FAV_F_SHIELD_T_PATH,
-  S2_ARROW_NEEDLE_PATH,
-  S2_PINE_ARC_PATH,
-  S2_VOLT_ARC_PATH,
+  BREAK_LANE_M_ARROW_PATH,
+  BREAK_LANE_M_LANES_PATH,
+  FAV_M_ARROW_PATH,
+  FAV_M_LANES_PATH,
+  FAV_M_SINGLE_INK_PATH,
+  MEETREADY_WORDMARK_OUTLINE_PATH,
 } from '../src/utils/brandVectors';
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-function readPngDimensions(filePath: string): { width: number; height: number } {
+function readPngMetadata(filePath: string): { width: number; height: number; colorType: number } {
   const buf = fs.readFileSync(filePath);
   expect(buf.subarray(0, 8).equals(PNG_MAGIC)).toBe(true);
   expect(buf.subarray(12, 16).toString('ascii')).toBe('IHDR');
   return {
     width: buf.readUInt32BE(16),
     height: buf.readUInt32BE(20),
+    colorType: buf[25],
   };
 }
 
-describe('UX-01 & BRD-03 · TL-2P1 Parallel-Breach Track-Lane × W-A Lockup & FAV-F 16px Favicon', () => {
+describe('UX-01 & BRD-03 · 1B-Pro Break-Lane M Vector Lockup & 32px Favicon', () => {
   const root = process.cwd();
 
-  it('ships TL-2P1 collinear 315-degree parallel breach + inside track lane in brandVectors.ts', () => {
-    // Inner track lane present in both Pine and Volt compound paths
-    expect(S2_PINE_ARC_PATH).toContain('M 42.32 87.68 A 25 25');
-    expect(S2_VOLT_ARC_PATH).toContain('M 83.19 60.67 A 25 25');
-    // Collinear 315° parallel chord endpoints on outer & inner Pine walls (dx === dy)
-    expect(S2_PINE_ARC_PATH).toContain('84.13 31.99 L 73.87 42.27');
-    expect(S2_VOLT_ARC_PATH).toContain('M 97.99 45.87');
-    expect(S2_VOLT_ARC_PATH).toContain('87.73 56.13');
-    // Center pinhole + +2.5px extended arrow tip preserved
-    expect(S2_ARROW_NEEDLE_PATH).toContain('108.44 21.56');
-    expect(S2_ARROW_NEEDLE_PATH).toContain('A 3.8 3.8 0 1 0 56.20 70.00');
+  it('ships flat 2-ink 1B-Pro Break-Lane M and outlined wordmark paths in brandVectors.ts', () => {
+    expect(BREAK_LANE_M_LANES_PATH.length).toBeGreaterThan(80);
+    expect(BREAK_LANE_M_ARROW_PATH.length).toBeGreaterThan(80);
+    expect(MEETREADY_WORDMARK_OUTLINE_PATH.length).toBeGreaterThan(1000);
+    expect(FAV_M_LANES_PATH).toContain('M 2.68 28.62');
+    expect(FAV_M_ARROW_PATH).toContain('28.12 4.38');
   });
 
-  it('ships the dedicated 32x32 FAV-F High-Vis Volt Shield in public/icon.svg (crisp at 16px)', () => {
+  it('ships the unified 32x32 Break-Lane M favicon in public/icon.svg (crisp at 16px)', () => {
     const svg = fs.readFileSync(path.join(root, 'public', 'icon.svg'), 'utf8');
     expect(svg).toContain('viewBox="0 0 32 32"');
+    expect(svg).toContain('fill="#0B120E"');
+    expect(svg).toContain('fill="#34C277"');
     expect(svg).toContain('fill="#C8FF00"');
-    expect(svg).toContain('fill="#080A09"');
-    expect(svg).toContain(FAV_F_SHIELD_T_PATH);
+    expect(svg).toContain(FAV_M_LANES_PATH);
+    expect(svg).toContain(FAV_M_ARROW_PATH);
     expect(svg).toContain('fill-rule="evenodd"');
+    expect(svg).not.toMatch(/<(linearGradient|radialGradient)/i);
     expect(svg).not.toContain('paint-order:stroke fill');
   });
 
-  it('links cache-busted v=5 FAV-F favicon and apple-touch-icon across app and docs HTML', () => {
+  it('links cache-busted v=6 favicon and apple-touch-icon across app and docs HTML', () => {
     const appHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     const docsHtml = fs.readFileSync(path.join(root, 'public', 'docs', 'index.html'), 'utf8');
 
-    expect(appHtml).toContain('href="/icon.svg?v=5"');
-    expect(appHtml).toContain('href="/apple-touch-icon.png?v=5"');
-    expect(docsHtml).toContain('href="/icon.svg?v=5"');
+    expect(appHtml).toContain('href="/icon.svg?v=6"');
+    expect(appHtml).toContain('href="/apple-touch-icon.png?v=6"');
+    expect(docsHtml).toContain('href="/icon.svg?v=6"');
   });
 
-  it('builds dynamic team favicons using the 32x32 FAV-F Volt Shield geometry with encoded team palette', () => {
+  it('builds dynamic team favicons using the 32x32 Break-Lane M geometry with encoded team palette', () => {
     const dataUri = buildTeamFaviconDataUri('#1E3A8A', '#FFFFFF', '#0F172A');
     expect(dataUri.startsWith('data:image/svg+xml,')).toBe(true);
     expect(dataUri).toContain('viewBox%3D%220%200%2032%2032%22');
     expect(dataUri).toContain('%231E3A8A');
     expect(dataUri).toContain('%23FFFFFF');
     expect(dataUri).toContain('%230F172A');
+    expect(decodeURIComponent(dataUri)).toContain(FAV_M_SINGLE_INK_PATH);
     expect(dataUri).not.toContain('viewBox%3D%220%200%20128%20128%22');
   });
 
-  it('provides regenerated PWA & Apple Touch PNG icons with exact pixel dimensions', () => {
-    const expected: Array<{ file: string; width: number; height: number }> = [
-      { file: 'apple-touch-icon.png', width: 180, height: 180 },
-      { file: 'pwa-192x192.png', width: 192, height: 192 },
-      { file: 'pwa-512x512.png', width: 512, height: 512 },
-      { file: 'pwa-maskable-512x512.png', width: 512, height: 512 },
+  it('provides regenerated opaque RGB PWA & Apple Touch PNG icons with exact pixel dimensions', () => {
+    const expected: Array<{ file: string; width: number; height: number; colorType: number }> = [
+      { file: 'apple-touch-icon.png', width: 180, height: 180, colorType: 2 },
+      { file: 'pwa-192x192.png', width: 192, height: 192, colorType: 2 },
+      { file: 'pwa-512x512.png', width: 512, height: 512, colorType: 2 },
+      { file: 'pwa-maskable-512x512.png', width: 512, height: 512, colorType: 2 },
     ];
 
     for (const item of expected) {
-      const dims = readPngDimensions(path.join(root, 'public', item.file));
-      expect(dims).toEqual({ width: item.width, height: item.height });
+      const meta = readPngMetadata(path.join(root, 'public', item.file));
+      expect(meta).toEqual({
+        width: item.width,
+        height: item.height,
+        colorType: item.colorType,
+      });
     }
   });
 
-  it('exports decoupled ThreshMark + ThreshWordmark with high-contrast tokens and zero interior watermarks', () => {
+  it('exports decoupled ThreshMark + ThreshWordmark with high-contrast tokens, outlined paths, and zero interior watermarks', () => {
     const logoSrc = fs.readFileSync(path.join(root, 'src', 'components', 'AeroPulseLogo.tsx'), 'utf8');
     expect(logoSrc).toContain('export const ThreshMark');
     expect(logoSrc).toContain('export const ThreshWordmark');
-    expect(logoSrc).toContain('--thresh-volt:#357A00');
-    expect(logoSrc).toContain('--thresh-ink:#101411');
+    expect(logoSrc).toContain('--thresh-pine:#34C277');
+    expect(logoSrc).toContain('--thresh-volt:#1C5436');
+    expect(logoSrc).toContain('--thresh-volt:#C8FF00');
+    expect(logoSrc).toContain('--thresh-ink:#0B120E');
     expect(logoSrc).toContain('--thresh-ink:#F4F7F4');
+    expect(logoSrc).toContain('MEETREADY_WORDMARK_OUTLINE_PATH');
+    expect(logoSrc).not.toMatch(/<text\s+/i);
     expect(logoSrc).not.toContain('skewX(-14) scale(1.10, 1.29)');
     expect(logoSrc).toContain('viewBox="0 0 32 32"');
 

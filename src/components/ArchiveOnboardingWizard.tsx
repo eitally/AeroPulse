@@ -134,7 +134,7 @@ export function ArchiveOnboardingWizard({
       role="dialog"
       aria-modal="true"
       aria-labelledby="archive-wizard-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/70 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/70 animate-fade-in"
     >
       <div
         ref={dialogRef}

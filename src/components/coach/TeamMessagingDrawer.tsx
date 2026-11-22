@@ -403,7 +403,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       role="dialog"
       aria-modal="true"
       data-testid="team-messaging-drawer"
-      className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex justify-end bg-black/60"
     >
       <div className="w-full max-w-xl h-full bg-white dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border-l border-ap-edge flex flex-col shadow-2xl">
         {/* Header */}

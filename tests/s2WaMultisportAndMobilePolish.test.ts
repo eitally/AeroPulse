@@ -74,12 +74,12 @@ describe('BRD-02 & SYNC-02 · S2 × W-A Brand Modularity, Multi-Sport TSS v4 & N
       React.createElement(AeroPulseLogo, { mode: 'mark-only', size: 'sm' })
     );
     expect(markOnlyHtml).toContain('viewBox="0 0 128 128"');
-    expect(markOnlyHtml).not.toContain('viewBox="0 0 364 64"');
+    expect(markOnlyHtml).not.toContain('viewBox="0 0 326 64"');
 
     const wordmarkOnlyHtml = renderToStaticMarkup(
       React.createElement(AeroPulseLogo, { mode: 'wordmark-only', surface: 'on-dark' })
     );
-    expect(wordmarkOnlyHtml).toContain('viewBox="0 0 364 64"');
+    expect(wordmarkOnlyHtml).toContain('viewBox="0 0 326 64"');
     expect(wordmarkOnlyHtml).not.toContain('viewBox="0 0 128 128"');
     expect(wordmarkOnlyHtml).toContain('--thresh-ink:#F4F7F4');
 

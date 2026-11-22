@@ -183,6 +183,10 @@ async function run() {
     await page.goto(`${BASE_URL}/?demo=1#coach/roster`, { waitUntil: 'domcontentloaded' });
     const digest = page.getByTestId('coach-execution-digest');
     await digest.waitFor({ state: 'visible', timeout: 15000 });
+    const proBtn = page.getByTestId('coach-complexity-pro');
+    if (await proBtn.isVisible().catch(() => false)) {
+      await proBtn.click();
+    }
     await digest.getByRole('button', { name: 'Inspect' }).first().click();
     await page.getByRole('button', { name: /Back to Coach Roster/i }).waitFor({ state: 'visible', timeout: 15000 });
     await page.waitForTimeout(500);

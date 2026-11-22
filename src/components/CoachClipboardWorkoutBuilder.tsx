@@ -1426,7 +1426,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 onClick={() => setAudienceMode(chip.id)}
                 className={`min-h-[44px] sm:!min-h-[34px] px-3 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
                   active
-                    ? 'ap-nav-volt-active'
+                    ? 'liquid-capsule-active text-ap-ink dark:text-white'
                     : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
                 }`}
               >
@@ -1453,7 +1453,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   className={`min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-medium border cursor-pointer ${
                     selected
                       ? 'border-ap-cobalt bg-[#E3ECE5] text-ap-cobalt dark:border-ap-volt dark:bg-ap-turf dark:text-ap-volt'
-                      : 'border-stone-300 dark:border-ap-edge text-slate-700 dark:text-slate-300'
+                      : 'border-ap-frame/25 dark:border-ap-edge text-slate-700 dark:text-slate-300'
                   }`}
                 >
                   {ath.name}
@@ -1646,7 +1646,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                       }}
                       className={`flex-1 min-h-[44px] sm:min-h-[32px] px-2 py-1 rounded-md cursor-pointer ${
                         sessionSlot === opt.id
-                          ? 'ap-nav-volt-active'
+                          ? 'liquid-capsule-active text-ap-ink dark:text-white'
                           : 'text-ap-muted dark:text-ap-muted-dark'
                       }`}
                     >
@@ -1705,7 +1705,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                     }}
                     className={`min-h-[44px] sm:min-h-[30px] px-2.5 py-0.5 rounded-md cursor-pointer ${
                       active
-                        ? 'ap-nav-volt-active'
+                        ? 'liquid-capsule-active text-ap-ink dark:text-white'
                         : 'liquid-capsule-track text-[#1F3528] dark:text-[#C8D8CE]'
                     }`}
                   >

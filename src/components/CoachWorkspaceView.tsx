@@ -570,6 +570,44 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   };
   const [tracksideMode, setTracksideMode] = useState<'STOPWATCH' | 'FIELD'>('STOPWATCH');
   const [showOnboardingWizard, setShowOnboardingWizard] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (
+      isSampleDemoMode ||
+      subTab !== 'CLIPBOARD' ||
+      myTeams.length > 0 ||
+      connectedAthletesOnly.length > 0 ||
+      showOnboardingWizard
+    ) {
+      return;
+    }
+    try {
+      if (
+        typeof window === 'undefined' ||
+        !window.localStorage.getItem('aeropulse_session_token') ||
+        window.sessionStorage.getItem('meetready_coach_wizard_seen') === '1'
+      ) {
+        return;
+      }
+    } catch {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      try {
+        window.sessionStorage.setItem('meetready_coach_wizard_seen', '1');
+      } catch {
+        // ignore storage failures
+      }
+      setShowOnboardingWizard(true);
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [
+    isSampleDemoMode,
+    subTab,
+    myTeams.length,
+    connectedAthletesOnly.length,
+    showOnboardingWizard,
+  ]);
   const [showMeetDayModal, setShowMeetDayModal] = useState<boolean>(false);
   const [drawerAthleteId, setDrawerAthleteId] = useState<string | null>(null);
   const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
@@ -683,7 +721,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   onClick={() => setComplexityTier('ESSENTIALS')}
                   className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg cursor-pointer transition-colors ${
                     complexityTier === 'ESSENTIALS'
-                      ? 'ap-nav-volt-active font-bold'
+                      ? 'liquid-capsule-active text-ap-ink dark:text-white font-bold'
                       : 'text-ap-ink dark:text-ap-chalk'
                   }`}
                 >
@@ -696,7 +734,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   onClick={() => setComplexityTier('PRO')}
                   className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg cursor-pointer transition-colors ${
                     complexityTier === 'PRO'
-                      ? 'ap-nav-volt-active font-bold'
+                      ? 'liquid-capsule-active text-ap-ink dark:text-white font-bold'
                       : 'text-ap-ink dark:text-ap-chalk'
                   }`}
                 >
@@ -1242,7 +1280,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                       const url = URL.createObjectURL(blob);
                       const anchor = document.createElement('a');
                       anchor.href = url;
-                      anchor.download = `thresh-ncaa-cara-${todayIso}.csv`;
+                      anchor.download = `meetready-ncaa-cara-${todayIso}.csv`;
                       document.body.appendChild(anchor);
                       anchor.click();
                       document.body.removeChild(anchor);

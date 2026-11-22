@@ -99,6 +99,7 @@ import {
   sanitizePersistedTargetGoals,
 } from './utils/lazyWithRetry';
 import { STORAGE_KEYS } from './utils/storageKeys';
+import { captureLandingAttribution } from './utils/attribution';
 
 const StravaAuthGate = lazyWithRetry(
   () => import('./components/StravaAuthGate').then((m) => ({ default: m.StravaAuthGate })),
@@ -315,6 +316,9 @@ export default function App() {
   useEffect(() => {
     hasEnteredWorkspaceRef.current = hasEnteredWorkspace;
   }, [hasEnteredWorkspace]);
+  useEffect(() => {
+    captureLandingAttribution();
+  }, []);
   const [isSessionLoggedOut, setIsSessionLoggedOut] = useState<boolean>(() => {
     try {
       return localStorage.getItem('aeropulse_logged_out') === '1';

@@ -1,8 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <rect width="32" height="32" rx="7" fill="#C8FF00" />
+  <rect width="32" height="32" rx="7" fill="#0B120E" />
   <path
-    d="M 5.5 25.5 V 6.5 H 10.7 L 16 15.8 L 21.3 6.5 H 26.5 V 25.5 H 21.8 V 14.3 L 17.5 21.6 H 14.5 L 10.2 14.3 V 25.5 Z"
-    fill="#080A09"
+    d="M 2.68 28.62 L 8.92 11.34 L 12.16 11.34 L 5.92 28.62 Z M 7.48 28.62 L 13.72 11.34 L 17.08 11.34 L 19.48 15.90 L 16 22.86 L 14.46 17.58 L 10.48 28.62 Z"
+    fill="#34C277"
+    fill-rule="evenodd"
+    clip-rule="evenodd"
+  />
+  <path
+    d="M 14.92 28.62 L 24.04 10.38 L 19.48 8.22 L 28.12 4.38 L 29.32 12.54 L 26.68 11.34 L 18.04 28.62 Z M 23.08 28.62 L 23.08 22.38 L 27.16 14.22 L 27.16 28.62 Z"
+    fill="#C8FF00"
     fill-rule="evenodd"
     clip-rule="evenodd"
   />

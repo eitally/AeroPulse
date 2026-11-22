@@ -35,11 +35,16 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
     expect(isBrandStudioLocation('/', '#stopwatch')).toBe(false);
   });
 
-  it('ships all 17 canonical vectors with unique IDs and namespaced gradient IDs', () => {
-    expect(BRAND_ASSET_CATALOG).toHaveLength(17);
+  it('ships all 23 canonical vectors with unique IDs, solid 2-ink fills (zero gradients), and outlined wordmarks', () => {
+    expect(BRAND_ASSET_CATALOG).toHaveLength(23);
 
     const seenIds = new Set<string>();
-    const seenGradientIds = new Set<string>();
+    const editorialTextAssets = new Set([
+      'meetready-og-1200x630',
+      'meetready-sticker-crest',
+      'meetready-merch-tee-back',
+      'meetready-banner-10x3-qr',
+    ]);
 
     for (const asset of BRAND_ASSET_CATALOG) {
       expect(seenIds.has(asset.id)).toBe(false);
@@ -49,14 +54,12 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
       expect(asset.svgMarkup.endsWith('</svg>')).toBe(true);
       expect(asset.svgMarkup).toContain(`viewBox="${asset.viewBox}"`);
 
-      // Never collide on generic gradient id="g1"
+      // Flat solid 2-ink fills only — no gradients for clean machine embroidery & print
       expect(asset.svgMarkup).not.toContain('id="g1"');
+      expect(asset.svgMarkup).not.toMatch(/<(linearGradient|radialGradient)/i);
 
-      const gradMatches = [...asset.svgMarkup.matchAll(/id="(meetready-grad-[^"]+)"/g)];
-      for (const m of gradMatches) {
-        const gid = m[1];
-        expect(seenGradientIds.has(gid)).toBe(false);
-        seenGradientIds.add(gid);
+      if (!editorialTextAssets.has(asset.id)) {
+        expect(asset.svgMarkup).not.toMatch(/<text[\s>]/i);
       }
     }
   });
@@ -93,7 +96,7 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
     }
   });
 
-  it('matches all 17 generated SVGs and 8 PNGs on disk in public/brand/ with exact pixel dimensions', () => {
+  it('matches all 23 generated SVGs, AD OG banner, and 15 PNGs on disk in public/brand/ with exact pixel dimensions', () => {
     const brandDir = path.resolve(process.cwd(), 'public', 'brand');
 
     for (const asset of BRAND_ASSET_CATALOG) {
@@ -102,15 +105,25 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
       expect(fs.readFileSync(svgDisk, 'utf8')).toBe(asset.svgMarkup);
     }
 
+    const adOgSvgPath = path.join(brandDir, 'meetready-og-ad-1200x630.svg');
+    expect(fs.existsSync(adOgSvgPath)).toBe(true);
+
     const expectedPngs: Array<{ file: string; width: number; height: number }> = [
       { file: 'meetready-og-1200x630.png', width: 1200, height: 630 },
+      { file: 'meetready-og-ad-1200x630.png', width: 1200, height: 630 },
       { file: 'meetready-lockup-dark-2x.png', width: 944, height: 248 },
       { file: 'meetready-lockup-light-2x.png', width: 944, height: 248 },
+      { file: 'meetready-stacked-dark-2x.png', width: 640, height: 480 },
+      { file: 'meetready-stacked-light-2x.png', width: 640, height: 480 },
       { file: 'meetready-sticker-diecut-2x.png', width: 944, height: 248 },
+      { file: 'meetready-sticker-crest-2x.png', width: 720, height: 720 },
+      { file: 'meetready-sticker-mark-diecut-2x.png', width: 600, height: 600 },
       { file: 'meetready-1ink-stencil-2x.png', width: 944, height: 248 },
       { file: 'meetready-1ink-stencil-white-2x.png', width: 944, height: 248 },
       { file: 'meetready-icon-square-512.png', width: 512, height: 512 },
       { file: 'meetready-icon-square-1024.png', width: 1024, height: 1024 },
+      { file: 'meetready-merch-tee-back-2x.png', width: 1200, height: 880 },
+      { file: 'meetready-banner-10x3-qr-2x.png', width: 2400, height: 720 },
     ];
 
     for (const item of expectedPngs) {
@@ -172,7 +185,7 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
     ]);
   });
 
-  it('packages all 17 SVGs, tokens JSON, and permissions guide into a valid fflate ZIP', async () => {
+  it('packages all 23 SVGs, tokens JSON, and permissions guide into a valid fflate ZIP', async () => {
     const bytes = await buildBrandKitZipUint8Array({
       'sample-test.png': new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
     });
