@@ -472,7 +472,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
 
         if (segPath && segPath.length >= 2) {
           const segLine = L.polyline(segPath, {
-            color: isSelectedSeg ? '#C8FF00' : eff.prRank === 1 ? '#D97706' : '#0284C7',
+            color: isSelectedSeg ? '#D8FF2A' : eff.prRank === 1 ? '#D97706' : '#0284C7',
             weight: isSelectedSeg ? 6.5 : 3.5,
             opacity: isSelectedSeg ? 1 : 0.7,
             dashArray: isSelectedSeg ? undefined : '5 4',
@@ -510,8 +510,8 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
             if (u >= nextSplit) {
               const splitMarker = L.circleMarker(coords[i], {
                 radius: 4.5,
-                fillColor: '#101411',
-                color: '#F4F7F2',
+                fillColor: '#121413',
+                color: '#F6F3EC',
                 weight: 1.5,
                 fillOpacity: 0.9,
               }).addTo(routeGroup);
@@ -584,7 +584,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
 
         if (isHighlighted) {
           L.polyline(pts, {
-            color: '#C8FF00',
+            color: '#D8FF2A',
             weight: 8,
             opacity: 0.4,
             lineCap: 'round',
@@ -592,7 +592,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
         }
 
         const poly = L.polyline(pts, {
-          color: isHighlighted ? '#C8FF00' : baseColor,
+          color: isHighlighted ? '#D8FF2A' : baseColor,
           weight: isHighlighted ? 4.5 : 3,
           opacity: isHighlighted ? 1 : props.highlightedActivityId ? 0.45 : 0.8,
           lineCap: 'round',
@@ -619,7 +619,7 @@ const InteractiveRouteMapInner: React.FC<InteractiveRouteMapProps> = (props) => 
         // Start pin for each workout
         const startPin = L.circleMarker(pts[0], {
           radius: isHighlighted ? 6.5 : 4.5,
-          fillColor: isHighlighted ? '#C8FF00' : baseColor,
+          fillColor: isHighlighted ? '#D8FF2A' : baseColor,
           color: '#FFFFFF',
           weight: 1.5,
           fillOpacity: 0.95,

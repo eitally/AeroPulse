@@ -200,7 +200,7 @@ export const TrackProgressionAndCalibrationPanel: React.FC<
                   `Updated threshold pace (${formatPace(bayesian.posteriorThresholdPaceSecsPerKm, distanceUnit)} · VDOT ${bayesian.posteriorVdotAer.toFixed(1)}).`
                 );
               }}
-              className="min-h-[44px] sm:min-h-[38px] px-3 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-ap-volt border border-ap-frame text-2xs font-bold cursor-pointer shrink-0"
+              className="min-h-[44px] sm:min-h-[38px] px-3 rounded-xl bg-ap-obsidian hover:bg-[#242826] text-ap-chalk dark:bg-ap-volt dark:text-ap-obsidian border border-ap-frame text-2xs font-bold cursor-pointer shrink-0"
             >
               Update Pace Zones
             </button>

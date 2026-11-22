@@ -69,7 +69,7 @@ export function buildMultiToneLockupSvg(opts: {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 472 124" fill="none">`,
     bg,
     buildBreakLaneMSymbolInnerSvg(opts.pineColor, opts.accentColor, 'translate(6, 5) scale(0.94)'),
-    buildMeetReadyWordmarkInnerSvg(opts.inkColor, opts.accentColor, 'translate(135, 34)'),
+    buildMeetReadyWordmarkInnerSvg(opts.inkColor, opts.accentColor, 'translate(135, 54)'),
     `</svg>`,
   ].join('');
 }
@@ -95,7 +95,7 @@ export function buildOneInkKnockoutLockupSvg(inkColor: string): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 472 124" fill="none">`,
     buildBreakLaneMSymbolInnerSvg(inkColor, inkColor, 'translate(6, 5) scale(0.94)'),
-    buildMeetReadyWordmarkInnerSvg(inkColor, inkColor, 'translate(135, 34)'),
+    buildMeetReadyWordmarkInnerSvg(inkColor, inkColor, 'translate(135, 54)'),
     `</svg>`,
   ].join('');
 }
@@ -110,8 +110,8 @@ export function buildGaugeIconSvg(opts: {
     : '';
   // Full-bleed tiles keep the mark comfortably inside the 64% iOS/Android safe zone; standalone symbols maximize frame fill.
   const scaleTransform = opts.tile
-    ? 'translate(64 64) scale(0.68) translate(-65.5 -57.5)'
-    : 'translate(64 64) scale(0.96) translate(-65.5 -57.5)';
+    ? 'translate(64 64) scale(0.68) translate(-64 -64)'
+    : 'translate(64 64) scale(0.96) translate(-64 -64)';
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">`,
     tileEl,
@@ -126,7 +126,7 @@ export function buildOneInkKnockoutGaugeSvg(inkColor: string): string {
     buildBreakLaneMSymbolInnerSvg(
       inkColor,
       inkColor,
-      'translate(64 64) scale(0.96) translate(-65.5 -57.5)'
+      'translate(64 64) scale(0.96) translate(-64 -64)'
     ),
     `</svg>`,
   ].join('');
@@ -146,10 +146,10 @@ export function buildStandaloneWordmarkSvg(opts: {
 export function buildWatermarkTurnSvg(): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 220" fill="none">`,
-    `<path d="M 260 190 H 120 A 70 70 0 0 1 120 50 H 260" stroke="#34C277" stroke-width="8"/>`,
-    `<path d="M 260 204 H 120 A 84 84 0 0 1 120 36 H 260" stroke="#1C5436" stroke-width="8"/>`,
-    `<path d="M 260 218 H 120 A 98 98 0 0 1 120 22 H 260" stroke="#1C5436" stroke-width="8"/>`,
-    `<path d="M 260 232 H 120 A 112 112 0 0 1 120 8 H 260" stroke="#1C5436" stroke-width="8"/>`,
+    `<path d="M 260 190 H 120 A 70 70 0 0 1 120 50 H 260" stroke="#B83A24" stroke-width="6"/>`,
+    `<path d="M 260 204 H 120 A 84 84 0 0 1 120 36 H 260" stroke="#121413" stroke-width="6"/>`,
+    `<path d="M 260 218 H 120 A 98 98 0 0 1 120 22 H 260" stroke="#121413" stroke-width="6"/>`,
+    `<path d="M 260 232 H 120 A 112 112 0 0 1 120 8 H 260" stroke="#121413" stroke-width="6"/>`,
     `</svg>`,
   ].join('');
 }
@@ -161,12 +161,12 @@ export function buildCircularCrestStickerSvg(): string {
     `<path id="meetready-grad-crest-top" d="M 52 182 A 128 128 0 1 1 308 182"/>`,
     `<path id="meetready-grad-crest-bot" d="M 46 184 A 134 134 0 0 0 314 184"/>`,
     `</defs>`,
-    `<circle cx="180" cy="180" r="168" fill="#0B120E" stroke="#34C277" stroke-width="8"/>`,
-    `<circle cx="180" cy="180" r="154" stroke="#F4F7F4" stroke-opacity="0.22" stroke-width="2"/>`,
-    `<circle cx="180" cy="180" r="94" stroke="#C8FF00" stroke-width="2.5"/>`,
-    buildBreakLaneMSymbolInnerSvg('#34C277', '#C8FF00', 'translate(180 182) scale(0.92) translate(-65.5 -57.5)'),
-    `<text fill="#F4F7F4" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="24" font-weight="800" letter-spacing="3.5"><textPath href="#meetready-grad-crest-top" startOffset="50%" text-anchor="middle">MeetReady</textPath></text>`,
-    `<text fill="#C8FF00" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="16" font-weight="700" letter-spacing="2.6"><textPath href="#meetready-grad-crest-bot" startOffset="50%" text-anchor="middle">TRACK · FIELD · XC</textPath></text>`,
+    `<circle cx="180" cy="180" r="168" fill="#121413" stroke="#B83A24" stroke-width="8"/>`,
+    `<circle cx="180" cy="180" r="154" stroke="#F6F3EC" stroke-opacity="0.22" stroke-width="2"/>`,
+    `<circle cx="180" cy="180" r="94" stroke="#D8FF2A" stroke-width="2.5"/>`,
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(180 180) scale(0.92) translate(-64 -64)'),
+    `<text fill="#F6F3EC" font-family="'Archivo', -apple-system, sans-serif" font-size="24" font-weight="800" letter-spacing="3.5"><textPath href="#meetready-grad-crest-top" startOffset="50%" text-anchor="middle">MeetReady</textPath></text>`,
+    `<text fill="#D8FF2A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="16" font-weight="700" letter-spacing="2.6"><textPath href="#meetready-grad-crest-bot" startOffset="50%" text-anchor="middle">TRACK · FIELD · XC</textPath></text>`,
     `</svg>`,
   ].join('');
 }
@@ -174,9 +174,9 @@ export function buildCircularCrestStickerSvg(): string {
 export function buildContourMarkStickerSvg(): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300" fill="none">`,
-    `<rect x="14" y="14" width="272" height="272" rx="64" fill="#F4F7F4" stroke="#D1DDD5" stroke-width="3"/>`,
-    `<rect x="28" y="28" width="244" height="244" rx="52" fill="#0B120E" stroke="#34C277" stroke-width="6"/>`,
-    buildBreakLaneMSymbolInnerSvg('#34C277', '#C8FF00', 'translate(150 152) scale(1.42) translate(-65.5 -57.5)'),
+    `<rect x="14" y="14" width="272" height="272" rx="64" fill="#F6F3EC" stroke="#121413" stroke-width="3"/>`,
+    `<rect x="28" y="28" width="244" height="244" rx="52" fill="#121413" stroke="#B83A24" stroke-width="6"/>`,
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(150 150) scale(1.42) translate(-64 -64)'),
     `</svg>`,
   ].join('');
 }
@@ -184,74 +184,76 @@ export function buildContourMarkStickerSvg(): string {
 export function buildMerchTeeBackSvg(): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 440" fill="none">`,
-    `<rect width="600" height="440" rx="20" fill="#0B120E"/>`,
-    `<g opacity="0.22">`,
-    `<path d="M 600 370 H 390 A 105 105 0 0 1 390 160 H 600" stroke="#C8FF00" stroke-width="9"/>`,
-    `<path d="M 600 392 H 390 A 127 127 0 0 1 390 138 H 600" stroke="#34C277" stroke-width="9"/>`,
-    `<path d="M 600 414 H 390 A 149 149 0 0 1 390 116 H 600" stroke="#34C277" stroke-width="9"/>`,
+    `<rect width="600" height="440" rx="20" fill="#121413"/>`,
+    `<g opacity="0.28">`,
+    `<path d="M 600 370 H 390 A 105 105 0 0 1 390 160 H 600" stroke="#D8FF2A" stroke-width="7"/>`,
+    `<path d="M 600 392 H 390 A 127 127 0 0 1 390 138 H 600" stroke="#B83A24" stroke-width="7"/>`,
+    `<path d="M 600 414 H 390 A 149 149 0 0 1 390 116 H 600" stroke="#F6F3EC" stroke-width="5"/>`,
     `</g>`,
-    buildBreakLaneMSymbolInnerSvg('#34C277', '#C8FF00', 'translate(54, 48) scale(0.72)'),
-    `<text x="56" y="218" fill="#F4F7F4" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="46" font-weight="800" letter-spacing="-1">BUILT FOR MEET DAY.</text>`,
-    `<text x="56" y="276" fill="#C8FF00" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="22" font-weight="700" letter-spacing="1.6">RUN. JUMP. THROW. MEET READY.</text>`,
-    `<line x1="56" y1="316" x2="360" y2="316" stroke="#34C277" stroke-width="3"/>`,
-    `<text x="56" y="362" fill="#93A39A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" font-weight="600" letter-spacing="2">TRACK · FIELD · XC · meetready.app</text>`,
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(54, 48) scale(0.72)'),
+    `<text x="56" y="220" fill="#F6F3EC" font-family="'Barlow Condensed', 'Archivo', sans-serif" font-size="56" font-weight="800" letter-spacing="-0.5">BUILT FOR MEET DAY.</text>`,
+    `<text x="56" y="276" fill="#D8FF2A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="22" font-weight="700" letter-spacing="1.6">RUN. JUMP. THROW. MEET READY.</text>`,
+    `<line x1="56" y1="316" x2="360" y2="316" stroke="#B83A24" stroke-width="4"/>`,
+    `<text x="56" y="362" fill="#A39E93" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" font-weight="600" letter-spacing="2">TRACK · FIELD · XC · meetready.app</text>`,
     `</svg>`,
   ].join('');
 }
 
 export function buildBanner10x3QrSvg(): string {
-  const bannerQrInner = generateQrCodeSvgMarkup('https://meetready.app/meet', '#080A09', 228).replace(
+  const bannerQrInner = generateQrCodeSvgMarkup('https://meetready.app/meet', '#121413', 228).replace(
     /^<svg[^>]*>|<\/svg>$/g,
     ''
   );
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 360" fill="none">`,
-    `<rect width="1200" height="360" rx="16" fill="#0B120E"/>`,
-    `<rect x="16" y="16" width="1168" height="328" rx="12" stroke="#2B543B" stroke-width="3"/>`,
+    `<rect width="1200" height="360" rx="16" fill="#121413"/>`,
+    `<rect x="16" y="16" width="1168" height="328" rx="12" stroke="#B83A24" stroke-width="4"/>`,
     `<g transform="translate(52, 46) scale(0.95)">`,
-    buildBreakLaneMSymbolInnerSvg('#34C277', '#C8FF00', 'translate(6, 5) scale(0.94)'),
-    buildMeetReadyWordmarkInnerSvg('#F4F7F4', '#F4F7F4', 'translate(135, 34)'),
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(6, 5) scale(0.94)'),
+    buildMeetReadyWordmarkInnerSvg('#F6F3EC', '#F6F3EC', 'translate(135, 54)'),
     `</g>`,
-    `<text x="56" y="242" fill="#F4F7F4" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="48" font-weight="800" letter-spacing="-1.2">BUILT FOR MEET DAY.</text>`,
-    `<rect x="56" y="268" width="446" height="44" rx="22" fill="#C8FF00"/>`,
-    `<text x="279" y="297" text-anchor="middle" fill="#080A09" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" font-weight="700" letter-spacing="1.4">TRACK · FIELD · XC · meetready.app</text>`,
-    `<rect x="886" y="34" width="268" height="292" rx="20" fill="#FFFFFF"/>`,
+    `<text x="56" y="242" fill="#F6F3EC" font-family="'Barlow Condensed', 'Archivo', sans-serif" font-size="54" font-weight="800" letter-spacing="-0.6">BUILT FOR MEET DAY.</text>`,
+    `<rect x="56" y="268" width="446" height="44" rx="22" fill="#D8FF2A"/>`,
+    `<text x="279" y="297" text-anchor="middle" fill="#121413" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" font-weight="700" letter-spacing="1.4">TRACK · FIELD · XC · meetready.app</text>`,
+    `<rect x="886" y="34" width="268" height="292" rx="20" fill="#F6F3EC"/>`,
     `<g transform="translate(906, 46)"><svg viewBox="0 0 33 33" width="228" height="228">${bannerQrInner}</svg></g>`,
-    `<text x="1020" y="304" text-anchor="middle" fill="#0B120E" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="15" font-weight="700" letter-spacing="0.8">SCAN → TRY LIVE DEMO</text>`,
+    `<text x="1020" y="304" text-anchor="middle" fill="#121413" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="15" font-weight="700" letter-spacing="0.8">SCAN → TRY LIVE DEMO</text>`,
     `</svg>`,
   ].join('');
 }
 
 export function buildSocialOgBannerSvg(): string {
   const heroLockupInner = [
-    `<g transform="translate(64, 96) scale(1.25)">`,
-    buildBreakLaneMSymbolInnerSvg('#34C277', '#C8FF00', 'translate(6, 5) scale(0.94)'),
-    buildMeetReadyWordmarkInnerSvg('#F4F7F4', '#F4F7F4', 'translate(135, 34)'),
+    `<g transform="translate(64, 86) scale(1.25)">`,
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(6, 5) scale(0.94)'),
+    buildMeetReadyWordmarkInnerSvg('#F6F3EC', '#F6F3EC', 'translate(135, 54)'),
     `</g>`,
   ].join('');
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">`,
-    `<rect width="1200" height="630" fill="#0C1D14"/>`,
-    `<rect x="28" y="28" width="1144" height="574" rx="28" fill="#0B120E" stroke="#2B543B" stroke-width="3"/>`,
+    `<rect width="1200" height="630" fill="#121413"/>`,
+    `<rect x="28" y="28" width="1144" height="574" rx="24" fill="#B83A24"/>`,
+    `<path d="M 1172 520 H 780 A 210 210 0 0 1 780 100 H 1172" stroke="#F6F3EC" stroke-opacity="0.22" stroke-width="2.5"/>`,
+    `<path d="M 1172 552 H 780 A 242 242 0 0 1 780 68 H 1172" stroke="#F6F3EC" stroke-opacity="0.22" stroke-width="2.5"/>`,
     heroLockupInner,
-    `<text x="72" y="318" fill="#F4F7F4" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="42" font-weight="800" letter-spacing="-1">Every mark. Every mile.</text>`,
-    `<text x="72" y="370" fill="#34C277" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="42" font-weight="800" letter-spacing="-1">Meet ready.</text>`,
-    `<text x="72" y="428" fill="#93A39A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="17" font-weight="600" letter-spacing="1.2">OFFLINE SPLITS · FIELD MARKS · PACE PODS</text>`,
-    `<rect x="72" y="476" width="444" height="54" rx="14" fill="#C8FF00"/>`,
-    `<text x="294" y="510" text-anchor="middle" fill="#080A09" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="20" font-weight="800">Free Founding Season · meetready.app</text>`,
-    `<rect x="706" y="74" width="424" height="482" rx="28" fill="#111C16" stroke="#34C277" stroke-width="2.5"/>`,
-    `<text x="740" y="122" fill="#93A39A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="14" font-weight="700" letter-spacing="1.4">TRACKSIDE STOPWATCH &amp; FIELD</text>`,
-    `<text x="740" y="202" fill="#C8FF00" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="68" font-weight="700" letter-spacing="-2">01:08.42</text>`,
-    `<rect x="740" y="236" width="356" height="74" rx="14" fill="#172820" stroke="#2B543B" stroke-width="1.5"/>`,
-    `<text x="762" y="268" fill="#F4F7F4" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-weight="800">Pod A · Lucas Alvarez</text>`,
-    `<text x="762" y="294" fill="#34C277" font-family="'JetBrains Mono', monospace" font-size="16" font-weight="600">400m Split: 1:08.42  (-0.6s)</text>`,
-    `<rect x="740" y="326" width="356" height="74" rx="14" fill="#172820" stroke="#2B543B" stroke-width="1.5"/>`,
-    `<text x="762" y="358" fill="#F4F7F4" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-weight="800">Field Sheet · Jumps &amp; Throws</text>`,
-    `<text x="762" y="384" fill="#93A39A" font-family="'JetBrains Mono', monospace" font-size="15" font-weight="600">HJ 6&apos;2&quot; PR · SP 48&apos;6&quot; · PV 13&apos;6&quot;</text>`,
-    `<rect x="740" y="422" width="356" height="96" rx="14" fill="#172820" stroke="#2B543B" stroke-width="1.5"/>`,
-    `<text x="762" y="458" fill="#F4F7F4" font-family="'Plus Jakarta Sans', sans-serif" font-size="18" font-weight="700">FERPA / SafeSport Shield Active</text>`,
-    `<text x="762" y="488" fill="#93A39A" font-family="'Plus Jakarta Sans', sans-serif" font-size="15" font-weight="600">Zero ads · Free for students ($0)</text>`,
+    `<text x="72" y="318" fill="#F6F3EC" font-family="'Barlow Condensed', 'Archivo', sans-serif" font-size="56" font-weight="800" letter-spacing="-0.6">EVERY EVENT. EVERY MARK.</text>`,
+    `<text x="72" y="376" fill="#D8FF2A" font-family="'Barlow Condensed', 'Archivo', sans-serif" font-size="56" font-weight="800" letter-spacing="-0.6">ONE TEAM PLATFORM.</text>`,
+    `<text x="72" y="432" fill="#F6F3EC" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="17" font-weight="600" letter-spacing="1.2">OFFLINE SPLITS · FIELD MARKS · PACE PODS</text>`,
+    `<rect x="72" y="476" width="444" height="54" rx="27" fill="#D8FF2A"/>`,
+    `<text x="294" y="510" text-anchor="middle" fill="#121413" font-family="'Archivo', -apple-system, sans-serif" font-size="20" font-weight="800">Free Founding Season · meetready.app</text>`,
+    `<rect x="706" y="74" width="424" height="482" rx="22" fill="#121413" stroke="#F6F3EC" stroke-opacity="0.28" stroke-width="2"/>`,
+    `<text x="740" y="122" fill="#A39E93" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="14" font-weight="700" letter-spacing="1.4">TRACKSIDE STOPWATCH &amp; FIELD</text>`,
+    `<text x="740" y="202" fill="#D8FF2A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="68" font-weight="700" letter-spacing="-2">01:08.42</text>`,
+    `<rect x="740" y="236" width="356" height="74" rx="12" fill="#1A1D1B" stroke="#F6F3EC" stroke-opacity="0.16" stroke-width="1.5"/>`,
+    `<text x="762" y="268" fill="#F6F3EC" font-family="'Archivo', sans-serif" font-size="20" font-weight="800">Pod A · Lucas Alvarez</text>`,
+    `<text x="762" y="294" fill="#D8FF2A" font-family="'JetBrains Mono', monospace" font-size="16" font-weight="600">400m Split: 1:08.42  (-0.6s)</text>`,
+    `<rect x="740" y="326" width="356" height="74" rx="12" fill="#1A1D1B" stroke="#F6F3EC" stroke-opacity="0.16" stroke-width="1.5"/>`,
+    `<text x="762" y="358" fill="#F6F3EC" font-family="'Archivo', sans-serif" font-size="20" font-weight="800">Field Sheet · Jumps &amp; Throws</text>`,
+    `<text x="762" y="384" fill="#A39E93" font-family="'JetBrains Mono', monospace" font-size="15" font-weight="600">HJ 6&apos;4&quot; PR · SP 48&apos;6&quot; · PV 14&apos;6&quot;</text>`,
+    `<rect x="740" y="422" width="356" height="96" rx="12" fill="#1A1D1B" stroke="#F6F3EC" stroke-opacity="0.16" stroke-width="1.5"/>`,
+    `<text x="762" y="458" fill="#F6F3EC" font-family="'Archivo', sans-serif" font-size="18" font-weight="700">FERPA / SafeSport Shield Active</text>`,
+    `<text x="762" y="488" fill="#A39E93" font-family="'Archivo', sans-serif" font-size="15" font-weight="600">Zero ads · Free for students ($0)</text>`,
     `</svg>`,
   ].join('');
 }
@@ -259,22 +261,22 @@ export function buildSocialOgBannerSvg(): string {
 export function buildAdOgBannerSvg(): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">`,
-    `<rect width="1200" height="630" fill="#0C1D14"/>`,
-    `<rect x="28" y="28" width="1144" height="574" rx="28" fill="#F4F7F2" stroke="#1C5436" stroke-width="4"/>`,
+    `<rect width="1200" height="630" fill="#121413"/>`,
+    `<rect x="28" y="28" width="1144" height="574" rx="24" fill="#F6F3EC" stroke="#121413" stroke-width="3"/>`,
     `<g transform="translate(64, 72) scale(1.05)">`,
-    buildBreakLaneMSymbolInnerSvg('#0B120E', '#1C5436', 'translate(6, 5) scale(0.94)'),
-    buildMeetReadyWordmarkInnerSvg('#0B120E', '#0B120E', 'translate(135, 34)'),
+    buildBreakLaneMSymbolInnerSvg('#121413', '#B83A24', 'translate(6, 5) scale(0.94)'),
+    buildMeetReadyWordmarkInnerSvg('#121413', '#121413', 'translate(135, 54)'),
     `</g>`,
-    `<text x="72" y="266" fill="#0B120E" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="46" font-weight="800" letter-spacing="-1">School &amp; Athletic Director Brief</text>`,
-    `<text x="72" y="324" fill="#1C5436" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="28" font-weight="700">FERPA · COPPA · CA NDPA · SafeSport Weight Shield</text>`,
-    `<rect x="72" y="370" width="504" height="162" rx="18" fill="#FFFFFF" stroke="#B7C9BE" stroke-width="2"/>`,
-    `<text x="98" y="418" fill="#1C5436" font-family="'JetBrains Mono', monospace" font-size="16" font-weight="700">FOUNDING SEASON PILOT</text>`,
-    `<text x="98" y="468" fill="#0B120E" font-family="'Plus Jakarta Sans', sans-serif" font-size="40" font-weight="800">$0 First Season</text>`,
-    `<text x="98" y="504" fill="#43584B" font-family="'Plus Jakarta Sans', sans-serif" font-size="20" font-weight="600">Then $250/yr flat school PO · Zero ads ever</text>`,
-    `<rect x="612" y="370" width="516" height="162" rx="18" fill="#0B120E"/>`,
-    `<text x="642" y="424" fill="#C8FF00" font-family="'JetBrains Mono', monospace" font-size="18" font-weight="700">ZERO STUDENT TRACKING</text>`,
-    `<text x="642" y="468" fill="#F4F7F4" font-family="'Plus Jakarta Sans', sans-serif" font-size="24" font-weight="700">W-9 &amp; NDPA DPA Packet Included</text>`,
-    `<text x="642" y="506" fill="#93A39A" font-family="'JetBrains Mono', monospace" font-size="18" font-weight="600">meetready.app/for-athletic-directors</text>`,
+    `<text x="72" y="266" fill="#121413" font-family="'Archivo', -apple-system, sans-serif" font-size="46" font-weight="800" letter-spacing="-1">School &amp; Athletic Director Brief</text>`,
+    `<text x="72" y="324" fill="#B83A24" font-family="'Archivo', -apple-system, sans-serif" font-size="28" font-weight="700">FERPA · COPPA · CA NDPA · SafeSport Weight Shield</text>`,
+    `<rect x="72" y="370" width="504" height="162" rx="16" fill="#FFFFFF" stroke="#121413" stroke-width="2"/>`,
+    `<text x="98" y="418" fill="#1E4D36" font-family="'JetBrains Mono', monospace" font-size="16" font-weight="700">FOUNDING SEASON PILOT</text>`,
+    `<text x="98" y="468" fill="#121413" font-family="'Archivo', sans-serif" font-size="40" font-weight="800">$0 First Season</text>`,
+    `<text x="98" y="504" fill="#57544D" font-family="'Archivo', sans-serif" font-size="20" font-weight="600">Then $250/yr flat school PO · Zero ads ever</text>`,
+    `<rect x="612" y="370" width="516" height="162" rx="16" fill="#121413"/>`,
+    `<text x="642" y="424" fill="#D8FF2A" font-family="'JetBrains Mono', monospace" font-size="18" font-weight="700">ZERO STUDENT TRACKING</text>`,
+    `<text x="642" y="468" fill="#F6F3EC" font-family="'Archivo', sans-serif" font-size="24" font-weight="700">W-9 &amp; NDPA DPA Packet Included</text>`,
+    `<text x="642" y="506" fill="#A39E93" font-family="'JetBrains Mono', monospace" font-size="18" font-weight="600">meetready.app/for-athletic-directors</text>`,
     `</svg>`,
   ].join('');
 }
@@ -286,7 +288,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'meetready-lockup-dark',
     title: 'Primary Lockup — Dark Stage',
-    subtitle: 'Break-Lane M (#34C277 / #C8FF00) + Outlined MeetReady (#F4F7F4)',
+    subtitle: 'Velocity Chevron M (#F6F3EC / #D8FF2A) + Outlined MeetReady (#F6F3EC)',
     category: 'LOCKUPS',
     width: 472,
     height: 124,
@@ -298,18 +300,18 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (944×248)', width: 944, height: 248 },
       { key: '4x', label: '4x Print (1888×496)', width: 1888, height: 496 },
     ],
-    recommendedFor: 'Obsidian-Pine surfaces, dark footers, apparel chest/banners',
+    recommendedFor: 'Track Asphalt (#121413) surfaces, dark footers, apparel chest/banners',
     minPhysicalSpec: 'Flat 2-ink fills (no gradients) · Min 0.5 in tall · 0 font dependency',
     svgMarkup: buildMultiToneLockupSvg({
-      pineColor: '#34C277',
-      accentColor: '#C8FF00',
-      inkColor: '#F4F7F4',
+      pineColor: '#F6F3EC',
+      accentColor: '#D8FF2A',
+      inkColor: '#F6F3EC',
     }),
   },
   {
     id: 'meetready-lockup-light',
     title: 'Primary Lockup — Light Stage',
-    subtitle: 'Obsidian & Stadium Pine Break-Lane M (#0B120E / #1C5436) + Outlined MeetReady',
+    subtitle: 'Track Asphalt & Mondo Clay Velocity Chevron M (#121413 / #B83A24) + Outlined MeetReady',
     category: 'LOCKUPS',
     width: 472,
     height: 124,
@@ -321,18 +323,18 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (944×248)', width: 944, height: 248 },
       { key: '4x', label: '4x Print (1888×496)', width: 1888, height: 496 },
     ],
-    recommendedFor: 'Chalk/white slides, CMYK meet programs, locker-room QR headers',
-    minPhysicalSpec: 'CMYK-safe PMS Black 6 C + PMS 3435 C · 0 font dependency',
+    recommendedFor: 'Stadium Chalk slides, CMYK meet programs, locker-room QR headers',
+    minPhysicalSpec: 'CMYK-safe PMS Black 6 C + PMS 7621 C · 0 font dependency',
     svgMarkup: buildMultiToneLockupSvg({
-      pineColor: '#0B120E',
-      accentColor: '#1C5436',
-      inkColor: '#0B120E',
+      pineColor: '#121413',
+      accentColor: '#B83A24',
+      inkColor: '#121413',
     }),
   },
   {
     id: 'meetready-stacked-dark',
     title: 'Stacked Lockup — Dark Stage',
-    subtitle: 'Centered Break-Lane M over monolithic MeetReady (4:3 badge proportion)',
+    subtitle: 'Centered Velocity Chevron M over monolithic MeetReady (4:3 badge proportion)',
     category: 'LOCKUPS',
     width: 320,
     height: 240,
@@ -347,15 +349,15 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     recommendedFor: 'Square/4:5 social ads, clinic booth podiums, center-chest hoodies',
     minPhysicalSpec: '2-ink flat embroidery/plastisol ready · 0 font dependency',
     svgMarkup: buildStackedLockupSvg({
-      pineColor: '#34C277',
-      accentColor: '#C8FF00',
-      inkColor: '#F4F7F4',
+      pineColor: '#F6F3EC',
+      accentColor: '#D8FF2A',
+      inkColor: '#F6F3EC',
     }),
   },
   {
     id: 'meetready-stacked-light',
     title: 'Stacked Lockup — Light Stage',
-    subtitle: 'Centered Break-Lane M (#0B120E / #1C5436) over monolithic MeetReady',
+    subtitle: 'Centered Velocity Chevron M (#121413 / #B83A24) over monolithic MeetReady',
     category: 'LOCKUPS',
     width: 320,
     height: 240,
@@ -367,18 +369,18 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (640×480)', width: 640, height: 480 },
       { key: '4x', label: '4x Print (1280×960)', width: 1280, height: 960 },
     ],
-    recommendedFor: 'Coach clinic half-sheet flyers, AD briefs, white cotton tees',
-    minPhysicalSpec: 'CMYK-safe Obsidian + Pine · 0 font dependency',
+    recommendedFor: 'Coach clinic half-sheet flyers, AD briefs, chalk cotton tees',
+    minPhysicalSpec: 'CMYK-safe Track Asphalt + Mondo Clay · 0 font dependency',
     svgMarkup: buildStackedLockupSvg({
-      pineColor: '#0B120E',
-      accentColor: '#1C5436',
-      inkColor: '#0B120E',
+      pineColor: '#121413',
+      accentColor: '#B83A24',
+      inkColor: '#121413',
     }),
   },
   {
     id: 'meetready-sticker-diecut',
     title: 'Clipboard & Bumper Sticker Pill',
-    subtitle: 'Balanced #0B120E container guaranteeing >15:1 contrast over any backdrop',
+    subtitle: 'Balanced #121413 container guaranteeing >15:1 contrast over any backdrop',
     category: 'LOCKUPS',
     width: 472,
     height: 124,
@@ -393,16 +395,16 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     recommendedFor: 'Coach clipboards, sunlit race photos, laptop lids, scoreboard bugs',
     minPhysicalSpec: '4.0" × 1.05" print cutout · add 0.125" bleed for plotter CutContour',
     svgMarkup: buildMultiToneLockupSvg({
-      pineColor: '#34C277',
-      accentColor: '#C8FF00',
-      inkColor: '#F4F7F4',
-      backgroundRect: { fill: '#0B120E', rx: 24 },
+      pineColor: '#F6F3EC',
+      accentColor: '#D8FF2A',
+      inkColor: '#F6F3EC',
+      backgroundRect: { fill: '#121413', rx: 24 },
     }),
   },
   {
     id: 'meetready-sticker-crest',
     title: 'Circular Varsity Crest Sticker (3" × 3")',
-    subtitle: 'Tracksmith-tier circular badge enclosing Break-Lane M (TRACK · FIELD · XC)',
+    subtitle: 'Varsity circular badge enclosing Velocity Chevron M (TRACK · FIELD · XC)',
     category: 'LOCKUPS',
     width: 360,
     height: 360,
@@ -420,7 +422,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   },
   {
     id: 'meetready-1ink-stencil',
-    title: '1-Ink Obsidian Stencil (Knockout)',
+    title: '1-Ink Asphalt Stencil (Knockout)',
     subtitle: 'True boolean outlined <path> stencil — zero strokes, zero <text> nodes',
     category: 'STENCILS',
     width: 472,
@@ -436,7 +438,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     ],
     recommendedFor: '600-DPI B&W laser heat sheets, white/volt gear, vinyl plotters',
     minPhysicalSpec: 'True 1-ink filled paths · 0 font dependency · plotter & silk-screen verified',
-    svgMarkup: buildOneInkKnockoutLockupSvg('#101411'),
+    svgMarkup: buildOneInkKnockoutLockupSvg('#121413'),
   },
   {
     id: 'meetready-1ink-stencil-white',
@@ -460,8 +462,8 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   },
   {
     id: 'meetready-1ink-stencil-volt',
-    title: '1-Ink Track Volt Stencil (Knockout)',
-    subtitle: 'Electric #C8FF00 single-ink outlined cutout for dark Pine or Black textiles',
+    title: '1-Ink Starter Volt Stencil (Knockout)',
+    subtitle: 'High-vis #D8FF2A single-ink outlined cutout for dark Asphalt or Pine textiles',
     category: 'STENCILS',
     width: 472,
     height: 124,
@@ -475,12 +477,12 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     ],
     recommendedFor: 'Dark stadium scrims, PMS 809 C fluorescent plastisol over white underbase',
     minPhysicalSpec: 'Pantone 809 C / Siser Fluo Yellow HTV · 0 font dependency',
-    svgMarkup: buildOneInkKnockoutLockupSvg('#C8FF00'),
+    svgMarkup: buildOneInkKnockoutLockupSvg('#D8FF2A'),
   },
   {
     id: 'meetready-gauge-symbol-dark',
-    title: 'Break-Lane M Emblem — Transparent (Dark)',
-    subtitle: 'Standalone flat 2-ink mark (#34C277 + #C8FF00) for dark apparel & avatars',
+    title: 'Velocity Chevron M Emblem — Transparent (Dark)',
+    subtitle: 'Standalone flat 2-ink mark (#F6F3EC + #D8FF2A) for dark apparel & avatars',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -494,14 +496,14 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     recommendedFor: 'Hat crowns, left-chest polos (1.65" W), dark club avatars, overlays',
     minPhysicalSpec: 'Flat 2-thread embroidery (zero gradients) · min 0.75" satin width',
     svgMarkup: buildGaugeIconSvg({
-      pineColor: '#34C277',
-      accentColor: '#C8FF00',
+      pineColor: '#F6F3EC',
+      accentColor: '#D8FF2A',
     }),
   },
   {
     id: 'meetready-gauge-symbol-light',
-    title: 'Break-Lane M Emblem — Transparent (Light)',
-    subtitle: 'Standalone Obsidian & Stadium Pine mark (#0B120E + #1C5436) for light media',
+    title: 'Velocity Chevron M Emblem — Transparent (Light)',
+    subtitle: 'Standalone Track Asphalt & Mondo Clay mark (#121413 + #B83A24) for light media',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -513,15 +515,15 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '4x', label: '4x (1024×1024)', width: 1024, height: 1024 },
     ],
     recommendedFor: 'Light circular avatars, clipboards, stationery corner marks',
-    minPhysicalSpec: 'PMS Black 6 C + PMS 3435 C · WCAG AAA light contrast',
+    minPhysicalSpec: 'PMS Black 6 C + PMS 7621 C · WCAG AAA light contrast',
     svgMarkup: buildGaugeIconSvg({
-      pineColor: '#0B120E',
-      accentColor: '#1C5436',
+      pineColor: '#121413',
+      accentColor: '#B83A24',
     }),
   },
   {
     id: 'meetready-gauge-symbol-1ink-black',
-    title: 'Break-Lane M — 1-Ink Black Knockout',
+    title: 'Velocity Chevron M — 1-Ink Black Knockout',
     subtitle: 'Unframed monochrome knockout symbol for embroidery & laser etch',
     category: 'ICONS',
     width: 128,
@@ -536,11 +538,11 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     ],
     recommendedFor: 'Relay batons, B&W heat-sheet footers, left-chest singlets & shorts',
     minPhysicalSpec: 'True boolean cutout · <= 2.25 sq in NCAA/NFHS uniform compliant',
-    svgMarkup: buildOneInkKnockoutGaugeSvg('#101411'),
+    svgMarkup: buildOneInkKnockoutGaugeSvg('#121413'),
   },
   {
     id: 'meetready-gauge-symbol-1ink-white',
-    title: 'Break-Lane M — 1-Ink White Knockout',
+    title: 'Velocity Chevron M — 1-Ink White Knockout',
     subtitle: 'Unframed reversed #FFFFFF knockout symbol for dark kits & bottles',
     category: 'ICONS',
     width: 128,
@@ -559,8 +561,8 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   },
   {
     id: 'meetready-icon-tile-dark',
-    title: 'App Tile Icon — Obsidian Rounded',
-    subtitle: 'Canonical rx=28 #0B120E rounded-square tile with flat 2-ink Break-Lane M',
+    title: 'App Tile Icon — Asphalt Rounded',
+    subtitle: 'Canonical rx=28 #121413 rounded-square tile with flat 2-ink Velocity Chevron M',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -572,17 +574,17 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '4x', label: '4x (1024×1024)', width: 1024, height: 1024 },
     ],
     recommendedFor: 'App launcher showcases, web docs cards (browser tabs use /icon.svg)',
-    minPhysicalSpec: 'Matches /icon.svg Break-Lane M silhouette 1:1',
+    minPhysicalSpec: 'Matches /icon.svg Velocity Chevron M silhouette 1:1',
     svgMarkup: buildGaugeIconSvg({
-      tile: { fill: '#0B120E', stroke: '#34C277', rx: 28 },
-      pineColor: '#34C277',
-      accentColor: '#C8FF00',
+      tile: { fill: '#121413', stroke: '#B83A24', rx: 28 },
+      pineColor: '#F6F3EC',
+      accentColor: '#D8FF2A',
     }),
   },
   {
     id: 'meetready-icon-tile-light',
     title: 'App Tile Icon — Stadium Chalk Rounded',
-    subtitle: 'Chalk #F4F7F2 rounded tile with #1C5436 architectural border',
+    subtitle: 'Chalk #F6F3EC rounded tile with #121413 architectural border',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -596,15 +598,15 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     recommendedFor: 'Light-mode documentation cards & editorial callout tiles',
     minPhysicalSpec: 'rx=28 Chalk frame · matches Light Stage canvas',
     svgMarkup: buildGaugeIconSvg({
-      tile: { fill: '#F4F7F2', stroke: '#1C5436', rx: 28 },
-      pineColor: '#0B120E',
-      accentColor: '#1C5436',
+      tile: { fill: '#F6F3EC', stroke: '#121413', rx: 28 },
+      pineColor: '#121413',
+      accentColor: '#B83A24',
     }),
   },
   {
     id: 'meetready-icon-square-fullbleed',
     title: 'Full-Bleed App Icon (iOS / Android / Strava)',
-    subtitle: 'Opaque edge-to-edge #0B120E square with 64% safe-zone Break-Lane M',
+    subtitle: 'Opaque edge-to-edge #121413 square with 64% safe-zone Velocity Chevron M',
     category: 'ICONS',
     width: 128,
     height: 128,
@@ -619,15 +621,15 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     recommendedFor: 'iOS apple-touch-icon, Android maskable PWA, App Store & Strava portals',
     minPhysicalSpec: 'Zero transparent corners · zero iOS corner artifacts',
     svgMarkup: buildGaugeIconSvg({
-      tile: { fill: '#0B120E' },
-      pineColor: '#34C277',
-      accentColor: '#C8FF00',
+      tile: { fill: '#121413' },
+      pineColor: '#F6F3EC',
+      accentColor: '#D8FF2A',
     }),
   },
   {
     id: 'meetready-sticker-mark-diecut',
     title: 'Hydro Flask Contour Mark Sticker (2.5" × 2.5")',
-    subtitle: 'Waterproof UV-laminated matte vinyl Break-Lane M contour sticker',
+    subtitle: 'Waterproof UV-laminated matte vinyl Velocity Chevron M contour sticker',
     category: 'ICONS',
     width: 300,
     height: 300,
@@ -640,13 +642,13 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '4x', label: '4x Print (1200×1200)', width: 1200, height: 1200 },
     ],
     recommendedFor: 'Water bottles, laptops, pole tubes, throwing-implement bags',
-    minPhysicalSpec: '2.5" × 2.5" contour die-cut with 0.125" white vinyl frame',
+    minPhysicalSpec: '2.5" × 2.5" contour die-cut with 0.125" chalk vinyl frame',
     svgMarkup: buildContourMarkStickerSvg(),
   },
   {
     id: 'meetready-wordmark-dark',
     title: 'Standalone Wordmark — Dark Stage',
-    subtitle: 'Monolithic outlined CamelCase MeetReady wordmark (#F4F7F4, zero <text>)',
+    subtitle: 'Monolithic outlined CamelCase MeetReady wordmark (#F6F3EC, zero <text>)',
     category: 'WORDMARK_AND_SOCIAL',
     width: 344,
     height: 80,
@@ -659,12 +661,12 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     ],
     recommendedFor: 'Back cap arch embroidery (2.5" W), jacket nape hit, dark footers',
     minPhysicalSpec: 'Single-ink outlined <path> · 0 font dependency',
-    svgMarkup: buildStandaloneWordmarkSvg({ inkColor: '#F4F7F4' }),
+    svgMarkup: buildStandaloneWordmarkSvg({ inkColor: '#F6F3EC' }),
   },
   {
     id: 'meetready-wordmark-light',
     title: 'Standalone Wordmark — Light Stage',
-    subtitle: 'Monolithic outlined CamelCase MeetReady wordmark (#0B120E, zero <text>)',
+    subtitle: 'Monolithic outlined CamelCase MeetReady wordmark (#121413, zero <text>)',
     category: 'WORDMARK_AND_SOCIAL',
     width: 344,
     height: 80,
@@ -677,7 +679,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     ],
     recommendedFor: 'Compact white headers, heat sheets & light apparel',
     minPhysicalSpec: 'Single-ink PMS Black 6 C outlined <path> · 0 font dependency',
-    svgMarkup: buildStandaloneWordmarkSvg({ inkColor: '#0B120E' }),
+    svgMarkup: buildStandaloneWordmarkSvg({ inkColor: '#121413' }),
   },
   {
     id: 'meetready-watermark-4lane',
@@ -770,36 +772,36 @@ export const BRAND_SURFACES: Array<{
     id: 'auto',
     label: 'Optimal Surface (Auto)',
     shortLabel: 'Auto (Optimal)',
-    swatchHex: '#1C5436',
-    description: 'Pairs each mark with its intended native light or dark background',
+    swatchHex: '#B83A24',
+    description: 'Pairs each mark with its intended Stadium Chalk or Track Asphalt background',
   },
   {
     id: 'obsidian',
-    label: 'Obsidian-Pine Stage',
-    shortLabel: 'Obsidian',
-    swatchHex: '#0B120E',
-    description: 'Night trackside / dark cockpit (#0B120E)',
+    label: 'Track Asphalt Stage',
+    shortLabel: 'Asphalt',
+    swatchHex: '#121413',
+    description: 'Night trackside / dark cockpit (#121413)',
   },
   {
     id: 'chalk',
     label: 'Stadium Chalk Stage',
     shortLabel: 'Chalk',
-    swatchHex: '#F4F7F2',
-    description: 'Daylight workspace stage (#F4F7F2)',
+    swatchHex: '#F6F3EC',
+    description: 'Daylight workspace stage (#F6F3EC)',
   },
   {
     id: 'paper',
-    label: 'Crisp Paper Card',
+    label: 'Matte White Card',
     shortLabel: 'Paper',
     swatchHex: '#FFFFFF',
     description: 'White banner, slide deck, or print sheet (#FFFFFF)',
   },
   {
     id: 'volt',
-    label: 'Track Volt Flood',
+    label: 'Starter Volt Flood',
     shortLabel: 'Volt',
-    swatchHex: '#C8FF00',
-    description: 'High-visibility #C8FF00 relay baton / tent accent',
+    swatchHex: '#D8FF2A',
+    description: 'High-visibility #D8FF2A trigger & flood accent',
   },
   {
     id: 'photo-sunlit',
@@ -1049,7 +1051,7 @@ export function buildTeamCobrandLockupSvg(opts: TeamCobrandSvgOptions): string {
   const totalWidth = lockupX + 472 + 12;
 
   const isOneInk = opts.variant === '1ink-black' || opts.variant === '1ink-white';
-  const monoInk = opts.variant === '1ink-white' ? '#FFFFFF' : '#101411';
+  const monoInk = opts.variant === '1ink-white' ? '#FFFFFF' : '#121413';
 
   const gradId = `meetready-grad-cobrand-${opts.variant}`;
 
@@ -1061,12 +1063,12 @@ export function buildTeamCobrandLockupSvg(opts: TeamCobrandSvgOptions): string {
   if (isOneInk) {
     crestMarkup = [
       `<rect x="${crestX + 2}" y="26" width="${crestSize - 4}" height="${crestSize - 4}" rx="18" fill="none" stroke="${monoInk}" stroke-width="5"/>`,
-      `<text x="${crestX + crestSize / 2}" y="71" text-anchor="middle" fill="${monoInk}" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="26" font-weight="800" letter-spacing="-0.5">${cleanMono}</text>`,
+      `<text x="${crestX + crestSize / 2}" y="71" text-anchor="middle" fill="${monoInk}" font-family="'Archivo', -apple-system, sans-serif" font-size="26" font-weight="800" letter-spacing="-0.5">${cleanMono}</text>`,
     ].join('');
     threshMarkup = [
       `<g transform="translate(${lockupX}, 0)">`,
       buildBreakLaneMSymbolInnerSvg(monoInk, monoInk, 'translate(6, 5) scale(0.94)'),
-      buildMeetReadyWordmarkInnerSvg(monoInk, monoInk, 'translate(135, 34)'),
+      buildMeetReadyWordmarkInnerSvg(monoInk, monoInk, 'translate(135, 54)'),
       `</g>`,
     ].join('');
   } else {
@@ -1074,21 +1076,21 @@ export function buildTeamCobrandLockupSvg(opts: TeamCobrandSvgOptions): string {
     const accent = isDark ? palette.primaryOnDark : palette.primaryOnLight;
     const secondary = isDark ? palette.secondaryOnDark : palette.secondaryOnLight;
     const onPrimary = isDark ? palette.textOnPrimaryDark : palette.textOnPrimaryLight;
-    const slatePine = isDark ? '#CBD5E1' : '#1E293B';
-    const inkColor = isDark ? '#F4F7F4' : '#0B120E';
+    const slatePine = isDark ? '#F6F3EC' : '#121413';
+    const inkColor = isDark ? '#F6F3EC' : '#121413';
     nameColor = inkColor;
-    crossColor = isDark ? '#93A39A' : '#43584B';
+    crossColor = isDark ? '#A39E93' : '#57544D';
 
     crestMarkup = [
       `<defs><linearGradient id="${gradId}-crest" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${accent}"/><stop offset="100%" stop-color="${secondary}"/></linearGradient></defs>`,
       `<rect x="${crestX}" y="24" width="${crestSize}" height="${crestSize}" rx="18" fill="url(#${gradId}-crest)" stroke="rgba(255,255,255,0.22)" stroke-width="2"/>`,
-      `<text x="${crestX + crestSize / 2}" y="70" text-anchor="middle" fill="${onPrimary}" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="27" font-weight="800" letter-spacing="-0.5">${cleanMono}</text>`,
+      `<text x="${crestX + crestSize / 2}" y="70" text-anchor="middle" fill="${onPrimary}" font-family="'Archivo', -apple-system, sans-serif" font-size="27" font-weight="800" letter-spacing="-0.5">${cleanMono}</text>`,
     ].join('');
 
     threshMarkup = [
       `<g transform="translate(${lockupX}, 0)">`,
       buildBreakLaneMSymbolInnerSvg(slatePine, accent, 'translate(6, 5) scale(0.94)'),
-      buildMeetReadyWordmarkInnerSvg(inkColor, accent, 'translate(135, 34)'),
+      buildMeetReadyWordmarkInnerSvg(inkColor, accent, 'translate(135, 54)'),
       `</g>`,
     ].join('');
   }
@@ -1096,8 +1098,8 @@ export function buildTeamCobrandLockupSvg(opts: TeamCobrandSvgOptions): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalWidth} 124" width="${totalWidth}" height="124" fill="none">`,
     crestMarkup,
-    `<text x="${nameX}" y="72" fill="${nameColor}" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="30" font-weight="800" letter-spacing="-0.7">${cleanName}</text>`,
-    `<text x="${xMarkX}" y="71" fill="${crossColor}" font-family="'Plus Jakarta Sans', -apple-system, sans-serif" font-size="26" font-weight="500">×</text>`,
+    `<text x="${nameX}" y="72" fill="${nameColor}" font-family="'Archivo', -apple-system, sans-serif" font-size="30" font-weight="800" letter-spacing="-0.7">${cleanName}</text>`,
+    `<text x="${xMarkX}" y="71" fill="${crossColor}" font-family="'Archivo', -apple-system, sans-serif" font-size="26" font-weight="500">×</text>`,
     threshMarkup,
     `</svg>`,
   ].join('');
@@ -1170,33 +1172,29 @@ export function buildDesignTokensExportJson(): string {
   return JSON.stringify(
     {
       name: 'MeetReady',
-      direction: '#1 Stadium Track — Track Volt & Obsidian',
-      budgetRule: { neutralPercent: 80, structuralPinePercent: 15, trackVoltMaxPercent: 5 },
+      direction: 'Mondo Clay & Stadium Chalk (Concept A · Velocity Chevron M)',
+      budgetRule: { neutralPercent: 80, structuralAccentPercent: 15, starterVoltMaxPercent: 5 },
       architecture: {
         light: {
-          outerSurround: '#163022',
           stageCanvas: light.canvasBg,
           cardSurface: light.cardBg,
           recessedWell: light.insetBg,
-          contentBorder: '#2B5B3F',
-          trackVolt: '#C8FF00',
-          stadiumPine: '#1C5436',
-          voltOliveInk: '#3F6212',
-          obsidianInk: '#080A09',
+          mondoClay: '#B83A24',
+          infieldPine: '#1E4D36',
+          starterVolt: '#D8FF2A',
+          trackAsphalt: '#121413',
           textPrimary: light.textPrimary,
           textSecondary: light.textSecondary,
           textMuted: light.textMuted,
         },
         dark: {
-          outerSurround: '#0C1D14',
           stageCanvas: dark.canvasBg,
           cardSurface: dark.cardBg,
           recessedWell: dark.insetBg,
-          contentBorder: '#2B543B',
-          trackVolt: '#C8FF00',
-          luminousEmerald: '#34C277',
-          voltLimeInk: '#A3E635',
-          obsidianInk: '#080A09',
+          mondoClay: '#E05238',
+          infieldPine: '#2F7A55',
+          starterVolt: '#D8FF2A',
+          stadiumChalk: '#F6F3EC',
           textPrimary: dark.textPrimary,
           textSecondary: dark.textSecondary,
           textMuted: dark.textMuted,
@@ -1237,8 +1235,8 @@ export function buildDesignTokensExportJson(): string {
         stravaTextOnCta: '#FFFFFF',
       },
       typography: {
-        display: 'Plus Jakarta Sans',
-        body: 'Plus Jakarta Sans',
+        display: 'Barlow Condensed',
+        body: 'Archivo',
         telemetryMono: 'JetBrains Mono',
         minFontRem: 0.6875,
         minFontPx: 11,
@@ -1254,11 +1252,11 @@ export const BRAND_KIT_README_MD = `# MeetReady Official Brand Kit & Permissions
 - **Canonical Name:** MeetReady (CamelCase \`MeetReady\` in running copy; domain \`https://meetready.app\`).
 - **Canonical Positioning:** MeetReady — Every mark. Every mile. Meet ready. (Track, Field & Cross Country Team Platform).
 - **Production Ink System (Flat 2-Ink, Zero Gradients):**
-  - Track Volt \`#C8FF00\`: PMS 809 C fluorescent plastisol over flash-cured white underbase · Madeira #1902.
-  - Luminous Emerald \`#34C277\` (Dark Grounds): PMS 340 C · Madeira #1951.
-  - Stadium Pine \`#1C5436\` (Light Paper/Apparel): PMS 3435 C · Madeira #1751.
-  - Obsidian \`#0B120E\`: PMS Black 6 C · Madeira #1800.
-- **Included Vectors (\`/svg/\`):** Primary & Stacked Dark/Light lockups (outlined <path> zero <text>), True Compound-Path 1-Ink Stencils, Break-Lane M Emblems, Circular Varsity Crest Sticker, 2.5" Contour Mark Sticker, 2-Ink Tee Back (BUILT FOR MEET DAY. / RUN. JUMP. THROW. MEET READY.), 10ft × 3ft QR Trackside Banner, Full-Bleed App Icons, and 1200×630 OpenGraph Card.
+  - Mondo Clay \`#B83A24\` (Light Accent / Hero Field): PMS 7621 C · Madeira #1839.
+  - Starter Volt \`#D8FF2A\` (Dark Right Peak & Primary CTAs): PMS 809 C fluorescent plastisol over flash-cured white underbase · Madeira #1902.
+  - Track Asphalt \`#121413\`: PMS Black 6 C · Madeira #1800.
+  - Stadium Chalk \`#F6F3EC\`: Warm Off-White · Madeira #1801.
+- **Included Vectors (\`/svg/\`):** Primary & Stacked Dark/Light Velocity Chevron M lockups (outlined <path> zero <text>), True Compound-Path 1-Ink Stencils, Velocity Chevron M Emblems, Circular Varsity Crest Sticker, 2.5" Contour Mark Sticker, 2-Ink Tee Back (BUILT FOR MEET DAY. / RUN. JUMP. THROW. MEET READY.), 10ft × 3ft QR Trackside Banner, Full-Bleed App Icons, and 1200×630 OpenGraph Card.
 - **Usage & Print Policy:**
   - **Permitted:** Unmodified editorial coverage, podcasts, race meet heat sheets & programs, API partner directories, and active team tent banners, warm-ups, & roster posters using \`Team × MeetReady\` co-branding (following NFHS/NCAA competition uniform area limits <= 2.25 sq in on race singlets without implied institutional sponsorship).
   - **Prohibited:** Commercial merchandise resale, altering mark/wordmark proportions, using retired legacy brand names in public copy, adding gradients to embroidery files, or recoding Z1–Z6 / Banister CTL-ATL-TSB physiology colors.

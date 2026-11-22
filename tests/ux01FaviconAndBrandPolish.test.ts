@@ -27,34 +27,33 @@ function readPngMetadata(filePath: string): { width: number; height: number; col
 describe('UX-01 & BRD-03 · 1B-Pro Break-Lane M Vector Lockup & 32px Favicon', () => {
   const root = process.cwd();
 
-  it('ships flat 2-ink 1B-Pro Break-Lane M and outlined wordmark paths in brandVectors.ts', () => {
-    expect(BREAK_LANE_M_LANES_PATH.length).toBeGreaterThan(80);
-    expect(BREAK_LANE_M_ARROW_PATH.length).toBeGreaterThan(80);
+  it('ships flat 2-ink Velocity Chevron M and outlined wordmark paths in brandVectors.ts', () => {
+    expect(BREAK_LANE_M_LANES_PATH.length).toBeGreaterThan(40);
+    expect(BREAK_LANE_M_ARROW_PATH.length).toBeGreaterThan(40);
     expect(MEETREADY_WORDMARK_OUTLINE_PATH.length).toBeGreaterThan(1000);
-    expect(FAV_M_LANES_PATH).toContain('M 2.68 28.62');
-    expect(FAV_M_ARROW_PATH).toContain('28.12 4.38');
+    expect(FAV_M_LANES_PATH).toContain('M 3.24 25.24');
+    expect(FAV_M_ARROW_PATH).toContain('28.76 25.24');
   });
 
-  it('ships the unified 32x32 Break-Lane M favicon in public/icon.svg (crisp at 16px)', () => {
+  it('ships the unified 32x32 Velocity Chevron M favicon in public/icon.svg (crisp at 16px)', () => {
     const svg = fs.readFileSync(path.join(root, 'public', 'icon.svg'), 'utf8');
     expect(svg).toContain('viewBox="0 0 32 32"');
-    expect(svg).toContain('fill="#0B120E"');
-    expect(svg).toContain('fill="#34C277"');
-    expect(svg).toContain('fill="#C8FF00"');
+    expect(svg).toContain('fill="#121413"');
+    expect(svg).toContain('fill="#F6F3EC"');
+    expect(svg).toContain('fill="#D8FF2A"');
     expect(svg).toContain(FAV_M_LANES_PATH);
     expect(svg).toContain(FAV_M_ARROW_PATH);
-    expect(svg).toContain('fill-rule="evenodd"');
     expect(svg).not.toMatch(/<(linearGradient|radialGradient)/i);
     expect(svg).not.toContain('paint-order:stroke fill');
   });
 
-  it('links cache-busted v=6 favicon and apple-touch-icon across app and docs HTML', () => {
+  it('links cache-busted v=7 favicon and apple-touch-icon across app and docs HTML', () => {
     const appHtml = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
     const docsHtml = fs.readFileSync(path.join(root, 'public', 'docs', 'index.html'), 'utf8');
 
-    expect(appHtml).toContain('href="/icon.svg?v=6"');
-    expect(appHtml).toContain('href="/apple-touch-icon.png?v=6"');
-    expect(docsHtml).toContain('href="/icon.svg?v=6"');
+    expect(appHtml).toContain('href="/icon.svg?v=7"');
+    expect(appHtml).toContain('href="/apple-touch-icon.png?v=7"');
+    expect(docsHtml).toContain('href="/icon.svg?v=7"');
   });
 
   it('builds dynamic team favicons using the 32x32 Break-Lane M geometry with encoded team palette', () => {
@@ -90,18 +89,19 @@ describe('UX-01 & BRD-03 · 1B-Pro Break-Lane M Vector Lockup & 32px Favicon', (
     const logoSrc = fs.readFileSync(path.join(root, 'src', 'components', 'AeroPulseLogo.tsx'), 'utf8');
     expect(logoSrc).toContain('export const ThreshMark');
     expect(logoSrc).toContain('export const ThreshWordmark');
-    expect(logoSrc).toContain('--thresh-pine:#34C277');
-    expect(logoSrc).toContain('--thresh-volt:#1C5436');
-    expect(logoSrc).toContain('--thresh-volt:#C8FF00');
-    expect(logoSrc).toContain('--thresh-ink:#0B120E');
-    expect(logoSrc).toContain('--thresh-ink:#F4F7F4');
+    expect(logoSrc).toContain('--thresh-pine:#121413');
+    expect(logoSrc).toContain('--thresh-pine:#F6F3EC');
+    expect(logoSrc).toContain('--thresh-volt:#B83A24');
+    expect(logoSrc).toContain('--thresh-volt:#D8FF2A');
+    expect(logoSrc).toContain('--thresh-ink:#121413');
+    expect(logoSrc).toContain('--thresh-ink:#F6F3EC');
     expect(logoSrc).toContain('MEETREADY_WORDMARK_OUTLINE_PATH');
     expect(logoSrc).not.toMatch(/<text\s+/i);
     expect(logoSrc).not.toContain('skewX(-14) scale(1.10, 1.29)');
     expect(logoSrc).toContain('viewBox="0 0 32 32"');
 
     const footerSrc = fs.readFileSync(path.join(root, 'src', 'components', 'CockpitFooter.tsx'), 'utf8');
-    expect(footerSrc).toContain('surface="on-dark"');
+    expect(footerSrc).toContain('surface="auto"');
 
     const heroSrc = fs.readFileSync(
       path.join(root, 'src', 'components', 'CircadianFirstTouchHero.tsx'),

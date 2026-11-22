@@ -242,7 +242,7 @@ export const TracksideWalkOnAndSaveBar: React.FC<TracksideWalkOnAndSaveBarProps>
             data-testid="stopwatch-save-thresh"
             onClick={() => void handleSaveToThresh()}
             disabled={totalSplitCount === 0 || isSavingToThresh}
-            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-ap-volt border border-ap-frame text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed transition-colors"
+            className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#121413] hover:bg-[#242826] text-[#F6F3EC] dark:bg-ap-volt dark:hover:bg-[#c8ef1e] dark:text-[#121413] border border-[#121413] dark:border-ap-volt text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed transition-colors"
           >
             {sessionType === 'RACE' ? (
               <Trophy className="w-4 h-4 shrink-0" weight="duotone" />
@@ -332,9 +332,9 @@ export const TracksideWalkOnAndSaveBar: React.FC<TracksideWalkOnAndSaveBarProps>
       >
         <div
           data-testid="stopwatch-mobile-thumb-clock"
-          className="col-span-3 flex items-center justify-between px-2 py-0.5 rounded-lg bg-white/95 dark:bg-[#0B120E] text-ap-obsidian dark:text-ap-volt border border-stone-300/80 dark:border-ap-frame font-mono text-xs font-extrabold tabular-nums"
+          className="col-span-3 flex items-center justify-between px-2.5 py-1 rounded-lg bg-[#121413] text-[#D8FF2A] border border-[#121413] font-mono text-xs font-extrabold tabular-nums"
         >
-          <span className="text-2xs uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
+          <span className="text-2xs uppercase tracking-wider text-[#A39E93]">
             {stopwatchRunning ? 'Running' : stopwatchElapsedMs > 0 ? 'Paused' : 'Ready'}
           </span>
           <span>{formatStopwatchClockMs(stopwatchElapsedMs)}</span>
@@ -426,12 +426,12 @@ export const TracksideWalkOnAndSaveBar: React.FC<TracksideWalkOnAndSaveBarProps>
             }
             handleChuteTap();
           }}
-          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl bg-[#0B120E] text-ap-volt border border-ap-frame text-xs font-bold cursor-pointer"
+          className="min-h-[52px] inline-flex items-center justify-center gap-1 px-2 rounded-xl bg-[#121413] text-ap-volt border border-[#121413] dark:border-white/25 text-xs font-bold cursor-pointer"
         >
           <Lightning className="w-4 h-4 shrink-0" weight="fill" />
           <span>Chute</span>
           {chuteQueueSecs.length > 0 && (
-            <span className="px-1.5 py-0.5 rounded bg-ap-cobalt text-ap-volt font-mono text-2xs">
+            <span className="px-1.5 py-0.5 rounded bg-ap-clay text-[#F6F3EC] font-mono text-2xs">
               {chuteQueueSecs.length}
             </span>
           )}

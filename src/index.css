@@ -2,42 +2,48 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================
-   MeetReady Design System — "Track Volt & Obsidian" v3.0 (Tailwind v4 @theme)
-   Strict 80 / 15 / 5 Color Budget & 2-Font Architecture:
-   - Light Mode: Stadium Chalk (#F4F7F2) Stage, Crisp Paper (#FFFFFF) Cards & Chalk Inset (#E9EFE9)
-   - Dark Mode: Obsidian-Pine (#0B120E) Stage, Carbon-Pine (#101B15) Panels & Deep Turf (#15231B)
-   - Unified Signature Brand Accent: Track Volt (#C8FF00 Dark / #558B00 & #3F6212 Light)
+   MeetReady Design System — "Mondo Clay & Stadium Chalk" v4.0 (Tailwind v4 @theme)
+   - Light Mode: Stadium Chalk (#F6F3EC) Ground, Matte White (#FFFFFF) Cards & Warm Stone (#EDE9DF) Wells
+   - Dark Mode: Track Asphalt (#121413) Ground, #1A1D1B Panels & #151816 Inset Wells
+   - Committed Accent: Mondo Track Clay (#B83A24) + Infield Pine (#1E4D36) + Starter Volt (#D8FF2A <= 5%)
    - Physiological Effort Zones (Z1–Z6) & Readiness Signals Strictly Locked
    ========================================================================== */
 
 @theme {
-  /* 2-Font System: Plus Jakarta Sans + JetBrains Mono */
-  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  /* 3-Font System: Barlow Condensed (Persuade Display) + Archivo (UI/Wordmark) + JetBrains Mono (Splits/KPI) */
+  --font-display: 'Barlow Condensed', 'Archivo', system-ui, sans-serif;
+  --font-sans: 'Archivo', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, monospace;
 
   /* 11px Floor Micro-Telemetry Scale Token (0.6875rem — scales with browser root rem) */
   --text-2xs: 0.6875rem;
   --text-2xs--line-height: 1rem;
 
-  /* Track Volt & Obsidian Brand Palette */
-  --color-ap-volt: #c8ff00;
-  --color-ap-volt-ink: #3f6212;
-  --color-ap-cobalt: #1c5436;
-  --color-ap-ink: #101411;
-  --color-ap-obsidian: #080a09;
-  --color-ap-chalk: #f4f7f4;
-  --color-ap-muted: #43584b;
-  --color-ap-muted-dark: #93a39a;
-  --color-ap-carbon: #101b15;
-  --color-ap-turf: #15231b;
-  --color-ap-edge: #244331;
-  --color-ap-edge-dark: #2b543b;
-  --color-ap-frame: #2b5b3f;
+  /* Mondo Clay & Stadium Chalk Brand Palette */
+  --color-ap-volt: #d8ff2a;
+  --color-ap-volt-ink: #1e4d36;
+  --color-ap-clay: #b83a24;
+  --color-ap-clay-dark: #9e2e1a;
+  --color-ap-clay-bright: #e05238;
+  --color-ap-pine: #1e4d36;
+  --color-ap-pine-bright: #2f7a55;
+  --color-ap-cobalt: #b83a24;
+  --color-ap-ink: #121413;
+  --color-ap-obsidian: #121413;
+  --color-ap-chalk: #f6f3ec;
+  --color-ap-surface-warm: #faf8f4;
+  --color-ap-inset: #ede9df;
+  --color-ap-muted: #57544d;
+  --color-ap-muted-dark: #a39e93;
+  --color-ap-carbon: #1a1d1b;
+  --color-ap-turf: #151816;
+  --color-ap-edge: #2c312e;
+  --color-ap-edge-dark: #2c312e;
+  --color-ap-frame: #121413;
   --color-ap-sky: #0284c7;
-  --color-ap-signal: #558b00;
+  --color-ap-signal: #b83a24;
   --color-ap-amber: #d97706;
-  --color-ap-emerald: #059669;
+  --color-ap-emerald: #1e4d36;
   --color-ap-rose: #e11d48;
   --color-ap-magenta: #7c3aed;
 
@@ -65,39 +71,39 @@
 
 @layer base {
   :root {
-    --ap-outer-bg: #163022;
-    --ap-canvas-bg: #f4f7f2;
-    --ap-content-border: #2b5b3f;
+    --ap-outer-bg: #f6f3ec;
+    --ap-canvas-bg: #f6f3ec;
+    --ap-content-border: rgba(18, 20, 19, 0.14);
     --ap-card-bg: #ffffff;
-    --ap-card-border: rgba(38, 88, 58, 0.19);
-    --ap-inset-bg: #e9efe9;
-    --ap-inset-border: rgba(38, 88, 58, 0.16);
-    --ap-brand-volt: #a6f000;
-    --ap-brand-primary: #1c5436;
-    --ap-action-cobalt: #1c5436;
-    --ap-thresh-vermilion: #84cc16;
-    --ap-ink-emerald: #047857;
+    --ap-card-border: rgba(18, 20, 19, 0.16);
+    --ap-inset-bg: #ede9df;
+    --ap-inset-border: rgba(18, 20, 19, 0.12);
+    --ap-brand-volt: #d8ff2a;
+    --ap-brand-primary: #b83a24;
+    --ap-action-cobalt: #b83a24;
+    --ap-thresh-vermilion: #b83a24;
+    --ap-ink-emerald: #1e4d36;
     --ap-ink-sky: #0369a1;
     --ap-ink-teal: #0f766e;
-    --ap-ink-vermilion: #9a3412;
+    --ap-ink-vermilion: #9e2e1a;
     --ap-ink-amber: #92400e;
     --ap-ink-rose: #be123c;
     --ap-ink-violet: #6d28d9;
   }
 
   .dark {
-    --ap-outer-bg: #050a07;
-    --ap-canvas-bg: #0b110e;
-    --ap-content-border: #2b543b;
-    --ap-card-bg: #111a15;
-    --ap-card-border: rgba(57, 150, 99, 0.36);
-    --ap-inset-bg: #080d0a;
-    --ap-inset-border: rgba(57, 150, 99, 0.26);
-    --ap-brand-volt: #c8ff00;
-    --ap-brand-primary: #c8ff00;
-    --ap-action-cobalt: #c8ff00;
-    --ap-thresh-vermilion: #c8ff00;
-    --ap-ink-emerald: #34d399;
+    --ap-outer-bg: #121413;
+    --ap-canvas-bg: #121413;
+    --ap-content-border: rgba(246, 243, 236, 0.13);
+    --ap-card-bg: #1a1d1b;
+    --ap-card-border: rgba(246, 243, 236, 0.13);
+    --ap-inset-bg: #151816;
+    --ap-inset-border: rgba(246, 243, 236, 0.1);
+    --ap-brand-volt: #d8ff2a;
+    --ap-brand-primary: #d8ff2a;
+    --ap-action-cobalt: #d8ff2a;
+    --ap-thresh-vermilion: #e05238;
+    --ap-ink-emerald: #86efac;
     --ap-ink-sky: #38bdf8;
     --ap-ink-teal: #2dd4bf;
     --ap-ink-vermilion: #fb923c;
@@ -107,24 +113,24 @@
   }
 
   html.dark.ap-midnight-slate {
-    --ap-outer-bg: #06080b;
+    --ap-outer-bg: #0e1318;
     --ap-inset-bg: #0a0d12;
     --ap-canvas-bg: #0e1318;
     --ap-card-bg: #151c24;
     --ap-content-border: #2a3644;
     --ap-card-border: rgba(148, 163, 184, 0.22);
     --ap-inset-border: rgba(148, 163, 184, 0.16);
-    --ap-brand-volt: #d4ff33;
-    --ap-brand-primary: #d4ff33;
-    --ap-action-cobalt: #d4ff33;
-    --ap-thresh-vermilion: #d4ff33;
+    --ap-brand-volt: #d8ff2a;
+    --ap-brand-primary: #d8ff2a;
+    --ap-action-cobalt: #d8ff2a;
+    --ap-thresh-vermilion: #e05238;
   }
 
   html.dark.ap-dusk {
-    --ap-outer-bg: #070605;
-    --ap-inset-bg: #090806;
-    --ap-canvas-bg: #0d0b09;
-    --ap-card-bg: #15120e;
+    --ap-outer-bg: #100e0c;
+    --ap-inset-bg: #14110e;
+    --ap-canvas-bg: #100e0c;
+    --ap-card-bg: #191612;
     --ap-content-border: #3d3528;
     --ap-card-border: rgba(217, 119, 6, 0.24);
     --ap-inset-border: rgba(217, 119, 6, 0.18);
@@ -140,33 +146,33 @@
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    letter-spacing: -0.011em;
+    letter-spacing: -0.01em;
     background-color: var(--ap-outer-bg);
-    background-image: radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.14), transparent 52%);
-    color: #101411;
+    color: #121413;
   }
 
   .dark body {
     background-color: var(--ap-outer-bg);
-    background-image: radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.06), transparent 52%);
-    color: #e6ece8;
+    color: #f6f3ec;
   }
 
   html.dark.ap-midnight-slate body {
     background-color: var(--ap-outer-bg);
-    background-image: radial-gradient(circle at 12% 0%, rgba(212, 255, 51, 0.05), transparent 52%);
     color: #eef2f6;
   }
 
   html.dark.ap-dusk body {
     background-color: var(--ap-outer-bg);
-    background-image: radial-gradient(circle at 12% 0%, rgba(217, 119, 6, 0.05), transparent 50%);
     color: #e8e2d8;
   }
 
-  h1, h2, h3, h4, .font-display {
+  h1, h2, h3, h4 {
+    font-family: var(--font-sans);
+    letter-spacing: -0.02em;
+  }
+
+  .font-display {
     font-family: var(--font-display);
-    letter-spacing: -0.025em;
   }
 
   .font-mono, .tabular-nums {
@@ -181,7 +187,7 @@
   textarea:focus-visible,
   summary:focus-visible,
   [tabindex]:not([tabindex="-1"]):focus-visible {
-    outline: 2px solid #1c5436;
+    outline: 2px solid #b83a24;
     outline-offset: 2px;
   }
 
@@ -192,7 +198,7 @@
   .dark textarea:focus-visible,
   .dark summary:focus-visible,
   .dark [tabindex]:not([tabindex="-1"]):focus-visible {
-    outline-color: #c8ff00;
+    outline-color: #d8ff2a;
   }
 
   html.dark.ap-midnight-slate a:focus-visible,
@@ -202,7 +208,7 @@
   html.dark.ap-midnight-slate textarea:focus-visible,
   html.dark.ap-midnight-slate summary:focus-visible,
   html.dark.ap-midnight-slate [tabindex]:not([tabindex="-1"]):focus-visible {
-    outline-color: #d4ff33;
+    outline-color: #d8ff2a;
   }
 
   html.dark.ap-dusk a:focus-visible,
@@ -224,77 +230,124 @@
 }
 
 /* ==========================================================================
-   MeetReady Track Volt & Obsidian Surface & Component System
+   MeetReady Mondo Clay & Stadium Chalk Surface & Component System
    ========================================================================== */
 
-/* Signature MeetReady Top Brand Hairline & Darker-Green Framed Content Stage */
+/* Signature MeetReady Top Brand Hairline & Edge-to-Edge Workspace Canvas */
 .ap-brand-hairline {
-  background: linear-gradient(90deg, #c8ff00 0%, #65a30d 55%, #1d3828 100%);
+  background: #b83a24;
 }
 
 .dark .ap-brand-hairline {
-  background: linear-gradient(90deg, #c8ff00 0%, #84cc16 60%, #25573a 100%);
+  background: #d8ff2a;
 }
 
 html.dark.ap-midnight-slate .ap-brand-hairline {
-  background: linear-gradient(90deg, #d4ff33 0%, #94a3b8 60%, #2a3644 100%);
+  background: #d8ff2a;
 }
 
 .ap-content-stage {
   background-color: var(--ap-canvas-bg);
-  border: 2px solid var(--ap-content-border);
-  border-radius: 1.25rem;
-  box-shadow:
-    0 18px 40px -16px rgba(7, 18, 12, 0.42),
-    0 2px 8px 0 rgba(7, 18, 12, 0.18);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .dark .ap-content-stage {
   background-color: var(--ap-canvas-bg);
-  border: 2px solid var(--ap-content-border);
-  box-shadow:
-    0 22px 48px -16px rgba(0, 0, 0, 0.78),
-    0 2px 10px 0 rgba(0, 0, 0, 0.5);
+  border: none;
+  box-shadow: none;
 }
 
 @media (min-width: 640px) {
   .ap-content-stage {
-    border-radius: 1.5rem;
+    border-radius: 0;
   }
 }
 
-/* Unified Brand Ink, Solid Volt Nav Pill & Volt Callout Badge */
+/* Unified Brand Ink, Active Nav Bottom Bar & Starter Volt Focal Triggers */
 .ap-text-brand {
   color: var(--ap-brand-primary);
 }
 
 .ap-dot-brand {
-  background-color: #84cc16;
+  background-color: #b83a24;
 }
 .dark .ap-dot-brand {
-  background-color: #c8ff00;
+  background-color: #d8ff2a;
 }
 
 .ap-nav-volt-active {
-  background-color: #c8ff00;
-  color: #080a09;
-  border: 1.5px solid #65a30d;
-  box-shadow: 0 2px 10px rgba(101, 163, 13, 0.28);
+  background-color: #d8ff2a;
+  color: #121413;
+  border: 1px solid rgba(18, 20, 19, 0.25);
+  box-shadow: none;
   font-weight: 800;
 }
 
 .dark .ap-nav-volt-active {
-  background-color: #c8ff00;
-  color: #080a09;
-  border: 1px solid #e2ff66;
-  box-shadow: 0 2px 14px rgba(200, 255, 0, 0.3);
+  background-color: #d8ff2a;
+  color: #121413;
+  border: 1px solid #d8ff2a;
+  box-shadow: none;
   font-weight: 800;
 }
 
-/* Orthogonal Track Navigation Tabs (skew retained strictly on .ap-lane-badge pills) */
+header nav .ap-track-tab {
+  border-radius: 0;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  padding-inline: 0.35rem;
+  background-color: transparent;
+}
+
+header nav .ap-nav-volt-active {
+  background-color: transparent;
+  color: #121413;
+  border: none;
+  border-bottom: 2.5px solid #b83a24;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.dark header nav .ap-nav-volt-active {
+  background-color: transparent;
+  color: #f6f3ec;
+  border: none;
+  border-bottom: 2.5px solid #d8ff2a;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+header nav .ap-track-tab-idle {
+  background-color: transparent;
+  color: #57544d;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  font-weight: 500;
+}
+
+header nav .ap-track-tab-idle:hover {
+  background-color: transparent;
+  color: #121413;
+}
+
+.dark header nav .ap-track-tab-idle {
+  background-color: transparent;
+  color: #a39e93;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+}
+
+.dark header nav .ap-track-tab-idle:hover {
+  background-color: transparent;
+  color: #f6f3ec;
+}
+
+/* Flat Orthogonal Tabs & Lane Badges */
 .ap-track-tab {
   transform: none;
-  border-radius: 0.75rem;
+  border-radius: 0.625rem;
 }
 
 .ap-track-tab-inner {
@@ -305,27 +358,27 @@ html.dark.ap-midnight-slate .ap-brand-hairline {
 }
 
 .ap-track-tab-idle {
-  background-color: #e8efe9;
-  color: #1f3528;
-  border: 1px solid rgba(39, 88, 58, 0.22);
+  background-color: var(--ap-inset-bg);
+  color: #57544d;
+  border: 1px solid var(--ap-inset-border);
   font-weight: 600;
 }
 
 .ap-track-tab-idle:hover {
-  background-color: #dce7de;
-  color: #0a140e;
+  background-color: #e3dfd3;
+  color: #121413;
 }
 
 .dark .ap-track-tab-idle {
-  background-color: #15251c;
-  color: #a9beb1;
-  border: 1px solid #254331;
+  background-color: #1a1d1b;
+  color: #a39e93;
+  border: 1px solid #2c312e;
   font-weight: 600;
 }
 
 .dark .ap-track-tab-idle:hover {
-  background-color: #1c3125;
-  color: #f4f7f4;
+  background-color: #242826;
+  color: #f6f3ec;
 }
 
 html.dark.ap-midnight-slate .ap-track-tab-idle {
@@ -342,12 +395,12 @@ html.dark.ap-midnight-slate .ap-track-tab-idle:hover {
 .ap-lane-badge {
   display: inline-flex;
   align-items: center;
-  transform: skewX(-14deg);
-  border-radius: 0.35rem;
-  padding: 0.1875rem 0.625rem;
-  background-color: rgba(86, 186, 0, 0.14);
-  border: 1px solid rgba(77, 166, 0, 0.42);
-  color: #296300;
+  transform: none;
+  border-radius: 0.375rem;
+  padding: 0.1875rem 0.5rem;
+  background-color: #ede9df;
+  border: 1px solid rgba(18, 20, 19, 0.16);
+  color: #121413;
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -356,13 +409,13 @@ html.dark.ap-midnight-slate .ap-track-tab-idle:hover {
 }
 
 .dark .ap-lane-badge {
-  background-color: rgba(200, 255, 0, 0.15);
-  border-color: rgba(200, 255, 0, 0.45);
-  color: #c8ff00;
+  background-color: #242826;
+  border-color: rgba(246, 243, 236, 0.18);
+  color: #f6f3ec;
 }
 
 .ap-lane-badge-inner {
-  transform: skewX(14deg);
+  transform: none;
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
@@ -370,56 +423,56 @@ html.dark.ap-midnight-slate .ap-track-tab-idle:hover {
 
 @layer components {
   .ap-badge-volt {
-    background-color: #c8ff00;
-    color: #080a09;
-    border: 1px solid #65a30d;
+    background-color: #d8ff2a;
+    color: #121413;
+    border: 1px solid rgba(18, 20, 19, 0.25);
     font-weight: 700;
   }
 
   .dark .ap-badge-volt {
-    background-color: #c8ff00;
-    color: #080a09;
-    border: 1px solid #a3e635;
+    background-color: #d8ff2a;
+    color: #121413;
+    border: 1px solid #d8ff2a;
     font-weight: 700;
   }
 }
 
-/* Primary Card Surface — Elevates cleanly on Stadium Chalk / Carbon-Pine without GPU blur lag */
+/* Primary Card Surface — Crisp Matte White / Track Asphalt Card */
 .liquid-glass,
 .ap-card {
   background: var(--ap-card-bg);
   border: 1px solid var(--ap-card-border);
-  box-shadow:
-    0 2px 10px -3px rgba(16, 20, 17, 0.05),
-    0 1px 2px 0 rgba(16, 20, 17, 0.03);
+  box-shadow: 0 1px 2px 0 rgba(18, 20, 19, 0.04);
 }
 
 .dark .liquid-glass,
 .dark .ap-card {
   background: var(--ap-card-bg);
   border: 1px solid var(--ap-card-border);
-  box-shadow:
-    0 10px 28px -10px rgba(0, 0, 0, 0.65),
-    0 2px 6px -1px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 10px -4px rgba(0, 0, 0, 0.45);
 }
 
-/* Floating Navigation Header Surface — Crisp Solid Stadium Track Framing (Zero GPU Blur Stall) */
+.ap-card-clay-top {
+  border-top: 3px solid #b83a24;
+}
+
+.dark .ap-card-clay-top {
+  border-top-color: #e05238;
+}
+
+/* Full-Bleed Sticky Navigation Header — Warm Chalk Surface with 1px Hairline Rule */
 .liquid-glass-header,
 .ap-header-bar {
-  background: #ffffff;
-  border: 2px solid var(--ap-content-border);
-  box-shadow:
-    0 10px 26px -10px rgba(10, 24, 16, 0.32),
-    0 1px 3px 0 rgba(16, 20, 17, 0.08);
+  background: #faf8f4;
+  border-bottom: 1px solid var(--ap-content-border);
+  box-shadow: none;
 }
 
 .dark .liquid-glass-header,
 .dark .ap-header-bar {
-  background: var(--ap-card-bg);
-  border: 2px solid var(--ap-content-border);
-  box-shadow:
-    0 12px 30px -10px rgba(0, 0, 0, 0.75),
-    0 1px 4px 0 rgba(0, 0, 0, 0.45);
+  background: #161917;
+  border-bottom: 1px solid var(--ap-content-border);
+  box-shadow: none;
 }
 
 /* Nested Inset Wells — Tonal Luminance Step Without Nested Boxitis */
@@ -440,35 +493,31 @@ html.dark.ap-midnight-slate .ap-track-tab-idle:hover {
 /* Segmented Switcher Track */
 .liquid-capsule-track,
 .ap-pill-track {
-  background: #e3ece5;
-  border: 1px solid rgba(40, 87, 59, 0.22);
+  background: #ede9df;
+  border: 1px solid rgba(18, 20, 19, 0.14);
 }
 
 .dark .liquid-capsule-track,
 .dark .ap-pill-track {
-  background: #0b140f;
-  border: 1px solid rgba(57, 150, 99, 0.28);
+  background: #151816;
+  border: 1px solid rgba(246, 243, 236, 0.14);
 }
 
-/* Raised Active Switcher Pill — Crisp Volt Ring & Bottom Accent Bar */
+/* Raised Active Switcher Pill — Crisp Ink Ring & Flat Definition */
 .liquid-capsule-active,
 .ap-pill-active {
   background: #ffffff;
-  color: #101411;
-  border: 1.5px solid #84cc16;
-  box-shadow:
-    inset 0 -2.5px 0 0 #a3e635,
-    0 1px 3px 0 rgba(16, 20, 17, 0.08);
+  color: #121413;
+  border: 1.5px solid #121413;
+  box-shadow: none;
 }
 
 .dark .liquid-capsule-active,
 .dark .ap-pill-active {
-  background: #1b241e;
-  color: #ecf2ee;
-  border: 1.5px solid rgba(200, 255, 0, 0.6);
-  box-shadow:
-    inset 0 -2.5px 0 0 #c8ff00,
-    0 2px 6px 0 rgba(0, 0, 0, 0.5);
+  background: #242826;
+  color: #f6f3ec;
+  border: 1.5px solid rgba(246, 243, 236, 0.72);
+  box-shadow: none;
 }
 
 html.dark.ap-midnight-slate .liquid-capsule-track,
@@ -481,22 +530,20 @@ html.dark.ap-midnight-slate .liquid-capsule-active,
 html.dark.ap-midnight-slate .ap-pill-active {
   background: #1b2430;
   color: #eef2f6;
-  border: 1.5px solid rgba(212, 255, 51, 0.65);
-  box-shadow:
-    inset 0 -2.5px 0 0 #d4ff33,
-    0 2px 6px 0 rgba(0, 0, 0, 0.5);
+  border: 1.5px solid rgba(238, 242, 246, 0.72);
+  box-shadow: none;
 }
 
 /* WCAG 2.1 AA/AAA Semantic Status Pills (>= 6.8:1 Light Mode Contrast) */
 .ap-status-prime {
-  background-color: #ecfdf5;
-  color: #065f46;
-  border: 1px solid #a7f3d0;
+  background-color: #e7f3ec;
+  color: #1e4d36;
+  border: 1px solid #b6d9c4;
 }
 .dark .ap-status-prime {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #6ee7b7;
-  border-color: rgba(16, 185, 129, 0.35);
+  background-color: rgba(30, 77, 54, 0.35);
+  color: #86efac;
+  border-color: rgba(134, 239, 172, 0.35);
 }
 
 .ap-status-caution {
@@ -511,25 +558,25 @@ html.dark.ap-midnight-slate .ap-pill-active {
 }
 
 .ap-status-strained {
-  background-color: #fff1f2;
-  color: #9f1239;
-  border: 1px solid #fecdd3;
+  background-color: #fdf0ed;
+  color: #8f2a18;
+  border: 1px solid #e8b4aa;
 }
 .dark .ap-status-strained {
-  background-color: rgba(244, 63, 94, 0.15);
-  color: #fda4af;
-  border-color: rgba(244, 63, 94, 0.35);
+  background-color: rgba(184, 58, 36, 0.22);
+  color: #f6b8ac;
+  border-color: rgba(224, 82, 56, 0.4);
 }
 
 .ap-status-info {
-  background-color: #f7fee7;
-  color: #365314;
-  border: 1px solid #bef264;
+  background-color: #f2f0e9;
+  color: #121413;
+  border: 1px solid rgba(18, 20, 19, 0.18);
 }
 .dark .ap-status-info {
-  background-color: rgba(200, 255, 0, 0.12);
-  color: #d9f99d;
-  border-color: rgba(200, 255, 0, 0.3);
+  background-color: rgba(246, 243, 236, 0.08);
+  color: #f6f3ec;
+  border-color: rgba(246, 243, 236, 0.24);
 }
 
 /* Standardized Telemetry Micro-Label & 44px Ergonomic Button Tokens */
@@ -540,11 +587,11 @@ html.dark.ap-midnight-slate .ap-pill-active {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #3f6212; /* 7.1:1 AAA Track Volt olive contrast on white */
+  color: #1e4d36;
 }
 
 .dark .ap-telemetry-label {
-  color: #a3e635; /* Crisp Track Volt lime on carbon-pine */
+  color: #d8ff2a;
 }
 
 .ap-kpi-value {
@@ -564,9 +611,9 @@ html.dark.ap-midnight-slate .ap-pill-active {
   align-items: center;
   padding: 0.625rem 1rem;
   border-radius: 0.75rem;
-  background-color: #c8ff00;
-  color: #080a09;
-  border: 2px solid #163022;
+  background-color: #d8ff2a;
+  color: #121413;
+  border: 2px solid #121413;
   font-family: var(--font-sans);
   font-size: 0.8125rem;
   font-weight: 700;
@@ -577,7 +624,7 @@ html.dark.ap-midnight-slate .ap-pill-active {
 
 .ap-skip-link:focus {
   transform: translateY(0);
-  outline: 2px solid #080a09;
+  outline: 2px solid #121413;
   outline-offset: 2px;
 }
 
@@ -591,33 +638,32 @@ html.dark.ap-midnight-slate .ap-pill-active {
     padding: 0.5rem 1rem;
     border-radius: 0.75rem;
     font-size: 0.8125rem; /* 13px */
-    font-weight: 700;
-    color: #080a09;
-    background-color: #c8ff00;
-    border: 1.5px solid #4d7c0f;
-    box-shadow: 0 2px 10px rgba(132, 204, 22, 0.28);
+    font-weight: 800;
+    color: #121413;
+    background-color: #d8ff2a;
+    border: 1px solid rgba(18, 20, 19, 0.24);
+    box-shadow: none;
     transition:
       background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
-      transform 120ms cubic-bezier(0.16, 1, 0.3, 1),
-      box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1);
+      transform 120ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .ap-btn-primary:hover {
-    background-color: #b5eb00;
+    background-color: #c8ef1e;
   }
 
   .dark .ap-btn-primary {
-    color: #080a09;
-    background-color: #c8ff00;
-    border-color: #e2ff66;
-    box-shadow: 0 2px 16px rgba(200, 255, 0, 0.26);
+    color: #121413;
+    background-color: #d8ff2a;
+    border-color: #d8ff2a;
+    box-shadow: none;
   }
 
   .dark .ap-btn-primary:hover {
-    background-color: #b5eb00;
+    background-color: #c8ef1e;
   }
 
-  /* Secondary Stadium Pine CTA (preserves strict 80/15/5 Track Volt restraint across viewports) */
+  /* Secondary Infield Pine CTA (preserves strict Starter Volt restraint across viewports) */
   .ap-btn-pine {
     min-height: 2.75rem;
     display: inline-flex;
@@ -628,28 +674,28 @@ html.dark.ap-midnight-slate .ap-pill-active {
     border-radius: 0.75rem;
     font-size: 0.8125rem;
     font-weight: 700;
-    color: #ffffff;
-    background-color: #1c5436;
-    border: 1px solid #16422a;
-    box-shadow: 0 2px 8px rgba(28, 84, 54, 0.22);
+    color: #f6f3ec;
+    background-color: #1e4d36;
+    border: 1px solid #163a28;
+    box-shadow: none;
     transition:
       background-color 150ms cubic-bezier(0.16, 1, 0.3, 1),
       border-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .ap-btn-pine:hover {
-    background-color: #16422a;
+    background-color: #163a28;
   }
 
   .dark .ap-btn-pine {
-    color: #c8ff00;
-    background-color: #15231b;
-    border-color: #399663;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    color: #d8ff2a;
+    background-color: #162d21;
+    border-color: #2f7a55;
+    box-shadow: none;
   }
 
   .dark .ap-btn-pine:hover {
-    background-color: #1c3125;
+    background-color: #1e3d2d;
   }
 
   @media (min-width: 640px) {
@@ -668,23 +714,24 @@ html.dark.ap-midnight-slate .ap-pill-active {
     border-radius: 0.75rem;
     font-size: 0.8125rem; /* 13px */
     font-weight: 600;
-    color: #101411;
-    background: var(--ap-inset-bg);
-    border: 1px solid rgba(38, 88, 58, 0.22);
+    color: #121413;
+    background: #ffffff;
+    border: 1px solid rgba(18, 20, 19, 0.22);
     transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dark .ap-btn-secondary {
-    color: #f4f7f4;
-    border-color: rgba(57, 150, 99, 0.28);
+    color: #f6f3ec;
+    background: #1a1d1b;
+    border-color: rgba(246, 243, 236, 0.2);
   }
 
   .ap-btn-secondary:hover {
-    background: #dce7de;
+    background: #ede9df;
   }
 
   .dark .ap-btn-secondary:hover {
-    background: #1c3125;
+    background: #242826;
   }
 
   /* WCAG 2.1 AA Compliant Strava Brand Surfaces (5.44:1 white-on-vermilion CTA; >= 5.07:1 text ink) */
@@ -774,12 +821,12 @@ html.dark.ap-midnight-slate .ap-pill-active {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(57, 118, 82, 0.34);
+  background: rgba(18, 20, 19, 0.24);
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(57, 118, 82, 0.54);
+  background: rgba(18, 20, 19, 0.42);
 }
 
 /* ==========================================================================
@@ -871,7 +918,7 @@ html.dark.ap-midnight-slate .ap-pill-active {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background-color: rgba(7, 15, 11, 0.82);
+  background-color: rgba(18, 20, 19, 0.78);
   display: flex;
   align-items: flex-end;
   justify-content: center;

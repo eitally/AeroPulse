@@ -635,7 +635,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                 Athletic.net &amp; TFRRS Team Sync
               </h2>
               {activeTeam && (
-                <span className="px-2 py-0.5 rounded-md font-mono text-2xs font-bold bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
+                <span className="px-2 py-0.5 rounded-md font-mono text-2xs font-bold bg-ap-inset text-ap-clay dark:bg-ap-turf dark:text-ap-volt">
                   {activeTeam.brand.shortName}
                 </span>
               )}

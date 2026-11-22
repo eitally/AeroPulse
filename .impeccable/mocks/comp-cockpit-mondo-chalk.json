@@ -1,0 +1,12 @@
+{
+  "slug": "comp-cockpit-mondo-chalk",
+  "mode": "operate",
+  "surface": "src/components/TracksideStopwatchView.tsx",
+  "seed": "5561f13e",
+  "world": "Mondo Clay & Stadium Chalk",
+  "image": ".impeccable/mocks/comp-cockpit-mondo-chalk.jpg",
+  "approved": true,
+  "approvedBy": "user",
+  "approvedAt": "2026-11-22",
+  "notes": "Approved Mondo Clay & Stadium Chalk Operate cockpit direction with flat #FAF8F4 header, 2.5px #B83A24 active bottom tab bar, #121413 master clock housing with #D8FF2A digits, and crisp 1px matte white athlete split cards."
+}

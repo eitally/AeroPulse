@@ -456,12 +456,12 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 : 'Today’s Session Receipt'}
           </h1>
           {mode === 'TONIGHT' ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-ap-inset text-ap-clay dark:bg-ap-turf dark:text-ap-volt">
               <Moon className="w-3.5 h-3.5" />
               <span>Bedtime Ritual · {todayIso}</span>
             </span>
           ) : mode === 'MORNING' ? (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-ap-inset text-ap-clay dark:bg-ap-turf dark:text-ap-volt">
               <Sun className="w-3.5 h-3.5" />
               <span>7d Rolling</span>
             </span>

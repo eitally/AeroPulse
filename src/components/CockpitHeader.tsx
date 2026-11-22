@@ -253,8 +253,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   }, [isAccountMenuOpen, accountMenuRef, accountTriggerRef, setIsAccountMenuOpen]);
 
   return (
-    <div className="sticky top-[max(0.25rem,env(safe-area-inset-top,0px))] z-40 ap-container pt-1.5 sm:pt-2">
-      <header className="rounded-2xl liquid-glass-header px-2.5 sm:px-3.5 py-1.5 sm:py-2">
+    <header className="sticky top-0 z-40 w-full liquid-glass-header">
+      <div className="ap-container py-1.5 sm:py-2">
         <div className="flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2">
           {/* 1. Brand Wordmark (Co-Branded when Team Active) + Multi-Team Switcher + Telemetry Sync Pill */}
           <div className="flex items-center gap-1.5 2xl:gap-2.5 min-w-0 shrink">
@@ -272,7 +272,14 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               className="min-h-[44px] sm:min-h-[36px] inline-flex items-center whitespace-nowrap min-w-0 shrink-0"
             >
               {activeTeam?.brand ? (
-                <AeroPulseLogo size="sm" teamBrand={activeTeam.brand} />
+                <>
+                  <span className="inline-flex min-[410px]:hidden">
+                    <AeroPulseLogo size="sm" mode="mark-only" teamBrand={activeTeam.brand} />
+                  </span>
+                  <span className="hidden min-[410px]:inline-flex">
+                    <AeroPulseLogo size="sm" teamBrand={activeTeam.brand} />
+                  </span>
+                </>
               ) : (
                 <>
                   <span className="inline-flex min-[380px]:hidden">
@@ -303,10 +310,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                   }
                   setActiveTab(activeTab === 'coach' ? 'fitness' : 'coach');
                 }}
-                className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-xl text-2xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2 sm:px-3 py-1 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   activeTab === 'coach'
-                    ? 'ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] border-ap-frame/30 dark:border-ap-edge-dark'
-                    : 'liquid-capsule-track text-slate-700 dark:text-slate-200 hover:text-slate-950 dark:hover:text-white'
+                    ? 'ap-card-inset text-ap-ink dark:text-ap-chalk border border-ap-frame/20 dark:border-white/20'
+                    : 'ap-card-inset text-ap-ink dark:text-ap-chalk hover:bg-[#e3dfd3] dark:hover:bg-[#242826]'
                 }`}
                 title={
                   activeTab === 'coach'
@@ -352,14 +359,14 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     <option
                       key={t.brand.teamId}
                       value={t.brand.teamId}
-                      className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                      className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white"
                     >
                       {t.brand.shortName || t.brand.name}
                     </option>
                   ))}
                   <option
                     value=""
-                    className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                    className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white"
                   >
                     Personal Mode
                   </option>
@@ -530,7 +537,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
 
             {/* Athlete Context Switcher — shown only in Personal mode when inspecting another athlete */}
             {activeViewedAthleteId !== 'SELF' && activeTab !== 'coach' && (
-              <div className="hidden xl:flex min-h-[36px] items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-emerald-800/25 dark:border-emerald-700/40 min-w-0">
+              <div className="hidden xl:flex min-h-[36px] items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 border border-ap-frame/25 dark:border-white/20 min-w-0">
                 <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
                 <select
                   value={activeViewedAthleteId}
@@ -541,13 +548,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                   aria-label="Switch Active Athlete Profile"
                   className="bg-transparent text-2xs font-mono font-semibold text-slate-800 dark:text-slate-100 cursor-pointer pr-0.5 max-w-[84px] 2xl:max-w-[130px] truncate rounded"
                 >
-                  <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                  <option value="SELF" className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white">
                     {primaryAthleteDisplayName} (You)
                   </option>
                   {combinedRoster
                     .filter((a) => a.status === 'CONNECTED')
                     .map((a) => (
-                      <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                      <option key={a.id} value={a.id} className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white">
                         {a.name} ({a.role === 'COACH_EDIT' ? 'Coach' : 'Teammate'})
                       </option>
                     ))}
@@ -563,24 +570,24 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 data-testid="open-team-messages-btn"
                 onClick={onOpenTeamMessages}
                 aria-label="Open Team Messaging"
-                className="relative min-h-[44px] w-[44px] sm:w-auto sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 py-1 sm:px-2.5 rounded-xl ap-btn-secondary text-xs font-semibold whitespace-nowrap cursor-pointer shrink-0"
+                className="relative min-h-[44px] w-[44px] sm:w-auto sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 py-1 sm:px-3 rounded-lg ap-btn-secondary text-xs font-semibold whitespace-nowrap cursor-pointer shrink-0"
               >
                 <MessageSquare className="w-4 h-4 sm:w-3.5 sm:h-3.5 ap-text-brand" />
                 <span className="hidden sm:inline">Team Chat</span>
                 {(activeTeam.teamMessages?.length || 0) > 0 && (
-                  <span className="hidden sm:inline px-1.5 py-0.2 rounded-full text-2xs font-mono font-bold ap-nav-volt-active">
+                  <span className="hidden sm:inline px-1.5 py-0.2 rounded-full text-2xs font-mono font-bold bg-[#EDE9DF] text-[#121413] dark:bg-[#242826] dark:text-[#D8FF2A]">
                     {activeTeam.teamMessages!.length}
                   </span>
                 )}
               </button>
             )}
 
-            {/* AI Coach Action Button — Stadium Pine Instrument Pill */}
+            {/* AI Coach Action Button — Track Asphalt Instrument Pill */}
             <button
               type="button"
               onClick={onOpenCoach}
               aria-label="Open AI Coach"
-              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 2xl:px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:hover:bg-[#21422E] dark:text-ap-volt border border-ap-frame text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer shadow-xs"
+              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 2xl:px-3.5 rounded-lg bg-[#121413] hover:bg-[#242826] text-[#F6F3EC] dark:bg-[#1A1D1B] dark:hover:bg-[#242826] dark:text-[#D8FF2A] border border-[#121413] dark:border-white/25 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
             >
               <Bot className="w-4 h-4 sm:w-3.5 sm:h-3.5" weight="fill" />
               <span className="hidden sm:inline">AI Coach</span>
@@ -590,14 +597,14 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             <button
               type="button"
               onClick={onToggleDark}
-              className="min-h-[44px] w-[44px] sm:min-h-[36px] sm:w-[36px] inline-flex items-center justify-center rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-slate-700 dark:text-slate-200 transition-all cursor-pointer"
+              className="min-h-[44px] w-[44px] sm:min-h-[36px] sm:w-[36px] inline-flex items-center justify-center rounded-lg ap-card-inset hover:border-ap-frame/35 dark:hover:border-white/30 text-ap-ink dark:text-ap-chalk transition-all cursor-pointer"
               title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
               aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
               {isDark ? (
                 <Sun className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-ap-volt" weight="fill" />
               ) : (
-                <Moon className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#1D3828]" weight="fill" />
+                <Moon className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-[#121413]" weight="fill" />
               )}
             </button>
 
@@ -608,7 +615,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 type="button"
                 onClick={() => setIsAccountMenuOpen((prev) => !prev)}
                 aria-label={`Account and preferences menu (${primaryAthleteDisplayName})`}
-                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-xl liquid-glass-subtle hover:border-[#28573B] dark:hover:border-[#2E6B47] text-xs font-semibold text-slate-800 dark:text-slate-100 transition-all cursor-pointer"
+                className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-1.5 pr-2 sm:pr-2.5 py-1 rounded-lg ap-card-inset hover:border-ap-frame/35 dark:hover:border-white/30 text-xs font-semibold text-ap-ink dark:text-ap-chalk transition-all cursor-pointer"
                 aria-expanded={isAccountMenuOpen}
                 aria-haspopup="menu"
                 title="Account, Profile Zones, Data Sources, Guide & Log Out"
@@ -617,10 +624,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                   <img
                     src={currentUser.picture}
                     alt=""
-                    className="w-6 h-6 rounded-lg object-cover border border-[#28573B] shrink-0"
+                    className="w-6 h-6 rounded-md object-cover border border-ap-frame/25 shrink-0"
                   />
                 ) : (
-                  <span className="w-6 h-6 rounded-lg bg-[#1D3828] text-ap-volt border border-[#28573B] font-mono text-2xs font-bold flex items-center justify-center shadow-xs">
+                  <span className="w-6 h-6 rounded-md bg-[#121413] text-ap-volt border border-ap-frame/30 font-mono text-2xs font-bold flex items-center justify-center">
                     {primaryAthleteInitials}
                   </span>
                 )}
@@ -638,7 +645,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 <div
                   role="menu"
                   aria-label="Account and workspace settings"
-                  className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white dark:bg-ap-carbon border-2 border-[#28573B] dark:border-[#25573A] shadow-2xl p-3 space-y-3 z-50 text-xs"
+                  className="absolute right-0 mt-2 w-[min(20rem,calc(100vw-1.5rem))] max-h-[82vh] overflow-y-auto rounded-2xl bg-white dark:bg-ap-carbon border border-ap-frame dark:border-white/25 shadow-2xl p-3 space-y-3 z-50 text-xs"
                 >
                   {/* Account Identity & Connection Summary */}
                   <div className="flex items-center justify-between gap-3 pb-2.5 border-b border-slate-200/80 dark:border-white/10">
@@ -647,10 +654,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         <img
                           src={currentUser.picture}
                           alt=""
-                          className="w-9 h-9 rounded-xl object-cover border border-[#28573B] shrink-0"
+                          className="w-9 h-9 rounded-xl object-cover border border-ap-frame/40 shrink-0"
                         />
                       ) : (
-                        <div className="w-9 h-9 rounded-xl bg-[#1D3828] text-ap-volt border border-[#28573B] font-mono text-xs font-bold flex items-center justify-center shrink-0">
+                        <div className="w-9 h-9 rounded-xl bg-[#121413] text-ap-volt border border-ap-frame/30 font-mono text-xs font-bold flex items-center justify-center shrink-0">
                           {primaryAthleteInitials}
                         </div>
                       )}
@@ -663,8 +670,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                             {currentUser.email}
                           </div>
                         )}
-                        <div className="text-2xs font-mono text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        <div className="text-2xs font-mono text-[#1E4D36] dark:text-[#86efac] flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#1E4D36] dark:bg-[#4ade80]" />
                           <span className="truncate">
                             {effectiveActivities.length.toLocaleString()} workouts synced
                           </span>
@@ -703,10 +710,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                     >
                       <span className="flex items-center gap-2 font-medium">
-                        <Database className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <Database className="w-4 h-4 text-[#1E4D36] dark:text-[#86efac]" />
                         <span>Data Sources (Strava, Garmin &amp; Intervals)</span>
                       </span>
-                      <span className="font-mono text-2xs text-emerald-600 dark:text-emerald-400">
+                      <span className="font-mono text-2xs text-[#1E4D36] dark:text-[#86efac]">
                         {anySourceConnected ? 'Active ●' : 'Connect'}
                       </span>
                     </button>
@@ -724,7 +731,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         <Sliders className="w-4 h-4 ap-text-brand" />
                         <span>Profile, Thresholds &amp; Zones</span>
                       </span>
-                      <span className="font-mono text-2xs font-bold ap-text-brand bg-emerald-500/10 px-2 py-0.5 rounded-md">
+                      <span className="font-mono text-2xs font-bold ap-text-brand bg-ap-clay/10 dark:bg-ap-volt/10 px-2 py-0.5 rounded-md">
                         {effectiveAthleteProfile.primarySport === 'Running'
                           ? formatPace(
                               Math.max(
@@ -749,7 +756,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                         className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                       >
                         <span className="flex items-center gap-2 font-medium">
-                          <ClipboardText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          <ClipboardText className="w-4 h-4 text-ap-clay dark:text-ap-volt" />
                           <span>Coach &amp; Team Setup</span>
                         </span>
                         <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
@@ -771,7 +778,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       className="w-full min-h-[44px] sm:min-h-[38px] flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
                     >
                       <span className="flex items-center gap-2 font-medium">
-                        <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <Users className="w-4 h-4 text-ap-clay dark:text-ap-volt" />
                         <span>Account, Teams &amp; Privacy</span>
                       </span>
                       <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
@@ -1005,7 +1012,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           ((activeTab !== 'coach' && hasActiveStopwatchPill) ||
             myTeams.length > 0 ||
             activeViewedAthleteId !== 'SELF') && (
-          <div className="xl:hidden mt-2 pt-2 border-t border-emerald-900/10 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="xl:hidden mt-2 pt-2 border-t border-ap-frame/15 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {activeTab !== 'coach' && (
               <div className="sm:hidden shrink-0">
                 <TracksideLiveHeaderPill
@@ -1035,14 +1042,14 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     <option
                       key={t.brand.teamId}
                       value={t.brand.teamId}
-                      className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                      className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white"
                     >
                       {t.brand.shortName || t.brand.name}
                     </option>
                   ))}
                   <option
                     value=""
-                    className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white"
+                    className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white"
                   >
                     Personal Mode
                   </option>
@@ -1062,13 +1069,13 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                   aria-label="Switch Active Athlete Profile (Mobile)"
                   className="bg-transparent text-xs font-mono font-semibold text-slate-800 dark:text-slate-100 max-w-[125px] truncate rounded"
                 >
-                  <option value="SELF" className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                  <option value="SELF" className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white">
                     {primaryAthleteDisplayName} (You)
                   </option>
                   {combinedRoster
                     .filter((a) => a.status === 'CONNECTED')
                     .map((a) => (
-                      <option key={a.id} value={a.id} className="bg-white dark:bg-[#121715] text-slate-900 dark:text-white">
+                      <option key={a.id} value={a.id} className="bg-white dark:bg-ap-carbon text-slate-900 dark:text-white">
                         {a.name}
                       </option>
                     ))}
@@ -1077,7 +1084,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             )}
           </div>
         )}
-      </header>
-    </div>
+      </div>
+    </header>
   );
 };

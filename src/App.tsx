@@ -2327,10 +2327,10 @@ export default function App() {
 
         {/* Global Content Container & Stage Banners */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 ap-container py-2 sm:py-3 min-w-0 flex flex-col gap-2.5 sm:gap-3">
+          <div className="flex-1 ap-container py-3 sm:py-4 min-w-0 flex flex-col gap-3">
             <div
               data-testid="cockpit-content-stage"
-              className="ap-content-stage p-1.5 sm:p-2 lg:p-5 space-y-3 sm:space-y-4 min-w-0 flex-1 flex flex-col"
+              className="ap-content-stage space-y-3 sm:space-y-4 min-w-0 flex-1 flex flex-col"
             >
               <CockpitStageBanners
               pendingUrlJoinOffer={pendingUrlJoinOffer}

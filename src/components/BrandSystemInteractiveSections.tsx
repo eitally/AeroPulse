@@ -212,29 +212,29 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
           )}
         </div>
 
-        <div className="w-full h-7 rounded-xl overflow-hidden flex border border-emerald-950/20 dark:border-emerald-700/40" aria-label="80 15 5 Stadium Color Budget">
+        <div className="w-full h-7 rounded-xl overflow-hidden flex border border-ap-frame/20 dark:border-ap-edge-dark" aria-label="80 15 5 Stadium Color Budget">
           <div
-            className="h-full flex items-center px-3 font-mono text-2xs font-bold border-r border-emerald-950/15 whitespace-nowrap"
+            className="h-full flex items-center px-3 font-mono text-2xs font-bold border-r border-ap-frame/15 whitespace-nowrap"
             style={{
               width: '80%',
-              backgroundColor: isDark ? '#0B120E' : '#F4F7F2',
-              color: isDark ? '#F4F7F4' : '#101411',
+              backgroundColor: isDark ? '#121413' : '#F6F3EC',
+              color: isDark ? '#F6F3EC' : '#121413',
             }}
           >
-            <span className="hidden sm:inline">80% Neutral Stage &amp; Paper</span>
+            <span className="hidden sm:inline">80% Stadium Chalk &amp; Asphalt</span>
             <span className="sm:hidden">80% Neutral</span>
           </div>
           <div
-            className="h-full flex items-center justify-center px-1.5 font-mono text-2xs font-bold text-white border-r border-emerald-950/20 whitespace-nowrap"
-            style={{ width: '15%', minWidth: '52px', backgroundColor: '#163022' }}
+            className="h-full flex items-center justify-center px-1.5 font-mono text-2xs font-bold bg-ap-clay text-[#F6F3EC] border-r border-ap-frame/20 whitespace-nowrap"
+            style={{ width: '15%', minWidth: '52px' }}
           >
-            <span className="hidden sm:inline">15% Pine</span>
+            <span className="hidden sm:inline">15% Clay</span>
             <span className="sm:hidden">15%</span>
           </div>
           <div
-            className="h-full flex items-center justify-center font-mono text-2xs font-bold whitespace-nowrap"
-            style={{ width: '5%', minWidth: '42px', backgroundColor: '#C8FF00', color: '#080A09' }}
-            title="Track Volt <= 5%"
+            className="h-full flex items-center justify-center font-mono text-2xs font-bold bg-ap-volt text-ap-obsidian whitespace-nowrap"
+            style={{ width: '5%', minWidth: '42px' }}
+            title="Starter Volt <= 5%"
           >
             5%
           </div>
@@ -263,7 +263,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
           <div className="flex items-start sm:items-center gap-2 text-xs text-slate-700 dark:text-slate-200">
             <Warning className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
             <span>
-              <strong>Print &amp; CMYK Calibration:</strong> Electric Track Volt (<code className="font-mono">#C8FF00</code>) is an out-of-gamut RGB ink. For 4-color CMYK paper without Pantone 809C spot ink, use the <strong>Light Stage Pine + Turf Lime</strong> lockup (<code className="font-mono">#1C5436 / #56BA00</code>) or <strong>1-Ink Stencil</strong>.
+              <strong>Print &amp; CMYK Calibration:</strong> Electric Starter Volt (<code className="font-mono">#D8FF2A</code>) is a high-visibility RGB accent. For 4-color CMYK paper without Pantone 809C spot ink, use the <strong>Light Stage Mondo Clay + Track Asphalt</strong> lockup (<code className="font-mono">#B83A24 / #121413</code>) or <strong>1-Ink Stencil</strong>.
             </span>
           </div>
           <span className="font-mono text-2xs font-bold ap-telemetry-label shrink-0">
@@ -615,9 +615,9 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
             <div
               className="rounded-2xl border p-5 sm:p-7 flex flex-col gap-4 transition-colors"
               style={{
-                backgroundColor: isPreviewDarkSurface ? '#0B120E' : '#F4F7F2',
-                borderColor: isPreviewDarkSurface ? '#2B543B' : '#2B5B3F',
-                color: isPreviewDarkSurface ? '#F4F7F4' : '#101411',
+                backgroundColor: isPreviewDarkSurface ? '#121413' : '#F6F3EC',
+                borderColor: isPreviewDarkSurface ? '#2C312E' : 'rgba(18, 20, 19, 0.22)',
+                color: isPreviewDarkSurface ? '#F6F3EC' : '#121413',
               }}
             >
               {/* 1:1 WYSIWYG Vector Lockup Preview matching exported SVG & 3x PNG */}
@@ -633,11 +633,11 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
               <div
                 className="rounded-xl p-3 border flex flex-wrap items-center justify-between gap-2.5"
                 style={{
-                  backgroundColor: isPreviewDarkSurface ? '#15231B' : '#FFFFFF',
+                  backgroundColor: isPreviewDarkSurface ? '#1A1D1B' : '#FFFFFF',
                   borderColor: isPreviewDarkSurface
-                    ? 'rgba(57, 150, 99, 0.3)'
-                    : 'rgba(38, 88, 58, 0.16)',
-                  color: isPreviewDarkSurface ? '#C8D8CE' : '#1F3528',
+                    ? 'rgba(246, 243, 236, 0.2)'
+                    : 'rgba(18, 20, 19, 0.18)',
+                  color: isPreviewDarkSurface ? '#F6F3EC' : '#121413',
                 }}
               >
                 <div className="font-mono text-2xs space-x-3">
@@ -812,8 +812,8 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
         {/* Full Type Hierarchy Specimen */}
         <div className="lg:col-span-7 ap-card rounded-2xl p-4 sm:p-5 space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="font-display text-base font-bold text-slate-950 dark:text-white">
-              Plus Jakarta Sans + JetBrains Mono Hierarchy
+            <h3 className="font-sans text-base font-bold text-slate-950 dark:text-white">
+              Barlow Condensed + Archivo + JetBrains Mono Hierarchy
             </h3>
             <span className="font-mono text-2xs font-bold ap-telemetry-label">
               Unassisted Headings · Zero Stacked Kickers

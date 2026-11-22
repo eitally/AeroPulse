@@ -97,7 +97,7 @@ export const TracksideMeetPassportPanel: React.FC<TracksideMeetPassportPanelProp
             data-testid="stopwatch-mint-passports-btn"
             disabled={finishers.length === 0}
             onClick={handleMintPassports}
-            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-[#1D3828] hover:bg-[#163022] text-white dark:bg-[#183122] dark:text-ap-volt border border-ap-frame text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+            className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-ap-obsidian hover:bg-[#242826] text-ap-chalk dark:bg-ap-volt dark:text-ap-obsidian border border-ap-frame text-xs font-bold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
           >
             <Trophy className="w-4 h-4 shrink-0" weight="duotone" />
             <span>

@@ -1107,7 +1107,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     },
                   ]);
                 }}
-                className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-ap-inset dark:bg-ap-turf text-ap-clay dark:text-ap-volt text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add Repeat Set</span>

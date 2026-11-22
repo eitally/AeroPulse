@@ -44,19 +44,19 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                   type="button"
                   data-testid={`runner-card-${idx}`}
                   onClick={() => handleRunnerAction(telemetry)}
-                  className={`min-h-[88px] rounded-2xl p-3 gap-2 w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
-                    isJustTapped ? 'ring-2 ring-ap-volt' : ''
+                  className={`min-h-[92px] rounded-xl p-3.5 gap-2.5 w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
+                    isJustTapped ? 'ring-2 ring-ap-clay dark:ring-ap-volt' : ''
                   } ${
                     telemetry.isFinishedLocked
-                      ? 'ap-card border-[#059669]/45 bg-[#ECFDF5]/70 dark:bg-[#0B1911]'
+                      ? 'bg-[#F0F7F3] dark:bg-[#13231A] border-[#1E4D36]/45'
                       : telemetry.isBellLap
                         ? 'ap-card border-[#D97706]/60 ring-1 ring-[#D97706]/50'
-                        : 'ap-card hover:border-ap-frame dark:hover:border-ap-volt/60 active:scale-[0.98]'
+                        : 'ap-card hover:border-[#121413]/45 dark:hover:border-ap-volt/60 active:scale-[0.98]'
                   }`}
                 >
                   {/* Row 1: Athlete Name + Target Pod & Right Status Pill */}
                   <div className="flex items-start justify-between gap-1.5 w-full">
-                    <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
                       <span className="ap-lane-badge shrink-0">
                         <span className="ap-lane-badge-inner">
                           {idx < 9 ? `L${idx + 1}` : `#${idx + 1}`}
@@ -80,78 +80,83 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
 
                     <div className="shrink-0 flex items-center gap-1">
                       {nextChuteTs !== undefined && !telemetry.isFinishedLocked ? (
-                        <span className="px-1.5 py-0.5 rounded-lg bg-[#0B120E] text-ap-volt font-mono text-2xs font-bold">
+                        <span className="px-1.5 py-0.5 rounded-md bg-[#121413] text-ap-volt font-mono text-2xs font-bold">
                           +{formatTrackMark(nextChuteTs, 2)}
                         </span>
                       ) : sessionType === 'RACE' ? (
                         <div className="flex items-center gap-1">
                           {telemetry.placeLabel && (
-                            <span className="px-1.5 py-0.5 rounded-lg ap-status-info font-mono text-2xs font-bold">
+                            <span className="px-1.5 py-0.5 rounded-md ap-status-info font-mono text-2xs font-bold">
                               {telemetry.placeLabel}
                             </span>
                           )}
                           {telemetry.isFinishedLocked ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold">
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ap-status-prime font-mono text-2xs font-bold">
                               <Lock className="w-3 h-3" weight="bold" />
                               <span>Fin</span>
                             </span>
                           ) : telemetry.isBellLap ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg ap-status-caution font-mono text-2xs font-bold">
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ap-status-caution font-mono text-2xs font-bold">
                               <BellRinging className="w-3 h-3" weight="bold" />
                               <span>Bell</span>
                             </span>
                           ) : (
-                            <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
+                            <span className="px-1.5 py-0.5 rounded-md ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
                               L{telemetry.lapCount}
                               {targetRaceLaps ? `/${targetRaceLaps}` : ''}
                             </span>
                           )}
                         </div>
                       ) : telemetry.restState.status === 'RESTING' ? (
-                        <span className="px-1.5 py-0.5 rounded-lg ap-status-caution font-mono text-2xs font-bold tabular-nums">
+                        <span className="px-1.5 py-0.5 rounded-md ap-status-caution font-mono text-2xs font-bold tabular-nums">
                           {telemetry.restState.remainingRestSecs}s
                         </span>
                       ) : telemetry.restState.status === 'GO_NOW' ? (
-                        <span className="px-1.5 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold tabular-nums">
+                        <span className="px-1.5 py-0.5 rounded-md ap-status-prime font-mono text-2xs font-bold tabular-nums">
                           GO +{telemetry.restState.overdueSecs}s
                         </span>
                       ) : (
-                        <span className="px-1.5 py-0.5 rounded-lg ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
+                        <span className="px-1.5 py-0.5 rounded-md ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
                           {telemetry.lapCount}L
                         </span>
                       )}
                     </div>
                   </div>
 
-                  {/* Row 2: Last Split (+ Target Delta) & Total Elapsed */}
-                  <div className="flex items-baseline justify-between gap-2 w-full pt-1.5 border-t border-emerald-900/10 dark:border-white/10">
-                    <div className="flex items-baseline gap-1.5 min-w-0">
-                      <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-ap-ink dark:text-ap-chalk">
-                        {telemetry.lastLapSecs !== null
-                          ? formatTrackMark(telemetry.lastLapSecs, 2)
-                          : 'Tap Split'}
+                  {/* Row 2: Last Split (+ Target Delta) or Tap Split Cue */}
+                  <div className="flex items-center justify-between gap-2 w-full pt-2 border-t border-[#121413]/10 dark:border-white/10">
+                    {telemetry.lastLapSecs !== null ? (
+                      <>
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-ap-ink dark:text-ap-chalk">
+                            {formatTrackMark(telemetry.lastLapSecs, 2)}
+                          </span>
+                          {telemetry.lastDeltaVsTargetSecs !== null && (
+                            <span
+                              className={`font-mono text-2xs font-bold tabular-nums px-1.5 py-0.5 rounded ${
+                                telemetry.lastDeltaVsTargetSecs <= 0.5
+                                  ? 'ap-status-prime'
+                                  : 'ap-status-caution'
+                              }`}
+                            >
+                              {telemetry.lastDeltaVsTargetSecs >= 0 ? '+' : ''}
+                              {telemetry.lastDeltaVsTargetSecs.toFixed(1)}s
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-right font-mono text-xs tabular-nums text-ap-muted dark:text-ap-muted-dark shrink-0">
+                          <span className="font-bold text-ap-ink dark:text-ap-chalk">
+                            {telemetry.netTotalSecs !== null
+                              ? formatFatTime(telemetry.netTotalSecs)
+                              : '--:--.--'}
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="w-full py-1.5 px-3 rounded-lg border border-[#121413]/22 dark:border-white/20 bg-[#FAF8F4] dark:bg-[#151816] text-center font-sans text-xs font-bold text-ap-ink dark:text-ap-chalk">
+                        Tap Split
                       </span>
-                      {telemetry.lastDeltaVsTargetSecs !== null && (
-                        <span
-                          className={`font-mono text-2xs font-bold tabular-nums px-1 py-0.5 rounded ${
-                            telemetry.lastDeltaVsTargetSecs <= 0.5
-                              ? 'ap-status-prime'
-                              : 'ap-status-caution'
-                          }`}
-                        >
-                          {telemetry.lastDeltaVsTargetSecs >= 0 ? '+' : ''}
-                          {telemetry.lastDeltaVsTargetSecs.toFixed(1)}s
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="text-right font-mono text-xs tabular-nums text-ap-muted dark:text-ap-muted-dark shrink-0">
-                      <span className="font-bold text-ap-ink dark:text-ap-chalk">
-                        {telemetry.netTotalSecs !== null
-                          ? formatFatTime(telemetry.netTotalSecs)
-                          : '--:--.--'}
-                      </span>
-                    </div>
+                    )}
                   </div>
                 </button>
               );
@@ -166,8 +171,8 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                 className="w-full text-left border-collapse text-xs"
               >
                 <thead>
-                  <tr className="border-b border-emerald-900/15 dark:border-white/10 bg-[#E9EFE9] dark:bg-ap-turf font-mono text-2xs uppercase text-slate-700 dark:text-slate-300">
-                    <th className="py-2.5 px-3 sticky left-0 bg-[#E9EFE9] dark:bg-ap-turf z-10">
+                  <tr className="border-b border-ap-frame/15 dark:border-white/10 bg-[#EDE9DF] dark:bg-ap-turf font-mono text-2xs uppercase text-ap-ink dark:text-ap-chalk">
+                    <th className="py-2.5 px-3 sticky left-0 bg-[#EDE9DF] dark:bg-ap-turf z-10">
                       Athlete &amp; Split Action
                     </th>
                     <th className="py-2.5 px-2.5">Pod</th>
@@ -184,18 +189,18 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                     <th className="py-2.5 px-3 text-right">Net Total</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-emerald-900/10 dark:divide-white/10">
+                <tbody className="divide-y divide-[#121413]/10 dark:divide-white/10">
                   {filteredTelemetries.map((telemetry, idx) => (
                     <tr
                       key={`row-${telemetry.runnerId}`}
-                      className="hover:bg-[#E9EFE9]/50 dark:hover:bg-ap-turf/60"
+                      className="hover:bg-[#FAF8F4] dark:hover:bg-ap-turf/60"
                     >
                       <td className="py-2 px-3 sticky left-0 bg-white dark:bg-ap-carbon z-10">
                         <button
                           type="button"
                           data-testid={`matrix-split-btn-${idx}`}
                           onClick={() => handleRunnerAction(telemetry)}
-                          className="min-h-[44px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ap-card-inset hover:border-[#28573B] dark:hover:border-ap-volt/60 font-semibold text-slate-900 dark:text-white cursor-pointer"
+                          className="min-h-[44px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ap-card-inset hover:border-ap-frame/45 dark:hover:border-ap-volt/60 font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
                         >
                           <span className="font-mono text-2xs ap-text-brand font-bold">
                             L{idx + 1}
@@ -203,7 +208,7 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                           <span className="truncate max-w-[140px]">
                             {telemetry.runnerName}
                           </span>
-                          <span className="px-1.5 py-0.5 rounded bg-[#1D3828] text-ap-volt font-mono text-2xs font-bold">
+                          <span className="px-1.5 py-0.5 rounded bg-[#121413] text-ap-volt font-mono text-2xs font-bold">
                             {telemetry.isFinishedLocked
                               ? 'Locked'
                               : chuteQueueSecs.length > 0

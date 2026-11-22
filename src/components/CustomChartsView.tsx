@@ -58,7 +58,7 @@ const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: 'aerobicDecouplingPct', label: 'Aerobic Decoupling (Drift %)', unit: '%', source: 'ACTIVITY', color: '#D97706', aggMode: 'AVG' },
   { key: 'avgPaceMinKm', label: 'Running Pace', unit: 'min/km', source: 'ACTIVITY', color: '#EA580C', aggMode: 'AVG' },
   { key: 'avgCadence', label: 'Average Cadence', unit: 'rpm/spm', source: 'ACTIVITY', color: '#0D9488', aggMode: 'AVG' },
-  { key: 'elevationGainMeters', label: 'Elevation Gain', unit: 'm', source: 'ACTIVITY', color: '#56BA00', aggMode: 'SUM' },
+  { key: 'elevationGainMeters', label: 'Elevation Gain', unit: 'm', source: 'ACTIVITY', color: '#2F7A55', aggMode: 'SUM' },
 ];
 
 const DEFAULT_SAVED_CHARTS: CustomChartConfig[] = [

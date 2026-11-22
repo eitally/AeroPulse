@@ -20,9 +20,18 @@ test.describe('MeetReady Homepage v3 — Editorial Split Stage (Desktop & Mobile
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
-    await expect(page.getByTestId('splash-overline')).toHaveText(/TRACK & FIELD · CROSS COUNTRY/i, {
-      timeout: 15000,
-    });
+    const viewport = page.viewportSize();
+    if (!viewport || viewport.width >= 640) {
+      await expect(page.locator('header a[href="/for-athletic-directors"]')).toBeVisible({
+        timeout: 15000,
+      });
+    }
+    const sampleCard = page.getByTestId('splash-sample-card');
+    await expect(sampleCard).toContainText('01:08.42');
+    await sampleCard.getByRole('tab', { name: /Pace Pods & Field Sheet/i }).click();
+    await expect(sampleCard).toContainText('High Jump');
+    await sampleCard.getByRole('tab', { name: /Trackside Stopwatch/i }).click();
+    await expect(sampleCard).toContainText('01:08.42');
     await expect(
       page.getByRole('heading', { name: /Every event\. Every mark\.\s*One team platform\./i })
     ).toBeVisible();
@@ -131,7 +140,8 @@ test.describe('MeetReady Homepage v3 — Editorial Split Stage (Desktop & Mobile
     await expect(page.locator('a[href="/privacy"]').first()).toBeVisible();
     await expect(page.locator('a[href="/terms"]').first()).toBeVisible();
     await expect(page.locator('a[href="/procurement"]').first()).toBeVisible();
-    await expect(page.locator('footer a[href="/for-athletic-directors"]')).toBeVisible();
+    await expect(page.locator('footer')).toContainText('Track, Field & Cross Country');
+    await expect(page.locator('footer a[href="/for-athletic-directors"]')).toHaveCount(0);
 
     expect(pageErrors).toEqual([]);
   });

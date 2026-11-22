@@ -196,48 +196,46 @@ export async function renderShareCardPngBlob(opts: {
     unit,
   });
 
-  // 1. Carbon Charcoal Editorial Canvas + Crisp Atmospheric Emerald Glow
-  ctx.fillStyle = '#090E0B';
+  // 1. Track Asphalt Architectural Canvas + Subtle Mondo Clay Glow
+  ctx.fillStyle = '#121413';
   ctx.fillRect(0, 0, 1080, 1350);
 
   const grad = ctx.createRadialGradient(880, 160, 40, 880, 160, 620);
-  grad.addColorStop(0, 'rgba(28, 84, 54, 0.42)');
-  grad.addColorStop(1, 'rgba(9, 14, 11, 0)');
+  grad.addColorStop(0, 'rgba(184, 58, 36, 0.28)');
+  grad.addColorStop(1, 'rgba(18, 20, 19, 0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 1080, 1350);
 
   // Subtle 1px inner border
-  ctx.strokeStyle = 'rgba(200, 255, 0, 0.16)';
+  ctx.strokeStyle = 'rgba(246, 243, 236, 0.16)';
   ctx.lineWidth = 2;
-  drawRoundedRectPath(ctx, 44, 44, 992, 1262, 32);
+  drawRoundedRectPath(ctx, 44, 44, 992, 1262, 24);
   ctx.stroke();
 
-  // 2. Top Header: Break-Lane M Emblem + MeetReady Wordmark + Category Pill
-  ctx.fillStyle = '#0B120E';
+  // 2. Top Header: Velocity Chevron M Emblem + MeetReady Wordmark + Category Pill
+  ctx.fillStyle = '#1A1D1B';
   drawRoundedRectPath(ctx, 84, 88, 224, 48, 24);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(52, 194, 119, 0.55)';
+  ctx.strokeStyle = 'rgba(246, 243, 236, 0.28)';
   ctx.lineWidth = 1.5;
   drawRoundedRectPath(ctx, 84, 88, 224, 48, 24);
   ctx.stroke();
 
-  // Draw crisp flat 2-ink 1B-Pro Break-Lane M at (104, 98), scale 0.24
+  // Draw crisp flat 2-ink Velocity Chevron M at (103, 98), scale 0.24
   ctx.save();
   ctx.translate(103, 98);
   ctx.scale(0.24, 0.24);
-  ctx.fillStyle = '#34C277';
+  ctx.fillStyle = '#F6F3EC';
   ctx.beginPath();
-  ctx.moveTo(10, 108); ctx.lineTo(36, 36); ctx.lineTo(49.5, 36); ctx.lineTo(23.5, 108); ctx.closePath();
-  ctx.moveTo(30, 108); ctx.lineTo(56, 36); ctx.lineTo(70, 36); ctx.lineTo(80, 55); ctx.lineTo(65.5, 84); ctx.lineTo(59.1, 62); ctx.lineTo(42.5, 108); ctx.closePath();
+  ctx.moveTo(6, 106); ctx.lineTo(34, 22); ctx.lineTo(52, 22); ctx.lineTo(60.5, 47.5); ctx.lineTo(51, 76); ctx.lineTo(43, 52); ctx.lineTo(25, 106); ctx.closePath();
   ctx.fill();
-  ctx.fillStyle = '#C8FF00';
+  ctx.fillStyle = '#D8FF2A';
   ctx.beginPath();
-  ctx.moveTo(61, 108); ctx.lineTo(99, 32); ctx.lineTo(80, 23); ctx.lineTo(116, 7); ctx.lineTo(121, 41); ctx.lineTo(110, 36); ctx.lineTo(74, 108); ctx.closePath();
-  ctx.moveTo(95, 108); ctx.lineTo(95, 82); ctx.lineTo(112, 48); ctx.lineTo(112, 108); ctx.closePath();
+  ctx.moveTo(48, 106); ctx.lineTo(76, 22); ctx.lineTo(94, 22); ctx.lineTo(122, 106); ctx.lineTo(103, 106); ctx.lineTo(85, 52); ctx.lineTo(67, 106); ctx.closePath();
   ctx.fill();
   ctx.restore();
 
-  ctx.fillStyle = '#F4F7F4';
+  ctx.fillStyle = '#F6F3EC';
   ctx.font = '800 22px system-ui, -apple-system, sans-serif';
   ctx.textBaseline = 'middle';
   ctx.fillText('MeetReady', 142, 113);
@@ -246,14 +244,14 @@ export async function renderShareCardPngBlob(opts: {
     payload.kind === 'STOPWATCH'
       ? '#STOPWATCH SPLITS'
       : `${payload.sport.toUpperCase()} PRESCRIPTION`;
-  ctx.fillStyle = 'rgba(200, 255, 0, 0.12)';
+  ctx.fillStyle = 'rgba(216, 255, 42, 0.14)';
   drawRoundedRectPath(ctx, 730, 88, 266, 48, 24);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(200, 255, 0, 0.4)';
+  ctx.strokeStyle = 'rgba(216, 255, 42, 0.45)';
   ctx.lineWidth = 1.5;
   drawRoundedRectPath(ctx, 730, 88, 266, 48, 24);
   ctx.stroke();
-  ctx.fillStyle = '#C8FF00';
+  ctx.fillStyle = '#D8FF2A';
   ctx.font = '700 18px ui-monospace, SFMono-Regular, monospace';
   ctx.fillText(badgeText, 756, 112);
 
@@ -316,7 +314,7 @@ export async function renderShareCardPngBlob(opts: {
     ctx.font = '700 17px ui-monospace, SFMono-Regular, monospace';
     ctx.fillText(stat.label, bx + 24, y + 24);
 
-    ctx.fillStyle = idx === 2 ? '#C8FF00' : '#FFFFFF';
+    ctx.fillStyle = idx === 2 ? '#D8FF2A' : '#FFFFFF';
     ctx.font = '800 38px ui-monospace, SFMono-Regular, monospace';
     ctx.fillText(stat.value, bx + 24, y + 60);
   });
@@ -333,27 +331,27 @@ export async function renderShareCardPngBlob(opts: {
     const visibleSplits = payload.splits.slice(0, 9);
     visibleSplits.forEach((row, idx) => {
       const ry = y + idx * 72;
-      ctx.fillStyle = idx % 2 === 0 ? '#111A15' : '#0D1410';
+      ctx.fillStyle = idx % 2 === 0 ? '#1A1D1B' : '#151816';
       drawRoundedRectPath(ctx, 84, ry, 912, 60, 14);
       ctx.fill();
 
-      ctx.fillStyle = '#CBD5E1';
+      ctx.fillStyle = '#F6F3EC';
       ctx.font = '600 23px system-ui, -apple-system, sans-serif';
       ctx.fillText(row.label.slice(0, 32), 110, ry + 16);
 
-      ctx.fillStyle = '#C8FF00';
+      ctx.fillStyle = '#D8FF2A';
       ctx.font = '700 24px ui-monospace, SFMono-Regular, monospace';
       ctx.fillText(row.lapTime, 620, ry + 16);
 
       if (row.paceOrPower) {
-        ctx.fillStyle = '#94A3B8';
+        ctx.fillStyle = '#A39E93';
         ctx.font = '500 20px ui-monospace, SFMono-Regular, monospace';
         ctx.fillText(row.paceOrPower, 790, ry + 18);
       }
     });
   } else {
     // Visual zone bar chart
-    ctx.fillStyle = '#111A15';
+    ctx.fillStyle = '#1A1D1B';
     drawRoundedRectPath(ctx, 84, y, 912, 168, 22);
     ctx.fill();
 
@@ -366,7 +364,7 @@ export async function renderShareCardPngBlob(opts: {
       const segW = Math.max(8, (st.durationSecs / totalSecs) * usableW - 3);
       const heightRatio = Math.max(0.24, Math.min(1, st.intensityPct / 135));
       const barH = Math.round(heightRatio * 108);
-      ctx.fillStyle = st.colorHex || '#1C5436';
+      ctx.fillStyle = st.colorHex || '#B83A24';
       drawRoundedRectPath(ctx, barX, baseLineY - barH, segW, barH, 6);
       ctx.fill();
       barX += segW + 3;
@@ -374,7 +372,7 @@ export async function renderShareCardPngBlob(opts: {
     }
 
     y += 200;
-    ctx.fillStyle = '#E2E8F0';
+    ctx.fillStyle = '#F6F3EC';
     ctx.font = '700 19px ui-monospace, SFMono-Regular, monospace';
     ctx.fillText('STRUCTURED INTERVAL BREAKDOWN', 84, y);
     y += 38;
@@ -382,19 +380,19 @@ export async function renderShareCardPngBlob(opts: {
     const rows = preview.steps.slice(0, 7);
     rows.forEach((st, idx) => {
       const ry = y + idx * 68;
-      ctx.fillStyle = idx % 2 === 0 ? '#111A15' : '#0D1410';
+      ctx.fillStyle = idx % 2 === 0 ? '#1A1D1B' : '#151816';
       drawRoundedRectPath(ctx, 84, ry, 912, 56, 14);
       ctx.fill();
 
-      ctx.fillStyle = st.colorHex || '#1C5436';
+      ctx.fillStyle = st.colorHex || '#B83A24';
       drawRoundedRectPath(ctx, 102, ry + 14, 10, 28, 5);
       ctx.fill();
 
-      ctx.fillStyle = '#F1F5F9';
+      ctx.fillStyle = '#F6F3EC';
       ctx.font = '600 22px system-ui, -apple-system, sans-serif';
       ctx.fillText(`${st.durationLabel} · ${st.label}`.slice(0, 38), 130, ry + 14);
 
-      ctx.fillStyle = '#C8FF00';
+      ctx.fillStyle = '#D8FF2A';
       ctx.font = '700 22px ui-monospace, SFMono-Regular, monospace';
       ctx.fillText(st.prescribedTargetLabel, 690, ry + 15);
     });

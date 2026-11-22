@@ -1198,7 +1198,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         aria-label="Workout Preset"
         value={workoutPresetId}
         onChange={(e) => setWorkoutPresetId(e.target.value)}
-        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
+        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt ${
           compact ? 'max-w-[168px] px-2 text-2xs shrink-0' : 'w-full px-3 text-xs'
         }`}
       >
@@ -1225,7 +1225,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         aria-label="Race Event Distance"
         value={raceEventLabel}
         onChange={(e) => setRaceEventLabel(e.target.value)}
-        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-[#56BA00] ${
+        className={`min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset font-sans font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt ${
           compact ? 'max-w-[155px] px-2 text-2xs shrink-0' : 'w-full px-3 text-xs'
         }`}
       >
@@ -1243,33 +1243,31 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     );
 
   const recoverySelectNode = (
-    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
-      <span>Auto Recovery Countdown</span>
-      <select
-        aria-label="Recovery Countdown"
-        value={restDurationSecs}
-        onChange={(e) => setRestDurationSecs(Number(e.target.value))}
-        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
-      >
-        {REST_OPTIONS_SECS.map((sec) => (
-          <option
-            key={sec}
-            value={sec}
-            className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
-          >
-            {sec === 0 ? 'Off (Continuous)' : `${sec}s Recovery Timer`}
-          </option>
-        ))}
-        {!REST_OPTIONS_SECS.includes(restDurationSecs as (typeof REST_OPTIONS_SECS)[number]) && (
-          <option
-            value={restDurationSecs}
-            className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
-          >
-            {restDurationSecs}s Recovery Timer (Auto-Reg)
-          </option>
-        )}
-      </select>
-    </label>
+    <select
+      aria-label="Recovery Countdown"
+      title="Auto Recovery Countdown"
+      value={restDurationSecs}
+      onChange={(e) => setRestDurationSecs(Number(e.target.value))}
+      className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt"
+    >
+      {REST_OPTIONS_SECS.map((sec) => (
+        <option
+          key={sec}
+          value={sec}
+          className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
+        >
+          {sec === 0 ? 'Off (Continuous)' : `${sec}s Recovery Timer`}
+        </option>
+      ))}
+      {!REST_OPTIONS_SECS.includes(restDurationSecs as (typeof REST_OPTIONS_SECS)[number]) && (
+        <option
+          value={restDurationSecs}
+          className="bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk"
+        >
+          {restDurationSecs}s Recovery Timer (Auto-Reg)
+        </option>
+      )}
+    </select>
   );
 
   const sessionTitleInputNode = (
@@ -1283,7 +1281,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           sessionType === 'RACE' ? 'e.g. League Finals Heat 1' : 'e.g. Tuesday Track Intervals'
         }
         aria-label="Meet or Session Name"
-        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted dark:placeholder:text-ap-muted-dark focus:outline-none focus:ring-2 focus:ring-[#56BA00]"
+        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted dark:placeholder:text-ap-muted-dark focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt"
       />
     </label>
   );
@@ -1461,26 +1459,26 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     customWorkoutSpec.sets.length > 1 ? (
       <div
         data-testid="stopwatch-multiset-plan-strip"
-        className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-900/10 dark:border-white/10 text-2xs font-mono"
+        className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-ap-frame/15 dark:border-white/10 text-2xs font-mono"
       >
         <span className="font-bold uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark mr-1">
           Multi-Set Plan:
         </span>
         {customWorkoutSpec.warmupDistanceMeters && (
-          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
+          <span className="px-2 py-0.5 rounded bg-ap-inset dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
             WU {(customWorkoutSpec.warmupDistanceMeters / 1609.344).toFixed(1)}mi
           </span>
         )}
         {customWorkoutSpec.sets.map((s, idx) => (
           <span
             key={`sw-set-${idx}`}
-            className="px-2 py-0.5 rounded bg-[#E3ECE5] dark:bg-ap-turf text-ap-cobalt dark:text-ap-volt font-semibold"
+            className="px-2 py-0.5 rounded bg-ap-inset dark:bg-ap-turf text-ap-clay dark:text-ap-volt font-semibold"
           >
             {s.repCount}×{s.repDistanceMeters}m
           </span>
         ))}
         {customWorkoutSpec.cooldownDistanceMeters && (
-          <span className="px-2 py-0.5 rounded bg-[#E9EFE9] dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
+          <span className="px-2 py-0.5 rounded bg-ap-inset dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
             CD {(customWorkoutSpec.cooldownDistanceMeters / 1609.344).toFixed(1)}mi
           </span>
         )}
@@ -1692,13 +1690,13 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             return (
               <div
                 key={podKey}
-                className="rounded-xl bg-white dark:bg-ap-carbon border border-emerald-900/15 dark:border-ap-edge-dark px-3 py-2 flex items-center justify-between gap-2"
+                className="rounded-xl bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark px-3 py-2 flex items-center justify-between gap-2"
               >
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-ap-ink dark:text-ap-chalk truncate">
                     {podKey}
                   </div>
-                  <div className="text-2xs font-mono text-ap-cobalt dark:text-[#56BA00]">
+                  <div className="text-2xs font-mono text-ap-clay dark:text-ap-volt">
                     +{offset.toFixed(1)}s offset
                   </div>
                 </div>
@@ -1749,7 +1747,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             data-testid={`chute-pill-${idx}`}
             className={`px-2 py-0.5 rounded-lg font-mono text-xs font-bold tabular-nums ${
               idx === 0
-                ? 'bg-[#0B120E] text-ap-volt border border-[#56BA00]'
+                ? 'bg-[#121413] text-ap-volt border border-ap-clay dark:border-ap-volt'
                 : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
             }`}
           >
@@ -1857,25 +1855,25 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         </div>
       </div>
 
-      <section className="sticky top-[60px] md:top-[64px] z-20 rounded-2xl ap-card p-2.5 sm:p-3.5 space-y-2.5">
-        {/* HUD Row 1: Clock + Gun + Undo + Chute */}
+      <section className="relative md:sticky md:top-[60px] z-20 rounded-xl ap-card ap-card-clay-top p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+        {/* HUD Row 1: Track Asphalt Clock Housing + Starter Volt Gun + Undo + Chute */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div
             data-testid="stopwatch-master-clock"
-            className="rounded-xl bg-white dark:bg-[#0B120E] text-ap-obsidian dark:text-ap-volt border border-ap-frame/30 dark:border-ap-frame px-3.5 py-2 font-mono text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
+            className="rounded-xl bg-[#121413] text-[#D8FF2A] border border-[#121413] dark:border-white/20 px-3 sm:px-5 py-1.5 sm:py-2 font-mono text-xl sm:text-3xl font-extrabold tabular-nums tracking-tight shrink-0"
           >
             {formatStopwatchClockMs(stopwatchElapsedMs)}
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5 justify-end">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 justify-end">
             <button
               type="button"
               data-testid="stopwatch-gun-btn"
               onClick={handleGunToggle}
               className={
                 stopwatchRunning
-                  ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl ap-status-caution font-bold text-xs cursor-pointer'
-                  : 'ap-btn-primary min-h-[44px] px-3.5 text-xs cursor-pointer'
+                  ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3 sm:px-4 rounded-xl ap-status-caution font-bold text-xs cursor-pointer'
+                  : 'ap-btn-primary min-h-[44px] px-3 sm:px-4 text-xs cursor-pointer'
               }
             >
               {stopwatchRunning ? (
@@ -1896,7 +1894,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               data-testid="stopwatch-undo-btn"
               onClick={handleUndo}
               disabled={tapHistory.length === 0}
-              className="min-h-[44px] inline-flex items-center gap-1 px-2.5 rounded-xl ap-card-inset text-xs font-semibold text-ap-ink dark:text-ap-chalk disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+              className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl ap-btn-secondary text-xs font-semibold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
             >
               <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
               <span>Undo</span>
@@ -1907,12 +1905,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 type="button"
                 data-testid="stopwatch-chute-tap"
                 onClick={handleChuteTap}
-                className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl bg-[#0B120E] text-ap-volt border border-ap-frame text-xs font-bold cursor-pointer"
+                className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-[#121413] hover:bg-[#242826] text-[#F6F3EC] dark:text-[#D8FF2A] border border-[#121413] dark:border-white/25 text-xs font-bold cursor-pointer transition-colors"
               >
                 <Lightning className="w-4 h-4 shrink-0" weight="fill" />
                 <span>Chute</span>
                 {chuteQueueSecs.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded bg-ap-cobalt text-ap-volt font-mono text-2xs">
+                  <span className="px-1.5 py-0.5 rounded bg-ap-clay text-[#F6F3EC] font-mono text-2xs">
                     {chuteQueueSecs.length}
                   </span>
                 )}
@@ -1941,14 +1939,14 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             (!stopwatchRunning && stopwatchElapsedMs === 0) || mobileSetupExpanded
               ? 'flex'
               : 'hidden md:flex'
-          } flex-wrap items-center gap-1.5 pt-2 border-t border-emerald-900/10 dark:border-white/10`}
+          } flex-wrap items-center gap-1.5 pt-2 border-t border-ap-frame/15 dark:border-white/10`}
         >
           <div className="min-w-[140px] flex-1 sm:flex-initial sm:w-52">
             {renderPresetSelect(false)}
           </div>
 
           {sessionType === 'WORKOUT' && (
-            <div className="w-40 sm:w-48 shrink-0">
+            <div className="w-48 shrink-0">
               {recoverySelectNode}
             </div>
           )}
@@ -2094,7 +2092,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         </div>
 
         {showToolsDrawer && (
-          <div className="pt-2.5 space-y-3 border-t border-emerald-900/10 dark:border-white/10">
+          <div className="pt-2.5 space-y-3 border-t border-ap-frame/15 dark:border-white/10">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {sessionTitleInputNode}
               {hardwareTogglesNode}
@@ -2111,9 +2109,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         {sessionType === 'WORKOUT' && (
           <div
             data-testid="stopwatch-rep-stepper"
-            className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-emerald-900/10 dark:border-white/10"
+            className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pt-2 border-t border-ap-frame/15 dark:border-white/10"
           >
-            <div className="inline-flex items-center gap-1.5">
+            <div className="inline-flex items-center gap-1 shrink-0">
               <span className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
                 Reps
               </span>
@@ -2124,13 +2122,13 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 onClick={() =>
                   setCustomRepOverride(Math.max(1, activeWorkoutPreset.repCount - 1))
                 }
-                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
+                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
               >
                 -
               </button>
               <span
                 data-testid="stopwatch-rep-count"
-                className="px-2 font-mono text-xs font-bold tabular-nums text-ap-ink dark:text-white"
+                className="px-1.5 font-mono text-xs font-bold tabular-nums text-ap-ink dark:text-white whitespace-nowrap"
               >
                 {activeWorkoutPreset.repCount} reps
               </span>
@@ -2141,7 +2139,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 onClick={() =>
                   setCustomRepOverride(Math.min(30, activeWorkoutPreset.repCount + 1))
                 }
-                className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
+                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
               >
                 +
               </button>
@@ -2157,7 +2155,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                     data-testid={`stopwatch-dist-${dist}`}
                     aria-pressed={isSelected}
                     onClick={() => setCustomDistOverride(dist)}
-                    className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer ${
+                    className={`min-h-[44px] sm:min-h-[34px] px-2 sm:px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer ${
                       isSelected
                         ? 'liquid-capsule-active text-ap-ink dark:text-white'
                         : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'

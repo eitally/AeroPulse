@@ -43,10 +43,10 @@ type CategoryFilter = 'ALL' | BrandAssetCategory;
 type ActiveNavSection = 'brand-assets' | 'brand-colors' | 'brand-cobrand' | 'brand-typography-usage';
 
 const CATEGORY_TABS: Array<{ id: CategoryFilter; label: string }> = [
-  { id: 'ALL', label: 'All 17' },
-  { id: 'LOCKUPS', label: 'Primary Lockups (3)' },
+  { id: 'ALL', label: 'All 23' },
+  { id: 'LOCKUPS', label: 'Primary Lockups (6)' },
   { id: 'STENCILS', label: '1-Ink Knockouts (3)' },
-  { id: 'ICONS', label: 'Gauge Icons & Tiles (7)' },
+  { id: 'ICONS', label: 'Emblems & Tiles (10)' },
   { id: 'WORDMARK_AND_SOCIAL', label: 'Wordmark & Social (4)' },
 ];
 
@@ -61,39 +61,33 @@ function getSurfacePreviewStyle(surface: Exclude<BrandSurfaceId, 'auto'>): React
   switch (surface) {
     case 'obsidian':
       return {
-        backgroundColor: '#0B120E',
-        backgroundImage:
-          'radial-gradient(circle at 18% 12%, rgba(200, 255, 0, 0.14), transparent 58%)',
-        borderColor: '#2B543B',
+        backgroundColor: '#121413',
+        borderColor: '#2C312E',
       };
     case 'chalk':
       return {
-        backgroundColor: '#F4F7F2',
-        borderColor: 'rgba(38, 88, 58, 0.24)',
+        backgroundColor: '#F6F3EC',
+        borderColor: 'rgba(18, 20, 19, 0.22)',
       };
     case 'paper':
       return {
         backgroundColor: '#FFFFFF',
-        borderColor: 'rgba(16, 20, 17, 0.16)',
+        borderColor: 'rgba(18, 20, 19, 0.16)',
       };
     case 'volt':
       return {
-        backgroundColor: '#C8FF00',
-        borderColor: '#65A30D',
+        backgroundColor: '#D8FF2A',
+        borderColor: '#121413',
       };
     case 'photo-sunlit':
       return {
-        backgroundColor: '#D6B89C',
-        backgroundImage:
-          'linear-gradient(135deg, rgba(255, 245, 232, 0.65) 0%, rgba(186, 114, 78, 0.42) 55%, rgba(132, 74, 48, 0.55) 100%)',
-        borderColor: 'rgba(132, 74, 48, 0.35)',
+        backgroundColor: '#B83A24',
+        borderColor: '#8F2A18',
       };
     case 'photo-night':
       return {
-        backgroundColor: '#0E1C16',
-        backgroundImage:
-          'radial-gradient(circle at 75% 18%, rgba(255, 255, 255, 0.18), transparent 48%), linear-gradient(160deg, #09110D 0%, #173326 100%)',
-        borderColor: '#2B543B',
+        backgroundColor: '#121413',
+        borderColor: '#2C312E',
       };
     case 'bw-copier':
       return {
@@ -215,16 +209,14 @@ export default function BrandGuidePage({
       </a>
 
       {/* Header Bar Matching Authenticated Cockpit */}
-      <header className="sticky top-0 z-30 pt-2 sm:pt-3 pb-2">
-        <div className="ap-container">
-          <div className="ap-header-bar rounded-2xl px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2.5 relative overflow-hidden">
-            <div className="ap-brand-hairline absolute top-0 left-0 right-0 h-[3px]" />
-
+      <header className="sticky top-0 z-30 w-full liquid-glass-header">
+        <div className="ap-container py-2">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5 min-w-0">
               <button
                 type="button"
                 onClick={onExitBrand}
-                className="min-h-[44px] sm:min-h-[40px] inline-flex items-center text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-600 dark:focus:ring-lime-400 rounded-lg"
+                className="min-h-[44px] sm:min-h-[40px] inline-flex items-center text-left cursor-pointer focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt rounded-lg"
                 aria-label={hasActiveWorkspace ? 'Back to MeetReady cockpit' : 'Return to MeetReady'}
               >
                 <AeroPulseLogo size="sm" />
@@ -250,7 +242,11 @@ export default function BrandGuidePage({
                 aria-pressed={isDark}
                 className="ap-btn-secondary px-3 py-2 min-h-[44px] sm:min-h-[38px] rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
-                {isDark ? <Sun className="w-4 h-4 text-amber-300" /> : <Moon className="w-4 h-4 text-emerald-800" />}
+                {isDark ? (
+                  <Sun className="w-4 h-4 text-[#D8FF2A]" weight="fill" />
+                ) : (
+                  <Moon className="w-4 h-4 text-[#121413]" weight="fill" />
+                )}
                 <span className="hidden sm:inline">{isDark ? 'Light' : 'Dark'}</span>
               </button>
 
@@ -298,8 +294,8 @@ export default function BrandGuidePage({
                       </span>
                     </div>
 
-                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-[65ch]">
-                      Official SVG vectors, transparent 1x / 2x / 4x PNG exports, true compound-path 1-ink print stencils, our Stadium Track color scheme, and NCAA/NFHS team co-branding tools — engineered for coaches, meet directors, print shops, press, and API partners.
+                    <p className="font-sans text-sm text-slate-700 dark:text-slate-300 leading-relaxed max-w-[65ch]">
+                      Official SVG vectors, transparent 1x / 2x / 4x PNG exports, true compound-path 1-ink print stencils, our Mondo Clay &amp; Stadium Chalk design tokens, and NCAA/NFHS team co-branding tools — built for coaches, meet directors, print shops, press, and API partners.
                     </p>
                   </div>
 
@@ -336,18 +332,18 @@ export default function BrandGuidePage({
                       </p>
                     ) : (
                       <p className="font-mono text-2xs text-slate-600 dark:text-slate-400">
-                        Includes 17 vector SVGs, crisp PNG lockups, CSS/JSON tokens &amp; print specs
+                        Includes 23 vector SVGs, crisp PNG lockups, CSS/JSON tokens &amp; print specs
                       </p>
                     )}
                   </div>
                 </div>
 
-                {/* Live Break-Lane M × Outlined MeetReady Geometric Construction Specimen */}
+                {/* Live Velocity Chevron M × MeetReady Geometric Construction Specimen */}
                 <div className="lg:col-span-6 ap-card rounded-2xl p-4 sm:p-5 flex flex-col justify-between gap-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-mono text-2xs font-bold uppercase text-slate-700 dark:text-slate-300 inline-flex items-center gap-1.5">
                       <Gauge className="w-4 h-4 ap-text-brand" />
-                      <span>Break-Lane M × MeetReady Architecture</span>
+                      <span>Velocity Chevron M × MeetReady Architecture</span>
                     </span>
                     <span className="font-mono text-2xs font-bold ap-telemetry-label">
                       472 × 124 · Outlined Vector Master
@@ -357,8 +353,8 @@ export default function BrandGuidePage({
                   <div
                     className="relative rounded-xl border p-4 sm:p-5 flex items-center justify-center overflow-hidden"
                     style={{
-                      backgroundColor: isDark ? '#0B120E' : '#FFFFFF',
-                      borderColor: isDark ? '#2B543B' : 'rgba(38, 88, 58, 0.22)',
+                      backgroundColor: isDark ? '#121413' : '#F6F3EC',
+                      borderColor: isDark ? '#2C312E' : 'rgba(18, 20, 19, 0.22)',
                     }}
                   >
                     <div className="relative w-full max-w-[472px]">
@@ -377,9 +373,9 @@ export default function BrandGuidePage({
                           {/* Safe Clear-Space Perimeter Frame */}
                           <rect
                             x="2"
-                            y="2"
+                            y="4"
                             width="468"
-                            height="120"
+                            height="116"
                             rx="6"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
                             strokeOpacity="0.65"
@@ -389,9 +385,9 @@ export default function BrandGuidePage({
                           {/* Cap-Height & Baseline Alignment Guides */}
                           <line
                             x1="12"
-                            y1="39"
+                            y1="26"
                             x2="462"
-                            y2="39"
+                            y2="26"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
                             strokeOpacity="0.4"
                             strokeWidth="0.9"
@@ -399,30 +395,30 @@ export default function BrandGuidePage({
                           />
                           <line
                             x1="12"
-                            y1="84"
+                            y1="104"
                             x2="462"
-                            y2="84"
+                            y2="104"
                             stroke={isDark ? '#38BDF8' : '#0284C7'}
                             strokeOpacity="0.4"
                             strokeWidth="0.9"
                             strokeDasharray="3 3"
                           />
-                          {/* Parallel Surging Launch Axis */}
+                          {/* Parallel Peak Slope Guide */}
                           <line
-                            x1="56"
-                            y1="114"
-                            x2="118"
-                            y2="8"
-                            stroke={isDark ? '#C8FF00' : '#1C5436'}
-                            strokeOpacity="0.55"
+                            x1="11"
+                            y1="105"
+                            x2="38"
+                            y2="25"
+                            stroke={isDark ? '#D8FF2A' : '#B83A24'}
+                            strokeOpacity="0.6"
                             strokeWidth="1"
                             strokeDasharray="3 2"
                           />
                           {/* Symbol-to-Wordmark Separation Axis */}
                           <line
-                            x1="130"
+                            x1="128"
                             y1="10"
-                            x2="130"
+                            x2="128"
                             y2="114"
                             stroke={isDark ? '#FBBF24' : '#D97706'}
                             strokeOpacity="0.85"
@@ -437,18 +433,18 @@ export default function BrandGuidePage({
                   <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-slate-600 dark:text-slate-400">
                     <span>
                       {showBlueprint
-                        ? 'Flat 2-Ink Break-Lane M · >=1.2mm Embroidery Satin Floor · Outlined Plus Jakarta Sans'
-                        : 'Minimum clear space: 0.5× mark height · Zero <text> font dependencies'}
+                        ? 'Flat 2-Ink Velocity Chevron M · >=1.2mm Embroidery Satin Floor · Archivo Web + Outlined Print'
+                        : 'Minimum clear space: 0.5× mark height · Zero gradients'}
                     </span>
                     <span className="ap-telemetry-label">Monolithic Single-Ink Wordmark</span>
                   </div>
                 </div>
               </div>
 
-              {/* Velocity-Sheared -14° Section Navigation Strip (2x2 on 390px, inline on >= sm) */}
+              {/* Flat Orthogonal Section Navigation Strip */}
               <nav
                 aria-label="Brand guide sections"
-                className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1 pb-1"
+                className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1 pb-1 border-b border-ap-frame/15 dark:border-ap-edge-dark"
               >
                 {NAV_SECTIONS.map((sec) => {
                   const active = activeNav === sec.id;
@@ -474,12 +470,12 @@ export default function BrandGuidePage({
                 <div className="flex flex-wrap items-center gap-2.5">
                   <h2
                     id="brand-assets-heading"
-                    className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white"
+                    className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-ap-ink dark:text-ap-chalk"
                   >
                     Universal Logo &amp; Icon Asset Studio
                   </h2>
                   <span className="ap-lane-badge">
-                    <span className="ap-lane-badge-inner">17 VECTORS · 1X / 2X / 4X PNG</span>
+                    <span className="ap-lane-badge-inner">23 VECTORS · 1X / 2X / 4X PNG</span>
                   </span>
                 </div>
 
@@ -679,7 +675,7 @@ export default function BrandGuidePage({
                       True Outlined Vector Stencils &amp; Flat-Fill Embroidery Masters
                     </div>
                     <p className="leading-relaxed">
-                      Every monochrome stencil (<code className="font-mono">Obsidian Black</code>, <code className="font-mono">Reversed White</code>, <code className="font-mono">Track Volt</code>, and standalone <code className="font-mono">Break-Lane M</code>) ships with 100% outlined closed <code className="font-mono">&lt;path&gt;</code> contours — zero <code className="font-mono">&lt;text&gt;</code> font dependencies, zero gradients on embroidery masters, zero masks, and zero plotter self-intersections.
+                      Every monochrome stencil (<code className="font-mono">Asphalt Black</code>, <code className="font-mono">Reversed White</code>, <code className="font-mono">Starter Volt</code>, and standalone <code className="font-mono">Velocity Chevron M</code>) ships with 100% outlined closed <code className="font-mono">&lt;path&gt;</code> contours — zero <code className="font-mono">&lt;text&gt;</code> font dependencies, zero gradients on embroidery masters, zero masks, and zero plotter self-intersections.
                     </p>
                   </div>
                 </div>

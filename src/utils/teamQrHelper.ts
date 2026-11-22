@@ -42,7 +42,7 @@ export function openPrintableTeamPosterWindow(
        </div>`
     : '';
 
-  const meetReadyPosterLogoSvg = `<svg style="height:34px;width:auto;display:inline-block;vertical-align:middle;" viewBox="0 0 472 124" fill="none" xmlns="http://www.w3.org/2000/svg">${buildBreakLaneMSymbolInnerSvg('#0B120E', palette.primaryOnLight)}${buildMeetReadyWordmarkInnerSvg('#0B120E')}</svg>`;
+  const meetReadyPosterLogoSvg = `<svg style="height:34px;width:auto;display:inline-block;vertical-align:middle;" viewBox="0 0 472 124" fill="none" xmlns="http://www.w3.org/2000/svg">${buildBreakLaneMSymbolInnerSvg('#121413', palette.primaryOnLight)}${buildMeetReadyWordmarkInnerSvg('#121413')}</svg>`;
 
   const html = `<!doctype html>
 <html>
@@ -51,9 +51,9 @@ export function openPrintableTeamPosterWindow(
   <title>${escapeTextForSafeAttr(brand.name)} — MeetReady Join Poster</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet" />
   <style>
-    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; background: #F4F7F2; color: #0B120E; margin: 0; padding: 32px; }
+    body { font-family: 'Archivo', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; background: #F6F3EC; color: #121413; margin: 0; padding: 32px; }
     .sheet { max-width: 720px; margin: 0 auto; background: #FFFFFF; border-radius: 24px; overflow: hidden; border: 2px solid #B8CBBF; box-shadow: 0 12px 32px rgba(16,20,17,0.08); }
     .banner { background: linear-gradient(135deg, ${palette.primaryOnLight} 0%, ${palette.secondaryOnLight} 100%); color: #FFFFFF; padding: 32px 36px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
     .banner-left { display: flex; align-items: center; gap: 20px; }

@@ -741,7 +741,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
             <button
               type="button"
               onClick={onOpenGoalsArchitect}
-              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#163022] hover:bg-ap-cobalt text-white dark:bg-[#0B1911] dark:text-ap-volt border border-ap-frame text-xs font-semibold transition-colors whitespace-nowrap shadow-xs cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-ap-obsidian hover:bg-[#242826] text-ap-chalk dark:bg-ap-volt dark:text-ap-obsidian border border-ap-frame text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Training Block &amp; Race Goals →</span>

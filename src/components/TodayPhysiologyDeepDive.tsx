@@ -456,7 +456,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
       >
         {standalone ? (
           <div className="flex items-center gap-2.5">
-            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-ap-turf flex items-center justify-center text-ap-cobalt dark:text-ap-volt shrink-0">
+            <span className="w-8 h-8 rounded-xl bg-ap-inset dark:bg-ap-turf flex items-center justify-center text-ap-clay dark:text-ap-volt shrink-0">
               <Sliders className="w-4 h-4" weight="duotone" />
             </span>
             <div>
@@ -476,7 +476,7 @@ const TodayPhysiologyDeepDiveInner: React.FC<TodayPhysiologyDeepDiveProps> = ({
             onClick={() => setOpenPersisted(!isOpen)}
             className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-2 text-left cursor-pointer group"
           >
-            <span className="w-8 h-8 rounded-xl bg-[#E3ECE5] dark:bg-ap-turf flex items-center justify-center text-ap-cobalt dark:text-ap-volt shrink-0">
+            <span className="w-8 h-8 rounded-xl bg-ap-inset dark:bg-ap-turf flex items-center justify-center text-ap-clay dark:text-ap-volt shrink-0">
               <Sliders className="w-4 h-4" weight="duotone" />
             </span>
             <span>

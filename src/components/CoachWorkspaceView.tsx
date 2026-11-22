@@ -702,7 +702,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 {activeTeam ? `${activeTeam.brand.name} · Coach` : 'Coach Workspace'}
               </h1>
               {activeTeam && (
-                <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt">
+                <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-ap-inset text-ap-clay dark:bg-ap-turf dark:text-ap-volt">
                   {activeTeam.brand.joinCode}
                 </span>
               )}
@@ -1074,8 +1074,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 onClick={() => setTracksideMode('STOPWATCH')}
                 className={`min-h-[44px] sm:min-h-[34px] px-3.5 py-1 rounded-lg cursor-pointer transition-colors ${
                   tracksideMode === 'STOPWATCH'
-                    ? 'ap-nav-volt-active'
-                    : 'text-ap-ink dark:text-ap-chalk'
+                    ? 'bg-white dark:bg-[#242826] text-ap-ink dark:text-ap-chalk border border-ap-frame dark:border-white/30 shadow-xs'
+                    : 'text-ap-muted dark:text-ap-muted-dark border border-transparent hover:text-ap-ink dark:hover:text-ap-chalk'
                 }`}
               >
                 Track Stopwatch
@@ -1087,8 +1087,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 onClick={() => setTracksideMode('FIELD')}
                 className={`min-h-[44px] sm:min-h-[34px] px-3.5 py-1 rounded-lg cursor-pointer transition-colors ${
                   tracksideMode === 'FIELD'
-                    ? 'ap-nav-volt-active'
-                    : 'text-ap-ink dark:text-ap-chalk'
+                    ? 'bg-white dark:bg-[#242826] text-ap-ink dark:text-ap-chalk border border-ap-frame dark:border-white/30 shadow-xs'
+                    : 'text-ap-muted dark:text-ap-muted-dark border border-transparent hover:text-ap-ink dark:hover:text-ap-chalk'
                 }`}
               >
                 Field Marks &amp; Multi

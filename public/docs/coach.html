@@ -18,11 +18,11 @@
   <meta property="og:image" content="https://meetready.app/brand/meetready-og-1200x630.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://meetready.app/brand/meetready-og-1200x630.png" />
-  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=6" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg?v=7" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap"
+    href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;display=swap"
     rel="stylesheet"
   />
   <script>
@@ -43,42 +43,42 @@
   </script>
   <style>
     :root {
-      --bg-outer: #163022;
-      --bg-canvas: #F4F7F2;
+      --bg-outer: #F6F3EC;
+      --bg-canvas: #F6F3EC;
       --bg-surface: #FFFFFF;
-      --bg-recessed: #E9EFE9;
-      --content-border: #2B5B3F;
-      --text-primary: #101411;
-      --text-secondary: #1F3528;
-      --text-muted: #43584B;
-      --border-hairline: rgba(38, 88, 58, 0.19);
-      --accent-cobalt: #1C5436;
-      --code-bg: #101411;
-      --code-fg: #F4F7F4;
+      --bg-recessed: #EDE9DF;
+      --content-border: rgba(18, 20, 19, 0.16);
+      --text-primary: #121413;
+      --text-secondary: #2C2A26;
+      --text-muted: #57544D;
+      --border-hairline: rgba(18, 20, 19, 0.14);
+      --accent-cobalt: #B83A24;
+      --code-bg: #121413;
+      --code-fg: #F6F3EC;
     }
     html.dark {
-      --bg-outer: #0C1D14;
-      --bg-canvas: #0B120E;
-      --bg-surface: #101B15;
-      --bg-recessed: #15231B;
-      --content-border: #2B543B;
-      --text-primary: #F4F7F4;
-      --text-secondary: #C8D8CE;
-      --text-muted: #93A39A;
-      --border-hairline: rgba(57, 150, 99, 0.34);
-      --accent-cobalt: #C8FF00;
-      --code-bg: #070B09;
-      --code-fg: #E6EFEA;
+      --bg-outer: #121413;
+      --bg-canvas: #121413;
+      --bg-surface: #1A1D1B;
+      --bg-recessed: #151816;
+      --content-border: rgba(246, 243, 236, 0.16);
+      --text-primary: #F6F3EC;
+      --text-secondary: #D6D1C7;
+      --text-muted: #A39E93;
+      --border-hairline: rgba(246, 243, 236, 0.14);
+      --accent-cobalt: #D8FF2A;
+      --code-bg: #0D0E0D;
+      --code-fg: #F6F3EC;
     }
     html.dark.theme-slate {
-      --bg-outer: #080D14;
-      --bg-canvas: #0B1117;
-      --bg-surface: #111923;
-      --bg-recessed: #16212E;
-      --content-border: #2D4259;
+      --bg-outer: #0E1318;
+      --bg-canvas: #0E1318;
+      --bg-surface: #151C24;
+      --bg-recessed: #0A0D12;
+      --content-border: #2A3644;
       --text-secondary: #CBD5E1;
       --text-muted: #94A3B8;
-      --border-hairline: rgba(94, 129, 172, 0.32);
+      --border-hairline: rgba(148, 163, 184, 0.24);
     }
     :focus-visible {
       outline: 2px solid var(--accent-cobalt);
@@ -94,9 +94,9 @@
       align-items: center;
       padding: 0.5rem 1rem;
       border-radius: 10px;
-      background: #C8FF00;
-      color: #080A09;
-      border: 2px solid #163022;
+      background: #D8FF2A;
+      color: #121413;
+      border: 2px solid #121413;
       font-size: 0.8125rem;
       font-weight: 800;
       text-decoration: none;
@@ -107,9 +107,8 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+      font-family: "Archivo", -apple-system, BlinkMacSystemFont, sans-serif;
       background-color: var(--bg-outer);
-      background-image: radial-gradient(circle at 12% 0%, rgba(200, 255, 0, 0.12), transparent 52%);
       color: var(--text-primary);
       line-height: 1.65;
       display: flex;
@@ -133,20 +132,20 @@
       position: sticky;
       top: 0;
       z-index: 40;
-      background-color: var(--bg-surface);
-      background-image: linear-gradient(to right, #b8f200, #b8f200);
-      background-size: 100% 4px;
-      background-repeat: no-repeat;
-      background-position: top left;
-      border-bottom: 2px solid var(--content-border);
-      padding: calc(0.75rem + 4px) 1.25rem 0.75rem;
+      background-color: #FAF8F4;
+      border-top: 3px solid #B83A24;
+      border-bottom: 1px solid var(--content-border);
+      padding: 0.75rem 1.25rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 1rem;
       flex-wrap: wrap;
     }
-    html.dark header { background-image: linear-gradient(to right, #c8ff00, #c8ff00); }
+    html.dark header {
+      background-color: #161917;
+      border-top-color: #D8FF2A;
+    }
     .brand {
       display: flex;
       align-items: center;
@@ -195,9 +194,9 @@
       white-space: nowrap;
     }
     .btn-primary {
-      background: #C8FF00;
-      color: #080A09;
-      border-color: #4D7C0F;
+      background: #D8FF2A;
+      color: #121413;
+      border-color: rgba(18, 20, 19, 0.25);
       font-weight: 700;
     }
     .layout {

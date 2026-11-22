@@ -42,7 +42,7 @@ const pngTargets = [
   { id: 'meetready-icon-square-fullbleed', outPath: path.join(publicDir, 'pwa-maskable-512x512.png'), width: 512, height: 512, omitBackground: false },
 ];
 
-const FONT_LINKS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">`;
+const FONT_LINKS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Barlow+Condensed:wght@700;800&family=JetBrains+Mono:wght@600;700&display=swap" rel="stylesheet">`;
 
 const browser = await chromium.launch({ headless: true });
 try {
@@ -58,14 +58,15 @@ try {
       `<svg width="${target.width}" height="${target.height}" style="display:block;width:${target.width}px;height:${target.height}px;" `
     );
     await page.setContent(
-      `<!doctype html><html><head>${FONT_LINKS}<style>html,body{margin:0;padding:0;background:${target.omitBackground ? 'transparent' : '#0B120E'};overflow:hidden;width:${target.width}px;height:${target.height}px;}</style></head><body>${sizedSvg}</body></html>`,
+      `<!doctype html><html><head>${FONT_LINKS}<style>html,body{margin:0;padding:0;background:${target.omitBackground ? 'transparent' : '#121413'};overflow:hidden;width:${target.width}px;height:${target.height}px;}</style></head><body>${sizedSvg}</body></html>`,
       { waitUntil: 'networkidle' }
     );
     await page.evaluate(async () => {
       if (document.fonts) {
         await Promise.race([
           Promise.all([
-            document.fonts.load('800 34px "Plus Jakarta Sans"'),
+            document.fonts.load('800 44px "Barlow Condensed"'),
+            document.fonts.load('800 34px "Archivo"'),
             document.fonts.load('700 18px "JetBrains Mono"'),
             document.fonts.ready,
           ]),

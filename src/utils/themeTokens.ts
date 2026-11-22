@@ -1,9 +1,9 @@
 /**
- * MeetReady "#1 Stadium Track — Track Volt & Obsidian + Sundown P2 Midnight Slate" v3.1 Design System Tokens
+ * MeetReady "Mondo Clay & Stadium Chalk + Sundown Midnight Slate" v4.0 Design System Tokens
  * Synchronized 1:1 with `src/index.css`:
- * - Daylight: Stadium Chalk (#F4F7F2) Canvas, Crisp Paper (#FFFFFF) Cards, Chalk Inset (#E9EFE9)
- * - Track Pine (Dark): Obsidian-Pine (#0B110E) Canvas, Carbon-Pine (#111A15) Cards, Deep Turf Inset (#080D0A)
- * - Sundown P2 Midnight Slate (Dark): #0E1318 Canvas, #151C24 Cards, #0A0D12 Inset, #EEF2F6 Ink, #D4FF33 Volt
+ * - Daylight: Stadium Chalk (#F6F3EC) Canvas, Matte White (#FFFFFF) Cards, Warm Stone (#EDE9DF) Inset
+ * - Track Asphalt (Dark): #121413 Canvas, #1A1D1B Cards, #151816 Inset, #F6F3EC Chalk Ink, #D8FF2A Volt
+ * - Sundown P2 Midnight Slate (Dark): #0E1318 Canvas, #151C24 Cards, #0A0D12 Inset, #EEF2F6 Ink, #D8FF2A Volt
  * - Locked 6-Zone Physiological Effort Spectrum & Banister PMC Encodings
  */
 
@@ -68,36 +68,36 @@ export function getAeroPulseThemePalette(
   return {
     isDark: darkEffective,
     variant: activeVariant,
-    canvasBg: isMidnight ? '#0E1318' : darkEffective ? '#0B110E' : '#F4F7F2',
-    cardBg: isMidnight ? '#151C24' : darkEffective ? '#111A15' : '#FFFFFF',
-    insetBg: isMidnight ? '#0A0D12' : darkEffective ? '#080D0A' : '#E9EFE9',
+    canvasBg: isMidnight ? '#0E1318' : darkEffective ? '#121413' : '#F6F3EC',
+    cardBg: isMidnight ? '#151C24' : darkEffective ? '#1A1D1B' : '#FFFFFF',
+    insetBg: isMidnight ? '#0A0D12' : darkEffective ? '#151816' : '#EDE9DF',
     borderSubtle: isMidnight
       ? 'rgba(148, 163, 184, 0.22)'
       : darkEffective
-        ? 'rgba(57, 150, 99, 0.36)'
-        : 'rgba(38, 88, 58, 0.19)',
-    textPrimary: isMidnight ? '#EEF2F6' : darkEffective ? '#E6ECE8' : '#101411',
-    textSecondary: isMidnight ? '#CBD5E1' : darkEffective ? '#C8D8CE' : '#1F3528',
-    textMuted: darkEffective ? '#93A39A' : '#43584B',
-    axisLine: isMidnight ? '#2A3644' : darkEffective ? '#254331' : '#B7C9BC',
+        ? 'rgba(246, 243, 236, 0.14)'
+        : 'rgba(18, 20, 19, 0.16)',
+    textPrimary: isMidnight ? '#EEF2F6' : darkEffective ? '#F6F3EC' : '#121413',
+    textSecondary: isMidnight ? '#CBD5E1' : darkEffective ? '#D6D1C7' : '#2C2A26',
+    textMuted: darkEffective ? '#A39E93' : '#57544D',
+    axisLine: isMidnight ? '#2A3644' : darkEffective ? '#2C312E' : '#CFC9BC',
     splitLine: isMidnight
       ? 'rgba(148, 163, 184, 0.12)'
       : darkEffective
-        ? 'rgba(57, 150, 99, 0.14)'
-        : 'rgba(38, 88, 58, 0.08)',
+        ? 'rgba(246, 243, 236, 0.1)'
+        : 'rgba(18, 20, 19, 0.08)',
     tooltipBg: isMidnight
       ? 'rgba(21, 28, 36, 0.96)'
       : darkEffective
-        ? 'rgba(17, 26, 21, 0.96)'
+        ? 'rgba(26, 29, 27, 0.96)'
         : 'rgba(255, 255, 255, 0.98)',
     tooltipBorder: isMidnight
       ? 'rgba(148, 163, 184, 0.28)'
       : darkEffective
-        ? 'rgba(57, 150, 99, 0.38)'
-        : 'rgba(38, 88, 58, 0.22)',
-    tooltipText: isMidnight ? '#EEF2F6' : darkEffective ? '#E6ECE8' : '#101411',
-    brandCobalt: isMidnight ? '#D4FF33' : darkEffective ? '#C8FF00' : '#1C5436',
-    brandSignalOrange: isMidnight ? '#D4FF33' : darkEffective ? '#C8FF00' : '#558B00',
+        ? 'rgba(246, 243, 236, 0.2)'
+        : 'rgba(18, 20, 19, 0.18)',
+    tooltipText: isMidnight ? '#EEF2F6' : darkEffective ? '#F6F3EC' : '#121413',
+    brandCobalt: isMidnight ? '#D8FF2A' : darkEffective ? '#D8FF2A' : '#B83A24',
+    brandSignalOrange: isMidnight ? '#D8FF2A' : darkEffective ? '#D8FF2A' : '#1E4D36',
     ctlCyan: darkEffective ? '#2DD4BF' : '#0D9488',
     atlRose: darkEffective ? '#FB7185' : '#E11D48',
     tsbOptimalEmerald: darkEffective ? '#34D399' : '#059669',

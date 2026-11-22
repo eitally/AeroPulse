@@ -44,8 +44,8 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
 
   if (!brand) {
     if (existing) existing.remove();
-    if (faviconEl && faviconEl.getAttribute('href') !== '/icon.svg?v=6') {
-      faviconEl.setAttribute('href', '/icon.svg?v=6');
+    if (faviconEl && faviconEl.getAttribute('href') !== '/icon.svg?v=7') {
+      faviconEl.setAttribute('href', '/icon.svg?v=7');
     }
     return;
   }
@@ -78,25 +78,31 @@ export function applyTeamBrandToDocument(brand: TeamBrandConfig | null | undefin
     }
     .ap-header-bar,
     .liquid-glass-header {
-      border-color: ${palette.primaryOnLight};
+      border-bottom-color: ${palette.primaryOnLight};
     }
     .dark .ap-header-bar,
     .dark .liquid-glass-header {
-      border-color: ${palette.primaryOnDark};
+      border-bottom-color: ${palette.primaryOnDark};
     }
     .ap-btn-primary,
-    .ap-nav-volt-active {
+    .ap-nav-volt-active:not(header nav .ap-nav-volt-active) {
       background-color: ${palette.primaryOnLight};
       color: ${palette.textOnPrimaryLight};
       border-color: transparent;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+    }
+    header nav .ap-nav-volt-active {
+      border-bottom-color: ${palette.primaryOnLight};
     }
     .dark .ap-btn-primary,
-    .dark .ap-nav-volt-active {
+    .dark .ap-nav-volt-active:not(header nav .ap-nav-volt-active) {
       background-color: ${palette.primaryOnDark};
       color: ${palette.textOnPrimaryDark};
       border-color: transparent;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.36);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
+    }
+    .dark header nav .ap-nav-volt-active {
+      border-bottom-color: ${palette.primaryOnDark};
     }
     .ap-btn-primary:hover {
       background-color: ${palette.primaryOnLight};

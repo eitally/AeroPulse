@@ -366,10 +366,10 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
         <div
           role="status"
           aria-live="polite"
-          className="rounded-xl liquid-glass-subtle border-[#28573B]/35 dark:border-[#25573A] px-3 py-2 flex flex-wrap items-center justify-between gap-2"
+          className="rounded-xl liquid-glass-subtle border-ap-frame/20 dark:border-white/15 px-3 py-2 flex flex-wrap items-center justify-between gap-2"
         >
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[#35463B] dark:text-slate-200 min-w-0">
-            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt shrink-0">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-ap-ink dark:text-ap-chalk min-w-0">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-2xs font-mono font-semibold uppercase tracking-wider bg-ap-inset text-ap-clay dark:bg-ap-turf dark:text-ap-volt shrink-0">
               Sample Demo
             </span>
             <span className="hidden sm:inline">
@@ -446,7 +446,7 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
               {activitiesCount.toLocaleString()} synced
             </span>
             {athleteProfile && (
-              <span className="font-mono text-2xs px-2 py-0.5 rounded-md bg-[#E3ECE5] text-ap-cobalt dark:bg-ap-turf dark:text-ap-volt whitespace-nowrap">
+              <span className="font-mono text-2xs px-2 py-0.5 rounded-md bg-ap-inset text-ap-clay dark:bg-ap-turf dark:text-ap-volt whitespace-nowrap">
                 {athleteProfile.primarySport === 'Running'
                   ? `Run · LT ${formatPace(athleteProfile.thresholdPaceSecsPerKm || 250, distanceUnit)}`
                   : `Bike · ${athleteProfile.ftp}W`}

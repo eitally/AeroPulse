@@ -17,9 +17,8 @@ describe('Sprint 1 Wave 1A — Design System, WCAG AA Ink Tokens & Component Lay
   it('defines theme-aware global :focus-visible rules, AA ink tokens, .ap-btn-pine, .ap-touch, and @layer components button wrapping in src/index.css', () => {
     const css = fs.readFileSync(path.join(process.cwd(), 'src/index.css'), 'utf8');
     expect(css).toContain('a:focus-visible,');
-    expect(css).toContain('outline: 2px solid #1c5436;');
-    expect(css).toContain('outline-color: #c8ff00;');
-    expect(css).toContain('outline-color: #d4ff33;');
+    expect(css).toContain('outline: 2px solid #b83a24;');
+    expect(css).toContain('outline-color: #d8ff2a;');
     expect(css).toContain('outline-color: #fbbf24;');
     expect(css).toContain('.ap-btn-pine');
     expect(css).toContain('.ap-ink-amber');
@@ -42,12 +41,12 @@ describe('Sprint 1 Wave 1A — Design System, WCAG AA Ink Tokens & Component Lay
       '#047857',
       '#0369A1',
       '#0F766E',
-      '#9A3412',
+      '#9E2E1A',
       '#92400E',
       '#BE123C',
       '#6D28D9',
-      '#33463A',
-      '#16422A',
+      '#B83A24',
+      '#1E4D36',
     ]) {
       expect(designMd).toContain(hex);
     }

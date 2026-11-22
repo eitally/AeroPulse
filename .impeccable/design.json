@@ -1,112 +1,142 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-11-16T07:50:00Z",
-  "title": "Design System: THRESH",
+  "generatedAt": "2026-11-22T22:49:00Z",
+  "title": "Design System: MeetReady",
   "extensions": {
     "colorMeta": {
-      "track-volt": {
+      "mondo-clay": {
         "role": "primary",
-        "displayName": "Track Volt",
-        "canonical": "#C8FF00",
+        "displayName": "Mondo Track Clay",
+        "canonical": "#B83A24",
         "tonalRamp": [
-          "oklch(22% 0.08 122)",
-          "oklch(34% 0.12 122)",
-          "oklch(46% 0.16 122)",
-          "oklch(58% 0.19 122)",
-          "oklch(72% 0.22 122)",
-          "oklch(84% 0.24 122)",
-          "oklch(93% 0.24 122)",
-          "oklch(97% 0.12 122)"
+          "oklch(22% 0.08 32)",
+          "oklch(33% 0.12 32)",
+          "oklch(44% 0.15 32)",
+          "oklch(52% 0.17 32)",
+          "oklch(62% 0.16 32)",
+          "oklch(74% 0.12 32)",
+          "oklch(86% 0.07 32)",
+          "oklch(95% 0.03 32)"
         ]
       },
-      "track-volt-hover": {
+      "mondo-clay-dark": {
         "role": "primary",
-        "displayName": "Track Volt Hover",
-        "canonical": "#B5EB00",
+        "displayName": "Mondo Clay Dark",
+        "canonical": "#9E2E1A",
         "tonalRamp": [
-          "oklch(20% 0.08 122)",
-          "oklch(32% 0.12 122)",
-          "oklch(44% 0.16 122)",
-          "oklch(56% 0.19 122)",
-          "oklch(69% 0.21 122)",
-          "oklch(81% 0.23 122)",
-          "oklch(89% 0.23 122)",
-          "oklch(96% 0.11 122)"
+          "oklch(20% 0.08 32)",
+          "oklch(30% 0.11 32)",
+          "oklch(40% 0.14 32)",
+          "oklch(48% 0.15 32)",
+          "oklch(60% 0.14 32)",
+          "oklch(72% 0.11 32)",
+          "oklch(85% 0.06 32)",
+          "oklch(95% 0.025 32)"
         ]
       },
-      "turf-lime-mark": {
+      "mondo-clay-bright": {
         "role": "primary",
-        "displayName": "Turf Lime Mark",
-        "canonical": "#56BA00",
+        "displayName": "Mondo Clay Bright",
+        "canonical": "#E05238",
         "tonalRamp": [
-          "oklch(22% 0.08 132)",
-          "oklch(34% 0.12 132)",
-          "oklch(46% 0.16 132)",
-          "oklch(58% 0.19 132)",
-          "oklch(70% 0.21 132)",
-          "oklch(80% 0.19 132)",
-          "oklch(89% 0.12 132)",
-          "oklch(96% 0.05 132)"
+          "oklch(24% 0.08 32)",
+          "oklch(36% 0.13 32)",
+          "oklch(48% 0.16 32)",
+          "oklch(60% 0.18 32)",
+          "oklch(71% 0.15 32)",
+          "oklch(81% 0.11 32)",
+          "oklch(89% 0.06 32)",
+          "oklch(96% 0.025 32)"
         ]
       },
-      "stadium-pine": {
+      "starter-volt": {
         "role": "primary",
-        "displayName": "Stadium Pine",
-        "canonical": "#1C5436",
+        "displayName": "Starter Volt",
+        "canonical": "#D8FF2A",
         "tonalRamp": [
-          "oklch(18% 0.04 154)",
-          "oklch(28% 0.06 154)",
-          "oklch(39% 0.08 154)",
-          "oklch(50% 0.09 154)",
-          "oklch(62% 0.09 154)",
-          "oklch(74% 0.07 154)",
-          "oklch(86% 0.04 154)",
-          "oklch(95% 0.02 154)"
+          "oklch(23% 0.07 118)",
+          "oklch(35% 0.11 118)",
+          "oklch(48% 0.15 118)",
+          "oklch(62% 0.18 118)",
+          "oklch(75% 0.20 118)",
+          "oklch(86% 0.21 118)",
+          "oklch(93% 0.21 118)",
+          "oklch(97% 0.10 118)"
         ]
       },
-      "pine-gauge-dark": {
+      "starter-volt-hover": {
         "role": "primary",
-        "displayName": "Dark Gauge Pine",
-        "canonical": "#399663",
+        "displayName": "Starter Volt Hover",
+        "canonical": "#C8EF1E",
         "tonalRamp": [
-          "oklch(20% 0.05 155)",
-          "oklch(31% 0.08 155)",
-          "oklch(43% 0.10 155)",
-          "oklch(55% 0.115 155)",
-          "oklch(67% 0.11 155)",
-          "oklch(78% 0.08 155)",
-          "oklch(88% 0.045 155)",
-          "oklch(95% 0.02 155)"
+          "oklch(22% 0.07 118)",
+          "oklch(33% 0.11 118)",
+          "oklch(46% 0.14 118)",
+          "oklch(59% 0.17 118)",
+          "oklch(72% 0.19 118)",
+          "oklch(83% 0.20 118)",
+          "oklch(90% 0.20 118)",
+          "oklch(96% 0.09 118)"
         ]
       },
-      "volt-olive-ink": {
+      "infield-pine": {
         "role": "primary",
-        "displayName": "Volt Olive Ink",
-        "canonical": "#3F6212",
+        "displayName": "Infield Pine",
+        "canonical": "#1E4D36",
         "tonalRamp": [
-          "oklch(20% 0.06 125)",
-          "oklch(31% 0.09 125)",
-          "oklch(44% 0.11 125)",
-          "oklch(56% 0.13 125)",
-          "oklch(68% 0.14 125)",
-          "oklch(80% 0.12 125)",
-          "oklch(89% 0.08 125)",
-          "oklch(96% 0.04 125)"
+          "oklch(18% 0.04 156)",
+          "oklch(28% 0.06 156)",
+          "oklch(37% 0.075 156)",
+          "oklch(49% 0.08 156)",
+          "oklch(61% 0.08 156)",
+          "oklch(74% 0.06 156)",
+          "oklch(86% 0.04 156)",
+          "oklch(95% 0.02 156)"
         ]
       },
-      "volt-lime-ink": {
+      "infield-pine-hover": {
         "role": "primary",
-        "displayName": "Volt Lime Ink",
-        "canonical": "#A3E635",
+        "displayName": "Infield Pine Hover",
+        "canonical": "#163A28",
         "tonalRamp": [
-          "oklch(22% 0.07 125)",
-          "oklch(34% 0.11 125)",
-          "oklch(46% 0.15 125)",
-          "oklch(58% 0.18 125)",
-          "oklch(72% 0.20 125)",
-          "oklch(85% 0.20 125)",
-          "oklch(92% 0.14 125)",
-          "oklch(97% 0.07 125)"
+          "oklch(16% 0.035 156)",
+          "oklch(25% 0.05 156)",
+          "oklch(34% 0.065 156)",
+          "oklch(46% 0.07 156)",
+          "oklch(58% 0.07 156)",
+          "oklch(71% 0.055 156)",
+          "oklch(84% 0.035 156)",
+          "oklch(95% 0.015 156)"
+        ]
+      },
+      "infield-pine-bright": {
+        "role": "primary",
+        "displayName": "Infield Pine Bright",
+        "canonical": "#2F7A55",
+        "tonalRamp": [
+          "oklch(20% 0.05 156)",
+          "oklch(31% 0.07 156)",
+          "oklch(42% 0.09 156)",
+          "oklch(52% 0.10 156)",
+          "oklch(64% 0.095 156)",
+          "oklch(76% 0.07 156)",
+          "oklch(87% 0.04 156)",
+          "oklch(95% 0.02 156)"
+        ]
+      },
+      "infield-pine-dark-ink": {
+        "role": "primary",
+        "displayName": "Infield Pine Dark Ink",
+        "canonical": "#86EFAC",
+        "tonalRamp": [
+          "oklch(22% 0.06 150)",
+          "oklch(34% 0.09 150)",
+          "oklch(46% 0.12 150)",
+          "oklch(58% 0.14 150)",
+          "oklch(71% 0.15 150)",
+          "oklch(82% 0.15 150)",
+          "oklch(88% 0.13 150)",
+          "oklch(96% 0.06 150)"
         ]
       },
       "strava-vermilion": {
@@ -126,7 +156,7 @@
       },
       "strava-vermilion-hover": {
         "role": "secondary",
-        "displayName": "Strava Vermilion Deep",
+        "displayName": "Strava Vermilion Hover",
         "canonical": "#A83000",
         "tonalRamp": [
           "oklch(20% 0.08 38)",
@@ -139,114 +169,69 @@
           "oklch(95% 0.03 38)"
         ]
       },
-      "stadium-surround-light": {
-        "role": "neutral",
-        "displayName": "Classic Pine Surround",
-        "canonical": "#163022",
+      "strava-ink-light": {
+        "role": "secondary",
+        "displayName": "Strava Provenance Light",
+        "canonical": "#B83500",
         "tonalRamp": [
-          "oklch(18% 0.03 154)",
-          "oklch(27% 0.04 154)",
-          "oklch(38% 0.05 154)",
-          "oklch(49% 0.05 154)",
-          "oklch(61% 0.04 154)",
-          "oklch(73% 0.03 154)",
-          "oklch(85% 0.02 154)",
-          "oklch(95% 0.01 154)"
+          "oklch(21% 0.08 38)",
+          "oklch(33% 0.12 38)",
+          "oklch(44% 0.16 38)",
+          "oklch(52% 0.18 38)",
+          "oklch(64% 0.17 38)",
+          "oklch(76% 0.13 38)",
+          "oklch(87% 0.07 38)",
+          "oklch(95% 0.03 38)"
         ]
       },
-      "stadium-surround-dark": {
-        "role": "neutral",
-        "displayName": "Deep Pine Surround",
-        "canonical": "#0C1D14",
+      "strava-ink-dark": {
+        "role": "secondary",
+        "displayName": "Strava Provenance Dark",
+        "canonical": "#FF7A45",
         "tonalRamp": [
-          "oklch(15% 0.02 154)",
-          "oklch(22% 0.03 154)",
-          "oklch(33% 0.04 154)",
-          "oklch(45% 0.04 154)",
-          "oklch(58% 0.04 154)",
-          "oklch(71% 0.03 154)",
-          "oklch(84% 0.02 154)",
-          "oklch(94% 0.01 154)"
+          "oklch(24% 0.09 38)",
+          "oklch(36% 0.13 38)",
+          "oklch(48% 0.17 38)",
+          "oklch(60% 0.19 38)",
+          "oklch(72% 0.18 38)",
+          "oklch(81% 0.14 38)",
+          "oklch(89% 0.08 38)",
+          "oklch(96% 0.03 38)"
         ]
       },
       "stadium-chalk": {
         "role": "neutral",
         "displayName": "Stadium Chalk",
-        "canonical": "#F4F7F2",
+        "canonical": "#F6F3EC",
         "tonalRamp": [
-          "oklch(20% 0.01 145)",
-          "oklch(32% 0.01 145)",
-          "oklch(45% 0.01 145)",
-          "oklch(58% 0.01 145)",
-          "oklch(70% 0.01 145)",
-          "oklch(82% 0.01 145)",
-          "oklch(91% 0.01 145)",
-          "oklch(97% 0.01 145)"
+          "oklch(20% 0.01 88)",
+          "oklch(32% 0.01 88)",
+          "oklch(45% 0.01 88)",
+          "oklch(58% 0.01 88)",
+          "oklch(70% 0.01 88)",
+          "oklch(82% 0.01 88)",
+          "oklch(91% 0.01 88)",
+          "oklch(96% 0.01 88)"
         ]
       },
-      "obsidian-pine": {
+      "warm-chalk-header": {
         "role": "neutral",
-        "displayName": "Obsidian-Pine",
-        "canonical": "#0B120E",
+        "displayName": "Warm Chalk Header",
+        "canonical": "#FAF8F4",
         "tonalRamp": [
-          "oklch(16% 0.015 152)",
-          "oklch(25% 0.02 152)",
-          "oklch(36% 0.025 152)",
-          "oklch(48% 0.025 152)",
-          "oklch(60% 0.02 152)",
-          "oklch(72% 0.015 152)",
-          "oklch(84% 0.01 152)",
-          "oklch(95% 0.008 152)"
+          "oklch(20% 0.008 88)",
+          "oklch(32% 0.008 88)",
+          "oklch(45% 0.008 88)",
+          "oklch(58% 0.008 88)",
+          "oklch(70% 0.008 88)",
+          "oklch(82% 0.008 88)",
+          "oklch(91% 0.008 88)",
+          "oklch(98% 0.007 88)"
         ]
       },
-      "tile-obsidian": {
+      "matte-white": {
         "role": "neutral",
-        "displayName": "Tile Obsidian",
-        "canonical": "#0B1911",
-        "tonalRamp": [
-          "oklch(17% 0.022 152)",
-          "oklch(26% 0.028 152)",
-          "oklch(37% 0.032 152)",
-          "oklch(49% 0.032 152)",
-          "oklch(61% 0.028 152)",
-          "oklch(73% 0.022 152)",
-          "oklch(85% 0.014 152)",
-          "oklch(95% 0.008 152)"
-        ]
-      },
-      "pine-frame-light": {
-        "role": "neutral",
-        "displayName": "Pine Frame Light",
-        "canonical": "#2B5B3F",
-        "tonalRamp": [
-          "oklch(20% 0.04 153)",
-          "oklch(31% 0.06 153)",
-          "oklch(43% 0.07 153)",
-          "oklch(54% 0.08 153)",
-          "oklch(66% 0.07 153)",
-          "oklch(77% 0.05 153)",
-          "oklch(87% 0.03 153)",
-          "oklch(95% 0.015 153)"
-        ]
-      },
-      "pine-frame-dark": {
-        "role": "neutral",
-        "displayName": "Pine Frame Dark",
-        "canonical": "#2B543B",
-        "tonalRamp": [
-          "oklch(19% 0.04 153)",
-          "oklch(30% 0.05 153)",
-          "oklch(41% 0.06 153)",
-          "oklch(53% 0.07 153)",
-          "oklch(65% 0.06 153)",
-          "oklch(76% 0.05 153)",
-          "oklch(87% 0.03 153)",
-          "oklch(95% 0.015 153)"
-        ]
-      },
-      "crisp-paper": {
-        "role": "neutral",
-        "displayName": "Crisp Paper",
+        "displayName": "Matte White",
         "canonical": "#FFFFFF",
         "tonalRamp": [
           "oklch(20% 0 0)",
@@ -259,184 +244,364 @@
           "oklch(100% 0 0)"
         ]
       },
-      "carbon-pine": {
+      "warm-stone": {
         "role": "neutral",
-        "displayName": "Carbon-Pine",
-        "canonical": "#101B15",
+        "displayName": "Warm Stone Inset",
+        "canonical": "#EDE9DF",
         "tonalRamp": [
-          "oklch(17% 0.02 152)",
-          "oklch(26% 0.025 152)",
-          "oklch(37% 0.03 152)",
-          "oklch(49% 0.03 152)",
-          "oklch(61% 0.025 152)",
-          "oklch(73% 0.02 152)",
-          "oklch(85% 0.012 152)",
-          "oklch(95% 0.008 152)"
+          "oklch(20% 0.012 85)",
+          "oklch(32% 0.012 85)",
+          "oklch(45% 0.012 85)",
+          "oklch(58% 0.012 85)",
+          "oklch(70% 0.012 85)",
+          "oklch(82% 0.011 85)",
+          "oklch(90% 0.01 85)",
+          "oklch(93% 0.01 85)"
         ]
       },
-      "chalk-inset": {
+      "warm-stone-hover": {
         "role": "neutral",
-        "displayName": "Chalk Inset",
-        "canonical": "#E9EFE9",
+        "displayName": "Warm Stone Hover",
+        "canonical": "#E3DFD3",
         "tonalRamp": [
-          "oklch(20% 0.015 148)",
-          "oklch(32% 0.015 148)",
-          "oklch(45% 0.015 148)",
-          "oklch(58% 0.015 148)",
-          "oklch(70% 0.015 148)",
-          "oklch(82% 0.012 148)",
-          "oklch(90% 0.01 148)",
-          "oklch(95% 0.008 148)"
+          "oklch(20% 0.014 85)",
+          "oklch(32% 0.014 85)",
+          "oklch(45% 0.014 85)",
+          "oklch(58% 0.014 85)",
+          "oklch(70% 0.013 85)",
+          "oklch(81% 0.012 85)",
+          "oklch(89% 0.011 85)",
+          "oklch(94% 0.009 85)"
         ]
       },
-      "deep-turf": {
+      "chalk-axis": {
         "role": "neutral",
-        "displayName": "Deep Turf Inset",
-        "canonical": "#15231B",
+        "displayName": "Chalk Axis Rule",
+        "canonical": "#CFC9BC",
         "tonalRamp": [
-          "oklch(18% 0.022 152)",
-          "oklch(24% 0.028 152)",
-          "oklch(36% 0.032 152)",
-          "oklch(48% 0.032 152)",
-          "oklch(60% 0.028 152)",
-          "oklch(72% 0.022 152)",
-          "oklch(84% 0.014 152)",
-          "oklch(94% 0.008 152)"
+          "oklch(20% 0.015 85)",
+          "oklch(32% 0.015 85)",
+          "oklch(45% 0.015 85)",
+          "oklch(58% 0.015 85)",
+          "oklch(70% 0.015 85)",
+          "oklch(82% 0.015 85)",
+          "oklch(89% 0.012 85)",
+          "oklch(95% 0.008 85)"
         ]
       },
-      "pill-track-light": {
+      "track-asphalt": {
         "role": "neutral",
-        "displayName": "Capsule Track Light",
-        "canonical": "#E3ECE5",
+        "displayName": "Track Asphalt",
+        "canonical": "#121413",
         "tonalRamp": [
-          "oklch(21% 0.018 150)",
-          "oklch(33% 0.02 150)",
-          "oklch(46% 0.02 150)",
-          "oklch(58% 0.02 150)",
-          "oklch(70% 0.018 150)",
-          "oklch(81% 0.015 150)",
-          "oklch(89% 0.012 150)",
-          "oklch(94% 0.008 150)"
+          "oklch(18% 0.004 145)",
+          "oklch(28% 0.005 145)",
+          "oklch(39% 0.005 145)",
+          "oklch(50% 0.005 145)",
+          "oklch(62% 0.004 145)",
+          "oklch(74% 0.004 145)",
+          "oklch(86% 0.003 145)",
+          "oklch(95% 0.002 145)"
         ]
       },
-      "pill-track-dark": {
+      "asphalt-header-dark": {
         "role": "neutral",
-        "displayName": "Capsule Track Dark",
-        "canonical": "#0B140F",
+        "displayName": "Asphalt Header Dark",
+        "canonical": "#161917",
         "tonalRamp": [
-          "oklch(16% 0.018 152)",
-          "oklch(25% 0.022 152)",
-          "oklch(36% 0.026 152)",
-          "oklch(48% 0.026 152)",
-          "oklch(60% 0.022 152)",
-          "oklch(72% 0.018 152)",
-          "oklch(84% 0.012 152)",
-          "oklch(94% 0.008 152)"
+          "oklch(20% 0.005 145)",
+          "oklch(30% 0.005 145)",
+          "oklch(41% 0.005 145)",
+          "oklch(52% 0.005 145)",
+          "oklch(64% 0.004 145)",
+          "oklch(75% 0.004 145)",
+          "oklch(87% 0.003 145)",
+          "oklch(95% 0.002 145)"
         ]
       },
-      "obsidian-ink": {
+      "matte-carbon": {
         "role": "neutral",
-        "displayName": "Obsidian Ink",
-        "canonical": "#080A09",
+        "displayName": "Matte Carbon",
+        "canonical": "#1A1D1B",
         "tonalRamp": [
-          "oklch(14% 0.006 152)",
-          "oklch(24% 0.008 152)",
-          "oklch(36% 0.01 152)",
-          "oklch(48% 0.01 152)",
-          "oklch(60% 0.008 152)",
-          "oklch(72% 0.006 152)",
-          "oklch(84% 0.004 152)",
-          "oklch(94% 0.003 152)"
+          "oklch(22% 0.005 145)",
+          "oklch(32% 0.005 145)",
+          "oklch(43% 0.005 145)",
+          "oklch(54% 0.005 145)",
+          "oklch(65% 0.004 145)",
+          "oklch(76% 0.004 145)",
+          "oklch(87% 0.003 145)",
+          "oklch(95% 0.002 145)"
         ]
       },
-      "ink-primary-light": {
+      "deep-asphalt": {
         "role": "neutral",
-        "displayName": "Primary Ink Light",
-        "canonical": "#101411",
+        "displayName": "Deep Asphalt Inset",
+        "canonical": "#151816",
         "tonalRamp": [
-          "oklch(18% 0.008 148)",
-          "oklch(28% 0.01 148)",
-          "oklch(40% 0.01 148)",
-          "oklch(52% 0.01 148)",
-          "oklch(64% 0.008 148)",
-          "oklch(76% 0.006 148)",
-          "oklch(86% 0.005 148)",
-          "oklch(95% 0.004 148)"
+          "oklch(20% 0.005 145)",
+          "oklch(30% 0.005 145)",
+          "oklch(41% 0.005 145)",
+          "oklch(52% 0.005 145)",
+          "oklch(64% 0.004 145)",
+          "oklch(75% 0.004 145)",
+          "oklch(87% 0.003 145)",
+          "oklch(95% 0.002 145)"
         ]
       },
-      "ink-primary-dark": {
+      "asphalt-elevated-dark": {
         "role": "neutral",
-        "displayName": "Primary Ink Dark",
-        "canonical": "#F4F7F4",
+        "displayName": "Asphalt Elevated Pill",
+        "canonical": "#242826",
         "tonalRamp": [
-          "oklch(20% 0.008 148)",
-          "oklch(32% 0.008 148)",
-          "oklch(45% 0.008 148)",
-          "oklch(58% 0.008 148)",
-          "oklch(70% 0.008 148)",
-          "oklch(82% 0.007 148)",
-          "oklch(91% 0.006 148)",
-          "oklch(97% 0.005 148)"
+          "oklch(27% 0.006 145)",
+          "oklch(36% 0.006 145)",
+          "oklch(47% 0.006 145)",
+          "oklch(58% 0.005 145)",
+          "oklch(69% 0.005 145)",
+          "oklch(79% 0.004 145)",
+          "oklch(88% 0.003 145)",
+          "oklch(95% 0.002 145)"
+        ]
+      },
+      "asphalt-edge": {
+        "role": "neutral",
+        "displayName": "Asphalt Border Edge",
+        "canonical": "#2C312E",
+        "tonalRamp": [
+          "oklch(30% 0.006 145)",
+          "oklch(40% 0.006 145)",
+          "oklch(50% 0.006 145)",
+          "oklch(61% 0.005 145)",
+          "oklch(71% 0.005 145)",
+          "oklch(81% 0.004 145)",
+          "oklch(89% 0.003 145)",
+          "oklch(95% 0.002 145)"
         ]
       },
       "ink-secondary-light": {
         "role": "neutral",
         "displayName": "Secondary Ink Light",
-        "canonical": "#1F3528",
+        "canonical": "#2C2A26",
         "tonalRamp": [
-          "oklch(20% 0.025 152)",
-          "oklch(31% 0.032 152)",
-          "oklch(42% 0.035 152)",
-          "oklch(54% 0.035 152)",
-          "oklch(66% 0.03 152)",
-          "oklch(77% 0.022 152)",
-          "oklch(87% 0.014 152)",
-          "oklch(95% 0.008 152)"
+          "oklch(28% 0.008 82)",
+          "oklch(38% 0.009 82)",
+          "oklch(48% 0.009 82)",
+          "oklch(59% 0.008 82)",
+          "oklch(70% 0.007 82)",
+          "oklch(80% 0.006 82)",
+          "oklch(89% 0.005 82)",
+          "oklch(95% 0.003 82)"
         ]
       },
       "ink-secondary-dark": {
         "role": "neutral",
         "displayName": "Secondary Ink Dark",
-        "canonical": "#C8D8CE",
+        "canonical": "#D6D1C7",
         "tonalRamp": [
-          "oklch(22% 0.02 152)",
-          "oklch(34% 0.022 152)",
-          "oklch(46% 0.024 152)",
-          "oklch(58% 0.024 152)",
-          "oklch(70% 0.022 152)",
-          "oklch(81% 0.02 152)",
-          "oklch(86% 0.018 152)",
-          "oklch(95% 0.01 152)"
+          "oklch(22% 0.012 85)",
+          "oklch(33% 0.013 85)",
+          "oklch(45% 0.013 85)",
+          "oklch(57% 0.013 85)",
+          "oklch(69% 0.012 85)",
+          "oklch(81% 0.012 85)",
+          "oklch(86% 0.011 85)",
+          "oklch(95% 0.006 85)"
         ]
       },
       "ink-muted-light": {
         "role": "neutral",
-        "displayName": "Muted Axis Ink Light",
-        "canonical": "#43584B",
+        "displayName": "Muted Ink Light",
+        "canonical": "#57544D",
         "tonalRamp": [
-          "oklch(22% 0.02 152)",
-          "oklch(33% 0.025 152)",
-          "oklch(44% 0.028 152)",
-          "oklch(55% 0.028 152)",
-          "oklch(67% 0.024 152)",
-          "oklch(78% 0.018 152)",
-          "oklch(88% 0.012 152)",
-          "oklch(95% 0.006 152)"
+          "oklch(22% 0.01 85)",
+          "oklch(33% 0.011 85)",
+          "oklch(44% 0.011 85)",
+          "oklch(55% 0.01 85)",
+          "oklch(67% 0.009 85)",
+          "oklch(78% 0.008 85)",
+          "oklch(88% 0.006 85)",
+          "oklch(95% 0.004 85)"
         ]
       },
       "ink-muted-dark": {
         "role": "neutral",
-        "displayName": "Muted Axis Ink Dark",
-        "canonical": "#93A39A",
+        "displayName": "Muted Ink Dark",
+        "canonical": "#A39E93",
         "tonalRamp": [
-          "oklch(21% 0.015 152)",
-          "oklch(33% 0.018 152)",
-          "oklch(45% 0.02 152)",
-          "oklch(57% 0.02 152)",
-          "oklch(70% 0.018 152)",
-          "oklch(80% 0.015 152)",
-          "oklch(89% 0.01 152)",
-          "oklch(95% 0.006 152)"
+          "oklch(22% 0.012 85)",
+          "oklch(34% 0.013 85)",
+          "oklch(46% 0.013 85)",
+          "oklch(58% 0.013 85)",
+          "oklch(70% 0.013 85)",
+          "oklch(80% 0.011 85)",
+          "oklch(89% 0.008 85)",
+          "oklch(95% 0.005 85)"
+        ]
+      },
+      "midnight-slate-stage": {
+        "role": "neutral",
+        "displayName": "Midnight Slate Stage",
+        "canonical": "#0E1318",
+        "tonalRamp": [
+          "oklch(17% 0.015 245)",
+          "oklch(27% 0.018 245)",
+          "oklch(38% 0.02 245)",
+          "oklch(50% 0.02 245)",
+          "oklch(62% 0.018 245)",
+          "oklch(74% 0.014 245)",
+          "oklch(85% 0.009 245)",
+          "oklch(95% 0.005 245)"
+        ]
+      },
+      "midnight-slate-card": {
+        "role": "neutral",
+        "displayName": "Midnight Slate Card",
+        "canonical": "#151C24",
+        "tonalRamp": [
+          "oklch(22% 0.018 245)",
+          "oklch(32% 0.02 245)",
+          "oklch(43% 0.02 245)",
+          "oklch(54% 0.02 245)",
+          "oklch(66% 0.018 245)",
+          "oklch(77% 0.014 245)",
+          "oklch(87% 0.009 245)",
+          "oklch(95% 0.005 245)"
+        ]
+      },
+      "midnight-slate-inset": {
+        "role": "neutral",
+        "displayName": "Midnight Slate Inset",
+        "canonical": "#0A0D12",
+        "tonalRamp": [
+          "oklch(15% 0.014 245)",
+          "oklch(25% 0.016 245)",
+          "oklch(36% 0.018 245)",
+          "oklch(48% 0.018 245)",
+          "oklch(60% 0.016 245)",
+          "oklch(72% 0.012 245)",
+          "oklch(84% 0.008 245)",
+          "oklch(94% 0.004 245)"
+        ]
+      },
+      "midnight-slate-border": {
+        "role": "neutral",
+        "displayName": "Midnight Slate Border",
+        "canonical": "#2A3644",
+        "tonalRamp": [
+          "oklch(22% 0.02 245)",
+          "oklch(33% 0.024 245)",
+          "oklch(44% 0.024 245)",
+          "oklch(56% 0.022 245)",
+          "oklch(68% 0.018 245)",
+          "oklch(79% 0.014 245)",
+          "oklch(88% 0.009 245)",
+          "oklch(95% 0.005 245)"
+        ]
+      },
+      "midnight-slate-ink": {
+        "role": "neutral",
+        "displayName": "Midnight Slate Ink",
+        "canonical": "#EEF2F6",
+        "tonalRamp": [
+          "oklch(20% 0.008 245)",
+          "oklch(32% 0.009 245)",
+          "oklch(45% 0.009 245)",
+          "oklch(58% 0.009 245)",
+          "oklch(70% 0.008 245)",
+          "oklch(82% 0.007 245)",
+          "oklch(91% 0.006 245)",
+          "oklch(96% 0.005 245)"
+        ]
+      },
+      "midnight-slate-secondary": {
+        "role": "neutral",
+        "displayName": "Midnight Slate Secondary Ink",
+        "canonical": "#CBD5E1",
+        "tonalRamp": [
+          "oklch(21% 0.014 245)",
+          "oklch(33% 0.016 245)",
+          "oklch(45% 0.016 245)",
+          "oklch(57% 0.016 245)",
+          "oklch(69% 0.015 245)",
+          "oklch(81% 0.014 245)",
+          "oklch(86% 0.012 245)",
+          "oklch(95% 0.006 245)"
+        ]
+      },
+      "dusk-stage": {
+        "role": "neutral",
+        "displayName": "Dusk Stage",
+        "canonical": "#100E0C",
+        "tonalRamp": [
+          "oklch(16% 0.008 65)",
+          "oklch(26% 0.01 65)",
+          "oklch(37% 0.011 65)",
+          "oklch(49% 0.011 65)",
+          "oklch(61% 0.01 65)",
+          "oklch(73% 0.008 65)",
+          "oklch(85% 0.006 65)",
+          "oklch(95% 0.003 65)"
+        ]
+      },
+      "dusk-card": {
+        "role": "neutral",
+        "displayName": "Dusk Card",
+        "canonical": "#191612",
+        "tonalRamp": [
+          "oklch(20% 0.01 65)",
+          "oklch(30% 0.012 65)",
+          "oklch(41% 0.013 65)",
+          "oklch(52% 0.012 65)",
+          "oklch(64% 0.011 65)",
+          "oklch(75% 0.009 65)",
+          "oklch(86% 0.006 65)",
+          "oklch(95% 0.004 65)"
+        ]
+      },
+      "dusk-inset": {
+        "role": "neutral",
+        "displayName": "Dusk Inset",
+        "canonical": "#14110E",
+        "tonalRamp": [
+          "oklch(18% 0.009 65)",
+          "oklch(28% 0.011 65)",
+          "oklch(39% 0.012 65)",
+          "oklch(50% 0.012 65)",
+          "oklch(62% 0.011 65)",
+          "oklch(74% 0.009 65)",
+          "oklch(85% 0.006 65)",
+          "oklch(95% 0.003 65)"
+        ]
+      },
+      "dusk-border": {
+        "role": "neutral",
+        "displayName": "Dusk Border",
+        "canonical": "#3D3528",
+        "tonalRamp": [
+          "oklch(22% 0.02 72)",
+          "oklch(33% 0.024 72)",
+          "oklch(44% 0.024 72)",
+          "oklch(56% 0.022 72)",
+          "oklch(68% 0.018 72)",
+          "oklch(79% 0.014 72)",
+          "oklch(88% 0.009 72)",
+          "oklch(95% 0.005 72)"
+        ]
+      },
+      "dusk-ink": {
+        "role": "neutral",
+        "displayName": "Dusk Primary Ink",
+        "canonical": "#E8E2D8",
+        "tonalRamp": [
+          "oklch(20% 0.01 80)",
+          "oklch(32% 0.012 80)",
+          "oklch(45% 0.012 80)",
+          "oklch(58% 0.012 80)",
+          "oklch(70% 0.012 80)",
+          "oklch(82% 0.011 80)",
+          "oklch(91% 0.01 80)",
+          "oklch(96% 0.006 80)"
         ]
       },
       "zone-1-mist": {
@@ -456,7 +621,7 @@
       },
       "zone-2-aerobic-teal": {
         "role": "tertiary",
-        "displayName": "Zone 2 Aerobic Teal / CTL",
+        "displayName": "Zone 2 Aerobic Teal",
         "canonical": "#0D9488",
         "tonalRamp": [
           "oklch(22% 0.06 185)",
@@ -471,7 +636,7 @@
       },
       "zone-3-ochre": {
         "role": "tertiary",
-        "displayName": "Zone 3 Ochre / Tempo",
+        "displayName": "Zone 3 Ochre",
         "canonical": "#D97706",
         "tonalRamp": [
           "oklch(24% 0.07 70)",
@@ -486,7 +651,7 @@
       },
       "zone-4-vermilion": {
         "role": "tertiary",
-        "displayName": "Zone 4 Thresh Vermilion",
+        "displayName": "Zone 4 Threshold Vermilion",
         "canonical": "#EA580C",
         "tonalRamp": [
           "oklch(23% 0.08 45)",
@@ -501,7 +666,7 @@
       },
       "zone-5-crimson": {
         "role": "tertiary",
-        "displayName": "Zone 5 VO2max Crimson",
+        "displayName": "Zone 5 Crimson",
         "canonical": "#DC2626",
         "tonalRamp": [
           "oklch(22% 0.09 27)",
@@ -516,7 +681,7 @@
       },
       "zone-6-violet": {
         "role": "tertiary",
-        "displayName": "Zone 6 Anaerobic Violet",
+        "displayName": "Zone 6 Deep Violet",
         "canonical": "#7C3AED",
         "tonalRamp": [
           "oklch(22% 0.10 293)",
@@ -576,67 +741,37 @@
       },
       "status-prime-bg": {
         "role": "tertiary",
-        "displayName": "Status Prime Surface",
-        "canonical": "#ECFDF5",
+        "displayName": "Status Prime Fill",
+        "canonical": "#E7F3EC",
         "tonalRamp": [
-          "oklch(22% 0.05 162)",
-          "oklch(35% 0.08 162)",
-          "oklch(48% 0.10 162)",
-          "oklch(62% 0.12 162)",
-          "oklch(75% 0.10 162)",
-          "oklch(86% 0.07 162)",
-          "oklch(93% 0.04 162)",
-          "oklch(98% 0.02 162)"
+          "oklch(20% 0.04 156)",
+          "oklch(32% 0.06 156)",
+          "oklch(45% 0.07 156)",
+          "oklch(58% 0.07 156)",
+          "oklch(71% 0.06 156)",
+          "oklch(83% 0.04 156)",
+          "oklch(91% 0.025 156)",
+          "oklch(95% 0.015 156)"
         ]
       },
-      "status-prime-ink": {
+      "status-prime-border": {
         "role": "tertiary",
-        "displayName": "Status Prime Ink",
-        "canonical": "#065F46",
+        "displayName": "Status Prime Border",
+        "canonical": "#B6D9C4",
         "tonalRamp": [
-          "oklch(20% 0.05 164)",
-          "oklch(32% 0.08 164)",
-          "oklch(43% 0.09 164)",
-          "oklch(56% 0.11 164)",
-          "oklch(69% 0.11 164)",
-          "oklch(81% 0.08 164)",
-          "oklch(89% 0.05 164)",
-          "oklch(96% 0.02 164)"
-        ]
-      },
-      "status-info-bg": {
-        "role": "tertiary",
-        "displayName": "Status Info Surface",
-        "canonical": "#F7FEE7",
-        "tonalRamp": [
-          "oklch(23% 0.06 125)",
-          "oklch(36% 0.09 125)",
-          "oklch(49% 0.12 125)",
-          "oklch(63% 0.14 125)",
-          "oklch(76% 0.13 125)",
-          "oklch(87% 0.10 125)",
-          "oklch(94% 0.06 125)",
-          "oklch(98.5% 0.03 125)"
-        ]
-      },
-      "status-info-ink": {
-        "role": "tertiary",
-        "displayName": "Status Info Ink",
-        "canonical": "#365314",
-        "tonalRamp": [
-          "oklch(20% 0.05 126)",
-          "oklch(31% 0.08 126)",
-          "oklch(40% 0.09 126)",
-          "oklch(53% 0.11 126)",
-          "oklch(66% 0.12 126)",
-          "oklch(79% 0.10 126)",
-          "oklch(89% 0.06 126)",
-          "oklch(96% 0.03 126)"
+          "oklch(20% 0.04 156)",
+          "oklch(32% 0.05 156)",
+          "oklch(45% 0.06 156)",
+          "oklch(58% 0.06 156)",
+          "oklch(70% 0.055 156)",
+          "oklch(83% 0.045 156)",
+          "oklch(90% 0.03 156)",
+          "oklch(96% 0.015 156)"
         ]
       },
       "status-caution-bg": {
         "role": "tertiary",
-        "displayName": "Status Caution Surface",
+        "displayName": "Status Caution Fill",
         "canonical": "#FFFBEB",
         "tonalRamp": [
           "oklch(24% 0.06 84)",
@@ -664,120 +799,335 @@
           "oklch(96% 0.03 55)"
         ]
       },
+      "status-caution-border": {
+        "role": "tertiary",
+        "displayName": "Status Caution Border",
+        "canonical": "#FDE68A",
+        "tonalRamp": [
+          "oklch(24% 0.06 88)",
+          "oklch(36% 0.09 88)",
+          "oklch(49% 0.11 88)",
+          "oklch(62% 0.13 88)",
+          "oklch(75% 0.13 88)",
+          "oklch(86% 0.11 88)",
+          "oklch(92% 0.09 88)",
+          "oklch(97% 0.04 88)"
+        ]
+      },
       "status-strained-bg": {
         "role": "tertiary",
-        "displayName": "Status Strained Surface",
-        "canonical": "#FFF1F2",
+        "displayName": "Status Strained Fill",
+        "canonical": "#FDF0ED",
         "tonalRamp": [
-          "oklch(22% 0.08 16)",
-          "oklch(35% 0.12 16)",
-          "oklch(48% 0.16 16)",
-          "oklch(62% 0.18 16)",
-          "oklch(75% 0.14 16)",
-          "oklch(86% 0.09 16)",
-          "oklch(93% 0.05 16)",
-          "oklch(97.5% 0.02 16)"
+          "oklch(22% 0.06 32)",
+          "oklch(34% 0.09 32)",
+          "oklch(47% 0.11 32)",
+          "oklch(60% 0.11 32)",
+          "oklch(73% 0.09 32)",
+          "oklch(84% 0.06 32)",
+          "oklch(92% 0.03 32)",
+          "oklch(96% 0.015 32)"
         ]
       },
       "status-strained-ink": {
         "role": "tertiary",
         "displayName": "Status Strained Ink",
-        "canonical": "#9F1239",
+        "canonical": "#8F2A18",
+        "tonalRamp": [
+          "oklch(20% 0.08 32)",
+          "oklch(31% 0.11 32)",
+          "oklch(42% 0.14 32)",
+          "oklch(50% 0.15 32)",
+          "oklch(62% 0.14 32)",
+          "oklch(75% 0.10 32)",
+          "oklch(86% 0.06 32)",
+          "oklch(95% 0.025 32)"
+        ]
+      },
+      "status-strained-border": {
+        "role": "tertiary",
+        "displayName": "Status Strained Border",
+        "canonical": "#E8B4AA",
+        "tonalRamp": [
+          "oklch(22% 0.05 32)",
+          "oklch(34% 0.07 32)",
+          "oklch(47% 0.08 32)",
+          "oklch(60% 0.08 32)",
+          "oklch(72% 0.07 32)",
+          "oklch(81% 0.055 32)",
+          "oklch(90% 0.03 32)",
+          "oklch(96% 0.015 32)"
+        ]
+      },
+      "status-info-bg": {
+        "role": "tertiary",
+        "displayName": "Status Info Fill",
+        "canonical": "#F2F0E9",
+        "tonalRamp": [
+          "oklch(20% 0.01 86)",
+          "oklch(32% 0.01 86)",
+          "oklch(45% 0.01 86)",
+          "oklch(58% 0.01 86)",
+          "oklch(70% 0.01 86)",
+          "oklch(82% 0.01 86)",
+          "oklch(90% 0.008 86)",
+          "oklch(95% 0.008 86)"
+        ]
+      },
+      "ink-aa-emerald-chart": {
+        "role": "tertiary",
+        "displayName": "AA Emerald Chart Ink",
+        "canonical": "#047857",
+        "tonalRamp": [
+          "oklch(20% 0.05 162)",
+          "oklch(32% 0.08 162)",
+          "oklch(45% 0.10 162)",
+          "oklch(52% 0.12 162)",
+          "oklch(65% 0.12 162)",
+          "oklch(78% 0.09 162)",
+          "oklch(88% 0.05 162)",
+          "oklch(96% 0.02 162)"
+        ]
+      },
+      "ink-aa-emerald-chart-dark": {
+        "role": "tertiary",
+        "displayName": "AA Emerald Chart Ink Dark",
+        "canonical": "#34D399",
+        "tonalRamp": [
+          "oklch(22% 0.06 160)",
+          "oklch(34% 0.09 160)",
+          "oklch(46% 0.12 160)",
+          "oklch(60% 0.14 160)",
+          "oklch(74% 0.15 160)",
+          "oklch(83% 0.12 160)",
+          "oklch(90% 0.07 160)",
+          "oklch(96% 0.03 160)"
+        ]
+      },
+      "ink-aa-sky": {
+        "role": "tertiary",
+        "displayName": "AA Sky Ink Light",
+        "canonical": "#0369A1",
+        "tonalRamp": [
+          "oklch(21% 0.06 242)",
+          "oklch(33% 0.09 242)",
+          "oklch(45% 0.12 242)",
+          "oklch(51% 0.13 242)",
+          "oklch(64% 0.12 242)",
+          "oklch(76% 0.09 242)",
+          "oklch(87% 0.05 242)",
+          "oklch(95% 0.02 242)"
+        ]
+      },
+      "ink-aa-sky-dark": {
+        "role": "tertiary",
+        "displayName": "AA Sky Ink Dark",
+        "canonical": "#38BDF8",
+        "tonalRamp": [
+          "oklch(22% 0.06 235)",
+          "oklch(34% 0.09 235)",
+          "oklch(46% 0.12 235)",
+          "oklch(59% 0.14 235)",
+          "oklch(74% 0.14 235)",
+          "oklch(83% 0.11 235)",
+          "oklch(90% 0.06 235)",
+          "oklch(96% 0.025 235)"
+        ]
+      },
+      "ink-aa-teal": {
+        "role": "tertiary",
+        "displayName": "AA Teal Ink Light",
+        "canonical": "#0F766E",
+        "tonalRamp": [
+          "oklch(21% 0.05 182)",
+          "oklch(33% 0.08 182)",
+          "oklch(44% 0.095 182)",
+          "oklch(53% 0.105 182)",
+          "oklch(66% 0.10 182)",
+          "oklch(78% 0.08 182)",
+          "oklch(88% 0.045 182)",
+          "oklch(96% 0.02 182)"
+        ]
+      },
+      "ink-aa-teal-dark": {
+        "role": "tertiary",
+        "displayName": "AA Teal Ink Dark",
+        "canonical": "#2DD4BF",
+        "tonalRamp": [
+          "oklch(22% 0.06 180)",
+          "oklch(34% 0.09 180)",
+          "oklch(46% 0.11 180)",
+          "oklch(59% 0.13 180)",
+          "oklch(73% 0.14 180)",
+          "oklch(83% 0.11 180)",
+          "oklch(90% 0.06 180)",
+          "oklch(96% 0.025 180)"
+        ]
+      },
+      "ink-aa-vermilion-dark": {
+        "role": "tertiary",
+        "displayName": "AA Vermilion Ink Dark",
+        "canonical": "#FB923C",
+        "tonalRamp": [
+          "oklch(23% 0.07 48)",
+          "oklch(35% 0.10 48)",
+          "oklch(47% 0.14 48)",
+          "oklch(60% 0.16 48)",
+          "oklch(73% 0.16 48)",
+          "oklch(82% 0.13 48)",
+          "oklch(90% 0.08 48)",
+          "oklch(96% 0.03 48)"
+        ]
+      },
+      "ink-aa-amber-dark": {
+        "role": "tertiary",
+        "displayName": "AA Amber Ink Dark",
+        "canonical": "#FBBF24",
+        "tonalRamp": [
+          "oklch(24% 0.07 82)",
+          "oklch(36% 0.10 82)",
+          "oklch(48% 0.13 82)",
+          "oklch(62% 0.15 82)",
+          "oklch(75% 0.16 82)",
+          "oklch(83% 0.16 82)",
+          "oklch(91% 0.10 82)",
+          "oklch(96% 0.04 82)"
+        ]
+      },
+      "ink-aa-rose": {
+        "role": "tertiary",
+        "displayName": "AA Rose Ink Light",
+        "canonical": "#BE123C",
         "tonalRamp": [
           "oklch(21% 0.09 16)",
           "oklch(33% 0.13 16)",
-          "oklch(43% 0.17 16)",
-          "oklch(56% 0.19 16)",
-          "oklch(69% 0.17 16)",
-          "oklch(81% 0.11 16)",
-          "oklch(89% 0.06 16)",
-          "oklch(96% 0.025 16)"
+          "oklch(44% 0.17 16)",
+          "oklch(52% 0.19 16)",
+          "oklch(65% 0.17 16)",
+          "oklch(77% 0.12 16)",
+          "oklch(87% 0.07 16)",
+          "oklch(95% 0.03 16)"
+        ]
+      },
+      "ink-aa-rose-dark": {
+        "role": "tertiary",
+        "displayName": "AA Rose Ink Dark",
+        "canonical": "#FB7185",
+        "tonalRamp": [
+          "oklch(22% 0.08 16)",
+          "oklch(34% 0.12 16)",
+          "oklch(46% 0.15 16)",
+          "oklch(59% 0.17 16)",
+          "oklch(71% 0.17 16)",
+          "oklch(81% 0.13 16)",
+          "oklch(89% 0.08 16)",
+          "oklch(96% 0.03 16)"
+        ]
+      },
+      "ink-aa-violet": {
+        "role": "tertiary",
+        "displayName": "AA Violet Ink Light",
+        "canonical": "#6D28D9",
+        "tonalRamp": [
+          "oklch(21% 0.09 293)",
+          "oklch(33% 0.14 293)",
+          "oklch(44% 0.19 293)",
+          "oklch(51% 0.22 293)",
+          "oklch(64% 0.19 293)",
+          "oklch(76% 0.14 293)",
+          "oklch(87% 0.08 293)",
+          "oklch(95% 0.03 293)"
+        ]
+      },
+      "ink-aa-violet-dark": {
+        "role": "tertiary",
+        "displayName": "AA Violet Ink Dark",
+        "canonical": "#C4B5FD",
+        "tonalRamp": [
+          "oklch(22% 0.07 293)",
+          "oklch(34% 0.10 293)",
+          "oklch(46% 0.13 293)",
+          "oklch(58% 0.14 293)",
+          "oklch(70% 0.13 293)",
+          "oklch(80% 0.11 293)",
+          "oklch(88% 0.07 293)",
+          "oklch(96% 0.03 293)"
         ]
       }
     },
     "typographyMeta": {
       "display": {
-        "displayName": "Display",
-        "purpose": "Onboarding hero headlines in StravaAuthGate, /brand studio hero heading, and primary cockpit milestones."
+        "displayName": "Persuade Display",
+        "purpose": "Barlow Condensed ExtraBold uppercase reserved for Persuade hero H1 statements and standalone display poster/OpenGraph headlines."
       },
       "headline": {
-        "displayName": "Headline",
-        "purpose": "Primary modal titles, major workspace section headers, and standalone documentation headings."
+        "displayName": "UI / Operate Headline",
+        "purpose": "Archivo Bold/ExtraBold headings for Auth cards, Operate view headers, modal headers, and Brand Guide section anchors."
       },
       "title": {
-        "displayName": "Title",
-        "purpose": "Telemetry card headers, coaching desk subheaders, and pod titles."
+        "displayName": "Card Title",
+        "purpose": "Archivo Bold titles for telemetry cards, For Coaches / For Athletes ledger columns, and athlete tap-split cards."
       },
       "body": {
         "displayName": "Body",
-        "purpose": "Coaching rationale, physiological explanations, privacy pledges, and documentation prose (capped at 65–75ch in reading views)."
+        "purpose": "Archivo Regular/SemiBold copy for hero subheads, coaching rationale, compliance notices, and reading prose (56ch–68ch)."
       },
       "label": {
         "displayName": "Telemetry Label",
-        "purpose": "Micro-telemetry labels (.ap-telemetry-label), readiness status pills, .ap-lane-badge callouts, and table column headers at the 11px rem floor."
+        "purpose": "JetBrains Mono uppercase micro-telemetry labels (.ap-telemetry-label), .ap-lane-badge callouts, readiness chips, and table headers at the 11px rem floor."
       },
       "kpi": {
-        "displayName": "KPI Readout",
-        "purpose": "Hero readiness metrics, FTP/VDOT thresholds, and live 0.01s tabular stopwatch displays (scaling to 2.25rem in the /brand comparator)."
+        "displayName": "Stopwatch & KPI Readout",
+        "purpose": "JetBrains Mono tabular numerals for 0.01s stopwatch displays, split deltas, VDOT pace pods, and Banister CTL/ATL/TSB metrics."
       }
     },
     "shadows": [
       {
-        "name": "stage-frame-light",
-        "value": "0 18px 40px -16px rgba(7, 18, 12, 0.42), 0 2px 8px 0 rgba(7, 18, 12, 0.18)",
-        "purpose": "Grounds the 2px Pine-bordered .ap-content-stage arena over the Classic Pine stadium surround."
+        "name": "card-rest-light",
+        "value": "0 1px 2px 0 rgba(18, 20, 19, 0.04)",
+        "purpose": "Subtle daylight hairline contact shadow on .ap-card telemetry containers."
       },
       {
-        "name": "stage-frame-dark",
-        "value": "0 22px 48px -16px rgba(0, 0, 0, 0.78), 0 2px 10px 0 rgba(0, 0, 0, 0.5)",
-        "purpose": "Deep structural lift under .ap-content-stage in dark mode."
+        "name": "card-rest-dark",
+        "value": "0 2px 10px -4px rgba(0, 0, 0, 0.45)",
+        "purpose": "Controlled dark-mode contact separation on .ap-card panels."
       },
       {
-        "name": "header-bar-lift",
-        "value": "0 10px 26px -10px rgba(10, 24, 16, 0.32), 0 1px 3px 0 rgba(16, 20, 17, 0.08)",
-        "purpose": "Crisp blur-free separation beneath .ap-header-bar over scrolling telemetry canvases."
+        "name": "specimen-dock-lift",
+        "value": "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)",
+        "purpose": "Tailwind shadow-md lifting the overlapping dark Track Asphalt specimen dock over the Mondo Clay hero seam."
       },
       {
-        "name": "card-rest",
-        "value": "0 2px 10px -3px rgba(16, 20, 17, 0.05), 0 1px 2px 0 rgba(16, 20, 17, 0.03)",
-        "purpose": "Subtle ambient contact shadow on .ap-card telemetry containers."
-      },
-      {
-        "name": "volt-action-glow",
-        "value": "0 2px 10px rgba(132, 204, 22, 0.28)",
-        "purpose": "Tactile Volt luminance under .ap-btn-primary and .ap-nav-volt-active."
-      },
-      {
-        "name": "pill-active-inset",
-        "value": "inset 0 -2.5px 0 0 #A3E635, 0 1px 3px 0 rgba(16, 20, 17, 0.08)",
-        "purpose": "Bottom Track Volt indicator bar + 1px contact lift inside .ap-pill-active."
+        "name": "strava-cta-glow",
+        "value": "0 2px 10px rgba(194, 56, 0, 0.26)",
+        "purpose": "Tactile vermilion contact shadow under .ap-btn-strava."
       }
     ],
     "motion": [
       {
         "name": "ease-stadium-out",
         "value": "cubic-bezier(0.16, 1, 0.3, 1)",
-        "purpose": "Crisp exponential ease-out used across buttons, tabs, and drawers."
+        "purpose": "Exponential ease-out curve for buttons, tabs, and skip links."
       },
       {
         "name": "duration-press",
         "value": "120ms",
-        "purpose": "Tactile transform response on primary buttons and watchless split taps."
+        "purpose": "Transform and active-tap response on .ap-btn-primary and trackside split cards."
       },
       {
         "name": "duration-state",
         "value": "150ms",
-        "purpose": "Background, border, and shadow transitions on interactive controls."
+        "purpose": "Background and border color transitions on buttons and tabs."
       },
       {
         "name": "duration-gauge",
         "value": "300ms",
-        "purpose": "Horizontal Load Focus and acute load tunnel bar fill updates."
+        "purpose": "Load Focus polarization corridor bar transitions."
       },
       {
         "name": "reduced-motion-clamp",
         "value": "0.01ms",
-        "purpose": "Mandatory transition and animation clamp under @media (prefers-reduced-motion: reduce)."
+        "purpose": "Animation clamp (90ms color/opacity fade) under @media (prefers-reduced-motion: reduce)."
       }
     ],
     "breakpoints": [
@@ -785,171 +1135,162 @@
       { "name": "md", "value": "768px" },
       { "name": "lg", "value": "1024px" },
       { "name": "xl", "value": "1280px" },
-      { "name": "stage-max", "value": "1536px" }
+      { "name": "2xl", "value": "1536px" }
     ]
   },
   "components": [
     {
-      "name": "Primary Track Volt Button",
+      "name": "Primary Starter Volt CTA",
       "kind": "button",
       "refersTo": "button-primary",
-      "description": "High-contrast 44px Track Volt CTA paired with Obsidian ink for primary coaching and AI actions.",
-      "html": "<button type=\"button\" class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17Z\"/></svg><span>Commit Adaptive Workout</span></button>",
-      "css": ".ds-btn-primary { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.5rem 1rem; border-radius: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); font-size: 0.8125rem; font-weight: 700; letter-spacing: -0.011em; color: #080a09; background-color: #c8ff00; border: 1.5px solid #4d7c0f; box-shadow: 0 2px 10px rgba(132, 204, 22, 0.28); cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background-color: #b5eb00; box-shadow: 0 4px 14px rgba(132, 204, 22, 0.38); } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; }"
+      "description": "44px flat Starter Volt trigger button paired with Track Asphalt ink for Start Gun, Save, and primary workspace actions.",
+      "html": "<button type=\"button\" class=\"ds-btn-primary\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M240,128a15.74,15.74,0,0,1-7.6,13.51L88.32,229.65a16,16,0,0,1-16.2.3A15.86,15.86,0,0,1,64,216.13V39.87a15.86,15.86,0,0,1,8.12-13.82,16,16,0,0,1,16.2.3L232.4,114.49A15.74,15.74,0,0,1,240,128Z\"/></svg><span>Start Gun</span></button>",
+      "css": ".ds-btn-primary { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.5rem 1rem; border-radius: 0.75rem; font-family: var(--font-sans, 'Archivo', sans-serif); font-size: 0.8125rem; font-weight: 800; color: #121413; background-color: #d8ff2a; border: 1px solid rgba(18, 20, 19, 0.24); box-shadow: none; cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-primary:hover { background-color: #c8ef1e; } .ds-btn-primary:active { transform: translateY(1px); } .ds-btn-primary:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; }"
     },
     {
-      "name": "Secondary Recessed Button",
+      "name": "Secondary Infield Pine CTA",
+      "kind": "button",
+      "refersTo": "button-pine",
+      "description": "Secondary Infield Pine turf action preserving strict <=5% Starter Volt scarcity across dense trackside screens.",
+      "html": "<button type=\"button\" class=\"ds-btn-pine\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z\"/></svg><span>Commit Split Log</span></button>",
+      "css": ".ds-btn-pine { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.5rem 0.95rem; border-radius: 0.75rem; font-family: var(--font-sans, 'Archivo', sans-serif); font-size: 0.8125rem; font-weight: 700; color: #f6f3ec; background-color: #1e4d36; border: 1px solid #163a28; cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-pine:hover { background-color: #163a28; } .ds-btn-pine:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Matte Button",
       "kind": "button",
       "refersTo": "button-secondary",
-      "description": "44px Chalk Inset / Deep Turf secondary button for utility actions, roster filters, and code lookup.",
-      "html": "<button type=\"button\" class=\"ds-btn-secondary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M244.8,150.4a8,8,0,0,1-11.2-1.6A51.6,51.6,0,0,0,192,128a8,8,0,0,1,0-16,24,24,0,1,0-23.24-30,8,8,0,1,1-15.5-4A40,40,0,1,1,219,117.51a67.94,67.94,0,0,1,27.43,21.68A8,8,0,0,1,244.8,150.4ZM190.92,212a8,8,0,1,1-13.84,8,57,57,0,0,0-98.16,0,8,8,0,1,1-13.84-8,72.06,72.06,0,0,1,33.74-29.92,48,48,0,1,1,58.36,0A72.06,72.06,0,0,1,190.92,212ZM128,176a32,32,0,1,0-32-32A32,32,0,0,0,128,176Z\"/></svg><span>Apply Team Code</span></button>",
-      "css": ".ds-btn-secondary { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.5rem 0.875rem; border-radius: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); font-size: 0.8125rem; font-weight: 600; color: #101411; background-color: var(--ap-inset-bg, #e9efe9); border: 1px solid rgba(38, 88, 58, 0.22); cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-secondary:hover { background-color: #dce7de; border-color: #2b5b3f; } .ds-btn-secondary:active { background-color: #d0dfd3; } .ds-btn-secondary:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; }"
+      "description": "44px Matte White button with crisp 1px Track Asphalt border and Warm Stone hover for Undo, Docs, and export utilities.",
+      "html": "<button type=\"button\" class=\"ds-btn-secondary\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M224,128A96,96,0,0,1,62.11,197.82a8,8,0,1,1,11-11.64A80,80,0,1,0,71.43,71.43C54.9,87.95,43.76,105.05,40.48,112H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v27.7c6.53-11.4,16.1-25.27,28.11-37.27A96,96,0,0,1,224,128Z\"/></svg><span>Undo Split</span></button>",
+      "css": ".ds-btn-secondary { min-height: 2.75rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem; padding: 0.5rem 0.875rem; border-radius: 0.75rem; font-family: var(--font-sans, 'Archivo', sans-serif); font-size: 0.8125rem; font-weight: 600; color: #121413; background: #ffffff; border: 1px solid rgba(18, 20, 19, 0.22); cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-secondary:hover { background: #ede9df; } .ds-btn-secondary:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; }"
     },
     {
-      "name": "Strava Partner Sign-In CTA",
+      "name": "Strava Partner OAuth CTA",
       "kind": "button",
       "refersTo": "button-strava",
-      "description": "50px WCAG 2.1 AA compliant Strava OAuth sign-in button with official chevron mark and 5.44:1 contrast.",
-      "html": "<button type=\"button\" class=\"ds-btn-strava\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169\"/></svg><span>Continue with Strava</span></button>",
-      "css": ".ds-btn-strava { min-height: 3.125rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.625rem; padding: 0.75rem 1.25rem; border-radius: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); font-size: 0.9375rem; font-weight: 700; color: #ffffff; background-color: #c23800; border: 1px solid rgba(255, 255, 255, 0.18); box-shadow: 0 2px 10px rgba(194, 56, 0, 0.26); cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1), transform 120ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-strava:hover { background-color: #a83000; box-shadow: 0 4px 14px rgba(194, 56, 0, 0.36); } .ds-btn-strava:active { transform: translateY(1px); } .ds-btn-strava:focus-visible { outline: 2px solid #c23800; outline-offset: 2px; }"
+      "description": "Isolated WCAG 2.1 AA compliant Strava OAuth sign-in button with 5.44:1 white-on-vermilion contrast.",
+      "html": "<button type=\"button\" class=\"ds-btn-strava\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169\"/></svg><span>Connect with Strava</span></button>",
+      "css": ".ds-btn-strava { min-height: 3rem; display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 0.75rem; font-family: var(--font-sans, 'Archivo', sans-serif); font-size: 0.875rem; font-weight: 700; color: #ffffff; background-color: #c23800; border: 1px solid rgba(255, 255, 255, 0.16); box-shadow: 0 2px 10px rgba(194, 56, 0, 0.26); cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-btn-strava:hover { background-color: #a83000; } .ds-btn-strava:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; }"
     },
     {
-      "name": "Velocity-Sheared Stadium Track Tabs",
+      "name": "Cockpit Header Navigation",
       "kind": "nav",
-      "refersTo": "nav-track-tab-active",
-      "description": "Primary cockpit workspace navigation using -14deg outer skew and +14deg counter-skewed labels.",
-      "html": "<nav class=\"ds-track-nav\" aria-label=\"Primary workspaces\"><a href=\"#today\" aria-current=\"page\" class=\"ds-track-tab ds-track-tab--active\"><span class=\"ds-track-tab-inner\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M240,98a57.63,57.63,0,0,1-17,41L133.7,229.62a8,8,0,0,1-11.4,0L33,139a58,58,0,0,1,82-82.1L128,69.05l13.09-12.19A58,58,0,0,1,240,98Z\"/></svg><span>Today</span></span></a><a href=\"#plan\" class=\"ds-track-tab ds-track-tab--idle\"><span class=\"ds-track-tab-inner\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M208,32H184V24a8,8,0,0,0-16,0v8H88V24a8,8,0,0,0-16,0v8H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,176H48V96H208V208Z\"/></svg><span>Plan</span></span></a><a href=\"#activities\" class=\"ds-track-tab ds-track-tab--idle\"><span class=\"ds-track-tab-inner\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M240,128a8,8,0,0,1-8,8H204.94l-37.78,75.58A8,8,0,0,1,160,216h-.4a8,8,0,0,1-7.08-5.14L95.35,60.76,63.28,131.31A8,8,0,0,1,56,136H24a8,8,0,0,1,0-16H50.85L88.72,36.69a8,8,0,0,1,14.76.46l57.51,151,31.85-63.71A8,8,0,0,1,200,120h32A8,8,0,0,1,240,128Z\"/></svg><span>Activities</span></span></a></nav>",
-      "css": ".ds-track-nav { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.5rem 0.75rem; border-radius: 1rem; background: var(--ap-card-bg, #ffffff); border: 2px solid var(--ap-content-border, #2b5b3f); } .ds-track-tab { min-height: 2.375rem; display: inline-flex; align-items: center; padding: 0.25rem 0.875rem; border-radius: 0.425rem; transform: skewX(-14deg); text-decoration: none; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); font-size: 0.75rem; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-track-tab-inner { transform: skewX(14deg); display: inline-flex; align-items: center; gap: 0.375rem; } .ds-track-tab--active { background-color: #c8ff00; color: #080a09; border: 1.5px solid #65a30d; box-shadow: 0 2px 10px rgba(101, 163, 13, 0.28); font-weight: 800; } .ds-track-tab--idle { background-color: #e8efe9; color: #1f3528; border: 1px solid rgba(39, 88, 58, 0.22); font-weight: 600; } .ds-track-tab--idle:hover { background-color: #dce7de; color: #0a140e; } .ds-track-tab:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; }"
+      "refersTo": "nav-header-tab-active",
+      "description": "Flat orthogonal header workspace links anchored on a Warm Chalk bar with a 2.5px Mondo Clay active bottom indicator.",
+      "html": "<header class=\"ds-header-bar\"><nav class=\"ds-header-nav\" aria-label=\"Primary workspaces\"><a href=\"#today\" aria-current=\"page\" class=\"ds-header-tab ds-header-tab--active\">Today</a><a href=\"#calendar\" class=\"ds-header-tab\">Training Calendar</a><a href=\"#progress\" class=\"ds-header-tab\">Progress</a><a href=\"#plan\" class=\"ds-header-tab\">Plan Builder</a></nav></header>",
+      "css": ".ds-header-bar { display: inline-flex; align-items: center; padding: 0.375rem 1rem; background: #faf8f4; border-bottom: 1px solid rgba(18, 20, 19, 0.14); } .ds-header-nav { display: inline-flex; align-items: center; gap: 0.75rem; } .ds-header-tab { min-height: 2.375rem; display: inline-flex; align-items: center; padding: 0.25rem 0.35rem; font-family: var(--font-sans, 'Archivo', sans-serif); font-size: 0.75rem; font-weight: 500; color: #57544d; text-decoration: none; border-bottom: 2.5px solid transparent; transition: color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-header-tab:hover { color: #121413; } .ds-header-tab--active { color: #121413; font-weight: 700; border-bottom-color: #b83a24; } .ds-header-tab:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; }"
     },
     {
       "name": "Segmented Capsule Switcher",
       "kind": "custom",
-      "description": "Recessed capsule track with Volt-ringed active pill and bottom indicator bar for circadian modes and units.",
-      "html": "<div class=\"ds-pill-track\" role=\"group\" aria-label=\"Readiness mode\"><button type=\"button\" aria-pressed=\"true\" class=\"ds-pill-btn ds-pill-btn--active\">Morning Brief</button><button type=\"button\" aria-pressed=\"false\" class=\"ds-pill-btn\">Post-Session</button></div>",
-      "css": ".ds-pill-track { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem; border-radius: 0.75rem; background: #e3ece5; border: 1px solid rgba(40, 87, 59, 0.22); } .ds-pill-btn { min-height: 2.25rem; padding: 0.35rem 0.75rem; border-radius: 0.5rem; border: 1.5px solid transparent; background: transparent; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); font-size: 0.75rem; font-weight: 600; color: #43584b; cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-pill-btn:hover { color: #101411; } .ds-pill-btn--active { background: #ffffff; color: #101411; border-color: #84cc16; box-shadow: inset 0 -2.5px 0 0 #a3e635, 0 1px 3px 0 rgba(16, 20, 17, 0.08); } .ds-pill-btn:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; }"
+      "description": "Warm Stone pill track housing crisp 1.5px Track Asphalt ringed active controls for Stopwatch Cards/Matrix and role toggles.",
+      "html": "<div class=\"ds-pill-track\" role=\"group\" aria-label=\"Stopwatch split layout\"><button type=\"button\" aria-pressed=\"true\" class=\"ds-pill-btn ds-pill-btn--active\">Cards</button><button type=\"button\" aria-pressed=\"false\" class=\"ds-pill-btn\">Matrix</button></div>",
+      "css": ".ds-pill-track { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.2rem; border-radius: 0.75rem; background: #ede9df; border: 1px solid rgba(18, 20, 19, 0.14); } .ds-pill-btn { min-height: 2.25rem; padding: 0.35rem 0.75rem; border-radius: 0.5rem; border: 1.5px solid transparent; background: transparent; font-family: var(--font-sans, 'Archivo', sans-serif); font-size: 0.6875rem; font-weight: 600; color: #57544d; cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-pill-btn:hover { color: #121413; } .ds-pill-btn--active { background: #ffffff; color: #121413; border-color: #121413; font-weight: 700; } .ds-pill-btn:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; }"
     },
     {
-      "name": "Semantic Readiness & Velocity Lane Chips",
+      "name": "Semantic Readiness & Orthogonal Lane Chips",
       "kind": "chip",
       "refersTo": "chip-status-prime",
-      "description": "WCAG AA/AAA autonomic readiness pills alongside the -14deg velocity-sheared .ap-lane-badge.",
-      "html": "<div class=\"ds-chips-row\"><span class=\"ds-chip ds-chip--prime\">● Prime Readiness</span><span class=\"ds-chip ds-chip--caution\">● Modulated -15%</span><span class=\"ds-chip ds-chip--strained\">● Overreach Stop</span><span class=\"ds-lane-badge\"><span class=\"ds-lane-badge-inner\">Pod A · VDOT 62</span></span></div>",
-      "css": ".ds-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; } .ds-chip { display: inline-flex; align-items: center; padding: 0.1875rem 0.625rem; border-radius: 9999px; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; line-height: 1.35; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; } .ds-chip--prime { background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; } .ds-chip--caution { background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; } .ds-chip--strained { background-color: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; } .ds-lane-badge { display: inline-flex; align-items: center; transform: skewX(-14deg); border-radius: 0.35rem; padding: 0.1875rem 0.625rem; background-color: rgba(86, 186, 0, 0.14); border: 1px solid rgba(77, 166, 0, 0.42); color: #296300; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; } .ds-lane-badge-inner { transform: skewX(14deg); display: inline-flex; align-items: center; }"
+      "description": "WCAG AA status pills alongside flat orthogonal Warm Stone .ap-lane-badge markers.",
+      "html": "<div class=\"ds-chips-row\"><span class=\"ds-chip ds-chip--prime\">PRIME · GO +0.4s</span><span class=\"ds-chip ds-chip--caution\">MODULATED -15%</span><span class=\"ds-chip ds-chip--strained\">OVERREACH STOP</span><span class=\"ds-lane-badge\">L1 · POD A</span></div>",
+      "css": ".ds-chips-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; } .ds-chip { display: inline-flex; align-items: center; padding: 0.1875rem 0.625rem; border-radius: 9999px; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; line-height: 1rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; } .ds-chip--prime { background-color: #e7f3ec; color: #1e4d36; border: 1px solid #b6d9c4; } .ds-chip--caution { background-color: #fffbeb; color: #92400e; border: 1px solid #fde68a; } .ds-chip--strained { background-color: #fdf0ed; color: #8f2a18; border: 1px solid #e8b4aa; } .ds-lane-badge { display: inline-flex; align-items: center; border-radius: 0.375rem; padding: 0.1875rem 0.5rem; background-color: #ede9df; border: 1px solid rgba(18, 20, 19, 0.16); color: #121413; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }"
     },
     {
-      "name": "Telemetry & Team Code Input Field",
+      "name": "Telemetry & Team Code Input",
       "kind": "input",
-      "description": "44px touch-ergonomic monospace input paired with an 11px Volt-Olive micro-telemetry label.",
-      "html": "<div class=\"ds-input-group\"><label class=\"ds-telemetry-label\" for=\"ds-join-code\">Team Roster Join Code</label><input id=\"ds-join-code\" type=\"text\" value=\"PAXC-26\" class=\"ds-input-field\" /></div>",
-      "css": ".ds-input-group { display: flex; flex-direction: column; gap: 0.35rem; max-width: 18rem; } .ds-telemetry-label { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; line-height: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #3f6212; } .ds-input-field { min-height: 2.75rem; padding: 0.5rem 0.75rem; border-radius: 0.75rem; border: 1px solid rgba(38, 88, 58, 0.24); background-color: #ffffff; color: #101411; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-input-field:hover { border-color: #2b5b3f; } .ds-input-field:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; border-color: #1c5436; }"
+      "description": "44px touch-ergonomic monospace input paired with an Infield Pine 11px micro-telemetry label.",
+      "html": "<div class=\"ds-input-group\"><label class=\"ds-telemetry-label\" for=\"ds-join-code\">Team Roster Join Code</label><input id=\"ds-join-code\" type=\"text\" value=\"WGXC-26\" class=\"ds-input-field\" /></div>",
+      "css": ".ds-input-group { display: flex; flex-direction: column; gap: 0.35rem; max-width: 18rem; } .ds-telemetry-label { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; line-height: 1rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #1e4d36; } .ds-input-field { min-height: 2.75rem; padding: 0.5rem 0.75rem; border-radius: 0.5rem; border: 1px solid #121413; background-color: #ffffff; color: #121413; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.875rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-input-field:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; }"
     },
     {
-      "name": "Telemetry Card with Load Focus Corridor Well",
+      "name": "Clay-Topped Stopwatch & Split Console Card",
       "kind": "card",
       "refersTo": "card-telemetry",
-      "description": "Crisp Paper telemetry card housing a shadowless Chalk Inset well, tabular KPI numerals, and a dashed optimal polarization corridor bar.",
-      "html": "<article class=\"ds-telemetry-card\"><div class=\"ds-card-head\"><h3 class=\"ds-card-title\">7-Day Rolling Load Focus</h3><span class=\"ds-ctl-pill\">+3.8 CTL/wk</span></div><div class=\"ds-inset-well\"><div class=\"ds-gauge-row\"><span class=\"ds-zone-label\"><span class=\"ds-zone-dot\"></span>Low Aerobic · Z1–Z2</span><span class=\"ds-zone-val\">312 TSS (71%)</span></div><div class=\"ds-gauge-track\"><div class=\"ds-gauge-fill\"></div><div class=\"ds-gauge-corridor\" title=\"Optimal Corridor: 65–78%\"></div></div></div></article>",
-      "css": ".ds-telemetry-card { max-width: 24rem; padding: 1.125rem; border-radius: 1rem; background: var(--ap-card-bg, #ffffff); border: 1px solid var(--ap-card-border, rgba(38, 88, 58, 0.19)); box-shadow: 0 2px 10px -3px rgba(16, 20, 17, 0.05), 0 1px 2px 0 rgba(16, 20, 17, 0.03); display: flex; flex-direction: column; gap: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); color: #101411; } .ds-card-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; } .ds-card-title { margin: 0; font-size: 0.875rem; font-weight: 700; letter-spacing: -0.025em; } .ds-ctl-pill { padding: 0.15rem 0.5rem; border-radius: 0.375rem; background: #e3ece5; border: 1px solid rgba(40, 87, 59, 0.22); font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.6875rem; font-weight: 600; color: #1f3528; } .ds-inset-well { padding: 0.875rem; border-radius: 0.75rem; background: var(--ap-inset-bg, #e9efe9); border: 1px solid var(--ap-inset-border, rgba(38, 88, 58, 0.16)); display: flex; flex-direction: column; gap: 0.5rem; } .ds-gauge-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; font-size: 0.6875rem; } .ds-zone-label { display: inline-flex; align-items: center; gap: 0.375rem; font-weight: 600; color: #1f3528; } .ds-zone-dot { width: 0.5rem; height: 0.5rem; border-radius: 9999px; background-color: #0d9488; } .ds-zone-val { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-weight: 700; color: #101411; } .ds-gauge-track { position: relative; height: 0.625rem; border-radius: 9999px; background: rgba(148, 163, 184, 0.32); overflow: hidden; } .ds-gauge-fill { width: 71%; height: 100%; border-radius: 9999px; background-color: #0d9488; transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-gauge-corridor { position: absolute; top: 0; bottom: 0; left: 65%; width: 13%; border-left: 2px dashed rgba(16, 20, 17, 0.65); border-right: 2px dashed rgba(16, 20, 17, 0.65); background: rgba(16, 20, 17, 0.06); }"
-    },
-    {
-      "name": "Brand Asset Specimen & Stress-Test Export Card",
-      "kind": "card",
-      "refersTo": "specimen-stage-dark",
-      "description": "Brand Studio asset card pairing a legality status pill, simulated backdrop well, physical print floor, and SVG/PNG/Copy actions.",
-      "html": "<article class=\"ds-brand-card\"><div class=\"ds-brand-head\"><div><h3 class=\"ds-brand-title\">Primary Lockup — Dark Stage</h3><p class=\"ds-brand-sub\">Track Volt (#C8FF00) + Pine (#399663) horizontal lockup</p></div><span class=\"ds-brand-legality\">Native Pairing</span></div><div class=\"ds-brand-well\"><svg viewBox=\"0 0 128 128\" width=\"56\" height=\"56\" aria-hidden=\"true\"><rect x=\"2\" y=\"2\" width=\"124\" height=\"124\" rx=\"28\" fill=\"#0B1911\" stroke=\"#399663\" stroke-width=\"3.5\"/><path d=\"M 47.74 88.33 A 23.4 23.4 0 0 1 51.6 51.66 L 55.73 58.27 A 15.6 15.6 0 0 0 53.16 82.72 Z\" fill=\"#399663\"/><path d=\"M 22.6 114.37 A 59.6 59.6 0 1 1 122.3 59.11 L 114.28 60.81 A 51.4 51.4 0 1 0 28.29 108.47 Z\" fill=\"#C8FF00\"/><path d=\"M 58.73 66.59 L 102.53 30.18 L 69.27 76.41 Z\" fill=\"#C8FF00\"/><circle cx=\"64\" cy=\"71.5\" r=\"9\" fill=\"#C8FF00\"/></svg></div><p class=\"ds-brand-spec\">Min print 0.5 in (13 mm) tall · Min web 28 px tall</p><div class=\"ds-brand-actions\"><button type=\"button\" class=\"ds-brand-btn\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 256 256\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z\"/></svg><span>.SVG</span></button><button type=\"button\" class=\"ds-brand-pill-btn\">2x PNG</button><button type=\"button\" class=\"ds-brand-pill-btn\">Copy</button></div></article>",
-      "css": ".ds-brand-card { max-width: 24rem; padding: 1rem; border-radius: 1rem; background: var(--ap-card-bg, #ffffff); border: 1px solid var(--ap-card-border, rgba(38, 88, 58, 0.19)); box-shadow: 0 2px 10px -3px rgba(16, 20, 17, 0.05), 0 1px 2px 0 rgba(16, 20, 17, 0.03); display: flex; flex-direction: column; gap: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); color: #101411; } .ds-brand-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; } .ds-brand-title { margin: 0; font-size: 0.875rem; font-weight: 700; letter-spacing: -0.025em; } .ds-brand-sub { margin: 0.15rem 0 0; font-size: 0.75rem; color: #43584b; line-height: 1.35; } .ds-brand-legality { padding: 0.125rem 0.625rem; border-radius: 9999px; background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; white-space: nowrap; } .ds-brand-well { height: 7.5rem; border-radius: 0.75rem; background-color: #0b120e; background-image: radial-gradient(circle at 18% 12%, rgba(200, 255, 0, 0.14), transparent 58%); border: 1px solid #2b543b; display: flex; align-items: center; justify-content: center; } .ds-brand-spec { margin: 0; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; color: #43584b; } .ds-brand-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; padding-top: 0.5rem; border-top: 1px solid rgba(38, 88, 58, 0.14); } .ds-brand-btn, .ds-brand-pill-btn { min-height: 2.25rem; display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.375rem 0.6875rem; border-radius: 0.5rem; background: var(--ap-inset-bg, #e9efe9); border: 1px solid rgba(38, 88, 58, 0.22); color: #101411; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; cursor: pointer; transition: background-color 150ms cubic-bezier(0.16, 1, 0.3, 1), border-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-brand-btn:hover, .ds-brand-pill-btn:hover { background: #dce7de; border-color: #2b5b3f; } .ds-brand-btn:focus-visible, .ds-brand-pill-btn:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; }"
-    },
-    {
-      "name": "3-Tier Swatch Copy Row",
-      "kind": "custom",
-      "refersTo": "swatch-copy-tile",
-      "description": "Dual Light/Dark 1-click copy tile inside a color token card supporting HEX, RGB, HSL, and CSS custom-property formats.",
-      "html": "<article class=\"ds-token-card\"><div class=\"ds-token-head\"><div><h4 class=\"ds-token-name\">Track Volt</h4><p class=\"ds-token-role\">Primary CTA fill &amp; active track tab</p></div><span class=\"ds-token-wcag\">&gt; 15:1 AAA</span></div><div class=\"ds-token-grid\"><button type=\"button\" class=\"ds-swatch-btn\"><span class=\"ds-swatch-chip ds-swatch-chip--volt\" aria-hidden=\"true\"></span><span class=\"ds-swatch-meta\"><span class=\"ds-swatch-mode\">LIGHT</span><span class=\"ds-swatch-val\">#C8FF00</span></span></button><button type=\"button\" class=\"ds-swatch-btn\"><span class=\"ds-swatch-chip ds-swatch-chip--pine\" aria-hidden=\"true\"></span><span class=\"ds-swatch-meta\"><span class=\"ds-swatch-mode\">PINE INK</span><span class=\"ds-swatch-val\">#1C5436</span></span></button></div></article>",
-      "css": ".ds-token-card { max-width: 24rem; padding: 1rem; border-radius: 0.75rem; background: var(--ap-card-bg, #ffffff); border: 1px solid var(--ap-card-border, rgba(38, 88, 58, 0.19)); display: flex; flex-direction: column; gap: 0.75rem; font-family: var(--font-sans, 'Plus Jakarta Sans', sans-serif); color: #101411; } .ds-token-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; } .ds-token-name { margin: 0; font-size: 0.875rem; font-weight: 700; letter-spacing: -0.025em; } .ds-token-role { margin: 0.125rem 0 0; font-size: 0.75rem; color: #43584b; } .ds-token-wcag { padding: 0.125rem 0.5rem; border-radius: 9999px; background: #f7fee7; color: #365314; border: 1px solid #bef264; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; white-space: nowrap; } .ds-token-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; } .ds-swatch-btn { min-height: 2.75rem; padding: 0.5rem 0.625rem; border-radius: 0.5rem; background: var(--ap-inset-bg, #e9efe9); border: 1px solid var(--ap-inset-border, rgba(38, 88, 58, 0.16)); display: flex; align-items: center; gap: 0.5rem; text-align: left; cursor: pointer; transition: border-color 150ms cubic-bezier(0.16, 1, 0.3, 1), background-color 150ms cubic-bezier(0.16, 1, 0.3, 1); } .ds-swatch-btn:hover { background: #dce7de; border-color: #2b5b3f; } .ds-swatch-btn:focus-visible { outline: 2px solid #1c5436; outline-offset: 2px; } .ds-swatch-chip { width: 1.25rem; height: 1.25rem; border-radius: 0.375rem; border: 1px solid rgba(16, 20, 17, 0.18); flex-shrink: 0; } .ds-swatch-chip--volt { background: #c8ff00; } .ds-swatch-chip--pine { background: #1c5436; } .ds-swatch-meta { display: flex; flex-direction: column; min-width: 0; } .ds-swatch-mode { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; text-transform: uppercase; color: #43584b; } .ds-swatch-val { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.6875rem; font-weight: 700; color: #101411; }"
+      "description": "Matte White .ap-card with 3px Mondo Clay top edge housing the Track Asphalt digital clock and tabular Warm Stone split row.",
+      "html": "<article class=\"ds-stopwatch-card\"><div class=\"ds-stopwatch-top\"><div class=\"ds-master-clock\">01:08.42</div><button type=\"button\" class=\"ds-gun-btn\">Start Gun</button></div><div class=\"ds-split-well\"><div class=\"ds-split-meta\"><span class=\"ds-lane-tag\">L1</span><span class=\"ds-runner-name\">Lucas Alvarez · Pod A</span></div><div class=\"ds-split-right\"><span class=\"ds-split-num\">01:05.33</span><span class=\"ds-delta-prime\">-0.6s</span></div></div></article>",
+      "css": ".ds-stopwatch-card { max-width: 24rem; padding: 1rem; border-radius: 0.75rem; background: var(--ap-card-bg, #ffffff); border: 1px solid var(--ap-card-border, rgba(18, 20, 19, 0.16)); border-top: 3px solid #b83a24; box-shadow: 0 1px 2px 0 rgba(18, 20, 19, 0.04); display: flex; flex-direction: column; gap: 0.75rem; font-family: var(--font-sans, 'Archivo', sans-serif); color: #121413; } .ds-stopwatch-top { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; } .ds-master-clock { padding: 0.375rem 0.875rem; border-radius: 0.75rem; background: #121413; color: #d8ff2a; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.03em; } .ds-gun-btn { min-height: 2.75rem; padding: 0.5rem 1rem; border-radius: 0.75rem; background: #d8ff2a; color: #121413; border: 1px solid rgba(18, 20, 19, 0.24); font-family: var(--font-sans, 'Archivo', sans-serif); font-size: 0.75rem; font-weight: 800; cursor: pointer; } .ds-gun-btn:hover { background: #c8ef1e; } .ds-gun-btn:focus-visible { outline: 2px solid #b83a24; outline-offset: 2px; } .ds-split-well { padding: 0.75rem; border-radius: 0.75rem; background: var(--ap-inset-bg, #ede9df); border: 1px solid var(--ap-inset-border, rgba(18, 20, 19, 0.12)); display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; } .ds-split-meta { display: inline-flex; align-items: center; gap: 0.5rem; min-width: 0; } .ds-lane-tag { padding: 0.125rem 0.45rem; border-radius: 0.375rem; background: #ffffff; border: 1px solid rgba(18, 20, 19, 0.16); font-family: var(--font-mono, 'JetBrains Mono', monospace); font-size: 0.6875rem; font-weight: 700; color: #121413; } .ds-runner-name { font-size: 0.75rem; font-weight: 700; color: #121413; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-split-right { display: inline-flex; align-items: center; gap: 0.4rem; flex-shrink: 0; } .ds-split-num { font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.875rem; font-weight: 800; color: #121413; } .ds-delta-prime { padding: 0.125rem 0.375rem; border-radius: 0.25rem; background: #e7f3ec; color: #1e4d36; border: 1px solid #b6d9c4; font-family: var(--font-mono, 'JetBrains Mono', monospace); font-variant-numeric: tabular-nums; font-size: 0.6875rem; font-weight: 700; }"
     }
   ],
   "narrative": {
-    "northStar": "The Stadium Track Lab",
-    "overview": "THRESH fuses the painted geometry of a 400-meter collegiate oval with the calm precision of an exercise-physiology laboratory. Every screen sits inside a deep Pine stadium surround lit by a subtle upper-left floodlight glow, framing a crisp `2px` Pine-bordered workspace stage—Stadium Chalk in daylight and Obsidian-Pine after dark. Within that arena, velocity-sheared `-14deg` navigation tabs and lane badges deliver unmistakable athletic identity at the perimeter, while interior telemetry cards, 1Hz workout streams, and coaching tables stay disciplined, orthogonal, and effortless to scan under fatigue or trackside glare.\n\nThe interface serves solo self-coached runners and cyclists alongside 80-athlete scholastic and collegiate rosters without splitting into two visual worlds. Density is high where longitudinal load curves, Banister `CTL`/`ATL`/`TSB` readouts, and `0.01s` multi-runner splits demand immediate comparison, yet buffered by recessed turf/chalk wells rather than nested drop-shadow cards. THRESH explicitly rejects decorative full-bar `backdrop-filter` blur passes, gamified neon clutter, fabricated readiness scores on uncalibrated accounts, and stacked uppercase kickers above headings.",
+    "northStar": "The Trackside Timing Console",
+    "overview": "MeetReady is built like hardware-grade track and field timing infrastructure rather than a generic wellness feed. Every surface starts edge-to-edge on warm **Stadium Chalk** in daylight or **Track Asphalt** after dark, bounded by crisp `1px` ink hairlines and anchored by committed **Mondo Clay** lane surfaces and flat geometric track curves. Rather than nesting heavy drop-shadow frames inside colored bezels, the interface establishes structure through matte tonal contrast—Warm Stone inset wells recessed beneath Matte White panels in daylight, and Deep Asphalt wells beneath Matte Carbon panels at night—so coaches and solo endurance athletes can scan splits, field marks, and readiness curves instantly under midday track glare or stadium floodlights.\n\nThe system bridges two visual registers cleanly without fragmenting into separate products: **Persuade** surfaces (`StravaAuthGate` landing hero and `/brand` architectural specimens) pair tall condensed `Barlow Condensed` ExtraBold headlines with committed Mondo Clay track lanes and an overlapping Track Asphalt stopwatch specimen dock, while **Operate** workspaces (`CockpitHeader`, `TracksideStopwatchView`, Banister PMC labs, and roster views) shift into calm, orthogonal `Archivo` UI headings and `JetBrains Mono` tabular readouts. Across both modes, **Starter Volt** is rationed strictly (`<= 5%` of the viewport) for primary gun triggers, active clock digits, and critical action buttons, while **Infield Pine** handles secondary turf controls and positive split deltas, and six-zone physiological effort colors (`Z1–Z6`) remain permanently locked.\n\nMeetReady explicitly rejects pale SaaS greens, decorative frosted-glass `backdrop-filter` blur passes, clipart arrows, gradient-shaded vector marks, parallelogram-sheared navigation tabs, stacked uppercase kickers above headings, and fabricated Day-1 physiological scores.",
     "keyCharacteristics": [
-      "**Framed Stadium Stage:** Deep Pine outer surround framing a `2px` Pine-bordered workspace stage (`1.5rem` desktop radius) with opaque tonal layering across light and dark modes.",
-      "**High-Voltage Track Volt Discipline:** Track Volt (`#C8FF00` paired with `#080A09` Obsidian ink) is reserved strictly for primary actions, active navigation pills, and threshold focal markers.",
-      "**Velocity-Sheared Perimeter Geometry:** Primary cockpit tabs and lane badges skew `-14deg` with `+14deg` counter-skewed inner labels, echoing the `S2 × W-A` THRESH track lockup.",
-      "**Protected Physiological Encodings:** Six-zone effort colors (`Z1–Z6`), Banister load series, and WCAG AA/AAA readiness pills stay invariant across themes and school/club co-branding.",
-      "**Tabular Telemetry & `11px` Floor:** `Plus Jakarta Sans` pairs with `JetBrains Mono` (`tabular-nums`) and a hard `0.6875rem` (`11px`) `rem`-scaled floor so live `0.01s` splits and `1Hz` scrubbers never jitter.",
-      "**Zero-Blur 60fps Surfaces:** Solid surface steps and crisp `1px`–`2px` borders replace GPU-heavy glassmorphism, keeping dense ECharts/uPlot canvases responsive on mobile field devices."
+      "**Edge-to-Edge Chalk & Asphalt Ground:** Open Stadium Chalk (`#F6F3EC`) and Track Asphalt (`#121413`) canvases replace outer green bezels, separated by `1px` ink hairlines (`rgba(18, 20, 19, 0.14)` light / `rgba(246, 243, 236, 0.13)` dark).",
+      "**Mondo Clay Authority & `<= 5%` Starter Volt Discipline:** Committed Mondo Track Clay (`#B83A24` / `#9E2E1A` / `#E05238`) owns the hero field, active header indicator bar, and stopwatch console top rule, reserving Starter Volt (`#D8FF2A` with `#121413` ink) for primary triggers and live clock digits.",
+      "**3-Font Trackside Hierarchy:** `Barlow Condensed` ExtraBold uppercase powers Persuade display `<h1>` statements, `Archivo` anchors UI headings, body copy, and the native web wordmark, and `JetBrains Mono` (`tabular-nums`) locks `0.01s` splits, pace pods, and `1Hz` telemetry above a hard `0.6875rem` (`11px`) `rem` floor.",
+      "**Flat Orthogonal Controls + Concept A Velocity Chevron `M`:** Angular momentum lives solely inside the flat two-ink **Velocity Chevron `M`** mark; Operate workspace tabs, split cards, and lane badges stay strictly flat and orthogonal (`transform: none`).",
+      "**Protected Physiological Encodings:** Six effort zones (`Z1–Z6`), Banister `CTL`/`ATL`/`TSB` series, `.ap-ink-*` WCAG AA semantic text tokens, and `.ap-status-*` readiness pills remain invariant even when school/club co-branding overrides outer chrome."
     ],
     "rules": [
       {
-        "name": "The 80 / 15 / 5 Stadium Budget Rule",
-        "body": "Eighty percent of any viewport belongs to neutral chalk, paper, or carbon-pine surfaces, fifteen percent to structural stadium-pine frames and recessed turf wells, and at most five percent to Track Volt (`#C8FF00`) so primary actions and active tabs command instant focus.",
+        "name": "The 80 / 15 / 5 Track Budget Rule",
+        "body": "Eighty percent of any viewport stays neutral Stadium Chalk, Matte White, or Track Asphalt; fifteen percent belongs to committed Mondo Clay surfaces, `1px` hairlines, and Warm Stone inset wells; and at most five percent uses Starter Volt (`#D8FF2A`) so primary gun triggers and active numerals command immediate focus.",
         "section": "colors"
       },
       {
         "name": "The Sacred Physiology Rule",
-        "body": "Physiological effort zones (`Z1–Z6`), Banister load series (`CTL`, `ATL`, `TSB`), and semantic readiness pills never re-theme—even when a school or club activates custom co-branding (`applyTeamBrandToDocument`), which clamps team accents to WCAG 2.1 AA (`>= 4.55:1`) and applies them strictly to outer chrome, hairlines, and primary CTAs.",
+        "body": "Effort zones (`Z1–Z6`), Banister load series (`CTL`/`ATL`/`TSB`), `.ap-ink-*` semantic text colors, and `.ap-status-*` readiness pills never re-theme—even when school or club co-branding (`applyTeamBrandToDocument`) clamps custom team accents to `>= 4.55:1` WCAG AA across outer chrome, top hairlines, and primary CTAs.",
         "section": "colors"
       },
       {
-        "name": "The Dark Ink on Volt Rule",
-        "body": "Solid Track Volt (`#C8FF00`) fills always carry Deep Obsidian text (`#080A09`) for `> 15:1` contrast, and standalone brand text on light surfaces shifts to Stadium Pine (`#1C5436`) or Volt Olive (`#3F6212`) rather than rendering illegible yellow-green text on white.",
+        "name": "The Dark Ink on Starter Volt Rule",
+        "body": "Solid Starter Volt (`#D8FF2A`) fills always carry Track Asphalt (`#121413`) text, and raw `#D8FF2A` never appears as text or un-cased icon ink on Stadium Chalk or Matte White surfaces—shifting to Mondo Clay (`#B83A24`) or Infield Pine (`#1E4D36`) on light grounds and converting to Mondo Clay + Track Asphalt (`#B83A24` / `#121413`) or 1-Ink Stencil for 4-color CMYK print.",
         "section": "colors"
       },
       {
-        "name": "The Print Gamut & Partner Isolation Rule",
-        "body": "Out-of-gamut Track Volt (`#C8FF00`) digital fills convert to Stadium Pine (`#1C5436`) + Turf Lime (`#56BA00`) or 1-Ink Stencil for 4-color CMYK paper without Pantone 809C spot ink, while partner brand inks (`#C23800`) stay strictly isolated from THRESH marks and `Team × THRESH` co-brand lockups.",
+        "name": "The Partner Attribution Isolation Rule",
+        "body": "Strava Vermilion (`#C23800`) and Strava provenance inks (`#B83500` / `#FF7A45`) stay strictly confined to official partner OAuth and clean-room attribution controls and never enter MeetReady brand marks or team co-brand lockups.",
         "section": "colors"
+      },
+      {
+        "name": "The Split Display / UI Font Rule",
+        "body": "`.font-display` (`Barlow Condensed` ExtraBold uppercase) is restricted strictly to Persuade hero and poster `<h1>` statements; Operate workspace headers, cards, forms, and the sitewide `MeetReady` navbar wordmark use `Archivo` (`--font-sans`) so dense coaching tables stay effortlessly legible.",
+        "section": "typography"
       },
       {
         "name": "The Tabular Telemetry Rule",
-        "body": "Every physiological metric (`CTL`, `ATL`, `TSB`, `Watts`, `W/kg`, `bpm`, `min/mi`, `min/km`), `0.01s` FAT/stopwatch split, join code, and chart axis renders in `JetBrains Mono` with `font-variant-numeric: tabular-nums` so numbers never shift horizontally as values update.",
+        "body": "Every `0.01s` stopwatch display, lap split, Banister metric (`CTL`/`ATL`/`TSB`), VDOT pace, power readout, join code, and chart axis sets `JetBrains Mono` with `font-variant-numeric: tabular-nums` so columns never jitter horizontally as clocks tick.",
         "section": "typography"
       },
       {
-        "name": "The 11px Rem Floor Rule",
-        "body": "Micro-telemetry captions and badges bottom out at `0.6875rem` (`11px` via `--text-2xs`), scaling proportionally with browser root `rem` preferences; hardcoded sub-`11px` pixel font sizes are prohibited.",
+        "name": "The 11px Rem Floor & Unassisted Heading Rule",
+        "body": "Micro-telemetry labels bottom out at `0.6875rem` (`11px` via `--text-2xs`) so they scale cleanly with root `rem` preferences, and headings assert hierarchy directly by weight and tracking without stacked uppercase kickers or eyebrows above them—placing status badges or `.ap-lane-badge` pills strictly inline or below.",
         "section": "typography"
       },
       {
-        "name": "The Unassisted Heading Rule",
-        "body": "Headings establish hierarchy directly through bold weight and `-0.025em` tracking without stacked uppercase kickers or eyebrows above them; when status or lane context is needed, place a pill or `.ap-lane-badge` inline beside or beneath the heading.",
-        "section": "typography"
-      },
-      {
-        "name": "The Zero-Blur Cockpit Rule",
-        "body": "Navigation bars, cards, chart tooltips, and modals use opaque fills and crisp `1px`–`2px` borders without full-bar or full-screen `backdrop-filter: blur()` or `background-attachment: fixed`, preserving `60fps` frame pacing during `1Hz` stream scrubbing.",
+        "name": "The Zero-Blur Surface Rule",
+        "body": "Sticky headers, telemetry cards, chart tooltips, and modals use solid opaque fills and `1px` ink borders with zero `backdrop-filter: blur()` or `background-attachment: fixed`, preserving `60fps` responsiveness across `1Hz` stream scrubbers and mobile trackside devices.",
         "section": "elevation"
       },
       {
-        "name": "The Recessed Well Rule",
-        "body": "Sub-sections inside a card—such as bento KPI tiles, privacy pledge blocks, and Load Focus rows—step *down* into shadowless Chalk Inset (`#E9EFE9`) or Deep Turf (`#15231B`) wells rather than stacking elevated white/carbon cards inside cards.",
+        "name": "The Recessed Well & Hairline Rule",
+        "body": "Secondary KPI blocks, pill tracks, and form sub-groups step *down* into flat, shadowless Warm Stone (`#EDE9DF`) or Deep Asphalt (`#151816`) wells (`.ap-card-inset`) rather than stacking white cards inside white cards, while structural divisions rely on `1px` ink hairlines (`rgba(18, 20, 19, 0.14)` light / `rgba(246, 243, 236, 0.13)` dark).",
         "section": "elevation"
       },
       {
-        "name": "The True 1-Ink Knockout Rule",
-        "body": "Monochrome screen-print, vinyl-plotter, and CNC laser stencils split radial gauge sectors mathematically around the `313°` needle moat and close boundary ticks as outlined capsule contours (`fill-rule=\"evenodd\"`), banning fake `#FFFFFF` masking strokes or SVG `<mask>` overlays.",
+        "name": "The Flat Orthogonal Control Rule",
+        "body": "All navigation tabs (`.ap-track-tab`), lane badges (`.ap-lane-badge`), split tap cards, and buttons stay strictly orthogonal (`transform: none`); directional velocity lives exclusively inside the `1:3`-sloped Concept A Velocity Chevron `M` mark.",
+        "section": "shapes"
+      },
+      {
+        "name": "The True 1-Ink Knockout & Flat Embroidery Rule",
+        "body": "Monochrome stencils (`#121413` Asphalt, `#FFFFFF` Reversed White, `#D8FF2A` Starter Volt) and embroidery masters ship exclusively as closed, outlined `<path>` silhouettes with zero `<text>` nodes, zero gradients, zero `#FFFFFF` masking strokes, and `>= 1.2mm` satin-stitch floor.",
         "section": "shapes"
       }
     ],
     "dos": [
-      "**Do** frame primary application and onboarding views inside `.ap-content-stage` (`2px solid` Pine border over the `#163022` / `#0C1D14` stadium surround) and nest sub-groups inside shadowless `.ap-card-inset` wells.",
-      "**Do** pair solid Track Volt (`#C8FF00`) fills exclusively with Deep Obsidian ink (`#080A09`), and switch standalone brand text on light surfaces to Stadium Pine (`#1C5436`) or Volt Olive (`#3F6212`).",
-      "**Do** set every physiological readout, `0.01s` split, pace/power zone, join code, and chart axis in `JetBrains Mono` with `font-variant-numeric: tabular-nums`, respecting the `0.6875rem` (`11px`) `--text-2xs` floor.",
-      "**Do** counter-skew inner content (`skewX(14deg)`) inside every `-14deg` `.ap-track-tab` and `.ap-lane-badge` so typography and Phosphor icons remain upright.",
-      "**Do** synchronize HTML/CSS UI tokens 1:1 with canvas/SVG chart palettes via `getThreshThemePalette(isDark)` (`src/utils/themeTokens.ts`), keeping `Z1–Z6` and `CTL`/`ATL`/`TSB` colors locked even under school/club co-branding.",
-      "**Do** render explicit `CALIBRATING` states when an athlete has zero synced workouts, and shield body weight / `W/kg` emphasis automatically when U18 Safe-Sport mode is active.",
-      "**Do** use true boolean compound-path 1-ink knockouts (`Obsidian Black`, `Reversed White`, `Track Volt`, and unframed `Gauge Symbols`) for singlets, heat-transfer vinyl, CNC etching, and 600-DPI B&W laser heat sheets, and convert `#C8FF00` to Light Stage Pine (`#1C5436`) + Turf Lime (`#56BA00`) for 4-color CMYK paper.",
-      "**Do** preserve `1R` minimum clear space around `S2 × W-A` lockups, keep NFHS/NCAA competition uniform marks within the `<= 2.25 sq in` limit, and enforce `ALL-CAPS THRESH` across all UI, print, and press copy (lowercase only inside domains like `https://thresh.app`)."
+      "**Do** anchor light surfaces on Stadium Chalk (`#F6F3EC`), Matte White (`#FFFFFF`), and Warm Stone (`#EDE9DF`), and dark surfaces on Track Asphalt (`#121413`), Matte Carbon (`#1A1D1B`), and Deep Asphalt (`#151816`), separated by `1px` ink hairlines and zero `backdrop-filter: blur()`.",
+      "**Do** restrict Starter Volt (`#D8FF2A`) to `<= 5%` of any screen (primary `.ap-btn-primary` CTAs, active stopwatch numerals, dark-mode logo right peak, and active tab markers), always paired with `#121413` Track Asphalt ink.",
+      "**Do** reserve `.font-display` (`Barlow Condensed` ExtraBold uppercase) for Persuade hero display `<h1>` headings, while rendering all Operate headings, body copy, and navbar wordmarks in `Archivo` and all `0.01s` splits, pace pods, join codes, and physiological KPIs in `JetBrains Mono` (`tabular-nums`) at `>= 0.6875rem` (`11px`).",
+      "**Do** keep Operate navigation tabs, `.ap-lane-badge` tags, and split cards strictly flat and orthogonal (`transform: none`), confining angled velocity exclusively to the flat 2-ink Concept A Velocity Chevron `M` mark (`#121413` + `#B83A24` on light; `#F6F3EC` + `#D8FF2A` on dark).",
+      "**Do** keep sacred effort zones (`Z1–Z6`), Banister load curves (`CTL`/`ATL`/`TSB`), `.ap-ink-*` AA text tokens, and `.ap-status-*` readiness pills locked across all themes and custom school/club co-branding.",
+      "**Do** enforce `>= 44px` (`2.75rem`) touch targets on mobile controls, `>= 92px` tap height on trackside split cards, explicit `CALIBRATING` states when zero workouts exist, and `CamelCase MeetReady` across all copy (lowercase only in `https://meetready.app`)."
     ],
     "donts": [
-      "**Don't** apply full-bar or full-screen `backdrop-filter: blur()` or `background-attachment: fixed` to headers, cards, or modals; maintain crisp opaque surface layering for `60fps` telemetry scrolling.",
-      "**Don't** stack decorative uppercase kickers or eyebrows above headings; let headings stand on their own weight and place contextual status pills or `.ap-lane-badge` callouts inline.",
-      "**Don't** override `Z1–Z6` effort colors, Banister `CTL`/`ATL`/`TSB` series, or `.ap-status-*` readiness pills with custom team co-branding colors or raw Track Volt.",
-      "**Don't** use raw Track Volt (`#C8FF00`) as text or un-cased icon ink on white, Stadium Chalk (`#F4F7F2`), or Chalk Inset (`#E9EFE9`) backgrounds where contrast collapses below WCAG AA.",
-      "**Don't** introduce a third typeface, sub-`11px` hardcoded pixel text (`text-[9px]`, `text-[10px]`), or Unicode emoji icons in place of drawn Phosphor vector icons.",
-      "**Don't** fabricate synthetic `CTL`, `FTP`, resting HR, testimonials, customer school logos, or commercial pricing tiers on any surface.",
-      "**Don't** paint fake `#FFFFFF` background strokes (`stroke=\"#FFFFFF\"`), SVG `<mask>` overlays, or drop shadows under monochrome marks to simulate knockouts on fabric or photography.",
-      "**Don't** stretch mark proportions, warp the `W1` wordmark, fuse Strava/Garmin/partner logos directly onto the THRESH lockup, or resell standalone THRESH-branded merchandise."
+      "**Don't** restore retired legacy pine-green palette tokens, outer green stage bezels, parallelogram-sheared navigation tabs, or unapproved geometric-sans font substitutions.",
+      "**Don't** apply `backdrop-filter: blur()`, glassmorphism overlays, stacked elevated shadows inside `.ap-card` containers, or decorative gradients inside the Velocity Chevron `M` mark.",
+      "**Don't** stack uppercase kickers or eyebrows above headings; let weight, scale, or an inline `.ap-lane-badge` / status pill carry the context.",
+      "**Don't** render raw Starter Volt (`#D8FF2A`) as text or un-cased icons on Stadium Chalk, Warm Stone, or Matte White surfaces, or export `#D8FF2A` directly to 4-color CMYK print without converting to Mondo Clay + Track Asphalt (`#B83A24` / `#121413`) or a 1-Ink Stencil.",
+      "**Don't** re-theme `Z1–Z6` physiology colors, mix Strava Vermilion (`#C23800`) into MeetReady brand marks, use Unicode emoji icons instead of Phosphor vectors, or fabricate synthetic readiness metrics, testimonials, or partner endorsements."
     ]
   }
 }

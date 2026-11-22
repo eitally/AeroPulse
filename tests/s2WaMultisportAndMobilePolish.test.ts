@@ -81,7 +81,7 @@ describe('BRD-02 & SYNC-02 · S2 × W-A Brand Modularity, Multi-Sport TSS v4 & N
     );
     expect(wordmarkOnlyHtml).toContain('viewBox="0 0 326 64"');
     expect(wordmarkOnlyHtml).not.toContain('viewBox="0 0 128 128"');
-    expect(wordmarkOnlyHtml).toContain('--thresh-ink:#F4F7F4');
+    expect(wordmarkOnlyHtml).toContain('--thresh-ink:#F6F3EC');
 
     const footerHtml = renderToStaticMarkup(
       React.createElement(CockpitFooter, {
@@ -92,10 +92,12 @@ describe('BRD-02 & SYNC-02 · S2 × W-A Brand Modularity, Multi-Sport TSS v4 & N
         onOpenBrandStudio: () => {},
       })
     );
-    expect(footerHtml).toContain('--thresh-volt:#C8FF00');
-    expect(footerHtml).toContain('--thresh-ink:#F4F7F4');
-    expect(footerHtml).toContain('text-emerald-50/85');
-    expect(footerHtml).toContain('text-[#C8FF00]');
+    expect(footerHtml).toContain('--thresh-volt:#B83A24');
+    expect(footerHtml).toContain('--thresh-volt:#D8FF2A');
+    expect(footerHtml).toContain('--thresh-ink:#121413');
+    expect(footerHtml).toContain('--thresh-ink:#F6F3EC');
+    expect(footerHtml).toContain('text-ap-muted');
+    expect(footerHtml).toContain('text-ap-clay');
   });
 
   it('classifies all non-run/non-bike sports cleanly and uses Load Model v4 without inflating casual/strength work', () => {
