@@ -3,6 +3,7 @@ import type {
   GuardianSafetyAlertRecord,
   TeamAuditLogEntry,
   TeamMemberRole,
+  TeamMembershipRecord,
   TeamSummaryWithRole,
   TeamWorkoutComment,
   TeamWorkoutLibraryCategory,
@@ -346,6 +347,8 @@ export async function updateAssistantCoachEventGroupsApi(params: {
   teamId: string;
   membershipId: string;
   coachEventGroups: CoachEventGroup[];
+  coachSpecialtyTitle?: string;
+  assignedAthleteMembershipIds?: string[];
 }) {
   return requestLifecycleJson<{
     team?: TeamSummaryWithRole;
@@ -354,9 +357,38 @@ export async function updateAssistantCoachEventGroupsApi(params: {
     `/api/teams/${encodeURIComponent(params.teamId)}/members/${encodeURIComponent(params.membershipId)}/coach-groups`,
     {
       method: 'PATCH',
-      body: JSON.stringify({ coachEventGroups: params.coachEventGroups }),
+      body: JSON.stringify({
+        coachEventGroups: params.coachEventGroups,
+        ...(params.coachSpecialtyTitle !== undefined
+          ? { coachSpecialtyTitle: params.coachSpecialtyTitle }
+          : {}),
+        ...(params.assignedAthleteMembershipIds !== undefined
+          ? { assignedAthleteMembershipIds: params.assignedAthleteMembershipIds }
+          : {}),
+      }),
     },
   );
+}
+
+export async function inviteTeamCoachingStaffApi(params: {
+  teamId: string;
+  staffName: string;
+  staffEmail?: string;
+  role?: TeamMemberRole;
+  coachSpecialtyTitle?: string;
+  coachEventGroups?: CoachEventGroup[];
+  assignedAthleteMembershipIds?: string[];
+}) {
+  return requestLifecycleJson<{
+    member?: TeamMembershipRecord;
+    inviteUrl?: string;
+    emailStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/staff/invite`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
 }
 
 export async function postTeamMessageApi(params: {

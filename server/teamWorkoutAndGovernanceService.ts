@@ -20,6 +20,7 @@ import {
   sanitizeSessionSlot,
 } from '../src/utils/workoutScheduleUtils.ts';
 import { isResendConfigured, sendEmailViaResend } from './teamEmailAndOtpService.ts';
+import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
 import {
   canProgramWorkoutsRole,
   canViewAuditLogRole,
@@ -1280,6 +1281,15 @@ export async function postTeamWorkoutComment(params: {
     doc.workoutComments = [comment, ...(doc.workoutComments || [])].slice(0, 300);
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
+
+    void dispatchTeamPushNotifications({
+      teamId: params.teamId,
+      senderSid: params.callerSid,
+      senderName: comment.authorName,
+      kind: 'WORKOUT_COMMENT',
+      targetMembershipId: targetMem.membershipId,
+      bodyText: cleanBody,
+    }).catch(() => {});
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,

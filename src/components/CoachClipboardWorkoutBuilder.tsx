@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type {
   AthleteProfile,
   CoachComplexityTier,
@@ -105,6 +105,7 @@ export interface CoachClipboardWorkoutBuilderProps {
   }) => Promise<void>;
   onOpenStopwatchSubTab: () => void;
   complexityTier?: CoachComplexityTier;
+  defaultEventGroup?: CoachEventGroup;
 }
 
 type AudienceMode = 'ALL' | CoachEventGroup | 'INDIVIDUAL';
@@ -300,9 +301,13 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   onCreatePlannedEvent,
   onOpenStopwatchSubTab,
   complexityTier = 'ESSENTIALS',
+  defaultEventGroup,
 }) => {
   const [clipboardSport, setClipboardSport] = useState<SportCategory>('Running');
-  const [audienceMode, setAudienceMode] = useState<AudienceMode>('ALL');
+  const [audienceMode, setAudienceMode] = useState<AudienceMode>(defaultEventGroup || 'ALL');
+  useEffect(() => {
+    setAudienceMode(defaultEventGroup || 'ALL');
+  }, [defaultEventGroup]);
   const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
   const [workoutDate, setWorkoutDate] = useState(() => getLocalDateIso());
   const [sessionSlot, setSessionSlot] = useState<WorkoutSessionSlot>('SINGLE');

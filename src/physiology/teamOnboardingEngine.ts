@@ -2,6 +2,7 @@ import type {
   CoachEventGroup,
   DistanceUnit,
   TeamBrandConfig,
+  TeamMemberRole,
   TeamOrgType,
 } from '../types.ts';
 import {
@@ -723,4 +724,61 @@ export function inferEventGroupFromSeedMark(seed?: string): CoachEventGroup | un
     return 'SPRINTS';
   }
   return undefined;
+}
+
+export interface CoachSpecialtyPreset {
+  id: string;
+  title: string;
+  defaultRole: Extract<TeamMemberRole, 'HEAD_COACH' | 'ASSISTANT_COACH' | 'ATHLETIC_TRAINER'>;
+  defaultEventGroups: CoachEventGroup[];
+}
+
+export const COACH_SPECIALTY_PRESETS: ReadonlyArray<CoachSpecialtyPreset> = [
+  { id: 'head', title: 'Head Coach', defaultRole: 'HEAD_COACH', defaultEventGroups: [] },
+  {
+    id: 'distance',
+    title: 'Distance Coach',
+    defaultRole: 'ASSISTANT_COACH',
+    defaultEventGroups: ['DISTANCE', 'MID_DISTANCE'],
+  },
+  { id: 'sprints', title: 'Sprint Coach', defaultRole: 'ASSISTANT_COACH', defaultEventGroups: ['SPRINTS'] },
+  { id: 'hurdles', title: 'Hurdles Coach', defaultRole: 'ASSISTANT_COACH', defaultEventGroups: ['HURDLES'] },
+  { id: 'jumps', title: 'Jumps Coach', defaultRole: 'ASSISTANT_COACH', defaultEventGroups: ['JUMPS'] },
+  {
+    id: 'pole_vault',
+    title: 'Pole Vault Coach',
+    defaultRole: 'ASSISTANT_COACH',
+    defaultEventGroups: ['POLE_VAULT'],
+  },
+  { id: 'throws', title: 'Throws Coach', defaultRole: 'ASSISTANT_COACH', defaultEventGroups: ['THROWS'] },
+  { id: 'multi', title: 'Multi-Events Coach', defaultRole: 'ASSISTANT_COACH', defaultEventGroups: ['MULTI'] },
+  {
+    id: 'trainer',
+    title: 'Athletic Trainer',
+    defaultRole: 'ATHLETIC_TRAINER',
+    defaultEventGroups: [],
+  },
+];
+
+/**
+ * Returns true when an event coach or assistant owns a specific athlete via either explicit
+ * athlete subset assignment (`assignedAthleteMembershipIds`) OR their assigned `coachEventGroups`.
+ * Coaches without group/athlete restrictions (e.g. Head Coach) see all athletes.
+ */
+export function doesCoachOwnAthlete(params: {
+  coachEventGroups?: CoachEventGroup[];
+  assignedAthleteMembershipIds?: string[];
+  athleteEventGroup?: CoachEventGroup | null;
+  athleteMembershipId?: string;
+}): boolean {
+  const explicitIds = params.assignedAthleteMembershipIds || [];
+  const groups = params.coachEventGroups || [];
+  if (explicitIds.length === 0 && groups.length === 0) return true;
+  if (params.athleteMembershipId && explicitIds.includes(params.athleteMembershipId)) {
+    return true;
+  }
+  if (groups.length > 0 && params.athleteEventGroup && groups.includes(params.athleteEventGroup)) {
+    return true;
+  }
+  return false;
 }

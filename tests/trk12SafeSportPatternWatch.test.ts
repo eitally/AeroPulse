@@ -14,6 +14,10 @@ import {
 } from '../server/teamService';
 import type { UnifiedActivity, UnifiedWellnessDay } from '../src/types';
 
+function daysAgoIso(days: number): string {
+  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
+}
+
 function makeEasyRun(dateIso: string, avgHr: number, distanceMeters = 8000, movingTimeSecs = 2400): UnifiedActivity {
   return {
     id: `easy-${dateIso}`,
@@ -266,7 +270,7 @@ describe('TRK-12: Ethical U18 RED-S / Iron / PHV Early Pattern Watch & Zero-Weig
         bmi: 18.9,
         wellnessDays: [
           {
-            date: '2026-11-11',
+            date: daysAgoIso(1),
             ctl: 44,
             atl: 56,
             tsb: -12,
@@ -283,10 +287,10 @@ describe('TRK-12: Ethical U18 RED-S / Iron / PHV Early Pattern Watch & Zero-Weig
           },
         ],
         activities: [
-          makeEasyRun('2026-10-12', 144, 8000, 2400),
-          makeEasyRun('2026-11-08', 155, 7600, 2400),
+          makeEasyRun(daysAgoIso(35), 144, 8000, 2400),
+          makeEasyRun(daysAgoIso(4), 155, 7600, 2400),
           {
-            ...makeEasyRun('2026-11-09', 150, 5000, 1500),
+            ...makeEasyRun(daysAgoIso(3), 150, 5000, 1500),
             id: 'strava-leak',
             stravaId: '77777',
             sourceBadges: ['Strava'],

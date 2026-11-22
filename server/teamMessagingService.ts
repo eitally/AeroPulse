@@ -9,6 +9,7 @@ import type {
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
 import { normalizeCoachEventGroup } from '../src/physiology/teamOnboardingEngine.ts';
 import { isResendConfigured, sendEmailViaResend } from './teamEmailAndOtpService.ts';
+import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
 import {
   canManageTeamGovernanceRole,
   canViewSafeguardingMedicalRole,
@@ -232,6 +233,19 @@ export async function postTeamMessage(params: {
     doc.teamMessages = [record, ...(doc.teamMessages || [])].slice(0, 500);
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
+
+    void dispatchTeamPushNotifications({
+      teamId: params.teamId,
+      senderSid: params.callerSid,
+      senderName: record.senderName,
+      kind: 'TEAM_MESSAGE',
+      channelScope: params.channelScope,
+      eventGroup: resolvedEventGroup,
+      targetMembershipId,
+      bodyText: cleanBody,
+      clientLocalHour: params.clientLocalHour,
+      isEmergency: params.isEmergencyOverride === true,
+    }).catch(() => {});
 
     await appendAuditLogAsync({
       teamId: params.teamId,

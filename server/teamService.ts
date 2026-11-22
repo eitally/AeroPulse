@@ -849,6 +849,9 @@ export async function previewTeamJoinInvite(
           parentGuardianEmail: matchedMem.parentGuardianEmail,
           squadGroup: matchedMem.squadGroup,
           role: matchedMem.role,
+          ...(matchedMem.coachSpecialtyTitle
+            ? { coachSpecialtyTitle: matchedMem.coachSpecialtyTitle }
+            : {}),
           isMinorU18: matchedMem.isMinorU18,
           birthYear: matchedMem.birthYear,
           parentConsentStatus: matchedMem.parentConsentStatus,
@@ -915,11 +918,10 @@ export async function claimTeamJoinInvite(params: {
           (!m.userSid || m.userSid === params.callerSid)
       );
     }
-    // 1. Primary CSV match: athlete email address (athletes only, unclaimed or own row)
+    // 1. Primary CSV match: email address (athletes or invited staff, unclaimed or own row)
     if (!mem && cleanEmail) {
       mem = doc.memberships.find(
         (m) =>
-          m.role === 'ATHLETE' &&
           m.invitedEmail?.toLowerCase() === cleanEmail &&
           m.status !== 'REVOKED' &&
           (!m.userSid || m.userSid === params.callerSid)
@@ -977,14 +979,24 @@ export async function claimTeamJoinInvite(params: {
       }
     }
 
+    const isStaffInvite = Boolean(mem && mem.role !== 'ATHLETE');
+
     // Evaluate COPPA (<13) and Minor/Adult (13-17 vs 18+) before mutating roster
     // Prefer existing stored DOB over incoming payload so a minor cannot overwrite DOB to 18+.
-    const ageCheck = resolveAthleteAgeTier({
-      birthMonthYear: mem?.birthMonthYear || params.birthMonthYear,
-      birthYear: mem?.birthYear ?? params.birthYear,
-      orgType: doc.brand.orgType,
-      graduationYear: params.graduationYear ?? mem?.graduationYear,
-    });
+    const ageCheck = isStaffInvite
+      ? {
+          ageTier: 'ADULT_18_PLUS' as const,
+          isUnder13: false,
+          isMinorU18: false,
+          birthYear: undefined,
+          birthMonthYear: undefined,
+        }
+      : resolveAthleteAgeTier({
+          birthMonthYear: mem?.birthMonthYear || params.birthMonthYear,
+          birthYear: mem?.birthYear ?? params.birthYear,
+          orgType: doc.brand.orgType,
+          graduationYear: params.graduationYear ?? mem?.graduationYear,
+        });
 
     if (ageCheck.isUnder13) {
       return {
@@ -994,11 +1006,13 @@ export async function claimTeamJoinInvite(params: {
       };
     }
 
-    const effectiveParentEmail =
-      params.parentGuardianEmail?.trim().toLowerCase() ||
-      mem?.parentGuardianEmail?.trim().toLowerCase();
+    const effectiveParentEmail = isStaffInvite
+      ? undefined
+      : params.parentGuardianEmail?.trim().toLowerCase() ||
+        mem?.parentGuardianEmail?.trim().toLowerCase();
 
     if (
+      !isStaffInvite &&
       (ageCheck.ageTier === 'YOUTH_13_17' ||
         (ageCheck.ageTier === 'UNKNOWN' && doc.brand.orgType === 'HIGH_SCHOOL')) &&
       !effectiveParentEmail &&
@@ -1011,16 +1025,19 @@ export async function claimTeamJoinInvite(params: {
     }
 
     const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-    const isMinor =
-      ageCheck.ageTier === 'UNKNOWN'
+    const isMinor = isStaffInvite
+      ? false
+      : ageCheck.ageTier === 'UNKNOWN'
         ? Boolean(doc.brand.orgType === 'HIGH_SCHOOL' || mem?.isMinorU18)
         : ageCheck.isMinorU18;
     const isDeferredMinorParentEmail = Boolean(
       isMinor && !effectiveParentEmail && params.deferParentEmail
     );
-    const resolvedSharingTier: CoachDataSharingTier = isDeferredMinorParentEmail
-      ? 'LOAD_ONLY'
-      : params.sharingTier || 'SUMMARY_ONLY';
+    const resolvedSharingTier: CoachDataSharingTier = isStaffInvite
+      ? 'FULL_STREAMS'
+      : isDeferredMinorParentEmail
+        ? 'LOAD_ONLY'
+        : params.sharingTier || 'SUMMARY_ONLY';
 
     if (!mem) {
       mem = {
@@ -1050,7 +1067,8 @@ export async function claimTeamJoinInvite(params: {
     } else {
       mem.userSid = params.callerSid;
       if (cleanStravaId) mem.stravaAthleteId = cleanStravaId;
-      if (isDeferredMinorParentEmail) mem.sharingTier = 'LOAD_ONLY';
+      if (isStaffInvite) mem.sharingTier = 'FULL_STREAMS';
+      else if (isDeferredMinorParentEmail) mem.sharingTier = 'LOAD_ONLY';
       else if (params.sharingTier) mem.sharingTier = params.sharingTier;
       else if (!mem.sharingTier) mem.sharingTier = 'SUMMARY_ONLY';
       if (params.athleteName?.trim()) {

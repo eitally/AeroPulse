@@ -52,6 +52,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          importScripts: ['/sw-push.js'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,webmanifest}'],
           globIgnores: [
@@ -86,6 +87,7 @@ export default defineConfig(() => {
             '**/assets/ScholasticRelayAndTopTimesPanel-*',
             '**/assets/CoachDailyOpsPanel-*',
             '**/assets/CoachOnboardingWizard-*',
+            '**/assets/CoachingStaffPanel-*',
             '**/assets/TeamMessagingDrawer-*',
             '**/assets/MeetDayHeatAndFlightModal-*',
             '**/assets/athleticNetAndTfrrsEngine-*',

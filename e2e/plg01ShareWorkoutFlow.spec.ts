@@ -75,7 +75,7 @@ test.describe('PLG-01: Zero-Auth /share/workout Preview, Live Threshold Recalc &
     await expect(banner).toContainText('Sweet Spot & Threshold Progression');
 
     // Entering Demo Cockpit automatically consumes stashed workout onto Training Calendar
-    await page.getByRole('button', { name: /Explore (?:Live )?Sample Cockpit/i }).click();
+    await page.getByTestId('try-athlete-sample-btn').click();
     const calendarNav = page.locator('nav[aria-label*="rimary workspaces"]:visible');
     await expect(calendarNav).toBeVisible({ timeout: 15000 });
     await expect(page.locator('main')).toContainText('Sweet Spot & Threshold Progression', {

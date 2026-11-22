@@ -8,6 +8,8 @@ import type {
   TeamAnnouncementRecord,
   TeamAttendanceRecord,
   TeamAttendanceStatus,
+  TeamMemberRole,
+  TeamMembershipRecord,
   TeamSummaryWithRole,
   UnifiedActivity,
 } from '../src/types.ts';
@@ -19,11 +21,16 @@ import {
   canManageTeamGovernanceRole,
   canProgramWorkoutsRole,
   canViewSafeguardingMedicalRole,
+  hashToken,
   loadTeamDocRaw,
   projectTeamSummaryForCaller,
   sanitizeTargetEventGroups,
   saveTeamDocRaw,
+  type StoredMembershipInternal,
 } from './teamStoreCore.ts';
+import { isResendConfigured, sendEmailViaResend } from './teamEmailAndOtpService.ts';
+import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
+import { escapeHtml } from './securityUtils.ts';
 import { appendAuditLogAsync, withTeamRowLock } from './tokenVault.ts';
 
 const VALID_ATTENDANCE_STATUSES = new Set<TeamAttendanceStatus>([
@@ -189,6 +196,17 @@ export async function postTeamAnnouncement(params: {
     doc.announcements = [announcement, ...(doc.announcements || [])].slice(0, 30);
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
+
+    void dispatchTeamPushNotifications({
+      teamId: params.teamId,
+      senderSid: params.callerSid,
+      senderName: announcement.authorName,
+      kind: 'ANNOUNCEMENT',
+      announcementCategory: category,
+      eventGroup: targetGroups && targetGroups.length === 1 ? targetGroups[0] : undefined,
+      bodyText: `${cleanTitle} — ${cleanBody}`,
+      isEmergency: category === 'WEATHER',
+    }).catch(() => {});
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
@@ -391,11 +409,40 @@ export async function recordTeamFieldMarks(params: {
   });
 }
 
+const VALID_COACH_STAFF_ROLES = new Set<TeamMemberRole>([
+  'HEAD_COACH',
+  'ASSISTANT_COACH',
+  'ATHLETIC_TRAINER',
+  'ORG_ADMIN',
+]);
+
+function filterValidAssignedAthleteIds(
+  memberships: StoredMembershipInternal[],
+  rawIds?: string[]
+): string[] | undefined {
+  if (!Array.isArray(rawIds)) return undefined;
+  const athleteIds = new Set(
+    memberships
+      .filter((m) => m.role === 'ATHLETE' && m.status !== 'REVOKED')
+      .map((m) => m.membershipId)
+  );
+  const cleaned: string[] = [];
+  for (const id of rawIds) {
+    const trimmed = String(id || '').trim();
+    if (trimmed && athleteIds.has(trimmed) && !cleaned.includes(trimmed)) {
+      cleaned.push(trimmed);
+    }
+  }
+  return cleaned;
+}
+
 export async function updateAssistantCoachEventGroups(params: {
   callerSid: string;
   teamId: string;
   membershipId: string;
   coachEventGroups: CoachEventGroup[];
+  coachSpecialtyTitle?: string;
+  assignedAthleteMembershipIds?: string[];
   originUrl: string;
 }): Promise<{ ok: boolean; team?: TeamSummaryWithRole | null; error?: string }> {
   return withTeamRowLock(params.teamId, async () => {
@@ -416,6 +463,20 @@ export async function updateAssistantCoachEventGroups(params: {
 
     const cleanGroups = sanitizeTargetEventGroups(params.coachEventGroups) || [];
     target.coachEventGroups = cleanGroups.length > 0 ? cleanGroups : undefined;
+
+    if (params.coachSpecialtyTitle !== undefined) {
+      const cleanTitle = String(params.coachSpecialtyTitle || '').trim().slice(0, 60);
+      target.coachSpecialtyTitle = cleanTitle || undefined;
+    }
+
+    if (params.assignedAthleteMembershipIds !== undefined) {
+      const validIds = filterValidAssignedAthleteIds(
+        doc.memberships,
+        params.assignedAthleteMembershipIds
+      );
+      target.assignedAthleteMembershipIds = validIds && validIds.length > 0 ? validIds : undefined;
+    }
+
     doc.updatedAt = new Date().toISOString();
     await saveTeamDocRaw(params.teamId, doc);
     await appendAuditLogAsync({
@@ -423,12 +484,142 @@ export async function updateAssistantCoachEventGroups(params: {
       actorSid: params.callerSid,
       action: 'COACH_GROUPS_UPDATED',
       targetId: target.membershipId,
-      metadata: { coachEventGroups: cleanGroups },
+      metadata: {
+        coachEventGroups: cleanGroups,
+        coachSpecialtyTitle: target.coachSpecialtyTitle,
+        assignedAthleteCount: target.assignedAthleteMembershipIds?.length ?? 0,
+      },
     });
 
     return {
       ok: true,
       team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    };
+  });
+}
+
+export async function inviteTeamCoachingStaff(params: {
+  callerSid: string;
+  teamId: string;
+  staffName: string;
+  staffEmail?: string;
+  role?: TeamMemberRole;
+  coachSpecialtyTitle?: string;
+  coachEventGroups?: CoachEventGroup[];
+  assignedAthleteMembershipIds?: string[];
+  originUrl: string;
+}): Promise<{
+  ok: boolean;
+  member?: TeamMembershipRecord;
+  inviteUrl?: string;
+  emailStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
+  team?: TeamSummaryWithRole | null;
+  error?: string;
+}> {
+  const cleanName = String(params.staffName || '').trim().slice(0, 64);
+  if (!cleanName) {
+    return { ok: false, error: 'Coach or staff name is required.' };
+  }
+  const cleanEmail = params.staffEmail ? String(params.staffEmail).trim().toLowerCase() : '';
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return { ok: false, error: 'Please enter a valid coach email address.' };
+  }
+  const role: TeamMemberRole =
+    params.role && VALID_COACH_STAFF_ROLES.has(params.role) ? params.role : 'ASSISTANT_COACH';
+  const cleanSpecialty = String(params.coachSpecialtyTitle || '').trim().slice(0, 60);
+
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: 'Team not found.' };
+
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+      return { ok: false, error: 'Head Coach or Org Admin permissions required.' };
+    }
+
+    if (cleanEmail) {
+      const duplicate = doc.memberships.find(
+        (m) => m.status !== 'REVOKED' && m.invitedEmail?.toLowerCase() === cleanEmail
+      );
+      if (duplicate) {
+        return {
+          ok: false,
+          error: 'A team or coaching staff member with that email already exists on this roster.',
+        };
+      }
+    }
+
+    const cleanGroups = sanitizeTargetEventGroups(params.coachEventGroups) || [];
+    const validAthleteIds = filterValidAssignedAthleteIds(
+      doc.memberships,
+      params.assignedAthleteMembershipIds
+    );
+    const rawInviteToken = crypto.randomBytes(16).toString('base64url');
+    const nowIso = new Date().toISOString();
+    const cleanOrigin = (params.originUrl || 'https://thresh.fit').replace(/\/+$/, '');
+    const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
+
+    let emailStatus: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED' = 'READY_MANUAL_LINK';
+    if (cleanEmail && isResendConfigured()) {
+      const roleLabel = cleanSpecialty || role.replace(/_/g, ' ');
+      const sendRes = await sendEmailViaResend({
+        to: cleanEmail,
+        subject: `Coaching staff invite: ${doc.brand.name} (${roleLabel}) on THRESH`,
+        html: `<p>Hi <strong>${escapeHtml(cleanName)}</strong>,</p><p>You have been invited to join <strong>${escapeHtml(doc.brand.name)}</strong> on THRESH as <strong>${escapeHtml(roleLabel)}</strong>.</p><p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;padding:12px 20px;background:#C8FF00;color:#111318;font-weight:700;text-decoration:none;border-radius:10px;">Accept Coach Invite</a></p><p style="font-size:12px;color:#64748B;">Or paste team code: <strong>${escapeHtml(doc.brand.joinCode)}</strong></p>`,
+        text: `Hi ${cleanName}, you are invited to join ${doc.brand.name} on THRESH as ${roleLabel}. Accept here: ${inviteUrl} (Team code: ${doc.brand.joinCode})`,
+      });
+      emailStatus = sendRes.status;
+    }
+
+    const newMem: StoredMembershipInternal = {
+      membershipId: `mem_coach_${crypto.randomBytes(6).toString('hex')}`,
+      teamId: doc.brand.teamId,
+      role,
+      squadGroup: 'Coaching Staff',
+      ...(cleanGroups.length > 0 ? { coachEventGroups: cleanGroups } : {}),
+      ...(cleanSpecialty ? { coachSpecialtyTitle: cleanSpecialty } : {}),
+      ...(validAthleteIds && validAthleteIds.length > 0
+        ? { assignedAthleteMembershipIds: validAthleteIds }
+        : {}),
+      sharingTier: 'FULL_STREAMS',
+      invitedName: cleanName,
+      ...(cleanEmail ? { invitedEmail: cleanEmail } : {}),
+      isMinorU18: false,
+      parentConsentStatus: 'NOT_REQUIRED',
+      status: 'INVITED',
+      emailDeliveryStatus: emailStatus,
+      magicJoinUrl: inviteUrl,
+      rawInviteToken,
+      inviteTokenHash: hashToken(rawInviteToken),
+      invitedAt: nowIso,
+    };
+
+    doc.memberships.push(newMem);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'COACHING_STAFF_INVITED',
+      targetId: newMem.membershipId,
+      metadata: {
+        role,
+        coachSpecialtyTitle: cleanSpecialty || undefined,
+        coachEventGroups: cleanGroups,
+        assignedAthleteCount: validAthleteIds?.length ?? 0,
+      },
+    });
+
+    const summary = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    const projectedMember = summary?.memberships.find((m) => m.membershipId === newMem.membershipId);
+    return {
+      ok: true,
+      member: projectedMember,
+      inviteUrl,
+      emailStatus,
+      team: summary,
     };
   });
 }

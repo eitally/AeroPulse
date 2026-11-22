@@ -1505,6 +1505,8 @@ export interface TeamMembershipRecord {
   squadGroup: string;
   eventGroup?: CoachEventGroup;
   coachEventGroups?: CoachEventGroup[];
+  coachSpecialtyTitle?: string;
+  assignedAthleteMembershipIds?: string[];
   invitedName: string;
   invitedEmail?: string;
   invitedPhone?: string;
@@ -1655,6 +1657,8 @@ export interface TeamSummaryWithRole {
   mySquadGroup: string;
   myEventGroup?: CoachEventGroup;
   myCoachEventGroups?: CoachEventGroup[];
+  myCoachSpecialtyTitle?: string;
+  myAssignedAthleteMembershipIds?: string[];
   myMembershipId: string;
   totalInvited: number;
   openedCount: number;
@@ -1682,6 +1686,7 @@ export interface TeamInvitePreviewPayload {
     parentGuardianEmail?: string;
     squadGroup: string;
     role: TeamMemberRole;
+    coachSpecialtyTitle?: string;
     isMinorU18: boolean;
     birthYear?: number;
     parentConsentStatus?: ParentConsentStatus;
@@ -1860,6 +1865,31 @@ export interface TeamMessagingPolicy {
   quietHoursStartHour: number;
   quietHoursEndHour: number;
   requireGuardianCcForMinors: boolean;
+}
+
+export interface WebPushSubscriptionKeys {
+  p256dh: string;
+  auth: string;
+}
+
+export interface StoredWebPushSubscription {
+  id: string;
+  userSid: string;
+  endpoint: string;
+  keys: WebPushSubscriptionKeys;
+  userAgent?: string;
+  createdAt: string;
+  updatedAt: string;
+  enabled: boolean;
+  muteQuietHours?: boolean;
+}
+
+export interface PushDispatchPayload {
+  title: string;
+  body: string;
+  url: string;
+  tag: string;
+  isEmergency?: boolean;
 }
 
 

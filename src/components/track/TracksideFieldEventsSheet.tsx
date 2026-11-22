@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Award, Check, CheckCircle2, Flame, Plus, Target, Trash2, X } from '../icons/PhosphorIcons';
 import {
   FIELD_EVENT_CATALOG,
@@ -24,6 +24,7 @@ export interface TracksideFieldEventsSheetProps {
   myTeams: TeamSummaryWithRole[];
   rosterAthletes: ConnectedAthleteRecord[];
   allowedEventGroups?: CoachEventGroup[];
+  defaultEventGroup?: CoachEventGroup;
   distanceUnit?: DistanceUnit;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], activeId?: string) => void;
 }
@@ -83,9 +84,24 @@ export const TracksideFieldEventsSheet: React.FC<TracksideFieldEventsSheetProps>
   myTeams,
   rosterAthletes,
   allowedEventGroups,
+  defaultEventGroup,
   onTeamsUpdated,
 }) => {
-  const [eventCode, setEventCode] = useState<FieldEventCode>('LJ');
+  const [eventCode, setEventCode] = useState<FieldEventCode>(
+    defaultEventGroup === 'POLE_VAULT'
+      ? 'PV'
+      : defaultEventGroup === 'THROWS'
+        ? 'SP'
+        : defaultEventGroup === 'MULTI'
+          ? 'DEC'
+          : 'LJ'
+  );
+  useEffect(() => {
+    if (defaultEventGroup === 'POLE_VAULT') setEventCode('PV');
+    else if (defaultEventGroup === 'THROWS') setEventCode('SP');
+    else if (defaultEventGroup === 'JUMPS') setEventCode('LJ');
+    else if (defaultEventGroup === 'MULTI') setEventCode('DEC');
+  }, [defaultEventGroup]);
   const spec = useMemo(() => getFieldEventSpec(eventCode), [eventCode]);
 
   const athleteOptions = useMemo<AthleteOption[]>(() => {

@@ -727,6 +727,50 @@ export default function App() {
     [isSampleDemoMode, handleSelectActiveTeam]
   );
 
+  // Open Team Messaging Drawer when launched from a device push notification (?openMessages=1 or SW postMessage)
+  useEffect(() => {
+    if (typeof window === 'undefined' || (!hasEnteredWorkspace && !isSampleDemoMode)) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('openMessages') === '1') {
+        const targetTeamId = params.get('teamId');
+        if (targetTeamId && effectiveTeams.some((t) => t.brand.teamId === targetTeamId)) {
+          effectiveOnSelectActiveTeam(targetTeamId);
+        }
+        setIsTeamMessagesOpen(true);
+        params.delete('openMessages');
+        params.delete('teamId');
+        const nextSearch = params.toString();
+        const cleanUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
+        window.history.replaceState(null, '', cleanUrl);
+      }
+    } catch {
+      // ignore URL parsing failures
+    }
+  }, [hasEnteredWorkspace, isSampleDemoMode, effectiveTeams, effectiveOnSelectActiveTeam]);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    const handleSwMessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; url?: string } | null;
+      if (data?.type !== 'THRESH_OPEN_URL' || !data.url) return;
+      try {
+        const parsed = new URL(data.url, window.location.origin);
+        const targetTeamId = parsed.searchParams.get('teamId');
+        if (targetTeamId && effectiveTeams.some((t) => t.brand.teamId === targetTeamId)) {
+          effectiveOnSelectActiveTeam(targetTeamId);
+        }
+        if (parsed.searchParams.get('openMessages') === '1') {
+          setIsTeamMessagesOpen(true);
+        }
+      } catch {
+        setIsTeamMessagesOpen(true);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+  }, [effectiveTeams, effectiveOnSelectActiveTeam]);
+
   const completeStravaAuthHandshakeRef = useRef<CompleteStravaAuthFn | null>(null);
   const { reconcileStoreOwnerAthleteId, fetchServerConfigStatus, syncLiveTelemetry } =
     useTelemetrySync({
