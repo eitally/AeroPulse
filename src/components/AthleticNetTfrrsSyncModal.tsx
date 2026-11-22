@@ -114,7 +114,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
     }
   }, [activeTeam]);
 
-  // Listen for live 1-Click "Send to THRESH" Bookmarklet postMessage payloads
+  // Listen for live 1-Click "Send to MeetReady" Bookmarklet postMessage payloads
   useEffect(() => {
     if (typeof window === 'undefined' || !isOpen) return;
     const allowedOrigins = new Set([
@@ -137,7 +137,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
       }
       setStatusBanner({
         tone: 'success',
-        text: 'Received live page data from the Send to THRESH bookmarklet. Review below and click Sync to Team.',
+        text: 'Received live page data from the Send to MeetReady bookmarklet. Review below and click Sync to Team.',
       });
     };
     window.addEventListener('message', onMessage);
@@ -232,7 +232,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
   ]);
 
   const appOrigin =
-    typeof window !== 'undefined' ? window.location.origin : 'https://thresh-dev.vercel.app';
+    typeof window !== 'undefined' ? window.location.origin : 'https://meetready.app';
   const bookmarkletHref = useMemo(
     () => buildThreshExternalSyncBookmarklet(appOrigin),
     [appOrigin]
@@ -1148,18 +1148,18 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
             <div className="flex items-center gap-2">
               <Globe className="w-4 h-4 text-ap-cobalt dark:text-ap-volt shrink-0" />
               <h3 className="text-sm font-bold text-ap-ink dark:text-ap-chalk">
-                1-Click &ldquo;Send to THRESH&rdquo; Browser Clipper
+                1-Click &ldquo;Send to MeetReady&rdquo; Browser Clipper
               </h3>
             </div>
             <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
-              One click inside any open Athletic.net or TFRRS browser tab sends that page&apos;s roster IDs or meet results straight to THRESH.
+              One click inside any open Athletic.net or TFRRS browser tab sends that page&apos;s roster IDs or meet results straight to MeetReady.
             </p>
             <ol className="list-decimal list-inside space-y-1.5 text-xs text-ap-ink dark:text-ap-chalk">
               <li>
-                Drag the <strong>Send to THRESH</strong> button below onto your browser&rsquo;s Bookmarks Bar.
+                Drag the <strong>Send to MeetReady</strong> button below onto your browser&rsquo;s Bookmarks Bar.
               </li>
               <li>
-                Open any Athletic.net team/meet page (e.g., Willow Glen <code>1073/xc</code>) or TFRRS team page and click <strong>Send to THRESH</strong>.
+                Open any Athletic.net team/meet page (e.g., Willow Glen <code>1073/xc</code>) or TFRRS team page and click <strong>Send to MeetReady</strong>.
               </li>
             </ol>
 
@@ -1171,13 +1171,13 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                   e.preventDefault();
                   setStatusBanner({
                     tone: 'warning',
-                    text: 'Drag this "Send to THRESH" button to your browser Bookmarks Bar, then click it while viewing Athletic.net or TFRRS.',
+                    text: 'Drag this "Send to MeetReady" button to your browser Bookmarks Bar, then click it while viewing Athletic.net or TFRRS.',
                   });
                 }}
                 className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-4 py-1.5 text-xs font-bold inline-flex items-center gap-1.5"
               >
                 <Link2 className="w-3.5 h-3.5" />
-                <span>Send to THRESH</span>
+                <span>Send to MeetReady</span>
               </a>
 
               <button

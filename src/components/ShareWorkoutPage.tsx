@@ -255,7 +255,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
               className="min-h-[44px] px-3.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
-              <span>{hasActiveWorkspace ? 'Back to Workspace' : 'Open THRESH'}</span>
+              <span>{hasActiveWorkspace ? 'Back to Workspace' : 'Open MeetReady'}</span>
             </button>
           </div>
         </div>
@@ -276,7 +276,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
                 onClick={hasActiveWorkspace ? onExitToWorkspace : onExitToSignIn}
                 className="min-h-[44px] px-5 py-2 rounded-xl ap-btn-primary text-xs font-semibold cursor-pointer"
               >
-                Return to THRESH
+                Return to MeetReady
               </button>
             </div>
           </section>
@@ -341,8 +341,8 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
                       {isImporting
                         ? 'Adding to Calendar...'
                         : hasActiveWorkspace
-                          ? 'Add to My THRESH Calendar'
-                          : 'Add to My THRESH Calendar (Free)'}
+                          ? 'Add to My MeetReady Calendar'
+                          : 'Add to My MeetReady Calendar (Free)'}
                     </span>
                   </button>
 

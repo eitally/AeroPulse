@@ -3,6 +3,7 @@ import type { TeamBrandConfig } from '../types';
 import { computeAccessibleTeamPalette } from '../utils/teamPalette';
 import {
   FAV_F_SHIELD_T_PATH,
+  MEETREADY_WORDMARK_FONT_FAMILY,
   S2_ARROW_NEEDLE_PATH,
   S2_PINE_ARC_PATH,
   S2_VOLT_ARC_PATH,
@@ -51,7 +52,7 @@ function getSurfaceThemeVarsClass(
 }
 
 /**
- * Standalone 1:1 THRESH Symbol Mark (`S2 Redline Breach`, 128×128).
+ * Standalone 1:1 MeetReady Symbol Mark (`S2 Redline Breach`, 128×128).
  * Chronometer precision ring broken at 45° by a piercing threshold arrow-needle.
  */
 export const ThreshMark: React.FC<{
@@ -67,7 +68,7 @@ export const ThreshMark: React.FC<{
   accentColor = '#C8FF00',
   isTeamOverride = false,
   oneInkColor,
-  ariaLabel = 'THRESH mark',
+  ariaLabel = 'MeetReady mark',
 }) => {
   const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
   const pineFill = oneInkColor ?? 'var(--thresh-pine)';
@@ -95,8 +96,7 @@ export const ThreshMark: React.FC<{
 };
 
 /**
- * Standalone Custom Vector THRESH Wordmark (`W-A Threshold Horizon`, 364×64).
- * True 0° optical caliper geometry (zero CSS/SVG skew distortion) with floating threshold E-bar.
+ * Standalone MeetReady Two-Tone CamelCase Wordmark (`Meet` + `Ready`, 364×64).
  */
 export const ThreshWordmark: React.FC<{
   className?: string;
@@ -113,7 +113,7 @@ export const ThreshWordmark: React.FC<{
   showVoltBar = true,
   isTeamOverride = false,
   oneInkColor,
-  ariaLabel = 'THRESH',
+  ariaLabel = 'MeetReady',
 }) => {
   const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
   const inkFill = oneInkColor ?? 'var(--thresh-ink)';
@@ -134,23 +134,23 @@ export const ThreshWordmark: React.FC<{
       role="img"
       aria-label={ariaLabel}
     >
-      <g fill={inkFill}>
-        {WA_WORDMARK_INK_PATHS.map((item, idx) => (
-          <path
-            key={idx}
-            d={item.d}
-            fillRule={item.evenOdd ? 'evenodd' : undefined}
-            clipRule={item.evenOdd ? 'evenodd' : undefined}
-          />
-        ))}
-      </g>
-      <path d={WA_THRESHOLD_BAR_PATH} fill={barFill} />
+      <text
+        x="0"
+        y="46"
+        fontFamily={MEETREADY_WORDMARK_FONT_FAMILY}
+        fontSize="56"
+        fontWeight="800"
+        letterSpacing="-1.6"
+      >
+        <tspan fill={inkFill}>Meet</tspan>
+        <tspan fill={barFill}>Ready</tspan>
+      </text>
     </svg>
   );
 };
 
 /**
- * Full Custom THRESH Vector Lockup SVG (`S2 Redline Breach` × `W-A Threshold Horizon`).
+ * Full MeetReady Lockup SVG (`S2 Redline Breach` × `MeetReady`).
  * Accepts `surface="on-dark"` so footer / dark-surround placements stay high contrast in Light Mode.
  */
 export const ThreshFullVectorLockup: React.FC<{
@@ -164,7 +164,7 @@ export const ThreshFullVectorLockup: React.FC<{
   surface = 'auto',
   accentColor = '#C8FF00',
   isTeamOverride = false,
-  ariaLabel = 'THRESH',
+  ariaLabel = 'MeetReady',
 }) => {
   const themeVarsClass = getSurfaceThemeVarsClass(surface, isTeamOverride);
   const activeGaugeColor = isTeamOverride ? accentColor : 'var(--thresh-volt)';
@@ -190,26 +190,26 @@ export const ThreshFullVectorLockup: React.FC<{
         />
       </g>
 
-      {/* Standalone W-A Threshold Horizon Custom Vector Wordmark */}
-      <g transform="translate(134, 34) scale(0.89)">
-        <g fill="var(--thresh-ink)">
-          {WA_WORDMARK_INK_PATHS.map((item, idx) => (
-            <path
-              key={idx}
-              d={item.d}
-              fillRule={item.evenOdd ? 'evenodd' : undefined}
-              clipRule={item.evenOdd ? 'evenodd' : undefined}
-            />
-          ))}
-        </g>
-        <path d={WA_THRESHOLD_BAR_PATH} fill={activeGaugeColor} />
+      {/* CamelCase Two-Tone MeetReady Wordmark */}
+      <g transform="translate(132, 33) scale(0.96)">
+        <text
+          x="0"
+          y="46"
+          fontFamily={MEETREADY_WORDMARK_FONT_FAMILY}
+          fontSize="56"
+          fontWeight="800"
+          letterSpacing="-1.6"
+        >
+          <tspan fill="var(--thresh-ink)">Meet</tspan>
+          <tspan fill={activeGaugeColor}>Ready</tspan>
+        </text>
       </g>
     </svg>
   );
 };
 
 /**
- * Compact 32x32 THRESH FAV-F "High-Vis Volt Shield" Squircle Icon Mark for 16px/32px browser favicons and small tiles.
+ * Compact 32x32 MeetReady "High-Vis Volt Shield" Squircle Icon Mark for 16px/32px browser favicons and small tiles.
  */
 export const ThreshSquareTrackIcon: React.FC<{
   className?: string;
@@ -245,7 +245,7 @@ export const ThreshSquareTrackIcon: React.FC<{
 };
 
 /**
- * THRESH — Modular Sitewide Brand Lockup & Dynamic Team Co-Branded Header
+ * MeetReady — Modular Sitewide Brand Lockup & Dynamic Team Co-Branded Header
  * - Supports decoupled `mode`: `'horizontal'` (Symbol + Wordmark), `'mark-only'`, or `'wordmark-only'`.
  * - Supports explicit `surface` (`'auto' | 'on-light' | 'on-dark'`) so footers and dark chrome stay AAA contrast.
  */
@@ -346,8 +346,8 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
     const accent = isTeam ? 'var(--team-logo-accent)' : '#C8FF00';
     const label =
       isTeam && teamBrand
-        ? `${teamBrand.shortName || teamBrand.name} on THRESH`
-        : 'THRESH';
+        ? `${teamBrand.shortName || teamBrand.name} on MeetReady`
+        : 'MeetReady';
 
     if (mode === 'mark-only') {
       return (
@@ -457,6 +457,8 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
 
 export const ThreshLogo = AeroPulseLogo;
 export const ThreshLockup = AeroPulseLogo;
+export const MeetReadyLogo = AeroPulseLogo;
+export const MeetReadyMark = ThreshMark;
 
 /**
  * Signature #1 Stadium Track 4-Lane Concentric Banking-Turn Watermark for hero & workout cards.

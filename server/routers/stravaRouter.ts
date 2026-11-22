@@ -494,7 +494,7 @@ export async function activateStravaCanonicalScope(
       await linkProviderToUser(canonicalUserId, 'strava', opts.athleteId, { name: cleanName });
       await connectServiceToUser(canonicalUserId, 'strava', opts.athleteId, cleanName);
     } catch (err) {
-      console.warn('[THRESH Auth] Linking Strava to existing ThreshUser warning:', err);
+      console.warn('[MeetReady Auth] Linking Strava to existing ThreshUser warning:', err);
     }
   }
 
@@ -661,7 +661,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
             heading: isCancelled ? 'Strava Sign-In Cancelled' : 'Strava Authorization Declined',
             accentColor: isCancelled ? '#FBBF24' : '#FB7185',
             body: escapeHtml(friendlyErr),
-            ctaLabel: 'Return to THRESH',
+            ctaLabel: 'Return to MeetReady',
             ctaHref: returnHref,
             ctaOnClick:
               "if (window.opener || window.name === 'strava_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
@@ -683,7 +683,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
             heading: 'Missing Strava Code',
             accentColor: '#FB7185',
             body: 'No authorization code was returned by Strava. Please try connecting again.',
-            ctaLabel: 'Return to THRESH',
+            ctaLabel: 'Return to MeetReady',
             ctaHref: buildReturnOnboardingUrl(verifiedState),
           })
         );
@@ -710,7 +710,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
             body: !verifiedState
               ? 'The security verification token has expired or is invalid. Please return and initiate connection again.'
               : 'The browser OAuth state cookie is missing or does not match. Please return and initiate connection again.',
-            ctaLabel: 'Return to THRESH',
+            ctaLabel: 'Return to MeetReady',
             ctaHref: '/',
           })
         );
@@ -849,14 +849,14 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       stravaIdentityByToken.set(tokenData.refresh_token, identityEntry);
     }
 
-    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory if not already linked to canonical usr_
+    // AUTH-01: Auto-link/migrate into unified MeetReady accounts directory if not already linked to canonical usr_
     if (athleteId && !linkedUserId) {
       try {
         await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
         });
       } catch (err) {
-        console.warn('[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:', err);
+        console.warn('[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:', err);
       }
     }
 
@@ -972,13 +972,13 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       .type('html')
       .send(
         renderThreshOAuthHtml({
-          title: 'Strava Connected · THRESH',
+          title: 'Strava Connected · MeetReady',
           heading: `Strava Connected${athleteName && !isGenericName(athleteName) ? ` · ${escapeHtml(athleteName)}` : ''}`,
           accentColor: '#10B981',
           body: !hasPendingTeamJoin
-            ? 'Strava connected! Opening your THRESH training workspace…'
-            : 'Your Strava account is linked. Return to THRESH to complete your team roster setup.',
-          ctaLabel: 'Continue to THRESH',
+            ? 'Strava connected! Opening your MeetReady training workspace…'
+            : 'Your Strava account is linked. Return to MeetReady to complete your team roster setup.',
+          ctaLabel: 'Continue to MeetReady',
           ctaHref: returnUrl,
           scriptBody: buildStravaCallbackScript({
             serializedPayload: oauthSuccessPayload,
@@ -1007,7 +1007,7 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
           heading: 'Strava Connection Failed',
           accentColor: '#FB7185',
           body: escapeHtml(friendlyErr),
-          ctaLabel: 'Return to THRESH',
+          ctaLabel: 'Return to MeetReady',
           ctaHref: buildReturnOnboardingUrl(verifiedState, { auth_error: friendlyErr }),
           ctaOnClick:
             "if (window.opener || window.name === 'strava_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
@@ -1256,14 +1256,14 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
 
-    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory if not already linked to canonical usr_
+    // AUTH-01: Auto-link/migrate into unified MeetReady accounts directory if not already linked to canonical usr_
     if (athleteId && !linkedUserId) {
       try {
         await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
         });
       } catch (err) {
-        console.warn('[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:', err);
+        console.warn('[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:', err);
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -1414,14 +1414,14 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     if (clientSecret) store.stravaClientSecret = clientSecret;
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
 
-    // AUTH-01: Auto-link/migrate into unified THRESH accounts directory if not already linked to canonical usr_
+    // AUTH-01: Auto-link/migrate into unified MeetReady accounts directory if not already linked to canonical usr_
     if (athleteId && !linkedUserId) {
       try {
         await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
         });
       } catch (err) {
-        console.warn('[THRESH Auth] Auto-migration of Strava athlete to THRESH accounts skipped:', err);
+        console.warn('[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:', err);
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -1811,7 +1811,7 @@ stravaRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => 
       comments: [],
     };
 
-    const resolvedName = req.body?.authorName || athleteName || 'THRESH Athlete';
+    const resolvedName = req.body?.authorName || athleteName || 'MeetReady Athlete';
     const [first, ...rest] = String(resolvedName).trim().split(' ');
     const last = rest.join(' ') || '';
 
@@ -1839,7 +1839,7 @@ stravaRouter.post('/api/activities/:id/kudos', (req: Request, res: Response) => 
           existingKudoers.unshift({
             firstname: first,
             lastname: last,
-            city: 'THRESH Club',
+            city: 'MeetReady Club',
           });
         }
       } else {

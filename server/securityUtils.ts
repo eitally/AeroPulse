@@ -109,7 +109,7 @@ export function isSafeHttpsUrl(rawUrl?: unknown): boolean {
 /**
  * Derives a deterministic, non-reversible 32-char hex session ID from a verified Strava Athlete ID.
  * Guarantees that signing in with Strava on any device (laptop, phone, PWA) restores the exact same
- * THRESH server vault and team memberships without requiring a secondary email OTP login.
+ * MeetReady server vault and team memberships without requiring a secondary email OTP login.
  */
 export function deriveStravaSessionSid(stravaAthleteId: string | number): string {
   const cleanId = String(stravaAthleteId || '').trim().replace(/[^0-9a-zA-Z_-]/g, '');
@@ -124,9 +124,9 @@ export function deriveStravaSessionSid(stravaAthleteId: string | number): string
 }
 
 /**
- * Derives a deterministic, non-reversible 32-char hex session ID from a verified THRESH User ID (usr_...).
+ * Derives a deterministic, non-reversible 32-char hex session ID from a verified MeetReady User ID (usr_...).
  * Guarantees that signing in via Google, Magic Link, or Passkey restores the exact same
- * THRESH server vault and team memberships across browsers, devices, and PWAs.
+ * MeetReady server vault and team memberships across browsers, devices, and PWAs.
  */
 export function deriveUserSessionSid(userId: string): string {
   const cleanId = String(userId || '').trim().replace(/[^0-9a-zA-Z_-]/g, '');
@@ -476,6 +476,8 @@ export function resolveSafeOrigin(rawOrigin?: string): string | null {
 }
 
 const TRUSTED_PROD_CORS_ORIGINS = new Set<string>([
+  'https://meetready.app',
+  'https://www.meetready.app',
   'https://thresh-dev.vercel.app',
   'https://aeropulse-eta.vercel.app',
   'https://thresh.app',

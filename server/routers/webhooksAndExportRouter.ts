@@ -117,7 +117,7 @@ webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Resp
  */
 webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Response) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
-  const title = String(body.name || 'THRESH Prescribed Session').trim();
+  const title = String(body.name || 'MeetReady Prescribed Session').trim();
   const sport = body.sportCategory === 'Running' ? 'Running' : 'Cycling';
   const ftp = Math.max(100, Number(body.ftp) || 280);
   const thresholdPaceSecsPerKm = Math.max(95, Number(body.thresholdPaceSecsPerKm) || 245);
@@ -460,7 +460,7 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
   // 3. Zwift .ZWO XML
   const zwoLines = [
     '<workout_file>',
-    '  <author>THRESH</author>',
+    '  <author>MeetReady</author>',
     `  <name>${title.replace(/[<>&]/g, '')}</name>`,
     `  <sportType>${sport === 'Running' ? 'run' : 'bike'}</sportType>`,
     '  <workout>',
@@ -544,7 +544,7 @@ webhooksAndExportRouter.post('/api/physiology/race-simulator', (req: Request, re
 webhooksAndExportRouter.post('/api/physiology/race-passport', (req: Request, res: Response) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const passport = generateVerifiedRacePassport({
-    athleteName: String(body.athleteName || 'THRESH Athlete'),
+    athleteName: String(body.athleteName || 'MeetReady Athlete'),
     meetOrRaceName: String(body.meetOrRaceName || 'Official Championship'),
     eventLabel: String(body.eventLabel || '5000m'),
     platform: body.platform || 'Official FAT',

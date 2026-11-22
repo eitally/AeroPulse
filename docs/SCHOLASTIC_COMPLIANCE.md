@@ -1,4 +1,4 @@
-# THRESH Scholastic Youth Privacy & Safe Sport Compliance Framework
+# MeetReady Scholastic Youth Privacy & Safe Sport Compliance Framework
 
 **Version:** 2.4 (Youth Safeguarding & Procurement Pack)  
 **Applicability:** High School, Middle School (`<13` Watchless Only), Junior Development Clubs, and Collegiate Programs  

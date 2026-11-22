@@ -195,7 +195,7 @@ export async function syncTeamIcsCalendar(params: {
         normalizedUrl,
         {
           headers: {
-            'User-Agent': 'THRESH-CalendarSync/2.1 (+https://thresh-dev.vercel.app)',
+            'User-Agent': 'MeetReady-CalendarSync/2.1 (+https://meetready.app)',
             Accept: 'text/calendar, text/plain, */*;q=0.8',
           },
           signal: controller.signal,

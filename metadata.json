@@ -1,6 +1,6 @@
 {
-  "name": "THRESH — Track, XC & Endurance Coaching Lab",
-  "description": "Track, XC & endurance coaching OS uniting team pace pods, watchless 0.01s trackside splits, U18 SafeSport triage, and 1Hz athlete physiology.",
+  "name": "MeetReady — Track & Field & Cross Country",
+  "description": "Track & field and cross country team OS uniting coach pace pods, watchless 0.01s trackside splits, U18 SafeSport triage, and 1Hz athlete physiology.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

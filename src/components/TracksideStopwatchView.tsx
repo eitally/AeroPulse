@@ -1113,10 +1113,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         setSaveFeedbackTone('prime');
         parts.push(
           sessionType === 'RACE'
-            ? `Saved ${saveResult.savedCount} Official Race ${saveResult.savedCount === 1 ? 'Mark' : 'Marks'} into THRESH Activities.`
+            ? `Saved ${saveResult.savedCount} Official Race ${saveResult.savedCount === 1 ? 'Mark' : 'Marks'} into MeetReady Activities.`
             : endedEarlyStimulusRatio !== null
-              ? `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (${Math.round(endedEarlyStimulusRatio * 100)}% quality stimulus preserved) into THRESH Activities.`
-              : `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into THRESH Activities.`
+              ? `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (${Math.round(endedEarlyStimulusRatio * 100)}% quality stimulus preserved) into MeetReady Activities.`
+              : `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into MeetReady Activities.`
         );
       }
 
@@ -2214,7 +2214,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         onRunnerAction={handleRunnerAction}
       />
 
-      {/* 5. Walk-On Roster Deck & 1-Click THRESH Save / CSV Export Footer */}
+      {/* 5. Walk-On Roster Deck & 1-Click MeetReady Save / CSV Export Footer */}
       <TracksideWalkOnAndSaveBar
         sessionType={sessionType}
         sessionTitle={sessionTitle}

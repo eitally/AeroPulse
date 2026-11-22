@@ -72,7 +72,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
                   id="thresh-pwa-install-title"
                   className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-100"
                 >
-                  Install THRESH as a Standalone App
+                  Install MeetReady as a Standalone App
                 </h3>
                 <button
                   onClick={() => setShowGuideModal(false)}
@@ -84,7 +84,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
               </div>
               <div className="mt-4 space-y-3 text-xs sm:text-sm text-slate-600 dark:text-slate-300">
                 <p>
-                  THRESH includes a Web App Manifest and offline Service Worker so you can launch it directly from your phone or desktop home screen:
+                  MeetReady includes a Web App Manifest and offline Service Worker so you can launch it directly from your phone or desktop home screen:
                 </p>
                 <div className="rounded-lg liquid-glass-subtle p-3.5 space-y-2">
                   <p className="font-medium text-slate-900 dark:text-slate-100">On iPhone / iPad (Safari):</p>
@@ -98,7 +98,7 @@ export const PWAInstallButton: React.FC<{ variant?: 'compact' | 'full' }> = ({ v
                   <p className="font-medium text-slate-900 dark:text-slate-100">On Android / Desktop (Chrome or Edge):</p>
                   <ol className="list-decimal list-inside space-y-1 text-xs">
                     <li>Open the app in a top-level browser tab.</li>
-                    <li>Tap <strong>Install THRESH</strong> (or <strong>Install App</strong>) in the browser menu or address bar.</li>
+                    <li>Tap <strong>Install MeetReady</strong> (or <strong>Install App</strong>) in the browser menu or address bar.</li>
                   </ol>
                 </div>
               </div>

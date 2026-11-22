@@ -401,7 +401,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 type="button"
                 onClick={handleCopyInvite}
                 className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center text-ap-muted dark:text-slate-300 hover:text-slate-900 dark:hover:text-white cursor-pointer"
-                aria-label="Copy your THRESH Invite Code"
+                aria-label="Copy your MeetReady Invite Code"
               >
                 {copiedCode ? (
                   <Check className="w-3.5 h-3.5 text-[#10B981]" />
@@ -913,7 +913,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       Team Membership &amp; Guardian Controls
                     </h4>
                     <p className="text-2xs text-slate-600 dark:text-slate-300 mt-0.5">
-                      Leaving a team stops live wellness sharing immediately while saving all coach-timed splits and official meet marks into your personal THRESH vault.
+                      Leaving a team stops live wellness sharing immediately while saving all coach-timed splits and official meet marks into your personal MeetReady vault.
                     </p>
                   </div>
                   <div className="divide-y divide-stone-200/70 dark:divide-slate-800">
@@ -1060,7 +1060,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       Login Email Mobility &amp; Account Erasure
                     </h4>
                     <p className="text-2xs text-slate-600 dark:text-slate-300 mt-0.5">
-                      Switch away from a graduating school email without losing your workouts, or permanently erase your THRESH account.
+                      Switch away from a graduating school email without losing your workouts, or permanently erase your MeetReady account.
                     </p>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2">
@@ -1137,7 +1137,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   ) : (
                     <div className="space-y-2.5 pt-2 border-t border-rose-500/20">
                       <p className="text-xs text-rose-700 dark:text-rose-300">
-                        This permanently erases your THRESH login credentials, encrypted cloud vault, connected watch/Strava tokens, and removes you from team rosters. Type <strong className="font-mono">DELETE</strong> below to confirm.
+                        This permanently erases your MeetReady login credentials, encrypted cloud vault, connected watch/Strava tokens, and removes you from team rosters. Type <strong className="font-mono">DELETE</strong> below to confirm.
                       </p>
                       <div className="flex flex-col sm:flex-row gap-2">
                         <input
@@ -1195,7 +1195,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
                 >
                   <Users className="w-3.5 h-3.5" />
-                  <span>Open THRESH Coach Desk</span>
+                  <span>Open MeetReady Coach Desk</span>
                 </button>
               )}
               {onOpenFullScreenStopwatch && (

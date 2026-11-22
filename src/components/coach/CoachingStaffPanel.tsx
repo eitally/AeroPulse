@@ -149,7 +149,7 @@ export const CoachingStaffPanel: React.FC<CoachingStaffPanelProps> = ({
     const localFallbackAdd = () => {
       const demoId = `demo-mem-coach-${Date.now()}`;
       const origin =
-        typeof window !== 'undefined' ? window.location.origin : 'https://thresh.fit';
+        typeof window !== 'undefined' ? window.location.origin : 'https://meetready.app';
       const inviteUrl = `${origin}/join/${activeTeam.brand.slug}?t=demo-staff-${Date.now()}`;
       const newCoach: TeamMembershipRecord = {
         membershipId: demoId,

@@ -124,7 +124,7 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
     benchmark: 'Optimal Build: -10 to -25 · Peak Race Freshness: +5 to +20',
     colorHex: '#10b981',
     explanation:
-      'The net balance between long-term Fitness (CTL) and short-term Fatigue (ATL). THRESH plots five distinct Form zones from Transition (> +25) down to High Risk (< -30).',
+      'The net balance between long-term Fitness (CTL) and short-term Fatigue (ATL). MeetReady plots five distinct Form zones from Transition (> +25) down to High Risk (< -30).',
   },
   {
     code: 'Ramp Rate',
@@ -293,9 +293,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       id: 'ch1-quickstart',
       number: '01',
       shortTitle: 'Quick Start & Vision',
-      fullTitle: 'Ch 1 · Quick Start & Why THRESH',
+      fullTitle: 'Ch 1 · Quick Start & Why MeetReady',
       subtitle:
-        'How THRESH unifies Intervals.icu physiological rigor, daily readiness morphing, and multi-source telemetry.',
+        'How MeetReady unifies Intervals.icu physiological rigor, daily readiness morphing, and multi-source telemetry.',
       icon: Sparkles,
       accentClass: 'text-sky-500 bg-sky-500/12 border-sky-500/30',
     },
@@ -391,7 +391,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/25',
         title: 'Banister Impulse-Response & Critical Power Physics',
         summary:
-          "THRESH computes true 42-day CTL, 7-day ATL, Form (TSB), Monod-Scherrer Critical Power (CP) & W' anaerobic battery, and first-vs-second-half Aerobic Decoupling (Pa:Hr).",
+          "MeetReady computes true 42-day CTL, 7-day ATL, Form (TSB), Monod-Scherrer Critical Power (CP) & W' anaerobic battery, and first-vs-second-half Aerobic Decoupling (Pa:Hr).",
         bullets: [
           'Separate Outdoor vs. Indoor/Smart-Trainer FTP, LTHR, and 7-zone tables.',
           'High-performance interactive uPlot PMC with brush zoom, custom date windows (7D to ALL), and milestone pins.',
@@ -408,7 +408,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
         title: 'Closed-Loop Daily Readiness Workout Morphing',
         summary:
-          'Static training plans break when life stress, poor sleep, or autonomic suppression hits. THRESH evaluates your morning HRV, RHR, and TSB to morph today’s workout in one click.',
+          'Static training plans break when life stress, poor sleep, or autonomic suppression hits. MeetReady evaluates your morning HRV, RHR, and TSB to morph today’s workout in one click.',
         bullets: [
           'Green (Optimal): Preserves full VO2max / Threshold interval prescription.',
           'Amber (Modulated -15% Load): Downshifts Z5/Z4 repeats into controlled Sweet Spot / Tempo.',
@@ -448,7 +448,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/25',
         title: 'Flexible Sign-In, Explicit Sync Window & Optional Sleep/HRV Add-Ons',
         summary:
-          'Google, Passkey, Email, or optional Strava handle your THRESH identity across every device. When connecting Strava or wearables, you explicitly choose what imports—zero mandatory wearables for team athletes.',
+          'Google, Passkey, Email, or optional Strava handle your MeetReady identity across every device. When connecting Strava or wearables, you explicitly choose what imports—zero mandatory wearables for team athletes.',
         bullets: [
           'Choose Last 90 Days (Recommended), Last 6 Months, Full Archive, or Identity Only (0 workouts imported).',
           'Optional Secondary Connections: Garmin Connect and Intervals.icu supply overnight HRV & Sleep Score whenever you want, but are never required.',
@@ -758,7 +758,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
         title: 'Athletic.net / TFRRS Sync (.ics Feeds, Paste Import & 1-Click Bookmarklet)',
         summary:
-          'Import High School XC/Track or Collegiate TFRRS rosters, non-5K XC course schedules, and whole-team meet results cleanly into THRESH.',
+          'Import High School XC/Track or Collegiate TFRRS rosters, non-5K XC course schedules, and whole-team meet results cleanly into MeetReady.',
         bullets: [
           'Connect a live .ics / webcal:// calendar URL or paste roster/meet tables from Athletic.net, TFRRS CSV, or Hy-Tek.',
           'Resolves non-5K California HS XC courses automatically (Crystal Springs 2.95 mi → 4,748m, Montgomery Hill 2.74 mi → 4,410m).',
@@ -888,7 +888,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                   id="thresh-user-guide-title"
                   className="text-base sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white truncate mt-0.5"
                 >
-                  THRESH Stadium Track Edition — Interactive User Guide
+                  MeetReady Stadium Track Edition — Interactive User Guide
                 </h2>
               </div>
             </div>
@@ -1224,7 +1224,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                         Chapter {activeChapterMeta.number} of 09
                       </span>
                       <span className="text-xs text-slate-500 dark:text-slate-400">
-                        THRESH Telemetry & Coaching Manual
+                        MeetReady Telemetry & Coaching Manual
                       </span>
                     </div>
                     <h3 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
@@ -1544,7 +1544,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         {/* Bottom Footer with Chapter Prev/Next Controls */}
         <div className="px-4 sm:px-6 py-3 border-t border-emerald-900/15 dark:border-ap-edge bg-white dark:bg-ap-carbon flex items-center justify-between gap-3 shrink-0">
           <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 truncate">
-            THRESH Documentation · <a href="/docs/coach.html" className="underline text-ap-cobalt dark:text-ap-volt">Coach Playbook</a> · <a href="/for-athletic-directors" className="underline text-ap-cobalt dark:text-ap-volt">For ADs</a>
+            MeetReady Documentation · <a href="/docs/coach.html" className="underline text-ap-cobalt dark:text-ap-volt">Coach Playbook</a> · <a href="/for-athletic-directors" className="underline text-ap-cobalt dark:text-ap-volt">For ADs</a>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">

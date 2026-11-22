@@ -248,7 +248,7 @@ export const SACRED_ZONES_SPECTRUM: PhysiologyZoneSpec[] = [
   },
   {
     zone: 'Z4',
-    name: 'THRESH Vermilion',
+    name: 'Threshold Vermilion',
     domain: 'LT2 / CS / FTP',
     hex: '#EA580C',
     cssVar: '--color-ap-z4',
@@ -384,7 +384,7 @@ export const TYPOGRAPHY_HIERARCHY: TypographySpecimenSpec[] = [
     sizeLabel: 'clamp(1.5rem, 2.5vw, 1.875rem) / 24–30px',
     weightLabel: '700 Bold',
     trackingLabel: '-0.025em',
-    sampleText: 'THRESH Stadium Track Lab',
+    sampleText: 'MeetReady Stadium Track OS',
     className: 'font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white',
   },
   {
@@ -455,7 +455,7 @@ export const BRAND_DO_DONT_RULES = [
     doTitle: 'Counter-Skew -14° Chrome Labels',
     doDetail: 'Always nest .ap-track-tab-inner (skewX(+14°)) inside -14° tabs and preserve at least 1R clear space around marks.',
     dontTitle: 'Never Distort or Combine Partner Logos',
-    dontDetail: 'Never stretch the aspect ratio, skew W-A letterforms, or lock Strava/Garmin logos directly onto the THRESH badge.',
+    dontDetail: 'Never stretch the aspect ratio, skew wordmark letterforms, or lock Strava/Garmin logos directly onto the MeetReady badge.',
   },
 ];
 
@@ -464,13 +464,13 @@ export const BRAND_PERMISSIONS_POLICY = [
     title: 'Editorial, Podcasts & Meet Timers',
     status: 'PERMITTED',
     detail:
-      'Use unmodified THRESH lockups, Die-Cut Pill badges, or 1-Ink Stencils in race heat sheets, FinishLynx/AthleticLIVE overlays, press coverage, coaching clinics, and API partner directories.',
+      'Use unmodified MeetReady lockups, Die-Cut Pill badges, or 1-Ink Stencils in race heat sheets, FinishLynx/AthleticLIVE overlays, press coverage, coaching clinics, and API partner directories.',
   },
   {
     title: 'Active Team Tents, Warm-Ups & Rosters',
     status: 'PERMITTED',
     detail:
-      'Scholastic, collegiate, and running/cycling clubs may use Team × THRESH co-branded exports on team banners, booster flyers, locker-room QR posters, and practice warm-ups without implied institutional endorsement.',
+      'Scholastic, collegiate, and running/cycling clubs may use Team × MeetReady co-branded exports on team banners, booster flyers, locker-room QR posters, and practice warm-ups without implied institutional endorsement.',
   },
   {
     title: 'NFHS / NCAA Competition Uniform Rule',
@@ -482,7 +482,7 @@ export const BRAND_PERMISSIONS_POLICY = [
     title: 'Commercial Merchandise Resale',
     status: 'PROHIBITED',
     detail:
-      'Selling standalone THRESH-branded retail merchandise, altering gauge/wordmark proportions, using retired legacy brand names in public copy, or recoding Z1–Z6 physiology colors is not permitted.',
+      'Selling standalone MeetReady-branded retail merchandise, altering gauge/wordmark proportions, using retired legacy brand names in public copy, or recoding Z1–Z6 physiology colors is not permitted.',
   },
 ];
 
@@ -491,18 +491,18 @@ export const PRESS_BOILERPLATES: PressBoilerplateSpec[] = [
     id: 'one-line',
     label: 'Partner Directory 1-Liner',
     wordCountLabel: '18 words',
-    text: 'THRESH — Track, XC & Endurance Coaching Lab uniting team pace pods, watchless 0.01s split timing, Banister load, and 1Hz endurance physiology.',
+    text: 'MeetReady — Track & Field & Cross Country Team OS uniting team pace pods, watchless 0.01s split timing, Banister load, and 1Hz physiology.',
   },
   {
     id: 'short-35',
     label: 'Meet Program / Event Blurb',
     wordCountLabel: '36 words',
-    text: 'THRESH combines laboratory-grade running and cycling physiology with scholastic and collegiate team operations — unifying Critical Speed and CP/W’ pacing, overnight HRV readiness, watchless 0.01s multi-athlete trackside timing, and automatic youth Safe-Sport protection in one workspace.',
+    text: 'MeetReady combines laboratory-grade running and cycling physiology with scholastic and collegiate team operations — unifying Critical Speed and CP/W’ pacing, overnight HRV readiness, watchless 0.01s multi-athlete trackside timing, and automatic youth Safe-Sport protection in one workspace.',
   },
   {
     id: 'standard-75',
     label: 'Full Press & Partner Boilerplate',
     wordCountLabel: '72 words',
-    text: 'THRESH (https://thresh.fit) is a track, cross country, and endurance coaching lab serving high school, collegiate, and club programs alongside self-coached athletes. Uniting watchless 0.01s multi-runner stopwatch splits, auto-scaled pace pods, U18 Safe-Sport weight shielding, CARA 20-hour compliance audits, and calibrated Banister CTL/ATL/TSB + 1Hz durability telemetry, THRESH replaces fragmented clipboards and static spreadsheets in one workspace.',
+    text: 'MeetReady (https://meetready.app) is a track & field and cross country team OS serving high school, collegiate, and club programs alongside self-coached athletes. Uniting watchless 0.01s multi-runner stopwatch splits, auto-scaled pace pods, U18 Safe-Sport weight shielding, CARA 20-hour compliance audits, and calibrated Banister CTL/ATL/TSB + 1Hz durability telemetry, MeetReady replaces fragmented clipboards and static spreadsheets in one workspace.',
   },
 ];

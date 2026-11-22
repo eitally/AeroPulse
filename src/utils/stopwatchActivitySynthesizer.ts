@@ -315,7 +315,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
     efficiencyFactor: Number((((1000 / Math.max(120, avgWorkPaceSecsKm)) * 60) / (lthr * 0.92)).toFixed(2)),
     firstHalfEf: 1.52,
     secondHalfEf: 1.49,
-    deviceName: `THRESH Trackside Stopwatch (${presetLabel})`,
+    deviceName: `MeetReady Trackside Stopwatch (${presetLabel})`,
     zoneSecs: {
       hr: [900, 600, 0, Math.round(totalWorkSecs * 0.35), Math.round(totalWorkSecs * 0.5), Math.round(totalWorkSecs * 0.15), 0],
       pace: [900, 600, 0, Math.round(totalWorkSecs * 0.35), Math.round(totalWorkSecs * 0.5), Math.round(totalWorkSecs * 0.15), 0],

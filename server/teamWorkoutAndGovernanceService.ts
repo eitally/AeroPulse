@@ -874,7 +874,7 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
           if (guardianEmail && isResendConfigured()) {
             const sendRes = await sendEmailViaResend({
               to: guardianEmail,
-              subject: `[THRESH Safety Alert] ${mem.invitedName} · ${doc.brand.shortName}`,
+              subject: `[MeetReady Safety Alert] ${mem.invitedName} · ${doc.brand.shortName}`,
               html: `<p>${escapeHtml(alertSummary)}</p><p>Logged inside ${escapeHtml(doc.brand.name)} under U18 Safe-Sport &amp; Guardian visibility.</p>`,
               text: `${alertSummary}\nTeam: ${doc.brand.name}`,
             });
@@ -969,7 +969,7 @@ export async function recordGuardianSafetyAlert(params: {
     if (guardianEmail && isResendConfigured()) {
       const sendRes = await sendEmailViaResend({
         to: guardianEmail,
-        subject: `[THRESH Safety Alert] ${target.invitedName} · ${doc.brand.shortName}`,
+        subject: `[MeetReady Safety Alert] ${target.invitedName} · ${doc.brand.shortName}`,
         html: `<p>${escapeHtml(cleanSummary)}</p><p>Reported via ${escapeHtml(doc.brand.name)} Safeguarding Desk.</p>`,
         text: `${cleanSummary}\nTeam: ${doc.brand.name}`,
       });
@@ -1169,7 +1169,7 @@ export async function listTeamWorkoutComments(params: {
   const doc = await loadTeamDocRaw(params.teamId);
   if (!doc) return { ok: false, error: 'Team not found.' };
 
-  const summary = projectTeamSummaryForCaller(doc, params.callerSid, 'https://thresh.app');
+  const summary = projectTeamSummaryForCaller(doc, params.callerSid, 'https://meetready.app');
   if (!summary) return { ok: false, error: 'Membership required.' };
 
   const allVisible = summary.workoutComments || [];
@@ -1272,7 +1272,7 @@ export async function postTeamWorkoutComment(params: {
     ) {
       void sendEmailViaResend({
         to: targetMem.parentGuardianEmail,
-        subject: `[THRESH Guardian CC] Coach note for ${targetMem.invitedName}`,
+        subject: `[MeetReady Guardian CC] Coach note for ${targetMem.invitedName}`,
         html: `<p><strong>${escapeHtml(comment.authorName)}</strong> commented on ${escapeHtml(targetMem.invitedName)}&apos;s ${escapeHtml(comment.workoutDate)} workout:</p><blockquote>${escapeHtml(cleanBody)}</blockquote>`,
         text: `${comment.authorName} commented on ${targetMem.invitedName}'s ${comment.workoutDate} workout: ${cleanBody}`,
       });

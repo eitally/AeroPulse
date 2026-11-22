@@ -1,12 +1,12 @@
-# THRESH — Complete Interactive User Manual
+# MeetReady — Complete Interactive User Manual
 
-Welcome to the **THRESH (`#1 Stadium Track` Edition)** User Guide. You can also access an interactive, searchable version of this guide directly inside the application at any time by clicking the **`?` (User Guide)** icon in the top navigation bar or visiting `/docs/index.html`.
+Welcome to the **MeetReady (`#1 Stadium Track` Edition)** User Guide. You can also access an interactive, searchable version of this guide directly inside the application at any time by clicking the **`?` (User Guide)** icon in the top navigation bar or visiting `/docs/index.html`.
 
 ---
 
 ## Table of Contents
 
-1. [Chapter 1: Quick Start, Strava Onboarding & Why THRESH](#chapter-1-quick-start-strava-onboarding--why-thresh)
+1. [Chapter 1: Quick Start, Strava Onboarding & Why MeetReady](#chapter-1-quick-start-strava-onboarding--why-meetready)
 2. [Chapter 2: Strava Sync Policy, Optional Garmin / Intervals.icu & `.FIT` Import](#chapter-2-strava-sync-policy-optional-garmin--intervalsicu--fit-import)
 3. [Chapter 3: Fitness (`CTL`), Fatigue (`ATL`), Form & Garmin Load Focus](#chapter-3-fitness-ctl-fatigue-atl-form--garmin-load-focus)
 4. [Chapter 4: Training Calendar, Effort Skylines & Block Builder](#chapter-4-training-calendar-effort-skylines--block-builder)
@@ -17,10 +17,10 @@ Welcome to the **THRESH (`#1 Stadium Track` Edition)** User Guide. You can also 
 
 ---
 
-## Chapter 1: Quick Start, Strava Onboarding & Why THRESH
+## Chapter 1: Quick Start, Strava Onboarding & Why MeetReady
 
-### The Three Pillars of THRESH
-THRESH eliminates the fragmentation between physiological analysis platforms, adaptive workout planners, and school/club team hubs:
+### The Three Pillars of MeetReady
+MeetReady eliminates the fragmentation between physiological analysis platforms, adaptive workout planners, and school/club team hubs:
 1. **Intervals.icu Physiological Rigor**: True Banister impulse-response modeling (`42d CTL`, `7d ATL`, `TSB`), Monod-Scherrer Critical Power (`CP`) & Anaerobic Work Capacity (`W'`), Skiba 1Hz `W' Balance`, two-pass calibrated running `rTSS`, and first-vs-second-half Aerobic Decoupling (`Pa:Hr`).
 2. **Closed-Loop Daily Adaptivity**: Daily morning readiness evaluation (`HRV rMSSD`, `Resting HR`, `Sleep Score`, `TSB`) that morphs today's scheduled workout between **Optimal Progression**, **Modulated Aerobic (`-15%` load)**, and **Active Recovery**—plus the **Plan vs. Actual Ledger** and **3-Channel Orthopedic Guardrails**.
 3. **Strava Identity, Official FAT Race Intelligence & Team Hub**: Universal Strava OAuth sign-in, full-bleed Leaflet GPS route maps, Strava segment PR leaderboards, verified `0.01s` Fully Automatic Timing (`FAT`) track/road/XC race logging with Daniels `VDOT` projections, and branded High School / Collegiate / Club team workspaces.
@@ -29,7 +29,7 @@ THRESH eliminates the fragmentation between physiological analysis platforms, ad
 1. **Step 1 — Sign In (`Google`, `Passkey`, `Magic Link`, `Email OTP`, or Optional `Strava`)**:
    - Sign in with Google, a biometric WebAuthn Passkey, an email Magic Link / OTP, or optional **Connect with Strava**. School athletes can join teams cleanly with Google or Email—zero Strava account required.
    - Joining a school or club team? Scan your coach's QR poster (`/join/<slug>`) or tap **Team Code** on the homepage to preview your team before signing in.
-   - **Read-Only Pledge**: THRESH never posts to your Strava feed or edits your activities.
+   - **Read-Only Pledge**: MeetReady never posts to your Strava feed or edits your activities.
 2. **Step 2 — Sync Preferences, Profile & Team Sharing Tier**:
    - If using Strava, choose your sync window (**Last 90 Days**, **Last 6 Months**, **Full Archive**, or **Identity Only — 0 Workouts**).
    - Confirm your **Primary Sport** (`Running`, `Cycling`, `Both`), **Units** (`mi / lbs` or `km / kg`), optional **Recent Race / Power Seed Mark**, birth month/year (`YYYY-MM` COPPA/Safe-Sport check), and—if joining a team—your **Coach Data Sharing Tier**.
@@ -49,10 +49,10 @@ THRESH eliminates the fragmentation between physiological analysis platforms, ad
 ### 1. Managing Your Strava Sync Window & Account
 1. Click the **Connection Status Pill** in the top navigation bar to open **Data Sources & Telemetry Sync**.
 2. Under **Strava — Primary Identity**, you can change your sync window (`Last 90d`, `Last 6 Months`, `Full Archive`, `Identity Only`), toggle bike/shoe gear & athlete profile sync, trigger an immediate sync, or click **Sign Out** to clear local telemetry on shared computers.
-3. If you unchecked `View data about your activities` on Strava's consent screen, THRESH detects the missing `activity:read` scope and provides a 1-click **Re-Authorize Activity Scope** button.
+3. If you unchecked `View data about your activities` on Strava's consent screen, MeetReady detects the missing `activity:read` scope and provides a 1-click **Re-Authorize Activity Scope** button.
 
 ### 2. Optional Hardware Connectors: Garmin Connect, Intervals.icu, Wahoo & Polar
-These connectors are **never mandatory**—they are optional add-ons that enrich THRESH with workouts and overnight autonomic wellness:
+These connectors are **never mandatory**—they are optional add-ons that enrich MeetReady with workouts and overnight autonomic wellness:
 - **Garmin Connect (Optional Add-On)**: Connects overnight `HRV rMSSD`, `Sleep Score`, `Resting HR`, and workout sync. Disconnect Garmin independently anytime without signing out.
 - **Intervals.icu (Optional OAuth / API Key)**: Syncs structured calendars, `eFTP`, `W'`, and Intervals.icu-relayed devices (**COROS**, **WHOOP**, Suunto).
 - **Wahoo Cloud & Polar AccessLink (Direct OAuth 2.0)**: Syncs ELEMNT/KICKR/Vantage/Grit X/H10 binary `.FIT` & exercise files using canonical UTC timestamps (`startDateUtcMs`) so evening workouts and ±5-minute deduplication work cleanly across all timezones.
@@ -64,7 +64,7 @@ These connectors are **never mandatory**—they are optional add-ons that enrich
 ### 4. Logging Official `0.01s` FAT Race Results (`VDOT`)
 - Click **Account Menu → Log Official Race (FAT)** (or **Log Official Race** in **Goals & Totals**).
 - Record verified results from **Athletic.net**, **TFRRS**, **MileSplit**, **RunSignup**, or **Official FAT** (`800m` through `Marathon`).
-- THRESH calculates your **Daniels VDOT score**, converts NCAA indoor flat/banked/altitude marks, and pins a gold **Race PR Milestone** onto your PMC.
+- MeetReady calculates your **Daniels VDOT score**, converts NCAA indoor flat/banked/altitude marks, and pins a gold **Race PR Milestone** onto your PMC.
 
 ### 5. Local IndexedDB Archive Export & Restore
 - Inside **Data Sources → Local Telemetry Archive**, click **Export Full JSON Backup** or **Import JSON Backup** anytime.
@@ -133,7 +133,7 @@ Switch between four sub-workspaces in **Activities**:
 
 ### 2. Granular Privacy Controls & Clean-Room Strava Firewall
 - Configure independent visibility (`ALL_CONNECTIONS`, `COACHES_ONLY`, `PRIVATE`) for Wellness, PMC/Zones, and GPS Routes.
-- THRESH's server-side **Clean-Room Firewall** automatically strips third-party Strava-only raw tracks from multi-user teammate views and AI prompts.
+- MeetReady's server-side **Clean-Room Firewall** automatically strips third-party Strava-only raw tracks from multi-user teammate views and AI prompts.
 
 ### 3. Context-Aware Google Gemini AI Coach
 - Generates 3 daily workout tiers (**Optimal**, **Modulated `-15%`**, **Active Recovery**) with 1-click Calendar push and multi-turn physiological chat.

@@ -1,8 +1,8 @@
-# THRESH — Strava Developer Program Review & Compliance Pack
+# MeetReady — Strava Developer Program Review & Compliance Pack
 
 > **Document Type:** Formal Developer Program Review Submission & Compliance Audit  
-> **Application:** THRESH (formerly AeroPulse)  
-> **Platform URL:** `https://thresh.app` (Production: Vercel)  
+> **Application:** MeetReady (formerly AeroPulse)  
+> **Platform URL:** `https://meetready.app` (Production: Vercel)  
 > **API Version:** Strava v3 REST API  
 > **Last Audited:** 2026-11-14  
 > **Compliance Baseline:** Strava Developer Agreement (Updated November 2024)
@@ -11,9 +11,9 @@
 
 ## 1. Executive Summary & Purpose of Application
 
-**THRESH** is a dual-sport (running and cycling) endurance training platform and team management workspace designed for competitive athletes, scholastic & collegiate cross-country and track & field teams, and endurance coaches.
+**MeetReady** is a dual-sport (running and cycling) endurance training platform and team management workspace designed for competitive athletes, scholastic & collegiate cross-country and track & field teams, and endurance coaches.
 
-THRESH integrates with Strava as an **optional, read-only data source** to help individual athletes sync their historical run and ride logs so THRESH's client-side physiology engine can calibrate baseline threshold benchmarks:
+MeetReady integrates with Strava as an **optional, read-only data source** to help individual athletes sync their historical run and ride logs so MeetReady's client-side physiology engine can calibrate baseline threshold benchmarks:
 - **Calibrated Running Threshold Pace & rTSS** (running Training Stress Score)
 - **Calibrated Cycling FTP & TSS**
 - **Banister Impulse-Response Fitness & Fatigue Modeling** (CTL, ATL, TSB)
@@ -26,7 +26,7 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
 ### 2.1 Section 5.3 Compliance · Third-Party AI Models & Machine Learning
 > **Strava Requirement:** Developer shall not use Strava data to train, fine-tune, or prompt any third-party artificial intelligence (AI) or large language model (LLM).
 
-**THRESH Implementation & Guarantee:**
+**MeetReady Implementation & Guarantee:**
 1. **Clean-Room Firewall (`server/cleanRoomFirewall.ts`):**  
    All outbound requests to generative AI endpoints (e.g., Google Gemini for optional workout syntax generation in `/api/coach/options` and `/api/coach/chat`) pass through `sanitizeTelemetryForCleanRoom()`.
 2. **Strict Payload Stripping:**  
@@ -34,16 +34,16 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
 3. **Strict Allowlist Schema (`recentWorkouts` Blocked)**:  
    All payloads pass through `sanitizeTelemetryForCleanRoom()` (`server/cleanRoomFirewall.ts`), which enforces a strict allowlist accepting only first-party hardware provenance (`Garmin`, `Polar`, `Wahoo`, direct `.FIT`), blocks alternate keys such as `recentWorkouts`, disables AI by default for minors (`U18`/`HIGH_SCHOOL`), and strips `weightKg`. Strava activity data is **100% excluded from all AI prompt payloads**.
 4. **No Model Training:**  
-   THRESH does not train, fine-tune, or distill any AI model on user data.
+   MeetReady does not train, fine-tune, or distill any AI model on user data.
 
 ---
 
 ### 2.2 Section 5.3 Compliance · Cross-User Data Display & Coach Views
 > **Strava Requirement:** Developer shall not display or share one Strava user's data with another user without explicit user consent, and must not expose raw user activity feeds to unauthorized third parties.
 
-**THRESH Implementation & Guarantee:**
+**MeetReady Implementation & Guarantee:**
 1. **Teammate Peer Views:**  
-   In team squad rosters and leaderboard triage views (`TeamManagementPanel.tsx`), peer athletes **never see another athlete's activities, GPS routes, sensor streams, or notes**. Peer views only display THRESH-derived aggregate metrics (CTL, ATL, TSB, readiness score).
+   In team squad rosters and leaderboard triage views (`TeamManagementPanel.tsx`), peer athletes **never see another athlete's activities, GPS routes, sensor streams, or notes**. Peer views only display MeetReady-derived aggregate metrics (CTL, ATL, TSB, readiness score).
 2. **Coach Data Sharing Tiers:**  
    Athletes select their explicit Coach Sharing Tier (`LOAD_ONLY`, `SUMMARY_ONLY`, or `FULL_STREAMS`):
    - Under `LOAD_ONLY`: Zero activities are shared with coaches; only aggregate load numbers are visible.
@@ -59,7 +59,7 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
 ### 2.3 Brand Guidelines & Attribution
 > **Strava Requirement:** Proper use of "Connect with Strava" button assets, official vermilion color `#FC4C02`, and "Compatible with Strava" / "Powered by Strava" marks.
 
-**THRESH Implementation:**
+**MeetReady Implementation:**
 1. **Canonical CTA Buttons:**  
    All OAuth entry points (`StravaAuthGate.tsx`, `DataSourcesModal.tsx`, `App.tsx`) use the canonical text: **`Connect with Strava`** with official chevron branding.
 2. **Accessible Contrast:**  
@@ -72,9 +72,9 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
 ### 2.4 User Consent, Sync Window Control & Data Deletion
 > **Strava Requirement:** Users must have clear visibility into what data is accessed, control over what syncs, and the right to disconnect and purge data at any time.
 
-**THRESH Implementation:**
+**MeetReady Implementation:**
 1. **2-Step Onboarding with Sync Choice:**  
-   Step 1 authenticates the athlete's identity. In Step 2, the athlete explicitly chooses their sync window (`90 days`, `180 days`, `365 days`, `all`, or `none`). Selecting `none` allows an athlete to use THRESH with zero workout sync.
+   Step 1 authenticates the athlete's identity. In Step 2, the athlete explicitly chooses their sync window (`90 days`, `180 days`, `365 days`, `all`, or `none`). Selecting `none` allows an athlete to use MeetReady with zero workout sync.
 2. **Instant Disconnect & Vault Purge (`POST /api/strava/disconnect`)**:  
    Athletes can disconnect Strava anytime or run permanent erasure (`DELETE /api/auth/account`), which calls Strava `/oauth/deauthorize`, wipes vault tokens, clears `thresh_session` / `thresh_vault` / `thresh_user`, and purges user-scoped caches.
 
@@ -84,7 +84,7 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
 
 | Layer | Implementation | Details |
 |---|---|---|
-| **OAuth 2.0 Scopes** | `activity:read_all,profile:read_all` | Strictly read-only; THRESH never requests write access. |
+| **OAuth 2.0 Scopes** | `activity:read_all,profile:read_all` | Strictly read-only; MeetReady never requests write access. |
 | **CSRF Protection** | HMAC-SHA256 signed `state` tokens | Short-lived (`20m`) signed state tokens verified at callback. |
 | **Token Storage** | `AES-256-GCM` encryption at rest | 256-bit encryption keys with 96-bit random IV and 128-bit auth tag. |
 | **Server AI Firewall** | `sanitizeTelemetryForCleanRoom()` | Filters out all Strava activity data before generative AI inference. |
@@ -96,16 +96,16 @@ THRESH integrates with Strava as an **optional, read-only data source** to help 
 
 *(Ready for copy-paste into Strava Developer Program Review form)*
 
-- **Application Name:** THRESH
-- **Website URL:** `https://thresh.app`
-- **Redirect URIs:** `https://thresh.app/api/strava/callback`, `http://localhost:3000/api/strava/callback`
+- **Application Name:** MeetReady
+- **Website URL:** `https://meetready.app`
+- **Redirect URIs:** `https://meetready.app/api/strava/callback`, `http://localhost:3000/api/strava/callback`
 - **Application Category:** Coaching & Training Analytics
 - **Requested Rate Limit Tier:** 100+ athlete production tier (expanding beyond development sandbox)
 - **Detailed Description:**  
-  THRESH is an endurance physiology dashboard and coaching management tool for runners and cyclists. It ingests historical activity data to calculate calibrated threshold pace/power, rTSS, and CTL/ATL/TSB training load models.
+  MeetReady is an endurance physiology dashboard and coaching management tool for runners and cyclists. It ingests historical activity data to calculate calibrated threshold pace/power, rTSS, and CTL/ATL/TSB training load models.
 - **Does your app display Strava data to other users?**  
-  No. Individual athlete activities, GPS polylines, and sensor streams are kept strictly private to each athlete. Team and coach views display only THRESH-derived aggregate physiological metrics (CTL, ATL, TSB, readiness score).
+  No. Individual athlete activities, GPS polylines, and sensor streams are kept strictly private to each athlete. Team and coach views display only MeetReady-derived aggregate physiological metrics (CTL, ATL, TSB, readiness score).
 - **Does your app share Strava data with AI or LLM providers?**  
-  No. THRESH maintains a strict Clean-Room firewall (`server/cleanRoomFirewall.ts`) that strips all Strava activity data, segment efforts, and metadata prior to any AI prompt generation.
+  No. MeetReady maintains a strict Clean-Room firewall (`server/cleanRoomFirewall.ts`) that strips all Strava activity data, segment efforts, and metadata prior to any AI prompt generation.
 - **How can users delete their data?**  
   Users can click "Disconnect Strava" or "Sign Out & Clear Credentials" in the Data Sources modal. This immediately wipes all OAuth tokens from our encrypted vault and clears session credentials.

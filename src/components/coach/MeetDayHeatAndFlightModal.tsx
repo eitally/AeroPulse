@@ -166,7 +166,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
 
   const handleExportHyTekCsv = () => {
     const csv = generateHyTekSemiColonEntryCsv({
-      teamName: activeTeam?.brand.shortName || activeTeam?.brand.name || 'THRESH',
+      teamName: activeTeam?.brand.shortName || activeTeam?.brand.name || 'MeetReady',
       entries,
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -253,7 +253,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               data-testid="meet-print-packet-btn"
               onClick={() =>
                 openPrintableMeetDayPacketWindow({
-                  teamName: activeTeam?.brand.name || 'THRESH Track & Field',
+                  teamName: activeTeam?.brand.name || 'MeetReady Track & Field',
                   meetTitle,
                   entries,
                 })

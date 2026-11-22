@@ -1,7 +1,7 @@
 import React, { lazy } from 'react';
 import type { ActiveTab, AnnualMileageGoal, SportCategory, TargetGoal } from '../types';
 
-export const CANONICAL_THRESH_ORIGIN = 'https://thresh-dev.vercel.app';
+export const CANONICAL_THRESH_ORIGIN = 'https://meetready.app';
 export const LEGACY_AEROPULSE_HOST = 'aeropulse-eta.vercel.app';
 
 const CHUNK_RELOAD_GUARD_STORAGE_KEY = 'thresh_chunk_reload_guard_v1';
@@ -34,7 +34,7 @@ let activeLazyImportDepth = 0;
 let latestRequestedTab: ActiveTab | undefined;
 
 /**
- * Rewrites legacy aeropulse-eta.vercel.app URLs to the canonical THRESH production origin
+ * Rewrites legacy aeropulse-eta.vercel.app URLs to the canonical MeetReady production origin
  * while leaving all other origins (localhost, previews, thresh-dev.vercel.app) untouched.
  */
 export function canonicalizeThreshUrl(rawUrl: string): string {

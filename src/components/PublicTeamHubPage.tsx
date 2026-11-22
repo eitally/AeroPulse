@@ -410,7 +410,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                           const lines = [
                             'BEGIN:VCALENDAR',
                             'VERSION:2.0',
-                            'PRODID:-//THRESH//Team Meet Schedule//EN',
+                            'PRODID:-//MeetReady//Team Meet Schedule//EN',
                           ];
                           for (const meet of payload.upcomingMeets) {
                             const ymd = meet.date.replace(/-/g, '');
@@ -418,7 +418,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                             const safeLoc = (meet.locationName || '').replace(/[,;\n]/g, ' ');
                             lines.push(
                               'BEGIN:VEVENT',
-                              `UID:${meet.id}@thresh.fit`,
+                              `UID:${meet.id}@meetready.app`,
                               `DTSTART;VALUE=DATE:${ymd}`,
                               `SUMMARY:${safeTitle}`,
                               ...(safeLoc ? [`LOCATION:${safeLoc}`] : []),
@@ -598,7 +598,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
 
       <footer className="max-w-6xl mx-auto px-3.5 sm:px-6 pb-6 pt-2 flex flex-wrap items-center justify-between gap-2 text-2xs text-ap-muted dark:text-ap-muted-dark">
         <div className="flex flex-wrap items-center gap-2">
-          <span>THRESH Safe-Sport Team Hub</span>
+          <span>MeetReady Safe-Sport Team Hub</span>
           <span>·</span>
           <a href="/?role=coach" className="font-bold text-ap-cobalt dark:text-ap-volt hover:underline">
             Coaching Track or XC? Start a Free Spring Pilot →

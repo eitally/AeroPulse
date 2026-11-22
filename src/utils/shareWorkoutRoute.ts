@@ -98,7 +98,7 @@ export function sanitizeSharedWorkoutPayload(raw: unknown): SharedWorkoutPayload
     }
   }
 
-  const title = stripEmailAndControls(cleanSource.title || 'THRESH Structured Session', 90);
+  const title = stripEmailAndControls(cleanSource.title || 'MeetReady Structured Session', 90);
   if (!title) return null;
 
   const kind: SharedWorkoutKind = cleanSource.kind === 'STOPWATCH' ? 'STOPWATCH' : 'WORKOUT';
@@ -249,7 +249,7 @@ export function decodeSharedWorkoutPayload(token: string | null | undefined): Sh
 export function buildShareWorkoutUrl(payload: SharedWorkoutPayload, origin?: string): string {
   const cleanOrigin = (
     origin ||
-    (typeof window !== 'undefined' ? window.location.origin : 'https://thresh-dev.vercel.app')
+    (typeof window !== 'undefined' ? window.location.origin : 'https://meetready.app')
   ).replace(/\/+$/, '');
   const encoded = encodeSharedWorkoutPayload(payload);
   return `${cleanOrigin}/share/workout?w=${encodeURIComponent(encoded)}`;

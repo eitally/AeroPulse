@@ -118,7 +118,7 @@ export async function subscribeToThreshWebPush(options?: {
       ok: false,
       permission,
       error:
-        'Notification permission is blocked in browser settings. Enable notifications for THRESH and retry.',
+        'Notification permission is blocked in browser settings. Enable notifications for MeetReady and retry.',
     };
   }
 
@@ -186,7 +186,7 @@ export async function subscribeToThreshWebPush(options?: {
       return {
         ok: false,
         permission,
-        error: saveJson.error || 'Could not register push subscription on THRESH server.',
+        error: saveJson.error || 'Could not register push subscription on MeetReady server.',
       };
     }
     return {
@@ -201,7 +201,7 @@ export async function subscribeToThreshWebPush(options?: {
       error:
         err instanceof Error
           ? err.message
-          : 'Failed subscribing device to THRESH Web Push notifications.',
+          : 'Failed subscribing device to MeetReady Web Push notifications.',
     };
   }
 }
@@ -261,7 +261,7 @@ export async function sendTestWebPush(): Promise<{
   } catch (err) {
     return {
       ok: false,
-      error: err instanceof Error ? err.message : 'Failed contacting THRESH push gateway.',
+      error: err instanceof Error ? err.message : 'Failed contacting MeetReady push gateway.',
     };
   }
 }

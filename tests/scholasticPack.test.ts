@@ -35,7 +35,7 @@ describe('THRESH v2.3 — High School & Collegiate Team Pack', () => {
     expect(pods[1].splitsSecs.split1000m).toBeLessThan(pods[2].splitsSecs.split1000m);
 
     const sheet = formatPrintablePodSplitSheet('6x1000m CV', '2026-11-11', pods);
-    expect(sheet).toContain('THRESH TRACKSIDE POD SHEET');
+    expect(sheet).toContain('MeetReady TRACKSIDE POD SHEET');
     expect(sheet).toContain('Varsity #1');
     expect(sheet).toContain('Frosh #1');
   });

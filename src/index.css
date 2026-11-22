@@ -2,7 +2,7 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================
-   THRESH Design System — "Track Volt & Obsidian" v3.0 (Tailwind v4 @theme)
+   MeetReady Design System — "Track Volt & Obsidian" v3.0 (Tailwind v4 @theme)
    Strict 80 / 15 / 5 Color Budget & 2-Font Architecture:
    - Light Mode: Stadium Chalk (#F4F7F2) Stage, Crisp Paper (#FFFFFF) Cards & Chalk Inset (#E9EFE9)
    - Dark Mode: Obsidian-Pine (#0B120E) Stage, Carbon-Pine (#101B15) Panels & Deep Turf (#15231B)
@@ -224,10 +224,10 @@
 }
 
 /* ==========================================================================
-   THRESH Track Volt & Obsidian Surface & Component System
+   MeetReady Track Volt & Obsidian Surface & Component System
    ========================================================================== */
 
-/* Signature THRESH Top Brand Hairline & Darker-Green Framed Content Stage */
+/* Signature MeetReady Top Brand Hairline & Darker-Green Framed Content Stage */
 .ap-brand-hairline {
   background: linear-gradient(90deg, #c8ff00 0%, #65a30d 55%, #1d3828 100%);
 }

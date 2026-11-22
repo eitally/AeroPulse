@@ -121,14 +121,17 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     expect(evilResp.headers.get('access-control-allow-origin')).toBeNull();
   });
 
-  it('auto-falls back redirect_uri to aeropulse-eta when Strava rejects thresh-dev and switches back once thresh-dev is registered', async () => {
-    let acceptThreshDev = false;
+  it('auto-falls back redirect_uri to aeropulse-eta when Strava rejects meetready.app & thresh-dev and switches back once meetready.app is registered', async () => {
+    let acceptCanonical = false;
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith('https://www.strava.com/oauth/authorize')) {
         const parsed = new URL(url);
         const redirectUri = parsed.searchParams.get('redirect_uri') || '';
-        if (redirectUri.includes('thresh-dev.vercel.app') && !acceptThreshDev) {
+        if (
+          (redirectUri.includes('meetready.app') || redirectUri.includes('thresh-dev.vercel.app')) &&
+          !acceptCanonical
+        ) {
           return new Response(
             JSON.stringify({
               message: 'Bad Request',
@@ -146,7 +149,7 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     }) as typeof fetch;
 
     const fallbackResp = await originalFetch(
-      `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Fthresh-dev.vercel.app&mode=cloud&flow=popup`
+      `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Fmeetready.app&mode=cloud&flow=popup`
     );
     expect(fallbackResp.status).toBe(200);
     const fallbackData = await fallbackResp.json();
@@ -155,27 +158,27 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
       `redirect_uri=${encodeURIComponent('https://aeropulse-eta.vercel.app/auth/strava/callback')}`
     );
 
-    // Fallback redirects must NOT stick in cache: once thresh-dev is registered on Strava,
-    // the very next request resolves to thresh-dev.vercel.app immediately without clearing cache
-    acceptThreshDev = true;
+    // Fallback redirects must NOT stick in cache: once meetready.app is registered on Strava,
+    // the very next request resolves to meetready.app immediately without clearing cache
+    acceptCanonical = true;
     const directResp = await originalFetch(
-      `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Fthresh-dev.vercel.app&mode=cloud&flow=popup`
+      `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Fmeetready.app&mode=cloud&flow=popup`
     );
     expect(directResp.status).toBe(200);
     const directData = await directResp.json();
-    expect(directData.redirectUri).toBe('https://thresh-dev.vercel.app/auth/strava/callback');
+    expect(directData.redirectUri).toBe('https://meetready.app/auth/strava/callback');
     expect(directData.url).toContain(
-      `redirect_uri=${encodeURIComponent('https://thresh-dev.vercel.app/auth/strava/callback')}`
+      `redirect_uri=${encodeURIComponent('https://meetready.app/auth/strava/callback')}`
     );
   });
 
-  it('canonicalizes legacy aeropulse-eta and Vercel preview origins to thresh-dev callback, preserves preview CORS, and blocks lone x-strava-client-id override', async () => {
+  it('canonicalizes legacy aeropulse-eta and Vercel preview origins to meetready.app callback, falls back to thresh-dev during cutover, and preserves preview CORS', async () => {
     globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.startsWith('https://www.strava.com/oauth/authorize')) {
         const parsed = new URL(url);
         const redirectUri = parsed.searchParams.get('redirect_uri') || '';
-        if (redirectUri.includes('thresh-dev.vercel.app')) {
+        if (redirectUri.includes('meetready.app')) {
           return new Response(null, {
             status: 302,
             headers: { Location: 'https://www.strava.com/login' },
@@ -192,7 +195,7 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
       return originalFetch(input, init);
     }) as typeof fetch;
 
-    // 1. Legacy origin (aeropulse-eta.vercel.app) immediately resolves to thresh-dev.vercel.app
+    // 1. Legacy origin (aeropulse-eta.vercel.app) immediately resolves to meetready.app
     const legacyResp = await originalFetch(
       `${baseUrl}/api/strava/auth/url?origin=https%3A%2F%2Faeropulse-eta.vercel.app&mode=cloud&flow=popup`,
       {
@@ -204,11 +207,11 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     );
     expect(legacyResp.status).toBe(200);
     const legacyData = await legacyResp.json();
-    expect(legacyData.redirectUri).toBe('https://thresh-dev.vercel.app/auth/strava/callback');
+    expect(legacyData.redirectUri).toBe('https://meetready.app/auth/strava/callback');
     // Lone x-strava-client-id without x-strava-client-secret must NOT override server clientId
     expect(legacyData.clientId).toBe('121717');
 
-    // 2. Trusted Vercel branch preview origin (matching VERCEL_BRANCH_URL) falls back to thresh-dev.vercel.app and gets CORS headers
+    // 2. Trusted Vercel branch preview origin (matching VERCEL_BRANCH_URL) falls back to meetready.app and gets CORS headers
     const previewOrigin = 'https://thresh-git-preview-willow-glen-photography.vercel.app';
     process.env.VERCEL_BRANCH_URL = 'thresh-git-preview-willow-glen-photography.vercel.app';
     const previewResp = await originalFetch(
@@ -221,7 +224,7 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     expect(previewResp.headers.get('access-control-allow-origin')).toBe(previewOrigin);
     expect(previewResp.headers.get('access-control-allow-credentials')).toBe('true');
     const previewData = await previewResp.json();
-    expect(previewData.redirectUri).toBe('https://thresh-dev.vercel.app/auth/strava/callback');
+    expect(previewData.redirectUri).toBe('https://meetready.app/auth/strava/callback');
 
     // Untrusted arbitrary *.vercel.app origin must NOT receive wildcard CORS headers
     const spoofPreviewResp = await originalFetch(

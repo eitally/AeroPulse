@@ -101,7 +101,7 @@ function resolveRequestOrigin(req: Request): string {
     const candidate = resolveSafeOrigin(`${proto}://${host}`);
     if (candidate) return candidate;
   }
-  return 'https://thresh.app';
+  return 'https://meetready.app';
 }
 
 // 1. Send 6-Digit Cross-Device Email OTP via Resend
@@ -1107,11 +1107,11 @@ teamRouter.get('/api/teams/parent-consent', async (req: Request, res: Response) 
     if (!preview.ok) {
       res.status(400).send(`<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Parent Consent Link Error · THRESH</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<head><meta charset="utf-8"><title>Parent Consent Link Error · MeetReady</title><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:32px 16px;max-width:480px;margin:0 auto;text-align:center;color:#1F2937;">
   <h2 style="color:#DC2626;">Invalid or Expired Link</h2>
   <p>${escapeHtml(preview.error || 'This consent link could not be verified.')}</p>
-  <a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Return to THRESH</a>
+  <a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Return to MeetReady</a>
 </body>
 </html>`);
       return;
@@ -1129,7 +1129,7 @@ teamRouter.get('/api/teams/parent-consent', async (req: Request, res: Response) 
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Parent &amp; Guardian Consent · THRESH</title>
+  <title>Parent &amp; Guardian Consent · MeetReady</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
 </head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F4F6F3;padding:40px 16px;margin:0;color:#111318;">
@@ -1181,7 +1181,7 @@ teamRouter.post(
           return;
         }
         if (wantsHtml) {
-          res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2>Child Data Removed</h2><p>Membership and synced biometrics for <strong>${escapeHtml(decl.athleteName || 'Athlete')}</strong> on <strong>${escapeHtml(decl.teamName || 'Team')}</strong> have been revoked and cleared.</p><a href="/">Return to THRESH</a></body></html>`);
+          res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2>Child Data Removed</h2><p>Membership and synced biometrics for <strong>${escapeHtml(decl.athleteName || 'Athlete')}</strong> on <strong>${escapeHtml(decl.teamName || 'Team')}</strong> have been revoked and cleared.</p><a href="/">Return to MeetReady</a></body></html>`);
           return;
         }
         res.json({ ...decl, declined: true });
@@ -1194,7 +1194,7 @@ teamRouter.post(
         return;
       }
       if (wantsHtml) {
-        res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2 style="color:#15803D;">Safeguarding Acknowledged</h2><p>Parental acknowledgment for <strong>${escapeHtml(result.athleteName || 'Athlete')}</strong> on <strong>${escapeHtml(result.teamName || 'Team')}</strong> has been confirmed.</p><a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Visit THRESH</a></body></html>`);
+        res.send(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px 16px;max-width:480px;margin:0 auto;text-align:center;"><h2 style="color:#15803D;">Safeguarding Acknowledged</h2><p>Parental acknowledgment for <strong>${escapeHtml(result.athleteName || 'Athlete')}</strong> on <strong>${escapeHtml(result.teamName || 'Team')}</strong> has been confirmed.</p><a href="/" style="display:inline-block;margin-top:16px;color:#14532D;font-weight:700;">Visit MeetReady</a></body></html>`);
         return;
       }
       res.json({ ...result });
@@ -2004,7 +2004,7 @@ teamRouter.post('/api/push/test', async (req: Request, res: Response) => {
     const result = await dispatchPushPayloadToUsers({
       recipientSids: [claims.sid],
       payload: {
-        title: 'THRESH Practice Alerts Active',
+        title: 'MeetReady Practice Alerts Active',
         body: 'Device push notifications are connected for coach messages and weather updates.',
         tag: 'thresh-test',
         url: '/?openMessages=1',

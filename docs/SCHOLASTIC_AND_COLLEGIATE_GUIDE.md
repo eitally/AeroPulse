@@ -1,6 +1,6 @@
-# THRESH v2.3 — High School & Collegiate Team Pack Guide
+# MeetReady v2.3 — High School & Collegiate Team Pack Guide
 
-This guide documents the scholastic, NCAA collegiate, and club team capabilities built into **THRESH v2.3** (`src/physiology/teamOnboardingEngine.ts`, `src/physiology/scholasticEngine.ts`, `src/components/TeamManagementPanel.tsx`, and `server/teamService.ts`), designed to replace fragmented coaching spreadsheets, pace calculators, and result trackers with one unified workspace.
+This guide documents the scholastic, NCAA collegiate, and club team capabilities built into **MeetReady v2.3** (`src/physiology/teamOnboardingEngine.ts`, `src/physiology/scholasticEngine.ts`, `src/components/TeamManagementPanel.tsx`, and `server/teamService.ts`), designed to replace fragmented coaching spreadsheets, pace calculators, and result trackers with one unified workspace.
 
 ---
 
@@ -16,7 +16,7 @@ This guide documents the scholastic, NCAA collegiate, and club team capabilities
    - Logged workout comments enforce **mandatory Parent/Guardian CC** on minor/HS rosters (`403 Forbidden` on un-CC&apos;d private comments), backed by a seeded **12-athlete Willow Glen Coach Demo** squad.
 3. **Bulk `.CSV` Roster Importer & Automatic Strava Claim Matching**:
    - Paste spreadsheet rows or upload a `.CSV` with `Name, Email, Phone, Squad, GradYear, ParentEmail, SeedMark`.
-   - When an invited athlete signs in with Strava and claims the team code or magic link, THRESH automatically matches their pending roster slot (by invite token, Strava ID, email, or normalized name), assigns their squad (`Varsity`, `Junior Varsity`, etc.), and pre-calibrates their threshold zones from `SeedMark` (including bare HS `3200m` marks like `10:15`, `800m` marks, `5K` times, or `280W 20m` cycling power).
+   - When an invited athlete signs in with Strava and claims the team code or magic link, MeetReady automatically matches their pending roster slot (by invite token, Strava ID, email, or normalized name), assigns their squad (`Varsity`, `Junior Varsity`, etc.), and pre-calibrates their threshold zones from `SeedMark` (including bare HS `3200m` marks like `10:15`, `800m` marks, `5K` times, or `280W 20m` cycling power).
 4. **Youth Safeguarding vs. Collegiate Adult Defaults**:
    - `HIGH_SCHOOL` rosters default **Safe-Sport Weight Shield (`isMinorU18`)** and **Parent/Guardian CC** `ON`.
    - `COLLEGIATE` rosters treat standard college graduation years as legal adults (`isMinorU18: false`) unless an explicit incoming high-school recruit year is specified.
@@ -44,7 +44,7 @@ High school and college distance coaches routinely prescribe a single physiologi
      - `EASY`: Easy / Aerobic Base (`~1.24 × LT Pace`)
    - **Rep Count & Rep Distance**: `200m`, `400m`, `800m`, `1000m`, or `1600m`.
    - **Recovery Cue**: e.g., `60s jog` or `200m float`.
-3. THRESH infers each athlete's **Jack Daniels VDOT** from their calibrated Threshold Pace (or explicit VDOT override) and clusters the squad into cohesive **Pacing Pods (`Pod A — Varsity Lead`, `Pod B — Varsity Pack`, `Pod C — Sub-Varsity`, `Pod D — Developmental`)** within a `≤ 3.0 VDOT` (`±2s/400m`) corridor.
+3. MeetReady infers each athlete's **Jack Daniels VDOT** from their calibrated Threshold Pace (or explicit VDOT override) and clusters the squad into cohesive **Pacing Pods (`Pod A — Varsity Lead`, `Pod B — Varsity Pack`, `Pod C — Sub-Varsity`, `Pod D — Developmental`)** within a `≤ 3.0 VDOT` (`±2s/400m`) corridor.
 4. Every pod card displays exact target splits for **`200m`**, **`400m`**, **`800m`**, **`1000m`**, and **`1600m`**.
 5. Coaches can:
    - Click **Push to Pod** to schedule the auto-scaled workout directly onto every coached athlete's calendar in that pod.
@@ -91,7 +91,7 @@ Converts times between **`INDOOR_FLAT_200M`**, **`INDOOR_BANKED_200M`**, and **`
 | **`10000m`** | `× 0.9925` | `× 0.9935` |
 
 ### NCAA Altitude Allowance (`≥ 3,000 ft`)
-For races contested at `≥ 3,000 ft` elevation (e.g., Boulder `5,280 ft`, Albuquerque `4,950 ft`, Flagstaff `6,910 ft`), THRESH deducts the distance- and elevation-scaled hypoxic time allowance so athletes can see their sea-level championship index mark.
+For races contested at `≥ 3,000 ft` elevation (e.g., Boulder `5,280 ft`, Albuquerque `4,950 ft`, Flagstaff `6,910 ft`), MeetReady deducts the distance- and elevation-scaled hypoxic time allowance so athletes can see their sea-level championship index mark.
 
 ### 6-Tier Recruiting & Championship Standards (`evaluateRecruitingStandards`)
 Compares the athlete's indexed time against Men's and Women's benchmarks across `800m`, `1500m`, `1600m`, `Mile`, `3000m`, `3200m`, `5000m`, and `10000m`:

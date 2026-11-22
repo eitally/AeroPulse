@@ -195,7 +195,7 @@ describe('AUTH-01 · Self-Hosted Zero-Cost Auth Engine', () => {
       expect(previewRes.status).toBe(200);
       expect(previewRes.headers.get('set-cookie')).toBeNull();
       const previewHtml = await previewRes.text();
-      expect(previewHtml).toContain('Complete Sign-In to THRESH');
+      expect(previewHtml).toContain('Complete Sign-In to MeetReady');
 
       // Step 2: POST /verify atomically consumes token and issues session cookie
       const verifyRes = await fetch(`${baseUrl}/api/auth/magic-link/verify`, {

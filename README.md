@@ -1,6 +1,6 @@
-# THRESH — Precision Endurance Physiology, Load, Race Simulation & Scholastic Team Platform
+# MeetReady — Precision Endurance Physiology, Load, Race Simulation & Scholastic Team Platform
 
-**THRESH** is a full-stack, mobile-ready Progressive Web App (PWA) and desktop physiological performance cockpit crafted in the **`#1 Stadium Track`** graphic identity (`S2 × W-A` brand lockup + `FAV-F` standalone favicon).
+**MeetReady** is a full-stack, mobile-ready Progressive Web App (PWA) and desktop physiological performance cockpit crafted in the **`#1 Stadium Track`** graphic identity (`S2 × W-A` brand lockup + `FAV-F` standalone favicon).
 
 - **Multi-Auth Cross-Device Identity**: Sign in across desktop and mobile with **Google OAuth**, **WebAuthn Passkeys**, **Magic Link**, **Email OTP**, or **optional Strava OAuth** (with deterministic HMAC sessions, `AES-256-GCM` vaults, and normalized PostgreSQL persistence).
 - **4-Pillar Athlete Workspace & Run/Ride Core**: Unified **Today**, **Calendar** (+ **Plan Builder** with Return-to-Run & First 5K beginner tracks), **Log** (`Activities`), and standalone **Progress** (`Curves`, `Trends`, `Lab`), plus optional **Coach Workspace**.
@@ -25,9 +25,9 @@
 
 ---
 
-## Why THRESH v2.3?
+## Why MeetReady v2.3?
 
-| Capability | Intervals.icu | Strava | Final Surge / VDOT O2 | **THRESH v2.3** |
+| Capability | Intervals.icu | Strava | Final Surge / VDOT O2 | **MeetReady v2.3** |
 | :--- | :---: | :---: | :---: | :---: |
 | **Strava Identity + Explicit Sync Window (`90d` / `6mo` / `All` / `None`)** | No | Native | No | **Yes + Optional Garmin / Intervals Add-Ons** |
 | **Banister PMC (`42d CTL`, `7d ATL`, `TSB`, `Ramp Rate`)** | Yes | No | No | **Yes + Two-Pass Calibrated Strava `rTSS`** |

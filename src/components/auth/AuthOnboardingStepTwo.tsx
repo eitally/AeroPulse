@@ -164,8 +164,8 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                     </div>
                     <div className="text-2xs opacity-90">
                       {status.stravaConnected
-                        ? 'Identity verified. Choose what Strava data you want to sync to THRESH.'
-                        : 'THRESH account active. Configure your telemetry sync and sport calibration below.'}
+                        ? 'Identity verified. Choose what Strava data you want to sync to MeetReady.'
+                        : 'MeetReady account active. Configure your telemetry sync and sport calibration below.'}
                     </div>
                   </div>
                 </div>
@@ -237,7 +237,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                         </span>
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-400">
-                        Automatically pull your workouts, GPS routes, and gear mileage into THRESH.
+                        Automatically pull your workouts, GPS routes, and gear mileage into MeetReady.
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -263,7 +263,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       <div className="space-y-0.5 flex-1 min-w-[220px]">
                         <div className="font-bold">Activity permission was unchecked on Strava</div>
                         <div className="opacity-90">
-                          THRESH is set to Identity Only. Re-authorize with activity read access if you want automatic workout sync.
+                          MeetReady is set to Identity Only. Re-authorize with activity read access if you want automatic workout sync.
                         </div>
                       </div>
                       <button
@@ -454,7 +454,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       <span>13+ Minimum Age Required (COPPA)</span>
                     </div>
                     <p className="text-slate-700 dark:text-slate-300 text-2xs leading-relaxed">
-                      THRESH self-serve accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.
+                      MeetReady self-serve accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.
                     </p>
                   </div>
                 )}

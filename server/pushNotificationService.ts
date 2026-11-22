@@ -54,7 +54,7 @@ function pushSubsVaultKey(userSid: string): string {
 export async function getOrInitVapidKeys(): Promise<StoredVapidKeys> {
   const envPublic = process.env.VAPID_PUBLIC_KEY?.trim();
   const envPrivate = process.env.VAPID_PRIVATE_KEY?.trim();
-  const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:support@thresh.fit';
+  const subject = process.env.VAPID_SUBJECT?.trim() || 'mailto:support@meetready.app';
   if (envPublic && envPrivate) {
     return {
       publicKey: envPublic,
@@ -293,7 +293,7 @@ export function buildSafePushPayload(params: {
   isMinorTarget: boolean;
   isEmergency?: boolean;
 }): PushDispatchPayload {
-  const shortTeam = params.teamShortName || 'THRESH';
+  const shortTeam = params.teamShortName || 'MeetReady';
   const cleanSnippet = String(params.bodyText || '').replace(/\s+/g, ' ').trim().slice(0, 110);
   const isStaffConfidential = params.channelScope === 'COACHES_STAFF';
   const redactForLockScreen =
@@ -302,15 +302,15 @@ export function buildSafePushPayload(params: {
       (params.channelScope === 'DIRECT_TRANSPARENT' || params.kind === 'WORKOUT_COMMENT'));
 
   const safeBody = isStaffConfidential
-    ? `New coaching staff message from ${params.senderName} — tap to open in THRESH.`
+    ? `New coaching staff message from ${params.senderName} — tap to open in MeetReady.`
     : redactForLockScreen
-      ? `New SafeSport CC note from ${params.senderName} — tap to open in THRESH.`
+      ? `New SafeSport CC note from ${params.senderName} — tap to open in MeetReady.`
       : `${params.senderName}: ${cleanSnippet}`;
 
   const title =
     params.isEmergency || params.announcementCategory === 'WEATHER'
-      ? `THRESH Alert · ${shortTeam}`
-      : `THRESH · ${shortTeam}`;
+      ? `MeetReady Alert · ${shortTeam}`
+      : `MeetReady · ${shortTeam}`;
 
   return {
     title,

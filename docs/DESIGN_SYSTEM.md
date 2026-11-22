@@ -1,6 +1,6 @@
-# THRESH — "#1 Stadium Track" Design System & Brand Architecture
+# MeetReady — "#1 Stadium Track" Design System & Brand Architecture
 
-This document is the engineering reference for the **THRESH** visual language, `#1 Stadium Track — Track Volt & Obsidian` token architecture, `S2 × W-A` brand lockup + `FAV-F` favicon, typography scale, locked 6-zone physiological color encodings, z-index layering, and accessibility standards (`src/index.css`, `src/utils/themeTokens.ts`, `src/utils/teamBrandDom.ts`, `src/components/AeroPulseLogo.tsx`, `public/brand/`, `public/icon.svg`, and `public/docs/index.html`).
+This document is the engineering reference for the **MeetReady** visual language, `#1 Stadium Track — Track Volt & Obsidian` token architecture, `S2 × W-A` brand lockup + `FAV-F` favicon, typography scale, locked 6-zone physiological color encodings, z-index layering, and accessibility standards (`src/index.css`, `src/utils/themeTokens.ts`, `src/utils/teamBrandDom.ts`, `src/components/AeroPulseLogo.tsx`, `public/brand/`, `public/icon.svg`, and `public/docs/index.html`).
 
 For the portable machine-readable Stitch/Impeccable design specification and shadow-DOM component snippets, see root `DESIGN.md` and `.impeccable/design.json`.
 
@@ -8,19 +8,19 @@ For the portable machine-readable Stitch/Impeccable design specification and sha
 
 ## 1. Aesthetic Direction: `#1 Stadium Track — Track Volt & Obsidian`
 
-THRESH pairs athletic stadium-track geometry with laboratory-grade physiological legibility across **Light Mode** and **Dark Mode**:
+MeetReady pairs athletic stadium-track geometry with laboratory-grade physiological legibility across **Light Mode** and **Dark Mode**:
 
 1. **Stadium Track Outer Surround (`body` / `.ap-shell`)**:
    - **Light Mode**: Classic Pine stadium surround (`#163022`) with a static upper-left floodlight radial glow (`rgba(200, 255, 0, 0.14)`), framing a `2px` Pine-bordered (`#2B5B3F`) Stadium Chalk workspace canvas (`#F4F7F2`) and Crisp Paper (`#FFFFFF`) telemetry cards.
    - **Dark Mode (`.dark`)**: Deep Pine surround (`#0C1D14`) with a subtle floodlight radial glow (`rgba(200, 255, 0, 0.12)`), framing a `2px` Pine-bordered (`#2B543B`) Obsidian-Pine workspace canvas (`#0B120E`), Carbon-Pine (`#101B15`) cards, and Deep Turf (`#15231B`) inset wells.
    - **Zero Scroll Jank Policy**: Surfaces use crisp solid/tonal layering without `background-attachment: fixed` or full-bar/full-screen `backdrop-filter` blur passes.
-2. **`S2 × W-A` THRESH Brand Lockup & `FAV-F` Favicon (`AeroPulseLogo.tsx` & `public/brand/`)**:
+2. **`S2 × MeetReady` Brand Lockup & `FAV-M` Favicon (`AeroPulseLogo.tsx` & `public/brand/`)**:
    - **`S2` Parallel-Breach Track Geometry**: Smooth asymmetric two-lane track mark with `315°` breach cutout paired with crisp dark/light surface calibration.
-   - **`W-A` Integrated Athletic Wordmark**: Forward-leaning heavy ALL-CAPS wordmark (`THRESH`) seated on the track straightaway, razor-sharp down to `28px` navbar height.
-   - **`FAV-F` Standalone High-Vis Volt Shield Favicon (`public/icon.svg`)**: Dedicated `32×32` stadium tile legible down to `16×16` browser tabs.
+   - **Two-Tone CamelCase Wordmark (`MeetReady`)**: Upright bold Plus Jakarta Sans 800 two-tone wordmark (`Meet` + `Ready`), razor-sharp down to `28px` navbar height.
+   - **`FAV-M` Standalone High-Vis Volt Shield Favicon (`public/icon.svg`)**: Dedicated `32×32` `#C8FF00` stadium tile with bold geometric `M` legible down to `16×16` browser tabs.
    - **Velocity-Sheared Navigation (`.ap-track-tab`)**: Primary cockpit navigation tabs and `.ap-lane-badge` callouts use `-14deg` outer skew with `+14deg` counter-skewed inner labels (`.ap-track-tab-inner`, `.ap-lane-badge-inner`).
    - **Gauge Favicon (`public/icon.svg`)**: Standalone rounded-square `#0B1B13` stadium tile housing the interior threshold gauge arc and needle for `16×16` and `32×32` browser-tab recognition.
-   - **Public Brand Studio (`/brand` & `public/brand/`)**: Zero-auth interactive Brand, Style Guide & Universal Asset Studio (`src/components/BrandGuidePage.tsx`, `src/utils/brandAssetEngine.ts`), linked from `CockpitFooter`, `StravaAuthGate`, and `/docs/`. Ships 17 namespaced SVG marks—including true compound-path boolean-knockout 1-ink black, reversed white, and Track Volt stencils, unframed transparent Gauge symbols, full-bleed `512px`/`1024px` partner icons, `W1` wordmarks, 4-lane watermark, and `1200×630` OpenGraph card—plus `1x/2x/4x` PNG exports, `THRESH-Brand-Kit.zip`, and the live `Team × THRESH` SVG/PNG co-brand sandbox.
+   - **Public Brand Studio (`/brand` & `public/brand/`)**: Zero-auth interactive Brand, Style Guide & Universal Asset Studio (`src/components/BrandGuidePage.tsx`, `src/utils/brandAssetEngine.ts`), linked from `CockpitFooter`, `StravaAuthGate`, and `/docs/`. Ships 17 namespaced SVG marks—including true compound-path boolean-knockout 1-ink black, reversed white, and Track Volt stencils, unframed transparent Gauge symbols, full-bleed `512px`/`1024px` partner icons, `W1` wordmarks, 4-lane watermark, and `1200×630` OpenGraph card—plus `1x/2x/4x` PNG exports, `MeetReady-Brand-Kit.zip`, and the live `Team × MeetReady` SVG/PNG co-brand sandbox.
 3. **Protected Telemetry & Physiological Semantics**:
    - High-density ECharts & uPlot canvases (`src/utils/themeTokens.ts`) synchronize 1:1 with `src/index.css` so 6-zone effort colors, Banister PMC series, and readiness pills maintain unambiguous meaning regardless of theme or school/club co-branding.
 
@@ -89,7 +89,7 @@ Even when a school or club activates custom co-branding (`TeamBrandConfig` via `
 | **Z1** | Cool Mist — Active Recovery | `--color-ap-z1` | `#94A3B8` |
 | **Z2** | Aerobic Teal — Endurance Base | `--color-ap-z2` | `#0D9488` |
 | **Z3** | Ochre — Tempo / Sweet Spot | `--color-ap-z3` | `#D97706` |
-| **Z4** | THRESH Vermilion — Lactate Threshold | `--color-ap-z4` | `#EA580C` |
+| **Z4** | Threshold Vermilion — Lactate Threshold | `--color-ap-z4` | `#EA580C` |
 | **Z5** | Crimson — $\text{VO}_2\max$ Aerobic Power | `--color-ap-z5` | `#DC2626` |
 | **Z6** | Deep Violet — Anaerobic / Neuromuscular | `--color-ap-z6` | `#7C3AED` |
 

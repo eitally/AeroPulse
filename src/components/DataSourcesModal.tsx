@@ -455,7 +455,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         })}`
                       : ''
                   }`
-                : 'THRESH account active · Strava, Garmin & Intervals.icu are optional data connectors'}
+                : 'MeetReady account active · Strava, Garmin & Intervals.icu are optional data connectors'}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -619,7 +619,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             <div className="rounded-xl bg-emerald-950/5 dark:bg-[#0C1D14]/80 border border-[#28573B]/20 dark:border-[#25573A] px-3 py-2 flex items-center gap-2 text-2xs text-emerald-950/85 dark:text-emerald-100/85">
               <Lock className="w-3.5 h-3.5 ap-text-brand shrink-0" />
               <span>
-                <strong>Read-Only Pledge:</strong> THRESH never posts to your Strava feed, edits activity titles, or sends kudos without you clicking it.
+                <strong>Read-Only Pledge:</strong> MeetReady never posts to your Strava feed, edits activity titles, or sends kudos without you clicking it.
               </span>
             </div>
 
@@ -833,7 +833,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     {isConnectingGarmin ? 'Linking...' : 'Link Garmin'}
                   </button>
                   <p className="sm:col-span-12 text-2xs text-slate-600 dark:text-slate-300">
-                    Your password is exchanged once for an OAuth token and never stored by THRESH.
+                    Your password is exchanged once for an OAuth token and never stored by MeetReady.
                   </p>
                 </form>
               ) : (

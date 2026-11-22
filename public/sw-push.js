@@ -1,10 +1,10 @@
 /* eslint-disable no-restricted-globals */
-// THRESH Service Worker Web Push & Notification Click Handler
+// MeetReady Service Worker Web Push & Notification Click Handler
 
 self.addEventListener('push', (event) => {
   let payload = {
-    title: 'THRESH Team Update',
-    body: 'Open THRESH to read your new message.',
+    title: 'MeetReady Team Update',
+    body: 'Open MeetReady to read your new message.',
     url: '/?openMessages=1',
     tag: 'thresh-team-message',
     isEmergency: false,

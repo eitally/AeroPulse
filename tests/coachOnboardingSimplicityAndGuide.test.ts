@@ -91,7 +91,7 @@ describe('Coach Onboarding Simplicity & Coach User Guide Contracts', () => {
       })
     );
 
-    expect(modalHtml).toContain('Open THRESH Coach Desk');
+    expect(modalHtml).toContain('Open MeetReady Coach Desk');
     expect(modalHtml).toContain('data-testid="roster-open-stopwatch-btn"');
     expect(modalHtml).toContain('Teammate (View Only)');
     expect(modalHtml).toContain('Connections (1)');

@@ -1,6 +1,6 @@
-# THRESH — REST API, Multi-Provider Identity & Security Architecture
+# MeetReady — REST API, Multi-Provider Identity & Security Architecture
 
-This document covers the server-side architecture of **THRESH**, including Multi-Auth identity (Google OAuth 2.0, WebAuthn Passkeys via `@simplewebauthn/server`, fail-closed Magic Link GET/POST, 6-digit Email OTP, and optional Strava OAuth), CSRF-protected OAuth cookie-nonce handshakes, the `AES-256-GCM` Token Vault, strict Postgres TLS (`rejectUnauthorized: true`) with normalized tables (`thresh_teams`, `thresh_team_members`, `thresh_audit_log`), Clean-Room Allowlist AI Firewall, RBAC governance, and hardware connectors.
+This document covers the server-side architecture of **MeetReady**, including Multi-Auth identity (Google OAuth 2.0, WebAuthn Passkeys via `@simplewebauthn/server`, fail-closed Magic Link GET/POST, 6-digit Email OTP, and optional Strava OAuth), CSRF-protected OAuth cookie-nonce handshakes, the `AES-256-GCM` Token Vault, strict Postgres TLS (`rejectUnauthorized: true`) with normalized tables (`thresh_teams`, `thresh_team_members`, `thresh_audit_log`), Clean-Room Allowlist AI Firewall, RBAC governance, and hardware connectors.
 
 > **Legal & Procurement Docs:** [`/privacy`](/privacy) · [`/terms`](/terms) · [`/subprocessors`](/subprocessors) · [`/procurement`](/procurement)
 

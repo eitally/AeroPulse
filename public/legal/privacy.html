@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>THRESH — Privacy Policy</title>
+  <title>MeetReady — Privacy Policy</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg?v=5" />
   <link rel="stylesheet" href="/legal/legal.css" />
   <script>
@@ -26,9 +26,9 @@
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
   <header class="legal-header">
-    <a class="legal-brand" href="/" aria-label="THRESH Home">
-      <img class="doc-logo-light" src="/brand/thresh-lockup-light-2x.png" alt="THRESH" width="122" height="32" />
-      <img class="doc-logo-dark" src="/brand/thresh-lockup-dark-2x.png" alt="THRESH" width="122" height="32" />
+    <a class="legal-brand" href="/" aria-label="MeetReady Home">
+      <img class="doc-logo-light" src="/brand/meetready-lockup-light-2x.png" alt="MeetReady" width="122" height="32" />
+      <img class="doc-logo-dark" src="/brand/meetready-lockup-dark-2x.png" alt="MeetReady" width="122" height="32" />
       <span class="mono" style="font-size:0.75rem;color:var(--text-muted)">Privacy &amp; Compliance</span>
     </a>
     <nav class="legal-nav" aria-label="Legal and procurement navigation">
@@ -38,22 +38,22 @@
       <a class="legal-nav-link" href="/subprocessors">Subprocessors</a>
       <a class="legal-nav-link" href="/procurement">District &amp; NCAA Pack</a>
       <button type="button" class="legal-btn" id="legalThemeBtn">Theme</button>
-      <a class="legal-btn legal-btn-primary" href="/">Open THRESH</a>
+      <a class="legal-btn legal-btn-primary" href="/">Open MeetReady</a>
     </nav>
   </header>
 
   <main id="main-content" tabindex="-1" class="legal-shell">
     <section class="legal-hero">
       <div class="legal-kicker">PRIVACY POLICY · UPDATED NOV 2026</div>
-      <h1>THRESH Privacy Policy &amp; Youth Data Protection</h1>
-      <p class="legal-meta">Applies to individual athletes, coaches, parents/guardians, high school programs, collegiate programs, and clubs across THRESH web and PWA surfaces.</p>
+      <h1>MeetReady Privacy Policy &amp; Youth Data Protection</h1>
+      <p class="legal-meta">Applies to individual athletes, coaches, parents/guardians, high school programs, collegiate programs, and clubs across MeetReady web and PWA surfaces.</p>
     </section>
 
     <section class="legal-section">
       <h2>1. Data We Collect &amp; Strict Minimization</h2>
       <ul>
         <li><strong>Account Identity:</strong> Display name, sign-in identifier (Google OAuth, WebAuthn Passkey credential, verified email for OTP/Magic Link, or optional Strava athlete ID), and explicit role (<code>ATHLETE</code>, <code>HEAD_COACH</code>, <code>ASSISTANT_COACH</code>, <code>ORG_ADMIN</code>, <code>ATHLETIC_TRAINER</code>, or <code>PARENT_FOLLOWER</code>).</li>
-        <li><strong>Birth Month &amp; Year Only (<code>YYYY-MM</code>):</strong> THRESH intentionally avoids collecting full calendar birth dates for minor age-tier routing. Age verification computes age tiers strictly from month/year boundaries.</li>
+        <li><strong>Birth Month &amp; Year Only (<code>YYYY-MM</code>):</strong> MeetReady intentionally avoids collecting full calendar birth dates for minor age-tier routing. Age verification computes age tiers strictly from month/year boundaries.</li>
         <li><strong>Endurance Telemetry &amp; Manual Logs:</strong> Workout duration, distance, splits, power/pace, heart rate, trackside stopwatch splits, planned sessions, and voluntary post-session check-ins (RPE &amp; soreness/pain flags).</li>
         <li><strong>Optional Body Mass &amp; Safe-Sport Shield:</strong> When an athlete is under 18 (<code>isMinorU18</code>) or joins a <code>HIGH_SCHOOL</code> team, Safe-Sport weight suppression (<code>safeSportHideWeight</code>) is locked ON and body mass / <code>W/kg</code> metrics are excluded from team projections and reports.</li>
       </ul>
@@ -62,7 +62,7 @@
     <section class="legal-section">
       <h2>2. Children Under 13 (COPPA) &amp; Youth Athletes Ages 13–17</h2>
       <div class="legal-callout">
-        <p><strong>No Unmanaged Child Accounts:</strong> Under the Children&apos;s Online Privacy Protection Act (COPPA, 15 U.S.C. § 6501 et seq.), THRESH does not knowingly collect personal information from children under 13 years of age and hard-blocks account creation for under-13 birthdates.</p>
+        <p><strong>No Unmanaged Child Accounts:</strong> Under the Children&apos;s Online Privacy Protection Act (COPPA, 15 U.S.C. § 6501 et seq.), MeetReady does not knowingly collect personal information from children under 13 years of age and hard-blocks account creation for under-13 birthdates.</p>
       </div>
       <ul>
         <li><strong>Verifiable Parent / Guardian Consent (Ages 13–17 &amp; High School Programs):</strong> High school and U18 minor memberships remain in pending-consent quarantine (<code>LOAD_ONLY</code> load &amp; readiness triage summary only, zero AI access, zero weight exposure) until a parent/guardian receives and confirms the single-use consent link.</li>
@@ -83,7 +83,7 @@
 
     <section class="legal-section">
       <h2>4. Strava Clean-Room Firewall &amp; Optional Gemini AI</h2>
-      <p>THRESH enforces a strict server-side telemetry allowlist firewall before any prompt reaches Google Gemini AI:</p>
+      <p>MeetReady enforces a strict server-side telemetry allowlist firewall before any prompt reaches Google Gemini AI:</p>
       <ul>
         <li><strong>100% Strava Exclusion:</strong> Activities originating from Strava (across all payload keys including <code>recentWorkouts</code>) are stripped unconditionally and never transmitted to Gemini AI or displayed inside unowned third-party views.</li>
         <li><strong>Minor AI Default-Off:</strong> AI Coach insights are disabled by default for all minors (<code>U18</code>) and high school athletes, and body weight / body composition fields are stripped server-side.</li>
@@ -97,12 +97,12 @@
         <li><strong>Encryption:</strong> Credentials and tenant vaults are encrypted at rest with AES-256-GCM; PostgreSQL connections enforce strict verified TLS in production; FIDO2/WebAuthn Passkeys verify cryptographic signatures before issuing sessions.</li>
         <li><strong>Self-Serve Deletion:</strong> Athletes can revoke Strava/wearable connectors or execute permanent erasure via <strong>Account &amp; Privacy → Delete My Account</strong>, which wipes session cookies, team memberships, and encrypted vault state (preventing deletion only if a sole active Head Coach has not transferred ownership).</li>
       </ul>
-      <p>Privacy &amp; procurement inquiries: <a href="mailto:privacy@thresh.fit">privacy@thresh.fit</a> · <a href="/procurement">District &amp; NCAA Procurement Pack</a></p>
+      <p>Privacy &amp; procurement inquiries: <a href="mailto:privacy@meetready.app">privacy@meetready.app</a> · <a href="/procurement">District &amp; NCAA Procurement Pack</a></p>
     </section>
   </main>
 
   <footer class="legal-footer">
-    <span><strong>THRESH</strong> · Endurance Readiness &amp; Team Performance Lab · Not medical advice</span>
+    <span><strong>MeetReady</strong> · Endurance Readiness &amp; Team Performance Lab · Not medical advice</span>
     <div>
       <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/subprocessors">Subprocessors</a> · <a href="/procurement">Procurement</a> · <a href="/docs/">Docs</a>
     </div>

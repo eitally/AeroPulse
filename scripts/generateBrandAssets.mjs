@@ -16,19 +16,21 @@ for (const asset of BRAND_ASSET_CATALOG) {
 
 // 2. Render key crisp high-DPI static PNG exports + PWA app icons via headless Chromium
 const pngTargets = [
-  { id: 'thresh-og-1200x630', outPath: path.join(outDir, 'thresh-og-1200x630.png'), width: 1200, height: 630 },
-  { id: 'thresh-lockup-dark', outPath: path.join(outDir, 'thresh-lockup-dark-2x.png'), width: 944, height: 248 },
-  { id: 'thresh-lockup-light', outPath: path.join(outDir, 'thresh-lockup-light-2x.png'), width: 944, height: 248 },
-  { id: 'thresh-sticker-diecut', outPath: path.join(outDir, 'thresh-sticker-diecut-2x.png'), width: 944, height: 248 },
-  { id: 'thresh-1ink-stencil', outPath: path.join(outDir, 'thresh-1ink-stencil-2x.png'), width: 944, height: 248 },
-  { id: 'thresh-1ink-stencil-white', outPath: path.join(outDir, 'thresh-1ink-stencil-white-2x.png'), width: 944, height: 248 },
-  { id: 'thresh-icon-square-fullbleed', outPath: path.join(outDir, 'thresh-icon-square-512.png'), width: 512, height: 512 },
-  { id: 'thresh-icon-square-fullbleed', outPath: path.join(outDir, 'thresh-icon-square-1024.png'), width: 1024, height: 1024 },
-  { id: 'thresh-icon-tile-dark', outPath: path.join(publicDir, 'apple-touch-icon.png'), width: 180, height: 180 },
-  { id: 'thresh-icon-tile-dark', outPath: path.join(publicDir, 'pwa-192x192.png'), width: 192, height: 192 },
-  { id: 'thresh-icon-tile-dark', outPath: path.join(publicDir, 'pwa-512x512.png'), width: 512, height: 512 },
-  { id: 'thresh-icon-square-fullbleed', outPath: path.join(publicDir, 'pwa-maskable-512x512.png'), width: 512, height: 512 },
+  { id: 'meetready-og-1200x630', outPath: path.join(outDir, 'meetready-og-1200x630.png'), width: 1200, height: 630 },
+  { id: 'meetready-lockup-dark', outPath: path.join(outDir, 'meetready-lockup-dark-2x.png'), width: 944, height: 248 },
+  { id: 'meetready-lockup-light', outPath: path.join(outDir, 'meetready-lockup-light-2x.png'), width: 944, height: 248 },
+  { id: 'meetready-sticker-diecut', outPath: path.join(outDir, 'meetready-sticker-diecut-2x.png'), width: 944, height: 248 },
+  { id: 'meetready-1ink-stencil', outPath: path.join(outDir, 'meetready-1ink-stencil-2x.png'), width: 944, height: 248 },
+  { id: 'meetready-1ink-stencil-white', outPath: path.join(outDir, 'meetready-1ink-stencil-white-2x.png'), width: 944, height: 248 },
+  { id: 'meetready-icon-square-fullbleed', outPath: path.join(outDir, 'meetready-icon-square-512.png'), width: 512, height: 512 },
+  { id: 'meetready-icon-square-fullbleed', outPath: path.join(outDir, 'meetready-icon-square-1024.png'), width: 1024, height: 1024 },
+  { id: 'meetready-icon-tile-dark', outPath: path.join(publicDir, 'apple-touch-icon.png'), width: 180, height: 180 },
+  { id: 'meetready-icon-tile-dark', outPath: path.join(publicDir, 'pwa-192x192.png'), width: 192, height: 192 },
+  { id: 'meetready-icon-tile-dark', outPath: path.join(publicDir, 'pwa-512x512.png'), width: 512, height: 512 },
+  { id: 'meetready-icon-square-fullbleed', outPath: path.join(publicDir, 'pwa-maskable-512x512.png'), width: 512, height: 512 },
 ];
+
+const FONT_LINKS = `<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">`;
 
 const browser = await chromium.launch({ headless: true });
 try {
@@ -44,9 +46,17 @@ try {
       `<svg width="${target.width}" height="${target.height}" style="display:block;width:${target.width}px;height:${target.height}px;" `
     );
     await page.setContent(
-      `<!doctype html><html><head><style>html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:${target.width}px;height:${target.height}px;}</style></head><body>${sizedSvg}</body></html>`,
-      { waitUntil: 'load' }
+      `<!doctype html><html><head>${FONT_LINKS}<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden;width:${target.width}px;height:${target.height}px;}</style></head><body>${sizedSvg}</body></html>`,
+      { waitUntil: 'domcontentloaded' }
     );
+    await page.evaluate(async () => {
+      if (document.fonts && document.fonts.ready) {
+        await Promise.race([
+          document.fonts.ready,
+          new Promise((resolve) => setTimeout(resolve, 3000)),
+        ]);
+      }
+    });
     await page.screenshot({
       path: target.outPath,
       omitBackground: true,

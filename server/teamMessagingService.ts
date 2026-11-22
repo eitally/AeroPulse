@@ -195,8 +195,8 @@ export async function postTeamMessage(params: {
         guardianEmailNotified = true;
         void sendEmailViaResend({
           to: targetMem.parentGuardianEmail,
-          subject: `[THRESH SafeSport CC] Coach message for ${targetMem.invitedName}`,
-          html: `<p><strong>${escapeHtml(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml(callerMem.role)}) sent a team message to ${escapeHtml(targetMem.invitedName)}:</p><blockquote>${escapeHtml(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under THRESH SafeSport MAAPP two-adult transparency.</p>`,
+          subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
+          html: `<p><strong>${escapeHtml(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml(callerMem.role)}) sent a team message to ${escapeHtml(targetMem.invitedName)}:</p><blockquote>${escapeHtml(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
           text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`,
         });
       }

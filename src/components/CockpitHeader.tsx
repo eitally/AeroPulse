@@ -262,8 +262,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               href="#fitness"
               aria-label={
                 activeTeam?.brand
-                  ? `${activeTeam.brand.shortName || activeTeam.brand.name} on THRESH Home`
-                  : 'THRESH Home'
+                  ? `${activeTeam.brand.shortName || activeTeam.brand.name} on MeetReady Home`
+                  : 'MeetReady Home'
               }
               onClick={(e) => {
                 e.preventDefault();

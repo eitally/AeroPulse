@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.describe('THRESH Homepage v3 — Editorial Split Stage (Desktop & Mobile)', () => {
+test.describe('MeetReady Homepage v3 — Editorial Split Stage (Desktop & Mobile)', () => {
   test.beforeEach(async ({ page, context }) => {
     await page.route('https://fonts.googleapis.com/**', (route) =>
       route.fulfill({ status: 200, contentType: 'text/css', body: '/* mock */' })

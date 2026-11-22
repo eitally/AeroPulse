@@ -253,8 +253,8 @@ export const TracksideWalkOnAndSaveBar: React.FC<TracksideWalkOnAndSaveBarProps>
               {isSavingToThresh
                 ? 'Saving Splits…'
                 : sessionType === 'RACE'
-                  ? 'Save Official Race Marks to THRESH'
-                  : 'Save Workout Splits to THRESH'}
+                  ? 'Save Official Race Marks to MeetReady'
+                  : 'Save Workout Splits to MeetReady'}
             </span>
           </button>
         </div>

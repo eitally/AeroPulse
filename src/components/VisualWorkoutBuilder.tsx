@@ -724,7 +724,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
     openShareWorkoutRoute({
       kind: 'WORKOUT',
       version: 1,
-      title: builderName.trim() || 'THRESH Structured Workout',
+      title: builderName.trim() || 'MeetReady Structured Workout',
       sport: builderSport,
       date: builderDate,
       workoutSyntax: effectiveSyntax,

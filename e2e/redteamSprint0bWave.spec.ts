@@ -24,7 +24,7 @@ async function signInAndEnterWorkspace(
   await confirmStep2Btn.click();
 
   const enterWorkspaceBtn = page.getByRole('button', {
-    name: /Skip for Now — Enter THRESH|Continue to THRESH/i,
+    name: /Skip for Now — Enter MeetReady|Continue to MeetReady/i,
   });
   await expect(enterWorkspaceBtn).toBeVisible({ timeout: 15000 });
   await enterWorkspaceBtn.click();
@@ -183,7 +183,7 @@ test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () 
     await page.goto('/?auth_just_signed_in=1&role=athlete');
     await page.getByRole('button', { name: /Confirm & Continue/i }).click();
     await page
-      .getByRole('button', { name: /Skip for Now — Enter THRESH|Continue to THRESH/i })
+      .getByRole('button', { name: /Skip for Now — Enter MeetReady|Continue to MeetReady/i })
       .click();
     await expect(page.getByTestId('toggle-coach-workspace')).toBeVisible({ timeout: 15000 });
 
@@ -310,7 +310,7 @@ test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () 
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
     await page.goto('/?demo=1#plan-builder');
-    const brandLink = page.locator('header a[aria-label*="THRESH"]');
+    const brandLink = page.locator('header a[aria-label*="MeetReady"]');
     await expect(brandLink).toBeVisible({ timeout: 15000 });
 
     const viewport = page.viewportSize()!;
@@ -344,7 +344,7 @@ test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () 
     // RT-26: /docs (without trailing slash) must serve public/docs/index.html (NOT SPA fallback)
     const docsResp = await page.goto('/docs');
     expect(docsResp?.status()).toBe(200);
-    await expect(page).toHaveTitle(/THRESH.*Documentation|THRESH User Guide/i);
+    await expect(page).toHaveTitle(/MeetReady.*Documentation|MeetReady User Guide/i);
     await expect(
       page.getByRole('heading', { name: /Sign in or create account/i })
     ).toHaveCount(0);

@@ -20,8 +20,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'THRESH — Track, XC & Endurance Coaching Lab',
-          short_name: 'THRESH',
+          name: 'MeetReady — Track & Field & Cross Country',
+          short_name: 'MeetReady',
           description:
             'Coach clipboard, auto-scaled distance pace pods, watchless 0.01s trackside stopwatch, and 1Hz endurance physiology for teams and athletes.',
           theme_color: '#0C1D14',

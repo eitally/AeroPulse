@@ -285,7 +285,7 @@ export function openPrintableTeamPosterWindow(
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>${escapeTextForSafeAttr(brand.name)} — THRESH Join Poster</title>
+  <title>${escapeTextForSafeAttr(brand.name)} — MeetReady Join Poster</title>
   <style>
     body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; background: #F4F7F2; color: #101411; margin: 0; padding: 32px; }
     .sheet { max-width: 720px; margin: 0 auto; background: #FFFFFF; border-radius: 24px; overflow: hidden; border: 2px solid #B8CBBF; box-shadow: 0 12px 32px rgba(16,20,17,0.08); }
@@ -311,7 +311,7 @@ export function openPrintableTeamPosterWindow(
       <div class="banner-left">
         ${crestMarkup}
         <div>
-          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;opacity:0.9;font-weight:700;">${escapeTextForSafeAttr(defaults.orgBadgeLabel)} · THRESH TEAM HUB</div>
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.1em;opacity:0.9;font-weight:700;">${escapeTextForSafeAttr(defaults.orgBadgeLabel)} · MeetReady TEAM HUB</div>
           <h1 style="margin:4px 0 4px;font-size:28px;font-weight:800;letter-spacing:-0.02em;">${escapeTextForSafeAttr(brand.name)}</h1>
           <div style="font-size:14px;opacity:0.92;">Coach ${escapeTextForSafeAttr(brand.coachDisplayName)}${brand.mascotOrMotto ? ` · "${escapeTextForSafeAttr(brand.mascotOrMotto)}"` : ''}</div>
         </div>
@@ -364,7 +364,7 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
     repCount,
     recoveryLabel,
     pods,
-    teamName = 'THRESH Squad',
+    teamName = 'MeetReady Squad',
   } = params;
 
   const repCols = Math.max(1, Math.min(8, Math.round(repCount || 4)));
@@ -484,8 +484,8 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
   </div>
   ${podPages.join('')}
   <footer class="sheet-footer">
-    <span>Auto-scaled Pace Pods &amp; 0.01s Watchless Splits · THRESH</span>
-    <span>https://thresh.fit</span>
+    <span>Auto-scaled Pace Pods &amp; 0.01s Watchless Splits · MeetReady</span>
+    <span>https://meetready.app</span>
   </footer>
 </body>
 </html>`;

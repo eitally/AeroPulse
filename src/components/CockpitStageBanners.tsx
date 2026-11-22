@@ -205,8 +205,8 @@ export const CockpitStageBanners: React.FC<CockpitStageBannersProps> = ({
               </div>
               <div className="text-2xs text-slate-600 dark:text-slate-300">
                 {activitiesCount > 0
-                  ? `${activitiesCount.toLocaleString()} workouts loaded so far. You can explore THRESH while this finishes.`
-                  : 'Importing workouts, routes, and gear mileage. You can explore THRESH while this finishes.'}
+                  ? `${activitiesCount.toLocaleString()} workouts loaded so far. You can explore MeetReady while this finishes.`
+                  : 'Importing workouts, routes, and gear mileage. You can explore MeetReady while this finishes.'}
               </div>
             </div>
           </div>

@@ -125,7 +125,7 @@ export function generateVerifiedRacePassport(
   return {
     passportId: `passport-${Date.now()}`,
     verificationHash,
-    athleteName: input.athleteName || 'THRESH Athlete',
+    athleteName: input.athleteName || 'MeetReady Athlete',
     meetOrRaceName: input.meetOrRaceName || 'Certified Championship Event',
     eventLabel: input.eventLabel || `${certDist}m`,
     platform: input.platform,

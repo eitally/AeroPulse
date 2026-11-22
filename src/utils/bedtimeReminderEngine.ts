@@ -99,7 +99,7 @@ export function checkAndFireBedtimeReminder(params: {
   if (window.Notification.permission !== 'granted') return false;
 
   try {
-    new window.Notification('THRESH Bedtime Closeout (15s)', {
+    new window.Notification('MeetReady Bedtime Closeout (15s)', {
       body: params.tomorrowSummary
         ? `Tap your RPE + lock in tomorrow: ${params.tomorrowSummary}`
         : 'Log today’s effort + sleep target before lights out.',
@@ -123,19 +123,19 @@ export function buildBedtimeReminderIcs(timeHhMm: string): string {
   return [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//THRESH//Bedtime Closeout Reminder//EN',
+    'PRODID:-//MeetReady//Bedtime Closeout Reminder//EN',
     'BEGIN:VEVENT',
-    `UID:thresh-bedtime-closeout@thresh.app`,
+    `UID:thresh-bedtime-closeout@meetready.app`,
     `DTSTAMP:${todayCompact}T000000Z`,
     `DTSTART:${todayCompact}T${hh}${mm}00`,
     'DURATION:PT5M',
     'RRULE:FREQ=DAILY',
-    `SUMMARY:THRESH 15s Bedtime Closeout (${label})`,
+    `SUMMARY:MeetReady 15s Bedtime Closeout (${label})`,
     'DESCRIPTION:Tap effort RPE, flag tightness, and confirm tomorrow workout time & location.',
     'BEGIN:VALARM',
     'TRIGGER:-PT0M',
     'ACTION:DISPLAY',
-    'DESCRIPTION:THRESH Bedtime Closeout',
+    'DESCRIPTION:MeetReady Bedtime Closeout',
     'END:VALARM',
     'END:VEVENT',
     'END:VCALENDAR',

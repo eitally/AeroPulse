@@ -6,7 +6,7 @@ test.describe('Red-Team Sprint 2: Legal/Procurement, Coach Features, Goals & Off
   }) => {
     const routes = [
       { path: '/privacy', mustMatch: /FERPA|SOPIPA|COPPA/i },
-      { path: '/terms', mustMatch: /Coaching & readiness telemetry|THRESH/i },
+      { path: '/terms', mustMatch: /Coaching & readiness telemetry|MeetReady/i },
       { path: '/subprocessors', mustMatch: /Vercel|Neon|Strava/i },
       { path: '/procurement', mustMatch: /SDPC|NDPA|HECVAT/i },
     ];
@@ -106,7 +106,7 @@ test.describe('Red-Team Sprint 2: Legal/Procurement, Coach Features, Goals & Off
 
     // 3. Offline state does not wipe caches or trigger reload loop
     await page.goto('/?demo=1');
-    await expect(page.getByRole('img', { name: 'THRESH' }).first()).toBeVisible({
+    await expect(page.getByRole('img', { name: 'MeetReady' }).first()).toBeVisible({
       timeout: 15000,
     });
     await context.setOffline(true);

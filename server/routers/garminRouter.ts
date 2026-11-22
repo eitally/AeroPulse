@@ -389,7 +389,7 @@ garminRouter.post('/api/garmin/workout/push', async (req: Request, res: Response
 
     const body = req.body || {};
     const date = String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
-    const name = String(body.name || 'THRESH Daily Prescription');
+    const name = String(body.name || 'MeetReady Daily Prescription');
     const sportCategory = body.sportCategory || 'Cycling';
     const ftpWatts = Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250);
     const lthrBpm = Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165);
