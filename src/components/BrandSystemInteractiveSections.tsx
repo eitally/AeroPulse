@@ -84,7 +84,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
       >
         <div className="flex items-start justify-between gap-2 min-w-0">
           <div className="min-w-0">
-            <h4 className="font-display text-sm font-bold tracking-tight text-slate-950 dark:text-white truncate">
+            <h4 className="font-sans text-sm font-bold tracking-tight text-slate-950 dark:text-white truncate">
               {token.name}
             </h4>
             <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-snug">
@@ -100,7 +100,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
           <button
             type="button"
             onClick={() => void copyText(lightKey, lightFormatted, `${token.name} Light`)}
-            className="ap-card-inset rounded-lg px-2.5 py-2 min-h-[44px] flex items-center gap-2 text-left hover:border-emerald-700/40 dark:hover:border-lime-400/50 transition-colors cursor-pointer min-w-0"
+            className="ap-card-inset rounded-lg px-2.5 py-2 min-h-[44px] flex items-center gap-2 text-left hover:border-ap-clay/45 dark:hover:border-ap-volt/50 transition-colors cursor-pointer min-w-0"
             title={`Copy Light ${copyFormat}: ${lightFormatted}`}
           >
             <span
@@ -117,7 +117,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
               </span>
             </span>
             {copied?.key === lightKey ? (
-              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-lime-400 shrink-0" />
+              <Check className="w-3.5 h-3.5 ap-ink-emerald shrink-0" />
             ) : (
               <Copy className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
             )}
@@ -126,7 +126,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
           <button
             type="button"
             onClick={() => void copyText(darkKey, darkFormatted, `${token.name} Dark`)}
-            className="ap-card-inset rounded-lg px-2.5 py-2 min-h-[44px] flex items-center gap-2 text-left hover:border-emerald-700/40 dark:hover:border-lime-400/50 transition-colors cursor-pointer min-w-0"
+            className="ap-card-inset rounded-lg px-2.5 py-2 min-h-[44px] flex items-center gap-2 text-left hover:border-ap-clay/45 dark:hover:border-ap-volt/50 transition-colors cursor-pointer min-w-0"
             title={`Copy Dark ${copyFormat}: ${darkFormatted}`}
           >
             <span
@@ -143,7 +143,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
               </span>
             </span>
             {copied?.key === darkKey ? (
-              <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-lime-400 shrink-0" />
+              <Check className="w-3.5 h-3.5 ap-ink-emerald shrink-0" />
             ) : (
               <Copy className="w-3.5 h-3.5 text-slate-600 dark:text-slate-400 shrink-0" />
             )}
@@ -163,7 +163,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
         <div className="flex flex-wrap items-center gap-2.5">
           <h2
             id="brand-colors-heading"
-            className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white"
+            className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white"
           >
             3-Tier Color Scheme &amp; Stadium Map
           </h2>
@@ -197,11 +197,11 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
       </div>
 
       {/* Interactive 80 / 15 / 5 Budget Cutaway + 4 Opaque Depth Planes (Stage-Level, No Nested Cards) */}
-      <div className="space-y-4 pt-3 border-t border-emerald-950/10 dark:border-emerald-700/25">
+      <div className="space-y-4 pt-3 border-t border-ap-frame/15 dark:border-ap-edge-dark">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Layers className="w-4 h-4 ap-text-brand shrink-0" />
-            <h3 className="font-display text-base font-bold text-slate-950 dark:text-white">
+            <h3 className="font-sans text-base font-bold text-slate-950 dark:text-white">
               Tier 1 · Stadium Architecture &amp; Zero-Blur Elevation Planes
             </h3>
           </div>
@@ -244,7 +244,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
           {STADIUM_BUDGET_SLICES.map((slice) => (
             <div key={slice.id} className="ap-card-inset rounded-xl p-3 space-y-1">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-display text-xs font-bold text-slate-950 dark:text-white">
+                <span className="font-sans text-xs font-bold text-slate-950 dark:text-white">
                   {slice.label}
                 </span>
                 <span className="font-mono text-2xs font-bold ap-telemetry-label">
@@ -277,11 +277,11 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
       </div>
 
       {/* Tier 2: Sacred Physiology Lock (Stage-Level, No Nested Cards) */}
-      <div className="space-y-5 pt-4 border-t border-emerald-950/10 dark:border-emerald-700/25">
+      <div className="space-y-5 pt-4 border-t border-ap-frame/15 dark:border-ap-edge-dark">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <Lock className="w-4 h-4 ap-text-brand shrink-0" />
-            <h3 className="font-display text-base font-bold text-slate-950 dark:text-white">
+            <h3 className="font-sans text-base font-bold text-slate-950 dark:text-white">
               Tier 2 · The Sacred Physiology Lock (Z1–Z6, Banister PMC &amp; Readiness)
             </h3>
           </div>
@@ -305,7 +305,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
                 key={z.zone}
                 type="button"
                 onClick={() => void copyText(key, formatted, `${z.zone} ${z.name}`)}
-                className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-left bg-white dark:bg-ap-carbon hover:border-emerald-700/50 dark:hover:border-lime-400/50 transition-colors cursor-pointer"
+                className="rounded-xl border border-black/10 dark:border-white/10 overflow-hidden text-left bg-white dark:bg-ap-carbon hover:border-ap-clay/50 dark:hover:border-ap-volt/50 transition-colors cursor-pointer"
               >
                 <div
                   className="px-3 py-3 flex items-center justify-between"
@@ -319,7 +319,7 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
                   )}
                 </div>
                 <div className="p-2.5 space-y-0.5">
-                  <div className="font-display text-xs font-bold text-slate-950 dark:text-white truncate">
+                  <div className="font-sans text-xs font-bold text-slate-950 dark:text-white truncate">
                     {z.name}
                   </div>
                   <div className="text-2xs text-slate-600 dark:text-slate-300 truncate">
@@ -360,9 +360,9 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
       </div>
 
       {/* Tier 3: Partner Attribution Isolation (Stage-Level, No Nested Cards) */}
-      <div className="space-y-4 pt-4 border-t border-emerald-950/10 dark:border-emerald-700/25">
+      <div className="space-y-4 pt-4 border-t border-ap-frame/15 dark:border-ap-edge-dark">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-display text-base font-bold text-slate-950 dark:text-white">
+          <h3 className="font-sans text-base font-bold text-slate-950 dark:text-white">
             Tier 3 · Partner Attribution Isolation (Clean-Room Separation)
           </h3>
           <span className="font-mono text-2xs font-bold uppercase text-slate-600 dark:text-slate-400">
@@ -373,9 +373,9 @@ export const BrandColorMapSection: React.FC<{ isDark: boolean }> = ({ isDark }) 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-stretch">
           <div className="ap-card-inset rounded-xl p-3.5 flex flex-col justify-between gap-3">
             <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-              Strava Vermilion (<code className="font-mono">#C23800</code>, deepened from <code className="font-mono">#FC4C02</code> for <code className="font-mono">5.44:1</code> AA white-ink legibility) appears solely on the <code className="font-mono">&gt;= 48px</code> partner OAuth CTA and read-only provenance badges.
+              Strava Vermilion (<code className="font-mono">#C23800</code>, deepened from <code className="font-mono">#FC4C02</code> for <code className="font-mono">5.44:1</code> AA white-ink legibility) appears solely on <code className="font-mono">&gt;= 48px</code> standalone Strava OAuth connect panels (<code className="font-mono">.ap-btn-strava</code>) and read-only provenance badges, while unified multi-provider auth cards keep neutral outline buttons (<code className="font-mono">Connect with Strava</code>) beside the single Starter Volt CTA.
             </div>
-            <div className="ap-btn-strava min-h-[48px] rounded-xl px-4 inline-flex items-center justify-center font-display text-sm font-bold shadow-xs">
+            <div className="ap-btn-strava min-h-[48px] rounded-xl px-4 inline-flex items-center justify-center font-sans text-sm font-bold shadow-xs">
               Connect with Strava (Spec Specimen)
             </div>
           </div>
@@ -460,7 +460,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
       <div className="flex flex-wrap items-center gap-2.5">
         <h2
           id="brand-cobrand-heading"
-          className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white"
+          className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white"
         >
           School &amp; Club Co-Branding Sandbox
         </h2>
@@ -474,7 +474,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
           {/* Controls Column */}
           <div className="lg:col-span-5 space-y-4">
             <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-              Coaches and athletic directors can test any squad name and raw school hex — MeetReady clamps light/dark contrast automatically (<code className="font-mono">&gt;= 4.55:1</code>), shifts inner track lanes to neutral Slate so school colors never clash with Pine green, and exports print-ready lockups for tent valances, flyers, and warm-ups.
+              Coaches and athletic directors can test any squad name and raw school hex — MeetReady clamps light/dark contrast automatically (<code className="font-mono">&gt;= 4.55:1</code>), shifts the base Chevron M peak to neutral Track Asphalt or Stadium Chalk so school colors never clash, and exports print-ready lockups for tent valances, flyers, and warm-ups.
             </p>
 
             <div className="space-y-1.5">
@@ -490,7 +490,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
                       setRawPrimaryHex(preset.primaryHex);
                       setRawSecondaryHex(preset.secondaryHex);
                     }}
-                    className="ap-card-inset px-2.5 py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200 hover:border-emerald-700/50 dark:hover:border-lime-400/50 cursor-pointer"
+                    className="ap-card-inset px-2.5 py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 dark:text-slate-200 hover:border-ap-clay/50 dark:hover:border-ap-volt/50 cursor-pointer"
                   >
                     <span
                       className="w-3 h-3 rounded-full border border-black/15 shrink-0"
@@ -513,7 +513,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
                   maxLength={22}
                   value={shortName}
                   onChange={(e) => setShortName(e.target.value)}
-                  className="w-full min-h-[44px] rounded-xl px-3 py-2 text-sm font-semibold ap-card-inset text-slate-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-600 dark:focus:ring-lime-400"
+                  className="w-full min-h-[44px] rounded-xl px-3 py-2 text-sm font-semibold ap-card-inset text-slate-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt"
                   placeholder="NORTHSIDE XC"
                 />
               </label>
@@ -527,7 +527,7 @@ export const BrandCobrandLabSection: React.FC<{ isDark?: boolean }> = ({
                   maxLength={3}
                   value={monogram}
                   onChange={(e) => setMonogram(e.target.value)}
-                  className="w-full min-h-[44px] rounded-xl px-3 py-2 text-sm font-mono font-bold uppercase ap-card-inset text-slate-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-600 dark:focus:ring-lime-400"
+                  className="w-full min-h-[44px] rounded-xl px-3 py-2 text-sm font-mono font-bold uppercase ap-card-inset text-slate-950 dark:text-white focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt"
                   placeholder="NX"
                 />
               </label>
@@ -724,12 +724,12 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
       <div className="flex flex-wrap items-center gap-2.5">
         <h2
           id="brand-type-heading"
-          className="font-display text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white"
+          className="font-sans text-xl sm:text-2xl font-bold tracking-tight text-slate-950 dark:text-white"
         >
           Typography, Rules &amp; Press Boilerplate
         </h2>
         <span className="ap-lane-badge">
-          <span className="ap-lane-badge-inner">2-FONT SYSTEM · 11PX FLOOR</span>
+          <span className="ap-lane-badge-inner">3-FONT SYSTEM · 11PX FLOOR</span>
         </span>
       </div>
 
@@ -740,7 +740,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Timer className="w-4 h-4 ap-text-brand" />
-                <h3 className="font-display text-base font-bold text-slate-950 dark:text-white">
+                <h3 className="font-sans text-base font-bold text-slate-950 dark:text-white">
                   0.01s Tabular Telemetry Rule
                 </h3>
               </div>
@@ -820,7 +820,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
             </span>
           </div>
 
-          <div className="divide-y divide-emerald-950/10 dark:divide-emerald-700/25">
+          <div className="divide-y divide-ap-frame/15 dark:divide-ap-edge-dark">
             {TYPOGRAPHY_HIERARCHY.map((item) => (
               <div key={item.role} className="py-3 first:pt-1 last:pb-1 space-y-1">
                 <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-2xs text-slate-500 dark:text-slate-400">
@@ -841,7 +841,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
         {BRAND_DO_DONT_RULES.map((rule) => (
           <div key={rule.id} className="ap-card rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="ap-card-inset rounded-xl p-3 space-y-1.5">
-              <div className="inline-flex items-center gap-1.5 font-mono text-2xs font-bold uppercase text-emerald-700 dark:text-emerald-300">
+              <div className="inline-flex items-center gap-1.5 font-mono text-2xs font-bold uppercase ap-ink-emerald">
                 <Check className="w-3.5 h-3.5" />
                 <span>DO · {rule.doTitle}</span>
               </div>
@@ -867,7 +867,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <Sparkle className="w-4 h-4 ap-text-brand" />
-            <h3 className="font-display text-base font-bold text-slate-950 dark:text-white">
+            <h3 className="font-sans text-base font-bold text-slate-950 dark:text-white">
               Canonical Naming, Apparel Permissions &amp; Uniform Rules
             </h3>
           </div>
@@ -884,7 +884,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
           {BRAND_PERMISSIONS_POLICY.map((item) => (
             <div key={item.title} className="ap-card-inset rounded-xl p-3.5 space-y-2">
               <div className="flex items-start justify-between gap-2">
-                <h4 className="font-display text-sm font-bold text-slate-950 dark:text-white leading-snug">
+                <h4 className="font-sans text-sm font-bold text-slate-950 dark:text-white leading-snug">
                   {item.title}
                 </h4>
                 <span
@@ -910,7 +910,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
       {/* Official Factual Press & API Partner Boilerplates */}
       <div className="ap-card rounded-2xl p-4 sm:p-5 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-display text-base font-bold text-slate-950 dark:text-white">
+          <h3 className="font-sans text-base font-bold text-slate-950 dark:text-white">
             Factual Press &amp; API Partner Boilerplate
           </h3>
           <span className="font-mono text-2xs text-slate-600 dark:text-slate-400">
@@ -925,7 +925,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
               <div key={item.id} className="ap-card-inset rounded-xl p-3.5 flex flex-col justify-between gap-3">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-display text-sm font-bold text-slate-950 dark:text-white">
+                    <span className="font-sans text-sm font-bold text-slate-950 dark:text-white">
                       {item.label}
                     </span>
                     <span className="font-mono text-2xs text-slate-500 dark:text-slate-400">
@@ -943,7 +943,7 @@ export const BrandTypographyAndUsageSection: React.FC = () => {
                 >
                   {copied?.key === copyKey ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-lime-400" />
+                      <Check className="w-3.5 h-3.5 ap-ink-emerald" />
                       <span>Copied Blurb</span>
                     </>
                   ) : (

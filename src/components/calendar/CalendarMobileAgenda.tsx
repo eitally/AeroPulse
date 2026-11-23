@@ -388,7 +388,7 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                                       type="button"
                                       data-testid="calendar-launch-stopwatch"
                                       onClick={() => handleLaunchPlannedInStopwatch(ev)}
-                                      className="min-h-[44px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
+                                      className="min-h-[44px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
                                     >
                                       <Timer className="w-3.5 h-3.5" weight="bold" />
                                       <span>Time on Track</span>

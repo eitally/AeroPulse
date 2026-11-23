@@ -587,7 +587,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
           <button
             type="button"
             onClick={handleSaveCurrentChart}
-            className="min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-sm font-semibold flex items-center gap-1.5 transition-colors"
+            className="min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-sm font-semibold flex items-center gap-1.5 transition-colors"
           >
             <Plus className="w-4 h-4" />
             <span>Save Current Chart View</span>
@@ -1259,7 +1259,7 @@ export const CustomChartsView: React.FC<CustomChartsViewProps> = ({
                 `Analyze the relationship between ${primaryDef.label} (${primaryDef.unit}) and ${secondaryDef?.label || 'training load'} over ${startBound} to ${endBound} (Pearson r = ${regressionStats.r}). What actionable training takeaways do you see?`
               )
             }
-            className="min-h-[38px] px-4 py-1.5 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-sm font-semibold transition-colors"
+            className="min-h-[38px] px-4 py-1.5 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-sm font-semibold transition-colors"
           >
             Ask AI Coach to Interpret This Chart
           </button>

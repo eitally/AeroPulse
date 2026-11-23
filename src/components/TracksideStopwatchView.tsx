@@ -2005,41 +2005,6 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             </button>
           </div>
 
-          <div
-            role="group"
-            aria-label="Stopwatch Split Layout"
-            className="inline-flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track shrink-0"
-          >
-            <button
-              type="button"
-              data-testid="stopwatch-view-cards"
-              aria-pressed={viewMode === 'CARDS'}
-              onClick={() => setViewMode('CARDS')}
-              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
-                viewMode === 'CARDS'
-                  ? 'liquid-capsule-active'
-                  : 'text-ap-muted dark:text-ap-muted-dark'
-              }`}
-            >
-              <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
-              <span>Cards</span>
-            </button>
-            <button
-              type="button"
-              data-testid="stopwatch-view-matrix"
-              aria-pressed={viewMode === 'MATRIX'}
-              onClick={() => setViewMode('MATRIX')}
-              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
-                viewMode === 'MATRIX'
-                  ? 'liquid-capsule-active'
-                  : 'text-ap-muted dark:text-ap-muted-dark'
-              }`}
-            >
-              <Table className="w-3.5 h-3.5" weight="duotone" />
-              <span>Matrix</span>
-            </button>
-          </div>
-
           {sessionType === 'WORKOUT' && (
             <button
               type="button"
@@ -2075,6 +2040,44 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 : 'Lane / Env'}
             </span>
           </button>
+        </div>
+
+        {/* Always-Visible Compact View Switcher & Tools Bar (accessible on 390px while clock is running) */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-ap-frame/15 dark:border-white/10">
+          <div
+            role="group"
+            aria-label="Stopwatch Split Layout"
+            className="inline-flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track shrink-0"
+          >
+            <button
+              type="button"
+              data-testid="stopwatch-view-cards"
+              aria-pressed={viewMode === 'CARDS'}
+              onClick={() => setViewMode('CARDS')}
+              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
+                viewMode === 'CARDS'
+                  ? 'liquid-capsule-active'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
+              }`}
+            >
+              <SquaresFour className="w-3.5 h-3.5" weight="duotone" />
+              <span>Cards</span>
+            </button>
+            <button
+              type="button"
+              data-testid="stopwatch-view-matrix"
+              aria-pressed={viewMode === 'MATRIX'}
+              onClick={() => setViewMode('MATRIX')}
+              className={`min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1 px-2.5 rounded-lg text-2xs font-semibold cursor-pointer ${
+                viewMode === 'MATRIX'
+                  ? 'liquid-capsule-active'
+                  : 'text-ap-muted dark:text-ap-muted-dark'
+              }`}
+            >
+              <Table className="w-3.5 h-3.5" weight="duotone" />
+              <span>Matrix</span>
+            </button>
+          </div>
 
           <button
             type="button"

@@ -1684,7 +1684,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsDatePickerOpen(false)}
-                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian font-semibold transition-colors"
+                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian font-semibold transition-colors"
                     >
                       Apply Range
                     </button>

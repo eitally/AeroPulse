@@ -245,10 +245,10 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                         type="button"
                         onClick={() => void handleStravaLaunchClick('cloud', false)}
                         disabled={busy}
-                        className="ap-btn-strava !min-h-[40px] px-3.5 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                        className="ap-btn-strava min-h-[48px] px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
                       >
                         <StravaChevronMark className="w-3.5 h-3.5" />
-                        <span>Connect Strava</span>
+                        <span>Connect with Strava</span>
                       </button>
                     </div>
                   </div>

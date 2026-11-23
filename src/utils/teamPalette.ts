@@ -1,8 +1,8 @@
 export interface AccessibleTeamPalette {
   primaryHex: string;
   secondaryHex: string;
-  primaryOnLight: string; // >= 4.5:1 against #FFFFFF & #F4F7F2
-  primaryOnDark: string; // >= 4.5:1 against #15231B, #101B15 & #0B120E
+  primaryOnLight: string; // >= 4.5:1 against #FFFFFF, #F6F3EC & #E9EFE9
+  primaryOnDark: string; // >= 4.5:1 against #1A1D1B, #15231B & #121419
   secondaryOnLight: string;
   secondaryOnDark: string;
   textOnPrimaryLight: '#FFFFFF' | '#080A09' | '#111318';
@@ -20,7 +20,7 @@ export function escapeTextForSafeAttr(input: unknown): string {
     .replaceAll("'", '&#39;');
 }
 
-export function normalizeHexColor(input: string, fallback = '#1C5436'): string {
+export function normalizeHexColor(input: string, fallback = '#B83A24'): string {
   const clean = String(input || '')
     .trim()
     .replace(/^#/, '');
@@ -149,7 +149,7 @@ function ensureContrastAgainstSurface(
       return candidate;
     }
   }
-  return darken ? '#14532D' : '#A3E635';
+  return darken ? '#B83A24' : '#F6F3EC';
 }
 
 function selectButtonInk(bgHex: string): '#FFFFFF' | '#080A09' {
@@ -166,8 +166,8 @@ export function computeAccessibleTeamPalette(
   rawPrimaryHex: string,
   rawSecondaryHex: string
 ): AccessibleTeamPalette {
-  const primaryHex = normalizeHexColor(rawPrimaryHex, '#1C5436');
-  const secondaryHex = normalizeHexColor(rawSecondaryHex, '#65A30D');
+  const primaryHex = normalizeHexColor(rawPrimaryHex, '#B83A24');
+  const secondaryHex = normalizeHexColor(rawSecondaryHex, '#D8FF2A');
 
   let primaryOnLight = ensureContrastAgainstSurface(primaryHex, '#E9EFE9', 4.6);
   primaryOnLight = ensureContrastAgainstSurface(primaryOnLight, '#FFFFFF', 4.65);

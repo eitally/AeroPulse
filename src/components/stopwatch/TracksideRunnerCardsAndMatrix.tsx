@@ -44,7 +44,7 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                   type="button"
                   data-testid={`runner-card-${idx}`}
                   onClick={() => handleRunnerAction(telemetry)}
-                  className={`min-h-[92px] rounded-xl p-3.5 gap-2.5 w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
+                  className={`min-h-[92px] rounded-xl p-3 sm:p-3.5 gap-2 sm:gap-2.5 w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
                     isJustTapped ? 'ring-2 ring-ap-clay dark:ring-ap-volt' : ''
                   } ${
                     telemetry.isFinishedLocked
@@ -54,72 +54,84 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                         : 'ap-card hover:border-[#121413]/45 dark:hover:border-ap-volt/60 active:scale-[0.98]'
                   }`}
                 >
-                  {/* Row 1: Athlete Name + Target Pod & Right Status Pill */}
-                  <div className="flex items-start justify-between gap-1.5 w-full">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="ap-lane-badge shrink-0">
-                        <span className="ap-lane-badge-inner">
-                          {idx < 9 ? `L${idx + 1}` : `#${idx + 1}`}
+                  {/* Row 1: Athlete Name + Right Status Pill (+ Dedicated Mobile Target Sub-Row) */}
+                  <div className="space-y-1 w-full">
+                    <div className="flex items-start justify-between gap-1.5 w-full">
+                      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                        <span className="ap-lane-badge shrink-0">
+                          <span className="ap-lane-badge-inner">
+                            {idx < 9 ? `L${idx + 1}` : `#${idx + 1}`}
+                          </span>
                         </span>
-                      </span>
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-bold text-ap-ink dark:text-ap-chalk truncate">
-                          {telemetry.runnerName}
+                        <div className="min-w-0">
+                          <div className="text-xs sm:text-sm font-bold text-ap-ink dark:text-ap-chalk truncate">
+                            {telemetry.runnerName}
+                          </div>
+                          <div className="hidden sm:block text-2xs font-mono text-ap-muted dark:text-ap-muted-dark truncate">
+                            {telemetry.podKey}
+                            {telemetry.effectiveOffsetSecs > 0
+                              ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
+                              : ''}
+                            {sessionType === 'WORKOUT' && podMeta
+                              ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
+                              : ''}
+                          </div>
                         </div>
-                        <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark truncate">
-                          {telemetry.podKey}
-                          {telemetry.effectiveOffsetSecs > 0
-                            ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
-                            : ''}
-                          {sessionType === 'WORKOUT' && podMeta
-                            ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
-                            : ''}
-                        </div>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-1">
+                        {nextChuteTs !== undefined && !telemetry.isFinishedLocked ? (
+                          <span className="px-1.5 py-0.5 rounded-md bg-[#121413] text-ap-volt font-mono text-2xs font-bold">
+                            +{formatTrackMark(nextChuteTs, 2)}
+                          </span>
+                        ) : sessionType === 'RACE' ? (
+                          <div className="flex items-center gap-1">
+                            {telemetry.placeLabel && (
+                              <span className="px-1.5 py-0.5 rounded-md ap-status-info font-mono text-2xs font-bold">
+                                {telemetry.placeLabel}
+                              </span>
+                            )}
+                            {telemetry.isFinishedLocked ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ap-status-prime font-mono text-2xs font-bold">
+                                <Lock className="w-3 h-3" weight="bold" />
+                                <span>Fin</span>
+                              </span>
+                            ) : telemetry.isBellLap ? (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ap-status-caution font-mono text-2xs font-bold">
+                                <BellRinging className="w-3 h-3" weight="bold" />
+                                <span>Bell</span>
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded-md ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
+                                L{telemetry.lapCount}
+                                {targetRaceLaps ? `/${targetRaceLaps}` : ''}
+                              </span>
+                            )}
+                          </div>
+                        ) : telemetry.restState.status === 'RESTING' ? (
+                          <span className="px-1.5 py-0.5 rounded-md ap-status-caution font-mono text-2xs font-bold tabular-nums">
+                            {telemetry.restState.remainingRestSecs}s
+                          </span>
+                        ) : telemetry.restState.status === 'GO_NOW' ? (
+                          <span className="px-1.5 py-0.5 rounded-md ap-status-prime font-mono text-2xs font-bold tabular-nums">
+                            GO +{telemetry.restState.overdueSecs}s
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded-md ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
+                            {telemetry.lapCount}L
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <div className="shrink-0 flex items-center gap-1">
-                      {nextChuteTs !== undefined && !telemetry.isFinishedLocked ? (
-                        <span className="px-1.5 py-0.5 rounded-md bg-[#121413] text-ap-volt font-mono text-2xs font-bold">
-                          +{formatTrackMark(nextChuteTs, 2)}
-                        </span>
-                      ) : sessionType === 'RACE' ? (
-                        <div className="flex items-center gap-1">
-                          {telemetry.placeLabel && (
-                            <span className="px-1.5 py-0.5 rounded-md ap-status-info font-mono text-2xs font-bold">
-                              {telemetry.placeLabel}
-                            </span>
-                          )}
-                          {telemetry.isFinishedLocked ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ap-status-prime font-mono text-2xs font-bold">
-                              <Lock className="w-3 h-3" weight="bold" />
-                              <span>Fin</span>
-                            </span>
-                          ) : telemetry.isBellLap ? (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ap-status-caution font-mono text-2xs font-bold">
-                              <BellRinging className="w-3 h-3" weight="bold" />
-                              <span>Bell</span>
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded-md ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
-                              L{telemetry.lapCount}
-                              {targetRaceLaps ? `/${targetRaceLaps}` : ''}
-                            </span>
-                          )}
-                        </div>
-                      ) : telemetry.restState.status === 'RESTING' ? (
-                        <span className="px-1.5 py-0.5 rounded-md ap-status-caution font-mono text-2xs font-bold tabular-nums">
-                          {telemetry.restState.remainingRestSecs}s
-                        </span>
-                      ) : telemetry.restState.status === 'GO_NOW' ? (
-                        <span className="px-1.5 py-0.5 rounded-md ap-status-prime font-mono text-2xs font-bold tabular-nums">
-                          GO +{telemetry.restState.overdueSecs}s
-                        </span>
-                      ) : (
-                        <span className="px-1.5 py-0.5 rounded-md ap-card-inset font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
-                          {telemetry.lapCount}L
-                        </span>
-                      )}
+                    <div className="sm:hidden text-2xs font-mono text-ap-muted dark:text-ap-muted-dark leading-tight">
+                      {telemetry.podKey}
+                      {telemetry.effectiveOffsetSecs > 0
+                        ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
+                        : ''}
+                      {sessionType === 'WORKOUT' && podMeta
+                        ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
+                        : ''}
                     </div>
                   </div>
 

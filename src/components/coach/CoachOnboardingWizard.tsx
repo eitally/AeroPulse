@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Check, Copy, Sparkles, Trophy, Users, X } from '../icons/PhosphorIcons';
+import React, { useId, useRef, useState } from 'react';
+import { Check, Copy, Trophy, Users, X } from '../icons/PhosphorIcons';
 import { COACH_EVENT_GROUP_OPTIONS } from '../../physiology/teamOnboardingEngine';
 import { buildThreshSessionHeaders } from '../../utils/teamLifecycleApi';
 import { getStoredCoachAttribution } from '../../utils/attribution';
+import { useModalDialog } from '../../hooks/useModalDialog';
 import type {
   CoachComplexityTier,
   CoachEventGroup,
@@ -21,7 +22,7 @@ export interface CoachOnboardingWizardProps {
 }
 
 const COLOR_PRESETS = [
-  { id: 'forest', label: 'Forest & Volt', primaryHex: '#1E5631', secondaryHex: '#C4F728' },
+  { id: 'mondo', label: 'Mondo Clay & Volt', primaryHex: '#B83A24', secondaryHex: '#D8FF2A' },
   { id: 'cobalt', label: 'Cobalt & Gold', primaryHex: '#1D4ED8', secondaryHex: '#F59E0B' },
   { id: 'crimson', label: 'Crimson & Slate', primaryHex: '#B91C1C', secondaryHex: '#1E293B' },
   { id: 'emerald', label: 'Pine & Copper', primaryHex: '#0F766E', secondaryHex: '#D97706' },
@@ -47,7 +48,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [teamName, setTeamName] = useState<string>('');
   const [orgType, setOrgType] = useState<TeamOrgType>('HIGH_SCHOOL');
-  const [colorPresetId, setColorPresetId] = useState<string>('forest');
+  const [colorPresetId, setColorPresetId] = useState<string>('mondo');
   const [preferredTier, setPreferredTier] = useState<CoachComplexityTier>('ESSENTIALS');
   const [selectedGroups, setSelectedGroups] = useState<CoachEventGroup[]>([
     'SPRINTS',
@@ -61,7 +62,10 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
   const [createdTeam, setCreatedTeam] = useState<TeamSummaryWithRole | null>(null);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [discoveryChannel, setDiscoveryChannel] = useState<string>('');
-  const [savedOfflineNotice, setSavedOfflineNotice] = useState<boolean>(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const headingId = useId();
+
+  useModalDialog({ isOpen, onClose, dialogRef });
 
   if (!isOpen) return null;
 
@@ -86,41 +90,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
 
     setCreating(true);
     setErrorText(null);
-    setSavedOfflineNotice(false);
     onSetComplexityTier(orgType === 'COLLEGIATE' && preferredTier === 'PRO' ? 'PRO' : preferredTier);
-
-    const buildDemoTeam = (): TeamSummaryWithRole => {
-      const slugBase = trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24) || 'varsity-tf';
-      const code = `${shortName.replace(/\s+/g, '').slice(0, 4)}-26`;
-      const teamId = `team-wiz-${Date.now()}`;
-      return {
-        brand: {
-          teamId,
-          slug: `${slugBase}-${Date.now().toString().slice(-3)}`,
-          joinCode: code,
-          name: trimmed,
-          shortName,
-          orgType,
-          primarySport: 'Running',
-          primaryHex: activePreset.primaryHex,
-          secondaryHex: activePreset.secondaryHex,
-          defaultSafeSportShield,
-          enableParentGuardianCc: orgType === 'HIGH_SCHOOL',
-          coachDisplayName: selfName || 'Head Coach',
-          createdAt: new Date().toISOString(),
-        },
-        myRole: 'HEAD_COACH',
-        mySquadGroup: selectedGroups[0] || 'Track & Field',
-        myCoachEventGroups: selectedGroups,
-        myMembershipId: `mem-coach-${Date.now()}`,
-        totalInvited: 0,
-        openedCount: 0,
-        activeCount: 0,
-        watchConnectedCount: 0,
-        memberships: [],
-        broadcastWorkouts: [],
-      };
-    };
 
     try {
       const resp = await fetch('/api/teams', {
@@ -138,6 +108,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
           defaultSafeSportShield,
           enableParentGuardianCc: orgType === 'HIGH_SCHOOL',
           coachDisplayName: selfName || 'Head Coach',
+          eventGroups: selectedGroups,
           attribution: getStoredCoachAttribution(discoveryChannel || undefined),
         }),
       });
@@ -155,18 +126,14 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
         onTeamCreated([...myTeams, created], created.brand.teamId);
         setStep(3);
       } else {
-        const localCreated = buildDemoTeam();
-        setSavedOfflineNotice(true);
-        setCreatedTeam(localCreated);
-        onTeamCreated([...myTeams, localCreated], localCreated.brand.teamId);
-        setStep(3);
+        setErrorText(
+          typeof data?.error === 'string' && data.error.trim()
+            ? data.error
+            : 'Could not create team on server. Sign in as a verified coach or retry.'
+        );
       }
     } catch {
-      const localCreated = buildDemoTeam();
-      setSavedOfflineNotice(true);
-      setCreatedTeam(localCreated);
-      onTeamCreated([...myTeams, localCreated], localCreated.brand.teamId);
-      setStep(3);
+      setErrorText('Network error while creating your team. Check your connection and retry.');
     } finally {
       setCreating(false);
     }
@@ -174,31 +141,35 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={headingId}
+      tabIndex={-1}
       data-testid="coach-onboarding-wizard"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
     >
-      <div className="w-full max-w-lg rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-edge p-4 sm:p-6 space-y-4 shadow-2xl">
+      <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-edge p-4 sm:p-6 space-y-4 shadow-2xl">
         <div className="flex items-start justify-between gap-2">
-          <div>
-            <div className="inline-flex items-center gap-1.5 text-2xs font-mono uppercase tracking-wider text-ap-cobalt dark:text-ap-volt font-bold">
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>60-Second MeetReady Team Setup · Step {step} of 3</span>
+          <div className="space-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 id={headingId} className="text-lg font-extrabold text-ap-ink dark:text-ap-chalk">
+                {step === 1
+                  ? 'Name Your Program & Choose Simplicity'
+                  : step === 2
+                    ? 'Select Track & Field Event Groups'
+                    : 'Your Team Clipboard Is Ready'}
+              </h2>
+              <span className="ap-lane-badge">
+                <span className="ap-lane-badge-inner">Step {step} of 3</span>
+              </span>
             </div>
-            <h2 className="text-lg font-extrabold text-ap-ink dark:text-ap-chalk">
-              {step === 1
-                ? 'Name Your Program & Choose Simplicity'
-                : step === 2
-                  ? 'Select Track & Field Event Groups'
-                  : 'Your Team Clipboard Is Ready'}
-            </h2>
           </div>
           <button
             type="button"
             aria-label="Close setup wizard"
             onClick={onClose}
-            className="min-h-[44px] min-w-[44px] rounded-xl ap-card-inset inline-flex items-center justify-center cursor-pointer"
+            className="min-h-[44px] min-w-[44px] rounded-xl ap-card-inset inline-flex items-center justify-center cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -357,8 +328,21 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
             </div>
 
             {errorText && (
-              <div role="alert" className="text-rose-500 font-mono text-2xs">
-                {errorText}
+              <div
+                role="alert"
+                data-testid="wizard-create-error"
+                className="ap-status-strained rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-3 text-xs font-medium"
+              >
+                <span>{errorText}</span>
+                <button
+                  type="button"
+                  data-testid="wizard-retry-btn"
+                  disabled={creating}
+                  onClick={() => void handleCreateTeam()}
+                  className="ap-btn-secondary !min-h-[36px] px-3 py-1 text-xs font-bold shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  Retry
+                </button>
               </div>
             )}
 
@@ -413,17 +397,6 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
                 </button>
               </div>
             </div>
-
-            {savedOfflineNotice && (
-              <div
-                role="status"
-                data-testid="wizard-offline-fallback-notice"
-                className="rounded-xl ap-status-caution px-3.5 py-2.5 text-xs font-medium leading-relaxed"
-              >
-                Saved locally in this browser — sign in or reconnect to sync this team code to the
-                cloud.
-              </div>
-            )}
 
             <div className="flex flex-wrap items-center justify-between gap-2">
               {onOpenRosterStudio && (

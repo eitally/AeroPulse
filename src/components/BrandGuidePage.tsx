@@ -165,7 +165,7 @@ export default function BrandGuidePage({
 
   const handleDownloadBrandKitZip = async () => {
     setIsZipBuilding(true);
-    setKitStatusNote('Bundling 17 SVGs, Hi-DPI PNGs & design tokens...');
+    setKitStatusNote('Bundling 23 SVGs, Hi-DPI PNGs & design tokens...');
     try {
       const pngEntries: Record<string, Uint8Array> = {};
       const keyPngTargets = [
@@ -195,7 +195,7 @@ export default function BrandGuidePage({
       const zipBlob = new Blob([copyBuffer.buffer], { type: 'application/zip' });
       triggerBlobDownload(zipBlob, 'MeetReady-Brand-Kit.zip');
       setKitStatusNote(
-        `Downloaded MeetReady-Brand-Kit.zip (${Object.keys(pngEntries).length} PNGs + 17 SVGs + JSON tokens).`
+        `Downloaded MeetReady-Brand-Kit.zip (${Object.keys(pngEntries).length} PNGs + 23 SVGs + JSON tokens).`
       );
     } finally {
       setIsZipBuilding(false);
@@ -285,7 +285,7 @@ export default function BrandGuidePage({
                     <div className="flex flex-wrap items-center gap-2.5">
                       <h1
                         id="brand-hero-heading"
-                        className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white"
+                        className="font-sans text-2xl sm:text-3xl font-bold tracking-tight text-slate-950 dark:text-white"
                       >
                         MeetReady Brand Studio &amp; Style Guide
                       </h1>
@@ -454,7 +454,7 @@ export default function BrandGuidePage({
                       type="button"
                       onClick={() => handleJumpSection(sec.id)}
                       className={`ap-track-tab px-3 sm:px-4 py-2 min-h-[44px] sm:min-h-[38px] text-xs font-bold flex items-center justify-center cursor-pointer transition-colors ${
-                        active ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
+                        active ? 'ap-pill-active' : 'ap-track-tab-idle'
                       }`}
                     >
                       <span className="ap-track-tab-inner truncate">{sec.label}</span>
@@ -489,8 +489,8 @@ export default function BrandGuidePage({
                       aria-pressed={categoryFilter === cat.id}
                       className={`px-3 py-1.5 min-h-[44px] sm:min-h-[36px] rounded-xl text-xs font-bold shrink-0 cursor-pointer transition-colors ${
                         categoryFilter === cat.id
-                          ? 'ap-nav-volt-active'
-                          : 'ap-card-inset text-slate-700 dark:text-slate-200 hover:border-emerald-700/40'
+                          ? 'ap-pill-active'
+                          : 'ap-card-inset text-slate-700 dark:text-slate-200 hover:border-ap-clay/45 dark:hover:border-ap-volt/45'
                       }`}
                     >
                       {cat.label}
@@ -504,7 +504,7 @@ export default function BrandGuidePage({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Eye className="w-4 h-4 ap-text-brand shrink-0" />
-                    <span className="font-display text-sm font-bold text-slate-950 dark:text-white">
+                    <span className="font-sans text-sm font-bold text-slate-950 dark:text-white">
                       Surface Stress-Tester · Preview Marks Under Real Conditions
                     </span>
                   </div>
@@ -570,7 +570,7 @@ export default function BrandGuidePage({
                       <div className="space-y-2.5">
                         <div className="flex items-start justify-between gap-2 min-w-0">
                           <div className="min-w-0">
-                            <h3 className="font-display text-sm font-bold text-slate-950 dark:text-white leading-snug">
+                            <h3 className="font-sans text-sm font-bold text-slate-950 dark:text-white leading-snug">
                               {asset.title}
                             </h3>
                             <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5 leading-snug">
@@ -611,7 +611,7 @@ export default function BrandGuidePage({
                       </div>
 
                       {/* Download & Copy Action Bar */}
-                      <div className="pt-2 border-t border-emerald-950/10 dark:border-emerald-700/25 space-y-2">
+                      <div className="pt-2 border-t border-ap-frame/15 dark:border-ap-edge-dark space-y-2">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <button
                             type="button"
@@ -634,7 +634,7 @@ export default function BrandGuidePage({
                                   void handleDownloadPng(asset, sz.key, sz.width, sz.height)
                                 }
                                 title={`Download PNG ${sz.label}`}
-                                className="ap-card-inset px-2.5 py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg font-mono text-2xs font-bold text-slate-800 dark:text-slate-100 hover:border-emerald-700/45 dark:hover:border-lime-400/50 cursor-pointer"
+                                className="ap-card-inset px-2.5 py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg font-mono text-2xs font-bold text-slate-800 dark:text-slate-100 hover:border-ap-clay/45 dark:hover:border-ap-volt/50 cursor-pointer"
                               >
                                 {isBusy ? '...' : `${sz.key} PNG`}
                               </button>
@@ -644,12 +644,12 @@ export default function BrandGuidePage({
                           <button
                             type="button"
                             onClick={() => void handleCopySvgMarkup(asset)}
-                            className="ap-card-inset px-2.5 py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg font-mono text-2xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1 hover:border-emerald-700/45 dark:hover:border-lime-400/50 cursor-pointer"
+                            className="ap-card-inset px-2.5 py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg font-mono text-2xs font-bold text-slate-700 dark:text-slate-200 inline-flex items-center gap-1 hover:border-ap-clay/45 dark:hover:border-ap-volt/50 cursor-pointer"
                             title="Copy raw inline <svg> markup"
                           >
                             {copiedSvgId === asset.id ? (
                               <>
-                                <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-lime-400" />
+                                <Check className="w-3.5 h-3.5 ap-ink-emerald" />
                                 <span>Copied</span>
                               </>
                             ) : (
@@ -671,7 +671,7 @@ export default function BrandGuidePage({
                 <div className="flex items-start gap-2.5">
                   <SquaresFour className="w-5 h-5 ap-text-brand shrink-0 mt-0.5" />
                   <div className="space-y-0.5 text-xs text-slate-700 dark:text-slate-300">
-                    <div className="font-display font-bold text-slate-950 dark:text-white">
+                    <div className="font-sans font-bold text-slate-950 dark:text-white">
                       True Outlined Vector Stencils &amp; Flat-Fill Embroidery Masters
                     </div>
                     <p className="leading-relaxed">
@@ -695,7 +695,7 @@ export default function BrandGuidePage({
             <BrandTypographyAndUsageSection />
 
             {/* Brand Studio Footer */}
-            <footer className="pt-5 border-t border-emerald-900/15 dark:border-[#244331] flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400">
+            <footer className="pt-5 border-t border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600 dark:text-slate-400">
               <div className="flex items-center gap-2.5">
                 <AeroPulseLogo size="sm" />
                 <span className="hidden sm:inline font-mono text-2xs">

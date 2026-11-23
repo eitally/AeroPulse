@@ -1447,7 +1447,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 setSubTab('CLIPBOARD');
               }}
               onOpenRosterStudio={() => {
-                setOpenCreateTeamOnSwitch(true);
+                setOpenCreateTeamOnSwitch(false);
                 setSubTab('ROSTER');
               }}
             />

@@ -742,7 +742,7 @@ export const ActivityInspectorZonesAndSplits: React.FC<
                                 );
                               }
                             }}
-                            className="min-h-[30px] px-3 py-1 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-semibold transition-colors whitespace-nowrap"
+                            className="min-h-[30px] px-3 py-1 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-xs font-semibold transition-colors whitespace-nowrap"
                           >
                             Recover Unstructured Reps (1Hz No-Lap Detector)
                           </button>
@@ -934,7 +934,7 @@ export const ActivityInspectorZonesAndSplits: React.FC<
                                   handleAssignToCompareSlot(sim, 'B');
                                   onSelectActivity(null);
                                 }}
-                                className="min-h-[28px] px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-semibold transition-colors whitespace-nowrap"
+                                className="min-h-[28px] px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-xs font-semibold transition-colors whitespace-nowrap"
                               >
                                 Overlay in Split-View
                               </button>

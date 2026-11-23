@@ -1079,7 +1079,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                           setCompareIdB(bestEfAttempt.id);
                           setActiveWorkspace('COMPARE');
                         }}
-                        className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-ap-cobalt hover:bg-[#16422A] text-white dark:bg-ap-volt dark:hover:bg-[#B5EB00] dark:text-ap-obsidian text-xs font-semibold transition-colors"
+                        className="min-h-[36px] inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-ap-cobalt hover:bg-ap-clay-dark text-white dark:bg-ap-volt dark:hover:bg-[#C8EF1E] dark:text-ap-obsidian text-xs font-semibold transition-colors"
                       >
                         <Columns2 className="w-3.5 h-3.5" />
                         <span>Compare Latest vs. Best Attempt in Split-View</span>

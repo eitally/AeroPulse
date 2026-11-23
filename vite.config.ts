@@ -24,8 +24,8 @@ export default defineConfig(() => {
           short_name: 'MeetReady',
           description:
             'Every mark. Every mile. Meet ready. Watchless 0.01s offline splits, field events sheet, auto-scaled pace pods, and U18 SafeSport guardrails for Track, Field & Cross Country.',
-          theme_color: '#163022',
-          background_color: '#163022',
+          theme_color: '#121413',
+          background_color: '#121413',
           display: 'standalone',
           orientation: 'any',
           start_url: '/',
@@ -104,7 +104,7 @@ export default defineConfig(() => {
               // Network-First for SPA HTML navigations so fresh deploys never serve stale index.html -> 404 hashed chunks
               urlPattern: ({ request, url }) =>
                 request.mode === 'navigate' &&
-                !/^\/(?:api|auth|docs|legal|privacy|terms|subprocessors|procurement|for-athletic-directors|demo|ad|meet|clinic|flyer|sticker|go)(?:\/|$)/i.test(
+                !/^\/(?:api|auth|docs|legal|privacy|terms|subprocessors|procurement|for-athletic-directors|demo|ad|meet|clinic|flyer|sticker|tee|go)(?:\/|$)/i.test(
                   url.pathname
                 ) &&
                 !/^\/share\/?$/i.test(url.pathname),

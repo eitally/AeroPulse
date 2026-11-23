@@ -1848,7 +1848,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                                 type="button"
                                                 data-testid="calendar-launch-stopwatch"
                                                 onClick={() => handleLaunchPlannedInStopwatch(ev)}
-                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
                                                 title="Stage this track session in Trackside Stopwatch"
                                               >
                                                 <Timer className="w-3 h-3" weight="bold" />

@@ -392,7 +392,7 @@ export function ArchiveOnboardingWizard({
                   onClose();
                   onCompleteOnboarding?.();
                 }}
-                className="min-h-[44px] px-5 py-2 rounded-xl bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
+                className="min-h-[44px] px-5 py-2 rounded-xl bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-xs font-bold flex items-center gap-2 transition-colors cursor-pointer"
               >
                 <span>Enter Cockpit</span>
                 <ArrowRight className="w-3.5 h-3.5" />

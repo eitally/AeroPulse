@@ -201,7 +201,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
             type="button"
             onClick={onScanMoreSegments}
             disabled={isScanningSegments}
-            className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] disabled:opacity-50 text-xs font-semibold text-white dark:text-ap-obsidian transition-colors"
+            className="min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] disabled:opacity-50 text-xs font-semibold text-white dark:text-ap-obsidian transition-colors"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isScanningSegments ? 'animate-spin' : ''}`} />
             <span>
@@ -559,7 +559,7 @@ export const SegmentEffortOverTimeChart: React.FC<SegmentEffortOverTimeChartProp
                       (activeHoveredEffort.endTimeSecs || 0) + 10
                     )
                   }
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-2xs font-sans font-semibold transition-colors"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-sans font-semibold transition-colors"
                 >
                   <ZoomIn className="w-3 h-3" />
                   <span>Zoom Segment on Stream &amp; Map</span>

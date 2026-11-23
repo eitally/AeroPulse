@@ -317,7 +317,7 @@ export const AICoachDrawer: React.FC<AICoachDrawerProps> = ({
                               className={`min-h-[30px] px-2.5 py-1 rounded-md text-2xs font-semibold flex items-center gap-1 shrink-0 transition-colors ${
                                 isScheduled
                                   ? 'bg-emerald-600/20 text-emerald-500 border border-emerald-500/30'
-                                  : 'bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian'
+                                  : 'bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian'
                               }`}
                             >
                               {isScheduled ? (

@@ -37,7 +37,7 @@ export function openPrintableTeamPosterWindow(
     : `<div style="width:72px;height:72px;border-radius:16px;background:rgba(255,255,255,0.16);border:2px solid rgba(255,255,255,0.4);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:28px;color:#fff;letter-spacing:-0.03em;">${escapeTextForSafeAttr(initials)}</div>`;
 
   const safeSportNote = brand.defaultSafeSportShield
-    ? `<div style="margin-top:20px;padding:12px 16px;border-radius:12px;background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;font-size:13px;font-weight:600;">
+    ? `<div style="margin-top:20px;padding:12px 16px;border-radius:12px;background:#E7F3EC;border:1px solid #B6D9C4;color:#1E4D36;font-size:13px;font-weight:600;">
          SafeSport Youth Privacy Active: Body weight &amp; BMI are hidden by default. Optional Strava imports remain strictly private.
        </div>`
     : '';
@@ -54,23 +54,23 @@ export function openPrintableTeamPosterWindow(
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet" />
   <style>
     body { font-family: 'Archivo', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; background: #F6F3EC; color: #121413; margin: 0; padding: 32px; }
-    .sheet { max-width: 720px; margin: 0 auto; background: #FFFFFF; border-radius: 24px; overflow: hidden; border: 2px solid #B8CBBF; box-shadow: 0 12px 32px rgba(16,20,17,0.08); }
+    .sheet { max-width: 720px; margin: 0 auto; background: #FFFFFF; border-radius: 24px; overflow: hidden; border: 2px solid rgba(18, 20, 19, 0.22); box-shadow: 0 12px 32px rgba(18, 20, 19, 0.08); }
     .banner { background: linear-gradient(135deg, ${palette.primaryOnLight} 0%, ${palette.secondaryOnLight} 100%); color: #FFFFFF; padding: 32px 36px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
     .banner-left { display: flex; align-items: center; gap: 20px; }
     .meetready-pill { background: #FFFFFF; padding: 8px 14px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); flex-shrink: 0; }
     .content { padding: 36px; text-align: center; }
-    .qr-box { display: inline-block; padding: 16px; border-radius: 20px; border: 2px solid #C2D5C9; background: #FFFFFF; margin: 16px 0; }
-    .code-pill { display: inline-block; font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, monospace; font-size: 36px; font-weight: 800; letter-spacing: 0.08em; padding: 12px 28px; border-radius: 16px; background: #ECFDF3; border: 2px dashed ${palette.primaryOnLight}; color: #0B120E; margin: 10px 0; }
+    .qr-box { display: inline-block; padding: 16px; border-radius: 20px; border: 2px solid rgba(18, 20, 19, 0.18); background: #FFFFFF; margin: 16px 0; }
+    .code-pill { display: inline-block; font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, monospace; font-size: 36px; font-weight: 800; letter-spacing: 0.08em; padding: 12px 28px; border-radius: 16px; background: #EDE9DF; border: 2px dashed ${palette.primaryOnLight}; color: #121413; margin: 10px 0; }
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; text-align: left; margin-top: 28px; }
-    .step { padding: 14px; border-radius: 14px; background: #F4F7F4; border: 1px solid #C2D5C9; font-size: 13px; line-height: 1.45; }
+    .step { padding: 14px; border-radius: 14px; background: #EDE9DF; border: 1px solid rgba(18, 20, 19, 0.16); font-size: 13px; line-height: 1.45; }
     .step strong { display: block; color: ${palette.primaryOnLight}; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-    .viral-foot { margin-top: 18px; padding-top: 12px; border-top: 1px solid #DCE7E0; font-size: 12px; color: #43574B; font-weight: 600; }
-    @media print { body { background: #FFFFFF; padding: 0; } .sheet { box-shadow: none; border: 1px solid #C2D5C9; } .no-print { display: none !important; } }
+    .viral-foot { margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(18, 20, 19, 0.16); font-size: 12px; color: #57544D; font-weight: 600; }
+    @media print { body { background: #FFFFFF; padding: 0; } .sheet { box-shadow: none; border: 1px solid rgba(18, 20, 19, 0.22); } .no-print { display: none !important; } }
   </style>
 </head>
 <body>
   <div class="no-print" style="max-width:720px;margin:0 auto 16px;display:flex;justify-content:space-between;align-items:center;">
-    <span style="font-size:13px;color:#3F4742;">Locker-Room / Team Tent Join Sheet · Ready for 8.5×11&quot; Print</span>
+    <span style="font-size:13px;color:#57544D;">Locker-Room / Team Tent Join Sheet · Ready for 8.5×11&quot; Print</span>
     <button onclick="window.print()" style="padding:10px 18px;border-radius:10px;border:none;background:${palette.primaryOnLight};color:#fff;font-weight:700;cursor:pointer;">Print / Save PDF</button>
   </div>
   <div class="sheet">
@@ -86,9 +86,9 @@ export function openPrintableTeamPosterWindow(
       <div class="meetready-pill">${meetReadyPosterLogoSvg}</div>
     </div>
     <div class="content">
-      <div style="font-size:15px;color:#1F3528;font-weight:600;">Scan with your phone camera to join the team roster in 45 seconds:</div>
+      <div style="font-size:15px;color:#121413;font-weight:600;">Scan with your phone camera to join the team roster in 45 seconds:</div>
       <div class="qr-box">${qrSvg}</div>
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:#43574B;font-weight:700;margin-top:4px;">Or visit meetready.app → tap &ldquo;Team Code&rdquo;</div>
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:#57544D;font-weight:700;margin-top:4px;">Or visit meetready.app → tap &ldquo;Team Code&rdquo;</div>
       <div><span class="code-pill">${escapeTextForSafeAttr(brand.joinCode)}</span></div>
       <div class="steps">
         <div class="step"><strong>1. Scan QR or Open Link</strong>Your school/club profile &amp; squad settings load automatically.</div>
@@ -213,41 +213,44 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
 <head>
   <meta charset="utf-8" />
   <title>${escapeTextForSafeAttr(teamName)} — Trackside Pod Clipboard (${escapeTextForSafeAttr(dateStr)})</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=JetBrains+Mono:wght@600;800&display=swap" rel="stylesheet" />
   <style>
     @page { size: landscape; margin: 0.35in; }
     * { box-sizing: border-box; }
-    body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; margin: 0; padding: 14px; background: #F7F8F5; color: #0E1712; }
-    .banner { background: #1C5436; color: #FFFFFF; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    body { font-family: 'Archivo', -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; margin: 0; padding: 14px; background: #F6F3EC; color: #121413; }
+    .banner { background: #121413; color: #F6F3EC; border-bottom: 3px solid #B83A24; border-radius: 10px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .banner h1 { margin: 0; font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
     .banner-meta { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; font-weight: 700; opacity: 0.95; }
     .pod-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .pod-card { background: #FFFFFF; border: 1.5px solid #B7C9BE; border-radius: 10px; padding: 10px; break-inside: avoid; }
-    .pod-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid #DDE6E0; padding-bottom: 6px; margin-bottom: 6px; }
-    .pod-title { font-size: 13px; font-weight: 800; color: #1C5436; }
-    .pod-meta { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: #43574B; font-weight: 600; }
-    .target-pill { background: #1C5436; color: #FFFFFF; border-radius: 8px; padding: 4px 8px; text-align: right; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; }
-    .target-lbl { display: block; font-size: 11px; letter-spacing: 0.04em; opacity: 0.88; }
+    .pod-card { background: #FFFFFF; border: 1.5px solid rgba(18, 20, 19, 0.22); border-radius: 10px; padding: 10px; break-inside: avoid; }
+    .pod-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; border-bottom: 1px solid #EDE9DF; padding-bottom: 6px; margin-bottom: 6px; }
+    .pod-title { font-size: 13px; font-weight: 800; color: #B83A24; }
+    .pod-meta { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: #57544D; font-weight: 600; }
+    .target-pill { background: #B83A24; color: #F6F3EC; border-radius: 8px; padding: 4px 8px; text-align: right; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; }
+    .target-lbl { display: block; font-size: 11px; letter-spacing: 0.04em; opacity: 0.92; }
     .target-val { display: block; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
     .split-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 7px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }
-    .split-cell { background: #F1F5F2; border: 1px solid #D3E0D8; border-radius: 6px; padding: 3px 4px; text-align: center; }
-    .split-lbl { display: block; font-size: 11px; color: #43574B; font-weight: 600; }
-    .split-val { display: block; font-size: 11px; color: #0E1712; font-weight: 800; }
+    .split-cell { background: #EDE9DF; border: 1px solid rgba(18, 20, 19, 0.14); border-radius: 6px; padding: 3px 4px; text-align: center; }
+    .split-lbl { display: block; font-size: 11px; color: #57544D; font-weight: 600; }
+    .split-val { display: block; font-size: 11px; color: #121413; font-weight: 800; }
     .rep-table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-variant-numeric: tabular-nums; }
-    .rep-table th { text-align: center; font-size: 11px; color: #43574B; border-bottom: 1px solid #C9D7CF; padding: 2px 3px; }
+    .rep-table th { text-align: center; font-size: 11px; color: #57544D; border-bottom: 1px solid rgba(18, 20, 19, 0.22); padding: 2px 3px; }
     .rep-table th:first-child { text-align: left; }
-    .rep-table td { border-bottom: 1px solid #E5EDE8; padding: 3px; }
-    .ath-name { font-family: 'Plus Jakarta Sans', sans-serif; font-weight: 700; color: #0E1712; white-space: nowrap; }
-    .ath-vdot { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #43574B; font-size: 11px; }
-    .rep-box { border-left: 1px solid #C9D7CF; min-width: 28px; height: 20px; }
-    .sheet-footer { margin-top: 8px; padding-top: 6px; border-top: 1px solid #C9D7CF; display: flex; justify-content: space-between; align-items: center; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: #43574B; font-weight: 600; }
+    .rep-table td { border-bottom: 1px solid #EDE9DF; padding: 3px; }
+    .ath-name { font-family: 'Archivo', sans-serif; font-weight: 700; color: #121413; white-space: nowrap; }
+    .ath-vdot { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-weight: 600; color: #57544D; font-size: 11px; }
+    .rep-box { border-left: 1px solid rgba(18, 20, 19, 0.22); min-width: 28px; height: 20px; }
+    .sheet-footer { margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(18, 20, 19, 0.22); display: flex; justify-content: space-between; align-items: center; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace; font-size: 11px; color: #57544D; font-weight: 600; }
     .no-print { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     @media print { body { background: #FFFFFF; padding: 0; } .no-print { display: none !important; } }
   </style>
 </head>
 <body>
   <div class="no-print">
-    <span style="font-size:12px;color:#3F4742;font-weight:600;">4-Up Landscape Trackside Clipboard · Ready to Print</span>
-    <button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:none;background:#1C5436;color:#FFFFFF;font-weight:700;cursor:pointer;">Print Clipboard Sheet</button>
+    <span style="font-size:12px;color:#57544D;font-weight:600;">4-Up Landscape Trackside Clipboard · Ready to Print</span>
+    <button onclick="window.print()" style="padding:8px 14px;border-radius:8px;border:none;background:#B83A24;color:#F6F3EC;font-weight:700;cursor:pointer;">Print Clipboard Sheet</button>
   </div>
   <div class="banner">
     <div>
@@ -263,7 +266,7 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
     </div>
     <div style="display:flex;align-items:center;gap:8px;text-align:right;">
       <div style="font-size:11px;line-height:1.25;">Scan for Free<br/>Coach Demo</div>
-      <div style="border:1px solid #C9D7CF;border-radius:6px;padding:2px;background:#FFFFFF;line-height:0;">${clipboardViralQrSvg}</div>
+      <div style="border:1px solid rgba(18, 20, 19, 0.22);border-radius:6px;padding:2px;background:#FFFFFF;line-height:0;">${clipboardViralQrSvg}</div>
     </div>
   </footer>
 </body>

@@ -273,7 +273,7 @@ export const ActivitiesRoutesFeedPanel: React.FC<ActivitiesRoutesFeedPanelProps>
                                 <button
                                   type="button"
                                   onClick={() => onSelectActivity(act)}
-                                  className="px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-2xs font-semibold transition-colors whitespace-nowrap"
+                                  className="px-2.5 py-1 rounded-md bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-semibold transition-colors whitespace-nowrap"
                                 >
                                   Inspect Map &amp; Streams
                                 </button>

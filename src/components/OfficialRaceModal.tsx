@@ -636,7 +636,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                       type="button"
                       onClick={handleParseUrlOrText}
                       disabled={isParsingRemote}
-                      className="w-full min-h-[44px] px-4 py-2 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] disabled:opacity-50 text-white dark:text-ap-obsidian text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
+                      className="w-full min-h-[44px] px-4 py-2 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] disabled:opacity-50 text-white dark:text-ap-obsidian text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 whitespace-nowrap"
                     >
                       <ClipboardPaste className="w-3.5 h-3.5" />
                       <span>{isParsingRemote ? 'Parsing Official Marks...' : 'Fetch & Parse Official Results'}</span>
@@ -1132,7 +1132,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
                         setCopiedPassport(true);
                         window.setTimeout(() => setCopiedPassport(false), 2500);
                       }}
-                      className="min-h-[44px] sm:min-h-[40px] px-3 py-1.5 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian font-semibold transition-colors whitespace-nowrap"
+                      className="min-h-[44px] sm:min-h-[40px] px-3 py-1.5 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian font-semibold transition-colors whitespace-nowrap"
                     >
                       {copiedPassport ? '✓ Copied Passport' : 'Copy Shareable Passport'}
                     </button>

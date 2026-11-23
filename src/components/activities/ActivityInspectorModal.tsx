@@ -296,7 +296,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                     }
                     onSelectActivity(null);
                   }}
-                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-lg bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] px-3 py-1.5 text-xs font-semibold text-white dark:text-ap-obsidian transition-colors"
+                  className="min-h-[44px] sm:min-h-[38px] inline-flex items-center gap-1.5 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] px-3 py-1.5 text-xs font-semibold text-white dark:text-ap-obsidian transition-colors"
                 >
                   <Columns2 className="w-3.5 h-3.5" />
                   <span className="hidden xs:inline sm:inline">Open in Split-View Compare</span>

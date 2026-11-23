@@ -55,6 +55,7 @@ import {
   updateMemberStatusApi,
 } from '../utils/teamLifecycleApi';
 import { AeroPulseLogo } from './AeroPulseLogo';
+import { getStoredCoachAttribution } from '../utils/attribution';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 const CoachingStaffPanel = lazyWithRetry(
@@ -202,7 +203,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const [primarySport, setPrimarySport] = useState<
     'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid'
   >('Running');
-  const [primaryHex, setPrimaryHex] = useState('#14532D');
+  const [primaryHex, setPrimaryHex] = useState('#B83A24');
   const [secondaryHex, setSecondaryHex] = useState('#D97706');
   const [logoDataUrl, setLogoDataUrl] = useState<string>('');
   const [defaultSafeSportShield, setDefaultSafeSportShield] = useState<boolean>(true);
@@ -564,6 +565,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             defaultSafeSportShield,
             enableParentGuardianCc,
             coachDisplayName: coachDisplayName.trim() || selfName || 'Head Coach',
+            attribution: getStoredCoachAttribution(),
           }),
         });
         const data = await resp.json();
@@ -1889,7 +1891,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                       type="button"
                       disabled={isSendingBulk}
                       onClick={() => handleResendPending('ALL_PENDING')}
-                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-ap-cobalt hover:bg-[#16422A] dark:bg-ap-volt dark:hover:bg-[#B5EB00] text-white dark:text-ap-obsidian text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>Nudge All Pending</span>
