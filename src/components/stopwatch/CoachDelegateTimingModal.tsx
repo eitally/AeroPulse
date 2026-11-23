@@ -1,10 +1,12 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type {
+  CoachEventGroup,
   DelegatedSplitSubmissionRecord,
   DelegatedTimingSessionRecord,
   DelegatedTimingStation,
   TeamSummaryWithRole,
 } from '../../types';
+import { COACH_EVENT_GROUP_OPTIONS } from '../../physiology/teamOnboardingEngine';
 import { useModalDialog } from '../../hooks/useModalDialog';
 import { getLocalDateIso } from '../../physiology/stravaLoadCalibration';
 import { formatFatTime, OFFICIAL_RACE_EVENTS } from '../../utils/officialRaceSynthesizer';
@@ -125,6 +127,8 @@ export const CoachDelegateTimingModal: React.FC<CoachDelegateTimingModalProps> =
   const [copiedPassCode, setCopiedPassCode] = useState<string | null>(null);
   const [offlineCodeInput, setOfflineCodeInput] = useState<string>('');
   const [isReviewingId, setIsReviewingId] = useState<string | null>(null);
+  const [runnerSearch, setRunnerSearch] = useState<string>('');
+  const [runnerGroupFilter, setRunnerGroupFilter] = useState<'ALL' | CoachEventGroup>('ALL');
 
   const activeAthletes = useMemo(
     () =>
@@ -133,6 +137,17 @@ export const CoachDelegateTimingModal: React.FC<CoachDelegateTimingModalProps> =
       ),
     [activeTeam?.memberships]
   );
+
+  const filteredActiveAthletes = useMemo(() => {
+    const q = runnerSearch.trim().toLowerCase();
+    return activeAthletes.filter((m) => {
+      if (runnerGroupFilter !== 'ALL' && m.eventGroup !== runnerGroupFilter) return false;
+      if (q && !m.invitedName.toLowerCase().includes(q) && !(m.squadGroup || '').toLowerCase().includes(q)) {
+        return false;
+      }
+      return true;
+    });
+  }, [activeAthletes, runnerGroupFilter, runnerSearch]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -680,16 +695,51 @@ export const CoachDelegateTimingModal: React.FC<CoachDelegateTimingModalProps> =
 
               {/* Runners in this Heat */}
               <div className="space-y-1.5">
-                <div className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-                  Runners in Pass ({selectedRunnerIds.length} selected)
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
+                    Runners in Pass ({selectedRunnerIds.length} selected)
+                  </div>
+                  {activeAthletes.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <input
+                        type="search"
+                        data-testid="delegate-runner-search"
+                        aria-label="Search runners to delegate"
+                        value={runnerSearch}
+                        onChange={(e) => setRunnerSearch(e.target.value)}
+                        placeholder="Search athlete..."
+                        className="min-h-[36px] w-36 sm:w-44 rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs text-ap-ink dark:text-ap-chalk"
+                      />
+                      <select
+                        data-testid="delegate-runner-group-filter"
+                        aria-label="Filter runners by event group"
+                        value={runnerGroupFilter}
+                        onChange={(e) =>
+                          setRunnerGroupFilter(e.target.value as 'ALL' | CoachEventGroup)
+                        }
+                        className="min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-2xs font-mono font-semibold"
+                      >
+                        <option value="ALL">All Groups</option>
+                        {COACH_EVENT_GROUP_OPTIONS.map((grp) => (
+                          <option key={grp.id} value={grp.id}>
+                            {grp.shortLabel}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
-                <div className="max-h-44 overflow-y-auto rounded-xl ap-card-inset p-2 space-y-1.5">
+                <div className="max-h-48 overflow-y-auto rounded-xl ap-card-inset p-2 space-y-1.5">
                   {activeAthletes.length === 0 ? (
                     <p className="text-xs text-ap-muted dark:text-ap-muted-dark p-1">
                       Timer can add walk-on runners directly on the Pocket Timing Pad.
                     </p>
+                  ) : filteredActiveAthletes.length === 0 ? (
+                    <p className="text-xs text-ap-muted dark:text-ap-muted-dark p-1">
+                      No athletes match your search/group filter.
+                    </p>
                   ) : (
-                    activeAthletes.map((m) => {
+                    filteredActiveAthletes.map((m) => {
                       const checked = selectedRunnerIds.includes(m.membershipId);
                       return (
                         <div key={m.membershipId} className="flex items-center justify-between gap-2">

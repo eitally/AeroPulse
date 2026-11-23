@@ -131,15 +131,24 @@ export const WorkspaceRouter: React.FC = () => {
     handleFlushStopwatchOutbox,
   } = useTeamCoach();
   // Warm lazy workspace chunks on idle so trackside Airplane Mode navigation never hits network
+  const isStaffRole = Boolean(
+    activeTeam &&
+      (activeTeam.myRole === 'HEAD_COACH' ||
+        activeTeam.myRole === 'ASSISTANT_COACH' ||
+        activeTeam.myRole === 'ORG_ADMIN' ||
+        activeTeam.myRole === 'ATHLETIC_TRAINER')
+  );
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void import('./CalendarView');
       void import('./TracksideStopwatchView');
       void import('./ActivitiesView');
-      void import('./CoachWorkspaceView');
+      if (isStaffRole) {
+        void import('./CoachWorkspaceView');
+      }
     }, 900);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [isStaffRole]);
 
   return (
     <WorkspaceErrorBoundary

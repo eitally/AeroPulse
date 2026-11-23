@@ -56,6 +56,8 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
   onOpenTeamPlan,
 }) => {
   const [filterMode, setFilterMode] = useState<'ALL' | 'ATTENTION' | 'ON_TRACK'>('ALL');
+  const [digestSearch, setDigestSearch] = useState<string>('');
+  const [showAllDigestRows, setShowAllDigestRows] = useState<boolean>(false);
   const athleteMembers = useMemo(
     () =>
       (activeTeam?.memberships || []).filter(
@@ -202,6 +204,14 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
     return groupScoped;
   }, [digest.rows, eventGroupFilter, filterMode]);
 
+  const visibleDigestRows = useMemo(() => {
+    const q = digestSearch.trim().toLowerCase();
+    const searched = q
+      ? visibleRows.filter((r) => r.name.toLowerCase().includes(q))
+      : visibleRows;
+    return showAllDigestRows ? searched : searched.slice(0, 25);
+  }, [digestSearch, showAllDigestRows, visibleRows]);
+
   return (
     <section
       data-testid="coach-execution-digest"
@@ -249,6 +259,29 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
         </div>
       </div>
 
+      {digest.rows.length > 6 && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <input
+            type="search"
+            data-testid="digest-search-input"
+            aria-label="Search athletes in triage"
+            value={digestSearch}
+            onChange={(e) => setDigestSearch(e.target.value)}
+            placeholder={`Search ${digest.rows.length} athletes...`}
+            className="w-full sm:w-64 min-h-[40px] sm:min-h-[36px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 text-xs text-ap-ink dark:text-ap-chalk"
+          />
+          {visibleRows.length > 25 && (
+            <button
+              type="button"
+              onClick={() => setShowAllDigestRows((prev) => !prev)}
+              className="min-h-[36px] px-2.5 rounded-lg ap-card-inset text-2xs font-mono font-bold cursor-pointer"
+            >
+              {showAllDigestRows ? 'Show First 25' : `Show All (${visibleRows.length})`}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 4 Crisp Summary Metric Tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 font-mono tabular-nums">
         <div className="rounded-xl ap-card-inset px-3.5 py-2.5">
@@ -293,14 +326,14 @@ export const CoachExecutionDigestPanel: React.FC<CoachExecutionDigestPanelProps>
       </div>
 
       {/* Athlete Digest List */}
-      {visibleRows.length === 0 ? (
+      {visibleDigestRows.length === 0 ? (
         <div className="rounded-xl ap-card-inset p-4 text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
           <Users className="w-4 h-4 ap-text-brand shrink-0" />
           <span>No athletes match the selected filter right now.</span>
         </div>
       ) : (
         <div className="space-y-2">
-          {visibleRows.map((row) => {
+          {visibleDigestRows.map((row) => {
             const readiness = readinessByAthleteId.get(row.athleteId);
             const hasWatchAlert =
               readiness && readiness.watchLight !== 'GREEN_CLEAR';

@@ -58,10 +58,13 @@ test.describe('Sprint 3C & 3B: Coach Parity, Direct Wahoo Push, Commercializatio
       await page.keyboard.press('Escape');
     });
 
-    // 3. Coach Workspace: District AD Overview modal + Clipboard Watch Push Menu (Garmin, COROS, Wahoo, Intervals)
+    // 3. Coach Workspace: District AD Overview modal (via Desk) + Clipboard Watch Push Menu (Garmin, COROS, Wahoo, Intervals)
     await page.goto('/?demo=1&sample=coach');
+    const deskBtn = page.getByTestId('coach-desk-menu-btn');
+    await expect(deskBtn).toBeVisible({ timeout: 15000 });
+    await deskBtn.click();
     const districtBtn = page.getByTestId('coach-open-district-ad-btn');
-    await expect(districtBtn).toBeVisible({ timeout: 15000 });
+    await expect(districtBtn).toBeVisible({ timeout: 10000 });
     await districtBtn.click();
 
     const districtModal = page.getByTestId('district-ad-overview-modal');

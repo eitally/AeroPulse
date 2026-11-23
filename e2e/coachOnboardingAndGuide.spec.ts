@@ -4,7 +4,7 @@ async function openCoachRosterTab(page: Page) {
   const isMobile = Boolean(page.viewportSize() && page.viewportSize()!.width < 768);
   if (isMobile) {
     const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
-    await mobileDock.getByRole('button', { name: 'Roster' }).click();
+    await mobileDock.getByRole('button', { name: 'Team' }).click();
   } else {
     await page.getByTestId('coach-subtab-roster').click();
   }
@@ -68,7 +68,9 @@ test.describe('Simplified Coach Onboarding & Illustrated Coach Guide (Desktop & 
       expect(layoutMetrics.copyJoinHeight).toBeGreaterThanOrEqual(44);
     }
 
-    // Open Coach Guide from Coach Workspace header -> verify modal lands on Coach chapter with /docs/coach.html link
+    // Open Coach Guide from Coach Desk drawer -> verify modal lands on Coach chapter with /docs/coach.html link
+    await page.getByTestId('coach-desk-menu-btn').click();
+    await expect(page.getByTestId('coach-desk-drawer')).toBeVisible();
     const openGuideBtn = page.getByTestId('coach-open-guide-btn');
     await openGuideBtn.scrollIntoViewIfNeeded();
     await openGuideBtn.click();

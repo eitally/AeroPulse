@@ -1,13 +1,16 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowSquareOut,
   CheckCircle2,
+  ChevronDown,
   ClipboardPaste,
   ClipboardText,
   Clock,
   Download,
   Plus,
+  Search,
   Timer,
   Trash2,
   Trophy,
@@ -31,6 +34,7 @@ import {
   inferDivisionFromSquadGroup,
   isRelayEventCode,
   openPrintableMeetDayPacketWindow,
+  parseMeetTimeToSortMinutes,
   parseTrackSeedTimeToSecs,
   seedFieldFlights,
   seedTrackHeats,
@@ -63,6 +67,10 @@ import { ExternalHeatSheetImportPanel, MeetDayEntryRow } from './ExternalHeatShe
 export interface MeetDayHeatAndFlightModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Renders full-width inline inside Meets & Plan Hub instead of a fixed modal overlay */
+  inline?: boolean;
+  /** Optional starting sub-tab (defaults to ENTRIES) */
+  initialSubTab?: 'ENTRIES' | 'SCHEDULE' | 'HEATS' | 'FLIGHTS';
   activeTeam: TeamSummaryWithRole | null;
   connectedAthletes: ConnectedAthleteRecord[];
   myTeams?: TeamSummaryWithRole[];
@@ -383,9 +391,137 @@ function triggerFileDownload(content: string, filename: string, mimeType: string
   URL.revokeObjectURL(url);
 }
 
+function resolveEntryPartitionLabel(entry: MeetEntryRecord, partitionByDivision: boolean): string {
+  if (!partitionByDivision) return 'Open';
+  const gLabel =
+    entry.genderDivision === 'F'
+      ? 'Girls'
+      : entry.genderDivision === 'M'
+        ? 'Boys'
+        : entry.genderDivision === 'NONBINARY'
+          ? 'Non-Binary'
+          : '';
+  return [gLabel, entry.division || 'Varsity'].filter(Boolean).join(' ') || 'Open';
+}
+
+export interface MeetScheduleBlock {
+  key: string;
+  eventCode: string;
+  eventLabel: string;
+  isField: boolean;
+  partLabel: string;
+  delayedStartTime: string;
+  delayedCallTime: string;
+  hasDelayApplied: boolean;
+  sortMinutes: number;
+  catalogOrder: number;
+  entries: MeetEntryRecord[];
+  runners: Array<{ membershipId?: string; athleteName: string; laneOrHip?: string }>;
+}
+
+/**
+ * Group active entries into chronological event/partition blocks ordered by
+ * delay-adjusted start or call time, falling back to official event catalog order.
+ */
+export function buildChronologicalScheduleBlocks(
+  entries: MeetEntryRecord[],
+  partitionByDivision: boolean,
+  meetDelayMinutes: number
+): MeetScheduleBlock[] {
+  const safeDelay = Math.max(0, Math.round(meetDelayMinutes || 0));
+  const specByCode = new Map(ALL_MEET_DAY_EVENTS.map((spec, idx) => [spec.code, { spec, idx }]));
+  const buckets = new Map<
+    string,
+    {
+      eventCode: string;
+      partLabel: string;
+      delayedStartTime: string;
+      delayedCallTime: string;
+      hasDelayApplied: boolean;
+      sortMinutes: number;
+      entries: MeetEntryRecord[];
+    }
+  >();
+
+  for (const entry of entries) {
+    if (entry.scratched) continue;
+    const partLabel = resolveEntryPartitionLabel(entry, partitionByDivision);
+    const delayedStart = applyDelayToMeetTimeString(entry.eventStartTime, safeDelay);
+    const delayedCall = applyDelayToMeetTimeString(entry.checkInCallTime, safeDelay);
+    const timeKey = delayedStart || delayedCall || 'TBD';
+    const key = `${entry.eventCode}::${partLabel}::${timeKey}`;
+    const rawTime = entry.eventStartTime || entry.checkInCallTime;
+    const parsedMins = parseMeetTimeToSortMinutes(rawTime);
+    const entrySortMins = parsedMins !== null ? parsedMins + safeDelay : 9999;
+
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.entries.push(entry);
+      if (entrySortMins < existing.sortMinutes) existing.sortMinutes = entrySortMins;
+      if (safeDelay > 0 && rawTime) existing.hasDelayApplied = true;
+    } else {
+      buckets.set(key, {
+        eventCode: entry.eventCode,
+        partLabel,
+        delayedStartTime: delayedStart,
+        delayedCallTime: delayedCall,
+        hasDelayApplied: safeDelay > 0 && Boolean(rawTime),
+        sortMinutes: entrySortMins,
+        entries: [entry],
+      });
+    }
+  }
+
+  const blocks: MeetScheduleBlock[] = Array.from(buckets.entries()).map(([key, bucket]) => {
+    const specEntry = specByCode.get(bucket.eventCode);
+    const isField = specEntry?.spec.category === 'FIELD';
+    const isRelay = isRelayEventCode(bucket.eventCode);
+    const runners = isField
+      ? []
+      : isRelay
+        ? groupEntriesIntoRelaySquads(bucket.entries).map((sq) => ({
+            membershipId: sq.representativeEntry.athleteId,
+            athleteName: `${sq.eventCode} Team ${sq.relayTeamCode}`,
+            laneOrHip: sq.officialLaneOrHip,
+          }))
+        : bucket.entries
+            .filter((e) => !e.isAlternate)
+            .map((e) => ({
+              membershipId: e.athleteId,
+              athleteName: e.athleteName,
+              laneOrHip: e.officialLaneOrHip,
+            }));
+
+    return {
+      key,
+      eventCode: bucket.eventCode,
+      eventLabel: specEntry?.spec.label || bucket.eventCode,
+      isField,
+      partLabel: bucket.partLabel,
+      delayedStartTime: bucket.delayedStartTime,
+      delayedCallTime: bucket.delayedCallTime,
+      hasDelayApplied: bucket.hasDelayApplied,
+      sortMinutes: bucket.sortMinutes,
+      catalogOrder: specEntry?.idx ?? 999,
+      entries: bucket.entries,
+      runners,
+    };
+  });
+
+  blocks.sort(
+    (a, b) =>
+      a.sortMinutes - b.sortMinutes ||
+      a.catalogOrder - b.catalogOrder ||
+      a.partLabel.localeCompare(b.partLabel)
+  );
+  return blocks;
+}
+
 export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps> = ({
   isOpen,
   onClose,
+  inline = false,
+  initialSubTab = 'ENTRIES',
   activeTeam,
   connectedAthletes,
   myTeams,
@@ -395,7 +531,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
 }) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
-  useModalDialog({ isOpen, onClose, dialogRef });
+  useModalDialog({ isOpen: isOpen && !inline, onClose, dialogRef });
 
   const teamScopeKey = activeTeam?.brand.teamId || 'local';
   const isLiveServerTeam = Boolean(
@@ -425,7 +561,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     () => initialInlinePacket?.meetDelayMinutes || 0
   );
   const [hostSlowToFast, setHostSlowToFast] = useState<boolean>(false);
-  const [subTab, setSubTab] = useState<'ENTRIES' | 'HEATS' | 'FLIGHTS'>('ENTRIES');
+  const [subTab, setSubTab] = useState<'ENTRIES' | 'SCHEDULE' | 'HEATS' | 'FLIGHTS'>(initialSubTab);
   const [entries, setEntries] = useState<MeetEntryRecord[]>(() =>
     initialInlinePacket
       ? deserializePacketEntriesToMeetEntries(initialInlinePacket.entries)
@@ -436,10 +572,15 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   );
   const [genderFilter, setGenderFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
   const [divisionFilter, setDivisionFilter] = useState<string>('ALL');
+  const [eventFilter, setEventFilter] = useState<string>('ALL');
+  const [entriesSearchQuery, setEntriesSearchQuery] = useState<string>('');
+  const [mobileExportsOpen, setMobileExportsOpen] = useState<boolean>(false);
   const [exportScope, setExportScope] = useState<'FULL_TEAM' | 'FILTERED_ONLY'>('FULL_TEAM');
   const [showExternalImportPanel, setShowExternalImportPanel] = useState<boolean>(false);
   const [editingClerkEntryId, setEditingClerkEntryId] = useState<string | null>(null);
   const [printPopupBlocked, setPrintPopupBlocked] = useState<boolean>(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
+  const [showUnsavedCloseGuard, setShowUnsavedCloseGuard] = useState<boolean>(false);
 
   const [newAthleteKey, setNewAthleteKey] = useState<string>('');
   const [newEventCode, setNewEventCode] = useState<string>('100m');
@@ -469,17 +610,22 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     setAthleticLiveUrl(pkt.athleticLiveUrl || '');
     setMeetDelayMinutes(pkt.meetDelayMinutes || 0);
     setEntries(deserializePacketEntriesToMeetEntries(pkt.entries));
+    setHasUnsavedChanges(false);
+    setShowUnsavedCloseGuard(false);
   };
 
   useEffect(() => {
     if (!isOpen) {
       hydratedOpenRef.current = null;
+      setShowUnsavedCloseGuard(false);
       return;
     }
     if (hydratedOpenRef.current === teamScopeKey) return;
     hydratedOpenRef.current = teamScopeKey;
     setPacketFeedback(null);
     setPrintPopupBlocked(false);
+    setHasUnsavedChanges(false);
+    setShowUnsavedCloseGuard(false);
 
     const localList = loadLocalMeetDayPackets(teamScopeKey);
     const serverInline = activeTeam?.meetDayPackets || [];
@@ -497,6 +643,8 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       setAthleticLiveUrl('');
       setMeetDelayMinutes(0);
       setEntries(buildInitialMeetEntries(activeTeam, connectedAthletes));
+      setHasUnsavedChanges(false);
+      setShowUnsavedCloseGuard(false);
     }
 
     if (isLiveServerTeam && activeTeam) {
@@ -592,6 +740,35 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     () => filteredEntries.filter((e) => !e.scratched),
     [filteredEntries]
   );
+  const availableEntryEvents = useMemo(() => {
+    const orderMap = new Map(ALL_MEET_DAY_EVENTS.map((ev, idx) => [ev.code, idx]));
+    return Array.from(new Set(entries.map((e) => e.eventCode))).sort(
+      (a, b) => (orderMap.get(a) ?? 999) - (orderMap.get(b) ?? 999) || a.localeCompare(b)
+    );
+  }, [entries]);
+  const visibleEntriesList = useMemo(() => {
+    const q = entriesSearchQuery.trim().toLowerCase();
+    return filteredEntries.filter((entry) => {
+      if (eventFilter !== 'ALL' && entry.eventCode !== eventFilter) return false;
+      if (!q) return true;
+      return (
+        entry.athleteName.toLowerCase().includes(q) ||
+        entry.eventCode.toLowerCase().includes(q) ||
+        (entry.seedMark || '').toLowerCase().includes(q) ||
+        (entry.bibNumber || '').toLowerCase().includes(q) ||
+        (entry.division || '').toLowerCase().includes(q)
+      );
+    });
+  }, [filteredEntries, eventFilter, entriesSearchQuery]);
+  const chronologicalScheduleBlocks = useMemo(
+    () =>
+      buildChronologicalScheduleBlocks(
+        activeFilteredEntries,
+        partitionByDivision,
+        meetDelayMinutes
+      ),
+    [activeFilteredEntries, partitionByDivision, meetDelayMinutes]
+  );
   const effectiveExportEntries =
     isFilterActive && exportScope === 'FILTERED_ONLY'
       ? activeFilteredEntries
@@ -650,11 +827,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   const partitionEntriesByLabel = (list: MeetEntryRecord[]) => {
     const byPart = new Map<string, MeetEntryRecord[]>();
     for (const e of list) {
-      const gLabel =
-        e.genderDivision === 'F' ? 'Girls' : e.genderDivision === 'M' ? 'Boys' : e.genderDivision === 'NONBINARY' ? 'Non-Binary' : '';
-      const label = partitionByDivision
-        ? [gLabel, e.division || 'Varsity'].filter(Boolean).join(' ') || 'Open'
-        : 'Open';
+      const label = resolveEntryPartitionLabel(e, partitionByDivision);
       const arr = byPart.get(label) || [];
       arr.push(e);
       byPart.set(label, arr);
@@ -720,11 +893,13 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       ...(newIsAlternate ? { isAlternate: true } : {}),
     };
     setEntries((prev) => [next, ...prev]);
+    setHasUnsavedChanges(true);
     if (selectedEventSpec?.category === 'FIELD') setSelectedFlightEvent(newEventCode);
     else setSelectedHeatEvent(newEventCode);
   };
 
   const updateEntryById = (entryId: string, patch: Partial<MeetEntryRecord>) => {
+    setHasUnsavedChanges(true);
     setEntries((prev) => prev.map((x) => (x.id === entryId ? { ...x, ...patch } : x)));
   };
 
@@ -749,6 +924,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       return applied.entries;
     });
     setSeedingAuthority('EXTERNAL_MEET');
+    setHasUnsavedChanges(true);
     setShowExternalImportPanel(false);
   };
 
@@ -791,7 +967,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     onTeamsUpdated(nextTeams, updatedTeam.brand.teamId);
   };
 
-  const handleSavePacket = async () => {
+  const handleSavePacket = async (closeAfterSave = false) => {
     if (isSavingPacket) return;
     setIsSavingPacket(true);
     setPacketFeedback(null);
@@ -823,10 +999,13 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
         } else {
           syncTeamPacketsToParent(res.packets);
         }
+        setHasUnsavedChanges(false);
+        setShowUnsavedCloseGuard(false);
         setPacketFeedback({
           tone: 'prime',
           text: `Saved "${res.packet.meetTitle}" (${entries.length} entries) to MeetReady team cloud.`,
         });
+        if (closeAfterSave) onClose();
         return;
       }
 
@@ -834,18 +1013,24 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       setSavedPackets(nextList);
       setActivePacketId(packetId);
       syncTeamPacketsToParent(nextList);
+      setHasUnsavedChanges(false);
+      setShowUnsavedCloseGuard(false);
       setPacketFeedback({
         tone: 'prime',
         text: `Saved "${packetPayload.meetTitle}" (${entries.length} entries) on device.`,
       });
+      if (closeAfterSave) onClose();
     } catch (err) {
       const nextList = saveLocalMeetDayPacket(teamScopeKey, packetPayload);
       setSavedPackets(nextList);
       setActivePacketId(packetId);
+      setHasUnsavedChanges(false);
+      setShowUnsavedCloseGuard(false);
       setPacketFeedback({
         tone: 'caution',
         text: `${err instanceof Error ? err.message : 'Cloud sync unavailable'} — saved locally on device.`,
       });
+      if (closeAfterSave) onClose();
     } finally {
       setIsSavingPacket(false);
     }
@@ -927,7 +1112,10 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
           type="checkbox"
           data-testid="meet-partition-toggle"
           checked={partitionByDivision}
-          onChange={(e) => setPartitionByDivision(e.target.checked)}
+          onChange={(e) => {
+            setPartitionByDivision(e.target.checked);
+            setHasUnsavedChanges(true);
+          }}
           className="accent-[#B83A24]"
         />
         <span>Separate Boys / Girls &amp; Divisions</span>
@@ -937,11 +1125,13 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
 
   const renderEventTimingButtons = (
     partLabel: string,
-    runners: Array<{ membershipId?: string; athleteName: string; laneOrHip?: string }>
+    runners: Array<{ membershipId?: string; athleteName: string; laneOrHip?: string }>,
+    eventCodeOverride?: string
   ) => {
     if (runners.length === 0 || (!onLaunchEventStopwatch && !onDelegateEventTimer)) {
       return null;
     }
+    const targetEventCode = eventCodeOverride || selectedHeatEvent;
     return (
       <div className="inline-flex flex-wrap items-center gap-1.5">
         {onLaunchEventStopwatch && (
@@ -952,7 +1142,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               onLaunchEventStopwatch({
                 meetTitle,
                 meetDate,
-                eventCode: selectedHeatEvent,
+                eventCode: targetEventCode,
                 runners,
               })
             }
@@ -970,7 +1160,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               onDelegateEventTimer({
                 meetTitle,
                 meetDate,
-                eventCode: selectedHeatEvent,
+                eventCode: targetEventCode,
                 heatLabel: partLabel,
                 runners: runners.map((r) => ({
                   membershipId: r.membershipId,
@@ -989,172 +1179,338 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     );
   };
 
-  return (
-    <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={headingId}
-      tabIndex={-1}
-      data-testid="meet-day-packet-modal"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-2 sm:p-4"
-    >
-      <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-ap-chalk dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border border-ap-edge flex flex-col shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="px-3 py-3 sm:px-5 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 flex-1 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <Trophy className="w-5 h-5 ap-text-brand shrink-0" />
-                <h2 id={headingId} className="text-sm sm:text-lg font-extrabold tracking-tight truncate">
-                  Meet-Day Entries, Heats, Flights &amp; NFHS 4-Event Check
-                </h2>
-              </div>
-              <div className="inline-flex flex-wrap items-center gap-1 p-0.5 rounded-xl liquid-capsule-track text-2xs font-mono font-bold">
-                <button
-                  type="button" data-testid="meet-authority-external" aria-pressed={seedingAuthority === 'EXTERNAL_MEET'}
-                  onClick={() => setSeedingAuthority('EXTERNAL_MEET')}
-                  className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'EXTERNAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
-                >External Meet (Athletic.net / Hy-Tek)</button>
-                <button
-                  type="button" data-testid="meet-authority-host" aria-pressed={seedingAuthority === 'HOST_DUAL_MEET'}
-                  onClick={() => setSeedingAuthority('HOST_DUAL_MEET')}
-                  className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'HOST_DUAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
-                >Host / Dual Meet Seeding</button>
-              </div>
+  const panelContent = (
+    <>
+      {/* Header */}
+      <div className="px-3 py-3 sm:px-5 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Trophy className="w-5 h-5 ap-text-brand shrink-0" />
+              <h2 id={headingId} className="text-sm sm:text-lg font-extrabold tracking-tight truncate">
+                Meet-Day Entries, Heats, Flights &amp; NFHS 4-Event Check
+              </h2>
             </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="text" value={meetTitle} onChange={(e) => setMeetTitle(e.target.value)} aria-label="Meet Title"
-                className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold w-full sm:w-56"
-              />
-              <input
-                type="date" value={meetDate} onChange={(e) => setMeetDate(e.target.value)} aria-label="Meet Date"
-                className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs"
-              />
+            <div className="inline-flex flex-wrap items-center gap-1 p-0.5 rounded-xl liquid-capsule-track text-2xs font-mono font-bold">
               <button
-                type="button" data-testid="meet-save-packet-btn" disabled={isSavingPacket}
-                onClick={() => void handleSavePacket()}
-                className="ap-btn-primary !min-h-[38px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
-              >{isSavingPacket ? 'Saving…' : 'Save Packet'}</button>
-              {savedPackets.length > 0 && (
-                <div className="inline-flex items-center gap-1 min-w-0">
-                  <select
-                    aria-label="Saved Meet Packets" data-testid="meet-saved-packets-select" value={activePacketId}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (!val) {
-                        setActivePacketId(''); setMeetTitle('New Track & Field Meet');
-                        setSeedingAuthority('EXTERNAL_MEET'); setAthleticLiveUrl(''); setMeetDelayMinutes(0);
-                        setEntries(buildInitialMeetEntries(activeTeam, connectedAthletes));
-                        return;
-                      }
-                      const found = savedPackets.find((p) => p.packetId === val);
-                      if (found) applyPacketToEditor(found);
-                    }}
-                    className="min-h-[38px] max-w-[170px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs"
-                  >
-                    <option value="">+ New Packet</option>
-                    {savedPackets.map((p) => (
-                      <option key={p.packetId} value={p.packetId}>{p.meetTitle} ({p.meetDate})</option>
-                    ))}
-                  </select>
-                  {activePacketId && (
-                    <button
-                      type="button" aria-label="Delete saved meet packet" data-testid="meet-delete-packet-btn"
-                      onClick={() => void handleDeleteSavedPacket(activePacketId)}
-                      className="min-h-[38px] min-w-[38px] rounded-lg ap-card-inset inline-flex items-center justify-center text-rose-600 dark:text-rose-400 cursor-pointer"
-                    ><Trash2 className="w-3.5 h-3.5" /></button>
-                  )}
-                </div>
-              )}
+                type="button"
+                data-testid="meet-authority-external"
+                aria-pressed={seedingAuthority === 'EXTERNAL_MEET'}
+                onClick={() => {
+                  setSeedingAuthority('EXTERNAL_MEET');
+                  setHasUnsavedChanges(true);
+                }}
+                className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'EXTERNAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+              >
+                External Meet (Athletic.net / Hy-Tek)
+              </button>
+              <button
+                type="button"
+                data-testid="meet-authority-host"
+                aria-pressed={seedingAuthority === 'HOST_DUAL_MEET'}
+                onClick={() => {
+                  setSeedingAuthority('HOST_DUAL_MEET');
+                  setHasUnsavedChanges(true);
+                }}
+                className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'HOST_DUAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+              >
+                Host / Dual Meet Seeding
+              </button>
             </div>
+          </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-2xs font-mono">
-              <div className="flex items-center gap-1 flex-1 min-w-[200px]">
-                <input
-                  type="url" data-testid="meet-athleticlive-url-input" value={athleticLiveUrl}
-                  onChange={(e) => setAthleticLiveUrl(e.target.value)} aria-label="AthleticLIVE URL"
-                  placeholder="https://live.athletic.net/meets/..."
-                  className="flex-1 min-w-0 min-h-[34px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-2xs font-mono"
-                />
-                {/^https:\/\//i.test(athleticLiveUrl.trim()) && (
-                  <a
-                    href={athleticLiveUrl.trim()} target="_blank" rel="noopener noreferrer" aria-label="Open AthleticLIVE meet link"
-                    className="min-h-[34px] min-w-[34px] rounded-lg ap-card-inset inline-flex items-center justify-center text-ap-clay dark:text-ap-volt"
-                  ><ArrowSquareOut className="w-3.5 h-3.5" /></a>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={meetTitle}
+              onChange={(e) => {
+                setMeetTitle(e.target.value);
+                setHasUnsavedChanges(true);
+              }}
+              aria-label="Meet Title"
+              className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold w-full sm:w-56"
+            />
+            <input
+              type="date"
+              value={meetDate}
+              onChange={(e) => {
+                setMeetDate(e.target.value);
+                setHasUnsavedChanges(true);
+              }}
+              aria-label="Meet Date"
+              className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs"
+            />
+            <button
+              type="button"
+              data-testid="meet-save-packet-btn"
+              disabled={isSavingPacket}
+              onClick={() => void handleSavePacket(false)}
+              className="ap-btn-primary !min-h-[38px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
+            >
+              {isSavingPacket ? 'Saving…' : 'Save Packet'}
+            </button>
+            {savedPackets.length > 0 && (
+              <div className="inline-flex items-center gap-1 min-w-0">
+                <select
+                  aria-label="Saved Meet Packets"
+                  data-testid="meet-saved-packets-select"
+                  value={activePacketId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) {
+                      setActivePacketId('');
+                      setMeetTitle('New Track & Field Meet');
+                      setSeedingAuthority('EXTERNAL_MEET');
+                      setAthleticLiveUrl('');
+                      setMeetDelayMinutes(0);
+                      setEntries(buildInitialMeetEntries(activeTeam, connectedAthletes));
+                      setHasUnsavedChanges(false);
+                      return;
+                    }
+                    const found = savedPackets.find((p) => p.packetId === val);
+                    if (found) applyPacketToEditor(found);
+                  }}
+                  className="min-h-[38px] max-w-[170px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs"
+                >
+                  <option value="">+ New Packet</option>
+                  {savedPackets.map((p) => (
+                    <option key={p.packetId} value={p.packetId}>
+                      {p.meetTitle} ({p.meetDate})
+                    </option>
+                  ))}
+                </select>
+                {activePacketId && (
+                  <button
+                    type="button"
+                    aria-label="Delete saved meet packet"
+                    data-testid="meet-delete-packet-btn"
+                    onClick={() => void handleDeleteSavedPacket(activePacketId)}
+                    className="min-h-[38px] min-w-[38px] rounded-lg ap-card-inset inline-flex items-center justify-center text-rose-600 dark:text-rose-400 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 )}
               </div>
-              <div className="inline-flex items-center gap-1">
-                <Clock className="w-3.5 h-3.5 text-ap-muted dark:text-ap-muted-dark" />
-                <span className="text-ap-muted dark:text-ap-muted-dark font-semibold">Delay:</span>
-                {([0, 15, 30] as const).map((mins) => (
-                  <button
-                    key={mins} type="button" data-testid={`meet-delay-${mins}`} aria-pressed={meetDelayMinutes === mins}
-                    onClick={() => setMeetDelayMinutes(mins)}
-                    className={`min-h-[32px] px-2 rounded-lg font-bold cursor-pointer ${meetDelayMinutes === mins ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark'}`}
-                  >{mins === 0 ? 'On Time' : `+${mins}m`}</button>
-                ))}
-              </div>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-2xs font-mono">
+            <div className="flex items-center gap-1 flex-1 min-w-[200px]">
+              <input
+                type="url"
+                data-testid="meet-athleticlive-url-input"
+                value={athleticLiveUrl}
+                onChange={(e) => {
+                  setAthleticLiveUrl(e.target.value);
+                  setHasUnsavedChanges(true);
+                }}
+                aria-label="AthleticLIVE URL"
+                placeholder="https://live.athletic.net/meets/..."
+                className="flex-1 min-w-0 min-h-[34px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-2xs font-mono"
+              />
+              {/^https:\/\//i.test(athleticLiveUrl.trim()) && (
+                <a
+                  href={athleticLiveUrl.trim()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open AthleticLIVE meet link"
+                  className="min-h-[34px] min-w-[34px] rounded-lg ap-card-inset inline-flex items-center justify-center text-ap-clay dark:text-ap-volt"
+                >
+                  <ArrowSquareOut className="w-3.5 h-3.5" />
+                </a>
+              )}
+            </div>
+            <div className="inline-flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 text-ap-muted dark:text-ap-muted-dark" />
+              <span className="text-ap-muted dark:text-ap-muted-dark font-semibold">Delay:</span>
+              {([0, 15, 30] as const).map((mins) => (
+                <button
+                  key={mins}
+                  type="button"
+                  data-testid={`meet-delay-${mins}`}
+                  aria-pressed={meetDelayMinutes === mins}
+                  onClick={() => {
+                    setMeetDelayMinutes(mins);
+                    setHasUnsavedChanges(true);
+                  }}
+                  className={`min-h-[32px] px-2 rounded-lg font-bold cursor-pointer ${meetDelayMinutes === mins ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark'}`}
+                >
+                  {mins === 0 ? 'On Time' : `+${mins}m`}
+                </button>
+              ))}
             </div>
           </div>
-          <button
-            type="button" aria-label="Close Meet-Day Modal" onClick={onClose}
-            className="min-h-[44px] min-w-[44px] rounded-xl ap-card-inset inline-flex items-center justify-center cursor-pointer shrink-0"
-          ><X className="w-4 h-4" /></button>
         </div>
+        {inline ? (
+          <button
+            type="button"
+            aria-label="Close Meet-Day Modal"
+            onClick={onClose}
+            className="min-h-[44px] sm:min-h-[36px] px-3 rounded-xl ap-card-inset inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Calendar</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label="Close Meet-Day Modal"
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] rounded-xl ap-card-inset inline-flex items-center justify-center cursor-pointer shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
 
-        {/* Sub-Tabs & Export Buttons */}
-        <div className="px-3 sm:px-5 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center justify-between gap-2">
-          <div className="inline-flex flex-wrap items-center gap-1 p-0.5 rounded-xl liquid-capsule-track text-xs font-bold">
-            {(
-              [
-                { id: 'ENTRIES', label: `Entries (${entries.length})`, testId: 'meet-tab-entries' },
-                { id: 'HEATS', label: 'Track Heats & Lanes', testId: 'meet-tab-heats' },
-                { id: 'FLIGHTS', label: 'Field Flights', testId: 'meet-tab-flights' },
-              ] as const
-            ).map((t) => (
-              <button
-                key={t.id} type="button" data-testid={t.testId} aria-pressed={subTab === t.id} onClick={() => setSubTab(t.id)}
-                className={`min-h-[44px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg cursor-pointer ${subTab === t.id ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
-              >{t.label}</button>
-            ))}
-          </div>
-
+      {/* Unsaved Backdrop Guard */}
+      {!inline && showUnsavedCloseGuard && (
+        <div
+          role="alertdialog"
+          aria-label="Unsaved meet packet changes"
+          data-testid="meet-unsaved-backdrop-guard"
+          className="mx-3 mt-3 sm:mx-5 rounded-xl ap-status-caution px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-semibold"
+        >
+          <span>Unsaved meet packet changes — save before closing?</span>
           <div className="flex flex-wrap items-center gap-1.5">
-            <button type="button" data-testid="meet-export-hy3-btn" onClick={handleExportHy3} className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer">
-              <Download className="w-3.5 h-3.5" /><span>Export .hy3 (Hy-Tek)</span>
-            </button>
-            <button type="button" data-testid="meet-export-athleticnet-btn" onClick={handleExportAthleticNetCsv} className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer">
-              <Download className="w-3.5 h-3.5" /><span>Athletic.net CSV</span>
-            </button>
-            <button type="button" data-testid="meet-export-hytek-btn" onClick={handleExportHyTekCsv} className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer">
-              <Download className="w-3.5 h-3.5" /><span>Download Hy-Tek CSV</span>
+            <button
+              type="button"
+              data-testid="meet-guard-save-close-btn"
+              disabled={isSavingPacket}
+              onClick={() => void handleSavePacket(true)}
+              className="ap-btn-primary !min-h-[34px] px-2.5 py-1 text-2xs font-bold cursor-pointer"
+            >
+              Save Packet
             </button>
             <button
-              type="button" data-testid="meet-print-packet-btn"
+              type="button"
+              data-testid="meet-guard-discard-btn"
+              onClick={() => {
+                setShowUnsavedCloseGuard(false);
+                setHasUnsavedChanges(false);
+                onClose();
+              }}
+              className="ap-btn-secondary !min-h-[34px] px-2.5 py-1 text-2xs font-bold cursor-pointer"
+            >
+              Discard &amp; Close
+            </button>
+            <button
+              type="button"
+              data-testid="meet-guard-keep-editing-btn"
+              onClick={() => setShowUnsavedCloseGuard(false)}
+              className="min-h-[34px] px-2.5 py-1 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 text-2xs font-bold cursor-pointer"
+            >
+              Keep Editing
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Tabs & Export Buttons */}
+      <div className="px-3 sm:px-5 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex flex-wrap items-center gap-1 p-0.5 rounded-xl liquid-capsule-track text-xs font-bold">
+          {(
+            [
+              { id: 'ENTRIES', label: `Entries (${entries.length})`, testId: 'meet-tab-entries' },
+              { id: 'SCHEDULE', label: 'Schedule / Now', testId: 'meet-tab-schedule' },
+              { id: 'HEATS', label: 'Track Heats & Lanes', testId: 'meet-tab-heats' },
+              { id: 'FLIGHTS', label: 'Field Flights', testId: 'meet-tab-flights' },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              data-testid={t.testId}
+              aria-pressed={subTab === t.id}
+              onClick={() => setSubTab(t.id)}
+              className={`min-h-[44px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg cursor-pointer ${subTab === t.id ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 w-full sm:w-auto">
+          <button
+            type="button"
+            data-testid="meet-mobile-exports-toggle"
+            aria-expanded={mobileExportsOpen}
+            onClick={() => setMobileExportsOpen((v) => !v)}
+            className="sm:hidden ap-btn-secondary !min-h-[44px] px-3 py-1 text-xs font-bold inline-flex items-center justify-between gap-1.5 cursor-pointer"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <Download className="w-3.5 h-3.5" />
+              <span>Exports &amp; Print (.hy3 / CSV / PDF)</span>
+            </span>
+            <ChevronDown
+              className={`w-3.5 h-3.5 transition-transform ${mobileExportsOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          <div
+            className={`${mobileExportsOpen ? 'flex' : 'hidden sm:flex'} flex-wrap items-center gap-1.5`}
+          >
+            <button
+              type="button"
+              data-testid="meet-export-hy3-btn"
+              onClick={handleExportHy3}
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Export .hy3 (Hy-Tek)</span>
+            </button>
+            <button
+              type="button"
+              data-testid="meet-export-athleticnet-btn"
+              onClick={handleExportAthleticNetCsv}
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Athletic.net CSV</span>
+            </button>
+            <button
+              type="button"
+              data-testid="meet-export-hytek-btn"
+              onClick={handleExportHyTekCsv}
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Download Hy-Tek CSV</span>
+            </button>
+            <button
+              type="button"
+              data-testid="meet-print-packet-btn"
               onClick={() => {
                 const opened = openPrintableMeetDayPacketWindow({
                   teamName: activeTeam?.brand.name || 'MeetReady Track & Field',
-                  meetTitle, meetDate, entries: effectiveExportEntries, partitionByDivision,
-                  seedingAuthority, athleticLiveUrl: athleticLiveUrl.trim() || undefined, meetDelayMinutes, showItinerary: true,
+                  meetTitle,
+                  meetDate,
+                  entries: effectiveExportEntries,
+                  partitionByDivision,
+                  seedingAuthority,
+                  athleticLiveUrl: athleticLiveUrl.trim() || undefined,
+                  meetDelayMinutes,
+                  showItinerary: true,
                 });
                 setPrintPopupBlocked(!opened);
                 if (!opened) {
-                  setPacketFeedback({ tone: 'caution', text: 'Print window was blocked by the browser. Allow pop-ups or use Download Offline HTML below.' });
+                  setPacketFeedback({
+                    tone: 'caution',
+                    text: 'Print window was blocked by the browser. Allow pop-ups or use Download Offline HTML below.',
+                  });
                 }
               }}
               className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-            ><ClipboardText className="w-3.5 h-3.5" /><span>Print Packet</span></button>
+            >
+              <ClipboardText className="w-3.5 h-3.5" />
+              <span>Print Packet</span>
+            </button>
           </div>
         </div>
+      </div>
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 text-xs">
+      {/* Body */}
+      <div className={inline ? 'p-3 sm:p-5 space-y-3 text-xs' : 'flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 text-xs'}>
           {packetFeedback && (
             <div
               role="status" data-testid="meet-packet-feedback"
@@ -1247,7 +1603,9 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                         }
                         setEntries((prev) => {
                           const existingKeys = new Set(prev.map((e) => `${e.athleteId}:${e.eventCode}`));
-                          return [...prev, ...rosterEntries.filter((r) => !existingKeys.has(`${r.athleteId}:${r.eventCode}`))];
+                          const additions = rosterEntries.filter((r) => !existingKeys.has(`${r.athleteId}:${r.eventCode}`));
+                          if (additions.length > 0) setHasUnsavedChanges(true);
+                          return [...prev, ...additions];
                         });
                         setPacketFeedback({ tone: 'prime', text: `Seeded ${rosterEntries.length} verified roster mark${rosterEntries.length === 1 ? '' : 's'}.` });
                       }}
@@ -1314,24 +1672,182 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 </div>
               </form>
 
+              <div
+                data-testid="meet-entries-filter-strip"
+                className="flex flex-wrap items-center justify-between gap-2 rounded-xl ap-card-inset px-3 py-2"
+              >
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[200px]">
+                  <div className="relative flex-1 min-w-[160px]">
+                    <Search className="w-3.5 h-3.5 text-ap-muted dark:text-ap-muted-dark absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="search"
+                      aria-label="Search meet entries"
+                      data-testid="meet-entries-search-input"
+                      value={entriesSearchQuery}
+                      onChange={(e) => setEntriesSearchQuery(e.target.value)}
+                      placeholder="Search athlete, event, bib, or seed..."
+                      className="w-full min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon pl-8 pr-2.5 text-xs"
+                    />
+                  </div>
+                  <select
+                    aria-label="Filter by Event"
+                    data-testid="meet-filter-event"
+                    value={eventFilter}
+                    onChange={(e) => setEventFilter(e.target.value)}
+                    className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs font-semibold text-ap-ink dark:text-ap-chalk"
+                  >
+                    <option value="ALL">All Events</option>
+                    {availableEntryEvents.map((evCode) => (
+                      <option key={evCode} value={evCode}>
+                        {evCode}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <span className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark shrink-0">
+                  Showing {visibleEntriesList.length} of {filteredEntries.length}
+                </span>
+              </div>
+
               <div className="space-y-1.5">
-                {filteredEntries.map((entry) => (
-                  <MeetDayEntryRow
-                    key={entry.id}
-                    entry={entry}
-                    availableDivisions={availableDivisions}
-                    isInjured={injuredMemberIds.has(entry.athleteId)}
-                    isClerkOpen={editingClerkEntryId === entry.id}
-                    meetDelayMinutes={meetDelayMinutes}
-                    onToggleClerk={() =>
-                      setEditingClerkEntryId(editingClerkEntryId === entry.id ? null : entry.id)
-                    }
-                    onUpdate={(patch) => updateEntryById(entry.id, patch)}
-                    onRemove={() => setEntries((prev) => prev.filter((x) => x.id !== entry.id))}
-                  />
-                ))}
+                {visibleEntriesList.length === 0 ? (
+                  <div className="rounded-xl ap-card-inset p-4 text-center text-ap-muted dark:text-ap-muted-dark space-y-2">
+                    <p>
+                      {filteredEntries.length === 0
+                        ? 'No entries match the active Boys / Girls or Division filter.'
+                        : 'No entries match your search or event filter.'}
+                    </p>
+                    {(entriesSearchQuery.trim() || eventFilter !== 'ALL') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEntriesSearchQuery('');
+                          setEventFilter('ALL');
+                        }}
+                        className="ap-btn-secondary !min-h-[34px] px-3 py-1 text-2xs font-bold cursor-pointer"
+                      >
+                        Clear Search Filters
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  visibleEntriesList.map((entry) => (
+                    <MeetDayEntryRow
+                      key={entry.id}
+                      entry={entry}
+                      availableDivisions={availableDivisions}
+                      isInjured={injuredMemberIds.has(entry.athleteId)}
+                      isClerkOpen={editingClerkEntryId === entry.id}
+                      meetDelayMinutes={meetDelayMinutes}
+                      onToggleClerk={() =>
+                        setEditingClerkEntryId(editingClerkEntryId === entry.id ? null : entry.id)
+                      }
+                      onUpdate={(patch) => updateEntryById(entry.id, patch)}
+                      onRemove={() => {
+                        setHasUnsavedChanges(true);
+                        setEntries((prev) => prev.filter((x) => x.id !== entry.id));
+                      }}
+                    />
+                  ))
+                )}
               </div>
             </>
+          )}
+
+          {subTab === 'SCHEDULE' && (
+            <div data-testid="meet-schedule-view" className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                <span className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                  Chronological event call &amp; start order across your active team entries
+                  {meetDelayMinutes > 0 ? ` (+${meetDelayMinutes}m meet delay applied)` : ''}.
+                </span>
+              </div>
+              {chronologicalScheduleBlocks.length === 0 ? (
+                <div className="rounded-xl ap-card-inset p-4 text-ap-muted dark:text-ap-muted-dark">
+                  No active entries matching the current division filter. Add or import entries to build the meet schedule.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {chronologicalScheduleBlocks.map((block) => (
+                    <div
+                      key={block.key}
+                      data-testid={`meet-schedule-block-${block.eventCode}`}
+                      className="rounded-xl ap-card-inset p-3 space-y-2"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark font-mono text-2xs font-bold text-ap-clay dark:text-ap-volt">
+                            <Clock className="w-3 h-3" />
+                            <span>{block.delayedStartTime || block.delayedCallTime || 'Time TBD'}</span>
+                            {block.hasDelayApplied && (
+                              <span className="text-ap-muted dark:text-ap-muted-dark font-normal">
+                                (delayed +{meetDelayMinutes}m)
+                              </span>
+                            )}
+                          </span>
+                          {block.delayedCallTime && block.delayedStartTime && (
+                            <span className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                              Call {block.delayedCallTime}
+                            </span>
+                          )}
+                          <span className="font-bold text-ap-ink dark:text-ap-chalk truncate">
+                            {block.eventLabel}
+                          </span>
+                          <span className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
+                            {block.partLabel}
+                          </span>
+                        </div>
+                        {!block.isField &&
+                          renderEventTimingButtons(
+                            `sched-${block.eventCode}-${block.partLabel}`,
+                            block.runners,
+                            block.eventCode
+                          )}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 font-mono text-2xs">
+                        {block.entries.map((entry) => {
+                          const slotTag = block.isField
+                            ? entry.officialFlight
+                              ? `Fl ${entry.officialFlight}${entry.officialOrder ? `#${entry.officialOrder}` : ''}`
+                              : null
+                            : entry.officialHeat || entry.officialLaneOrHip
+                              ? [
+                                  entry.officialHeat ? `H${entry.officialHeat}` : '',
+                                  entry.officialLaneOrHip
+                                    ? formatOfficialLaneOrHip(entry.eventCode, entry.officialLaneOrHip)
+                                    : '',
+                                ]
+                                  .filter(Boolean)
+                                  .join(' ')
+                              : null;
+                          return (
+                            <span
+                              key={entry.id}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark"
+                            >
+                              <span className="font-semibold">{entry.athleteName}</span>
+                              {entry.bibNumber && (
+                                <span className="text-ap-muted dark:text-ap-muted-dark">
+                                  #{entry.bibNumber}
+                                </span>
+                              )}
+                              {slotTag && (
+                                <span className="text-ap-clay dark:text-ap-volt font-bold">
+                                  · {slotTag}
+                                </span>
+                              )}
+                              <span className="text-ap-muted dark:text-ap-muted-dark">
+                                ({entry.seedMark})
+                              </span>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {subTab === 'HEATS' && (
@@ -1503,6 +2019,42 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
             </div>
           )}
         </div>
+    </>
+  );
+
+  if (inline) {
+    return (
+      <section
+        data-testid="meet-day-packet-modal"
+        aria-labelledby={headingId}
+        className="w-full rounded-2xl bg-ap-chalk dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border border-ap-edge flex flex-col shadow-sm overflow-hidden"
+      >
+        {panelContent}
+      </section>
+    );
+  }
+
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={headingId}
+      tabIndex={-1}
+      data-testid="meet-day-packet-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          if (hasUnsavedChanges) {
+            setShowUnsavedCloseGuard(true);
+            return;
+          }
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-2 sm:p-4"
+    >
+      <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-ap-chalk dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border border-ap-edge flex flex-col shadow-2xl overflow-hidden">
+        {panelContent}
       </div>
     </div>
   );

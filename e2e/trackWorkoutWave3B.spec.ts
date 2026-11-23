@@ -107,18 +107,16 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
       await expect(mintedList).toBeVisible();
       await expect(mintedList).toContainText(/THV-[A-F0-9]{4}-[A-F0-9]{4}/);
 
-      // 3. Dedicated Coach Workspace -> Clipboard (Relay Optimizer & NFHS Top Times) + Roster (CARA 3.0h Comp Day)
+      // 3. Dedicated Coach Workspace -> Meets & Plan (Relay Optimizer & NFHS Top Times) + Team (CARA 3.0h Comp Day)
       await page.getByTestId('toggle-coach-workspace').click();
       const coachView = page.getByTestId('coach-workspace-view');
       await expect(coachView).toBeVisible({ timeout: 10000 });
 
-      const relayToggle = page.getByRole('button', { name: /Relay Optimizer & NFHS FAT Top Times/i });
-      if ((await relayToggle.getAttribute('aria-expanded')) === 'false') {
-        await relayToggle.click();
-      }
+      await page.getByTestId('coach-subtab-team_plan').click();
+      await page.getByTestId('meets-subview-relays').click();
       const relayPanel = page.getByTestId('relay-optimizer-panel');
+      await expect(relayPanel).toBeVisible({ timeout: 10000 });
       await relayPanel.scrollIntoViewIfNeeded();
-      await expect(relayPanel).toBeVisible();
       await page.getByTestId('relay-event-btn-4x400m').click();
       await expect(relayPanel).toContainText('Optimal Predicted 4x400m');
 
@@ -144,7 +142,8 @@ test.describe('THRESH Wave 3B: TRK-10 Progression/Kalman & TRK-11 Relay/FAT/Pass
       // High School program must NOT display NCAA 20h CARA panel
       await expect(page.getByTestId('coach-cara-audit')).toHaveCount(0);
 
-      // Load Collegiate TFRRS preset and confirm NCAA 20h CARA panel renders cleanly
+      // Load Collegiate TFRRS preset via Desk Drawer and confirm NCAA 20h CARA panel renders cleanly
+      await page.getByTestId('coach-desk-menu-btn').click();
       await page.getByTestId('coach-open-external-sync-btn').click();
       await page.getByTestId('sync-quick-setup-tfrrs').click();
       await expect(page.getByTestId('sync-status-banner')).toBeVisible({ timeout: 15000 });

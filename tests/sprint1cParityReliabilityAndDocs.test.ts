@@ -269,9 +269,12 @@ describe('Sprint 1 Track 1C: Shoe & Spike Closet, Calendar DnD/Copy, Sync Reliab
     expect(popoverHtml).toContain('Next Week (+7d)');
 
     const coachSrc = readRel('src/components/CoachWorkspaceView.tsx');
-    expect(coachSrc).toContain('onUpdatePlannedEvent={handleTeamPlanUpdate}');
-    expect(coachSrc).toContain('onBatchCreatePlannedEvents={handleTeamPlanBatchCreate}');
-    expect(coachSrc).toContain('/workouts/broadcast-batch');
+    expect(coachSrc).toContain('onUpdateTeamEvent={handleTeamPlanUpdate}');
+    expect(coachSrc).toContain('onBatchCreateTeamEvents={handleTeamPlanBatchCreate}');
+    const meetsPlanSrc = readRel('src/components/coach/CoachMeetsAndPlanView.tsx');
+    expect(meetsPlanSrc).toContain('onUpdatePlannedEvent={onUpdateTeamEvent}');
+    expect(meetsPlanSrc).toContain('onBatchCreatePlannedEvents={onBatchCreateTeamEvents}');
+    expect(readRel('src/hooks/useCoachTeamPlanActions.ts')).toContain('/workouts/broadcast-batch');
     expect(readRel('src/components/CalendarView.tsx')).toContain('calendar-edit-planned-workout');
   });
 

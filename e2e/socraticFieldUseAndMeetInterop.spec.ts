@@ -67,7 +67,18 @@ test.describe('Socratic Field-Use: 3:15 PM Quick Ops, Delegated Pocket Timing & 
     await page.goto('/?demo=1&sample=coach');
     await expect(page.getByTestId('coach-workspace-view')).toBeVisible({ timeout: 15000 });
 
-    // 1. 3:15 PM Quick Ops strip sits immediately at top of Clipboard
+    // 0. 1-Line Compact Coach Header & Coach Desk Drawer
+    const compactHeader = page.getByTestId('coach-compact-header');
+    await expect(compactHeader).toBeVisible();
+    await expect(page.getByTestId('coach-desk-menu-btn')).toBeVisible();
+    await expect(page.getByTestId('coach-open-wizard-btn')).toHaveCount(0);
+    await page.getByTestId('coach-desk-menu-btn').click();
+    await expect(page.getByTestId('coach-desk-drawer')).toBeVisible();
+    await expect(page.getByTestId('coach-open-wizard-btn')).toBeVisible();
+    await page.getByRole('button', { name: 'Close Coach Desk' }).click();
+    await expect(page.getByTestId('coach-desk-drawer')).toHaveCount(0);
+
+    // 1. 3:15 PM Quick Ops strip sits immediately at top of Practice
     const quickOps = page.getByTestId('coach-quick-ops-strip');
     await expect(quickOps).toBeVisible();
     await expect(page.getByTestId('quick-ops-roll-call-btn')).toBeVisible();
@@ -75,13 +86,17 @@ test.describe('Socratic Field-Use: 3:15 PM Quick Ops, Delegated Pocket Timing & 
     await expect(page.getByTestId('quick-ops-delegate-timing-btn')).toBeVisible();
     await expect(page.getByTestId('quick-ops-pending-splits-btn')).toBeVisible();
 
-    // 2. Roll Call unmarked safety check (never silently mark unmarked athletes PRESENT)
+    // 2. Roll Call unmarked safety check + auto-save on mark tap
     const rollCounts = page.getByTestId('roll-call-counts');
     await expect(rollCounts).toBeVisible();
     await expect(rollCounts).toContainText(/unmarked/i);
     await page.getByTestId('roll-call-save-btn').click();
     await expect(page.getByTestId('roll-call-saved-banner')).toBeVisible();
     await expect(page.getByTestId('coach-daily-ops-panel')).not.toContainText('1-Tap Roll Call (12/12 Present)');
+    await page.getByTestId('roll-call-mark-all-btn').click();
+    await expect(page.getByTestId('roll-call-saved-banner')).toContainText(/Auto-saved/i, {
+      timeout: 5000,
+    });
 
     // 3. Open Delegate Timing Modal cleanly from Quick Ops
     await page.getByTestId('quick-ops-delegate-timing-btn').click();
@@ -92,15 +107,22 @@ test.describe('Socratic Field-Use: 3:15 PM Quick Ops, Delegated Pocket Timing & 
     await page.getByRole('button', { name: /Close Delegated Timing/i }).click();
     await expect(delegateModal).toHaveCount(0);
 
-    // 4. Open Meet-Day Packet -> verify EXTERNAL_MEET default (no fake lanes) + Hy-Tek paste + Clerk Override + Full-Team Export Guard
+    // 4. Open Inline Full-Screen Meet Day Hub -> verify Schedule / Now, Entries Search, EXTERNAL_MEET default, Hy-Tek paste & Export Guard
     await page.getByTestId('coach-open-meet-packet-btn').click();
     const meetModal = page.getByTestId('meet-day-packet-modal');
     await expect(meetModal).toBeVisible({ timeout: 10000 });
 
     await expect(page.getByTestId('meet-authority-external')).toHaveAttribute('aria-pressed', 'true');
+    await page.getByTestId('meet-tab-schedule').click();
+    await expect(page.getByTestId('meet-schedule-view')).toBeVisible();
     await page.getByTestId('meet-tab-heats').click();
     await expect(meetModal).toContainText('TBD (Official Program)');
     await page.getByTestId('meet-tab-entries').click();
+
+    await expect(page.getByTestId('meet-entries-search-input')).toBeVisible();
+    await page.getByTestId('meet-entries-search-input').fill('Maya');
+    await expect(meetModal).toContainText('Maya Chen');
+    await page.getByTestId('meet-entries-search-input').fill('');
 
     // Paste external Friday-night heat sheet
     await page.getByTestId('toggle-external-heat-import-btn').click();
@@ -174,6 +196,40 @@ test.describe('Socratic Field-Use: 3:15 PM Quick Ops, Delegated Pocket Timing & 
     });
 
     const todayIso = new Date().toISOString().slice(0, 10);
+
+    // 1b. Verify real POST / GET / PUT delta TeamEvent + RSVP endpoints against live backend
+    const evCreateResp = await page.request.post(`/api/teams/${encodeURIComponent(teamId)}/events`, {
+      data: {
+        eventId: 'e2e-meet-ev-1',
+        eventType: 'MEET',
+        title: 'Central Coast Invite Live',
+        date: todayIso,
+        startTime: '09:30',
+        liveResultsUrl: 'https://live.athletic.net/meets/77777',
+      },
+    });
+    expect(evCreateResp.ok()).toBe(true);
+    const evListResp = await page.request.get(`/api/teams/${encodeURIComponent(teamId)}/events`);
+    expect(evListResp.ok()).toBe(true);
+    const evListJson = (await evListResp.json()) as {
+      events?: Array<{ eventId: string }>;
+    };
+    expect(evListJson.events?.some((e) => e.eventId === 'e2e-meet-ev-1')).toBe(true);
+
+    const rsvpResp = await page.request.put(
+      `/api/teams/${encodeURIComponent(teamId)}/events/e2e-meet-ev-1/rsvp`,
+      {
+        data: {
+          status: 'GOING',
+          travelMode: 'TEAM_BUS',
+        },
+      }
+    );
+    expect(rsvpResp.ok()).toBe(true);
+    const rsvpJson = (await rsvpResp.json()) as {
+      counts?: { going?: number };
+    };
+    expect(rsvpJson.counts?.going).toBe(1);
     const passResp = await page.request.post(
       `/api/teams/${encodeURIComponent(teamId)}/timing-sessions`,
       {

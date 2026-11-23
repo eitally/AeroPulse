@@ -45,6 +45,7 @@ export interface TeamMessagingDrawerProps {
   myTeams: TeamSummaryWithRole[];
   onTeamsUpdated: (teams: TeamSummaryWithRole[], activeTeamId?: string) => void;
   viewerMode?: 'ATHLETE' | 'COACH';
+  initialScope?: TeamMessageChannelScope;
 }
 
 const COACH_QUICK_TEMPLATES = [
@@ -89,8 +90,9 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   myTeams,
   onTeamsUpdated,
   viewerMode = 'ATHLETE',
+  initialScope = 'ALL_TEAM',
 }) => {
-  const [activeScope, setActiveScope] = useState<TeamMessageChannelScope>('ALL_TEAM');
+  const [activeScope, setActiveScope] = useState<TeamMessageChannelScope>(initialScope);
   const [selectedGroup, setSelectedGroup] = useState<CoachEventGroup>('SPRINTS');
   const [selectedAthleteMembershipId, setSelectedAthleteMembershipId] = useState<string>('');
   const [draftBody, setDraftBody] = useState<string>('');
@@ -104,6 +106,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   const [pushCount, setPushCount] = useState<number>(0);
   const [pushLoading, setPushLoading] = useState<boolean>(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
+  const [pushPanelExpanded, setPushPanelExpanded] = useState<boolean>(false);
   const iosStandaloneNeeded = useMemo(() => isIosStandaloneHintNeeded(), []);
   const isSampleDemo = Boolean(
     activeTeam?.brand.teamId.startsWith('demo_team_') ||
@@ -165,6 +168,11 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
 
   const resolvedDirectAthlete = useMemo(() => {
     if (!isStaff) {
+      if (activeTeam?.myRole === 'PARENT_FOLLOWER') {
+        const linkedIds = new Set(activeTeam.myLinkedChildMembershipIds || []);
+        const linkedChild = athleteMembers.find((m) => linkedIds.has(m.membershipId));
+        if (linkedChild) return linkedChild;
+      }
       return (
         athleteMembers.find((m) => m.membershipId === activeTeam?.myMembershipId) ||
         athleteMembers[0] ||
@@ -176,7 +184,40 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       athleteMembers[0] ||
       null
     );
-  }, [activeTeam?.myMembershipId, athleteMembers, isStaff, selectedAthleteMembershipId]);
+  }, [
+    activeTeam?.myLinkedChildMembershipIds,
+    activeTeam?.myMembershipId,
+    activeTeam?.myRole,
+    athleteMembers,
+    isStaff,
+    selectedAthleteMembershipId,
+  ]);
+
+  const directThreads = useMemo(() => {
+    if (!isStaff) return [];
+    const byMemId = new Map<
+      string,
+      { membershipId: string; athleteName: string; preview: string; createdAt: string; count: number }
+    >();
+    for (const msg of activeTeam?.teamMessages || []) {
+      if (msg.channelScope !== 'DIRECT_TRANSPARENT' || !msg.targetMembershipId) continue;
+      const member = athleteMembers.find((m) => m.membershipId === msg.targetMembershipId);
+      const prev = byMemId.get(msg.targetMembershipId);
+      const count = (prev?.count || 0) + 1;
+      if (!prev || msg.createdAt > prev.createdAt) {
+        byMemId.set(msg.targetMembershipId, {
+          membershipId: msg.targetMembershipId,
+          athleteName: member?.invitedName || msg.targetAthleteName || msg.senderName,
+          preview: msg.body,
+          createdAt: msg.createdAt,
+          count,
+        });
+      } else {
+        byMemId.set(msg.targetMembershipId, { ...prev, count });
+      }
+    }
+    return Array.from(byMemId.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [activeTeam?.teamMessages, athleteMembers, isStaff]);
 
   const localHour = new Date().getHours();
   const isQuietHours =
@@ -599,60 +640,88 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
           </button>
         </div>
 
-        {/* Device Push Alerts Bar */}
-        <div className="px-4 py-2.5 border-b border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset flex flex-wrap items-center justify-between gap-2">
-          <div className="min-w-0 space-y-0.5">
-            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ap-ink dark:text-ap-chalk">
-              {pushEnabled ? (
-                <BellRinging className="w-4 h-4 ap-text-brand shrink-0" weight="fill" />
-              ) : (
-                <Bell className="w-4 h-4 text-ap-muted dark:text-ap-muted-dark shrink-0" />
-              )}
-              <span>Device Push Notifications</span>
-              {pushEnabled && (
-                <span className="px-2 py-0.5 rounded-full ap-status-prime text-2xs font-mono font-bold">
-                  ON{pushCount > 1 ? ` (${pushCount})` : ''}
-                </span>
-              )}
+        {/* Device Push Alerts Bar (expanded until enabled, then compact pill to maximize chat height) */}
+        {(!pushEnabled || pushPanelExpanded) ? (
+          <div className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0 space-y-0.5 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ap-ink dark:text-ap-chalk">
+                {pushEnabled ? (
+                  <BellRinging className="w-4 h-4 ap-text-brand shrink-0" weight="fill" />
+                ) : (
+                  <Bell className="w-4 h-4 text-ap-muted dark:text-ap-muted-dark shrink-0" />
+                )}
+                <span>Device Push Notifications</span>
+                {pushEnabled && (
+                  <span className="px-2 py-0.5 rounded-full ap-status-prime text-2xs font-mono font-bold">
+                    ON{pushCount > 1 ? ` (${pushCount})` : ''}
+                  </span>
+                )}
+              </div>
+              <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-snug">
+                {pushNotice ||
+                  (iosStandaloneNeeded
+                    ? 'iPhone/iPad: tap Share → Add to Home Screen first to enable lock-screen alerts.'
+                    : 'Get instant alerts for coach messages, workout notes & lightning weather.')}
+              </p>
             </div>
-            <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-snug">
-              {pushNotice ||
-                (iosStandaloneNeeded
-                  ? 'iPhone/iPad: tap Share → Add to Home Screen first to enable lock-screen alerts.'
-                  : 'Get instant alerts for coach messages, workout notes & lightning weather. Minor/staff details hidden on lock screens.')}
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {pushEnabled && !isSampleDemo && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              {pushEnabled && !isSampleDemo && (
+                <button
+                  type="button"
+                  disabled={pushLoading}
+                  data-testid="send-test-push-btn"
+                  onClick={() => void handleSendTestPush()}
+                  className="min-h-[44px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-bold cursor-pointer disabled:opacity-50"
+                >
+                  Test Alert
+                </button>
+              )}
               <button
                 type="button"
                 disabled={pushLoading}
-                data-testid="send-test-push-btn"
-                onClick={() => void handleSendTestPush()}
-                className="min-h-[44px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-bold cursor-pointer disabled:opacity-50"
+                data-testid="toggle-device-push-btn"
+                aria-pressed={pushEnabled}
+                onClick={() => void handleToggleDevicePush()}
+                className={`min-h-[44px] px-3.5 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                  pushEnabled ? 'ap-nav-volt-active' : 'ap-btn-primary'
+                }`}
               >
-                Test Alert
+                {pushEnabled ? (
+                  <BellRinging className="w-4 h-4" weight="bold" />
+                ) : (
+                  <Bell className="w-4 h-4" weight="bold" />
+                )}
+                <span>{pushLoading ? 'Updating…' : pushEnabled ? 'Push Alerts ON' : 'Enable Device Push'}</span>
               </button>
-            )}
+              {pushEnabled && (
+                <button
+                  type="button"
+                  onClick={() => setPushPanelExpanded(false)}
+                  className="min-h-[36px] px-2 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark cursor-pointer"
+                >
+                  Hide
+                </button>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="px-4 py-1.5 border-b border-ap-frame/15 dark:border-ap-edge-dark flex items-center justify-between gap-2 text-2xs">
+            <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
+              <BellRinging className="w-3.5 h-3.5 ap-text-brand" weight="fill" />
+              <span>Device Push Alerts</span>
+            </span>
             <button
               type="button"
-              disabled={pushLoading}
               data-testid="toggle-device-push-btn"
-              aria-pressed={pushEnabled}
-              onClick={() => void handleToggleDevicePush()}
-              className={`min-h-[44px] px-3.5 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                pushEnabled ? 'ap-nav-volt-active' : 'ap-btn-primary'
-              }`}
+              aria-pressed={true}
+              onClick={() => setPushPanelExpanded(true)}
+              className="px-2.5 py-1 rounded-lg ap-status-prime font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
             >
-              {pushEnabled ? (
-                <BellRinging className="w-4 h-4" weight="bold" />
-              ) : (
-                <Bell className="w-4 h-4" weight="bold" />
-              )}
-              <span>{pushLoading ? 'Updating…' : pushEnabled ? 'Push Alerts ON' : 'Enable Device Push'}</span>
+              <span>Push Alerts ON{pushCount > 1 ? ` (${pushCount})` : ''}</span>
+              <span className="opacity-75">· Manage</span>
             </button>
           </div>
-        </div>
+        )}
 
         {/* Channel Rail */}
         <div className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center gap-1.5" role="tablist">
@@ -710,7 +779,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         {activeScope === 'DIRECT_TRANSPARENT' && (
           <div
             data-testid="msg-safesport-cc-banner"
-            className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/25 space-y-1.5 text-xs"
+            className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/25 space-y-2 text-xs"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-bold text-emerald-800 dark:text-emerald-300 inline-flex items-center gap-1.5">
@@ -733,6 +802,33 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                 </select>
               )}
             </div>
+            {isStaff && directThreads.length > 0 && (
+              <div
+                data-testid="msg-active-threads-inbox"
+                className="flex flex-wrap items-center gap-1.5"
+              >
+                <span className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark mr-1">
+                  Active Threads:
+                </span>
+                {directThreads.slice(0, 6).map((thr) => {
+                  const isSel = resolvedDirectAthlete?.membershipId === thr.membershipId;
+                  return (
+                    <button
+                      key={thr.membershipId}
+                      type="button"
+                      onClick={() => setSelectedAthleteMembershipId(thr.membershipId)}
+                      className={`min-h-[32px] px-2.5 py-0.5 rounded-full text-2xs font-semibold cursor-pointer truncate max-w-[200px] ${
+                        isSel
+                          ? 'ap-nav-volt-active'
+                          : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk'
+                      }`}
+                    >
+                      {thr.athleteName} ({thr.count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

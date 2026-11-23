@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AthleteProfile,
+  CoachComplexityTier,
   CoachEventGroup,
   ConnectedAthleteRecord,
   NcaaTrackFacilityType,
@@ -76,7 +77,6 @@ import {
   DownloadSimple,
   FlagCheckered,
   Lightning,
-  Lock,
   Pause,
   Play,
   Plus,
@@ -130,6 +130,7 @@ export interface TracksideStopwatchViewProps {
   onOpenDelegateTiming?: () => void;
   pendingTimingCount?: number;
   launchPreset?: TracksideStopwatchLaunchPreset | null;
+  complexityTier?: CoachComplexityTier;
 }
 
 const EVENT_GROUP_FILTER_LABELS: Array<{ value: CoachEventGroup; label: string }> = [
@@ -233,6 +234,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   onOpenDelegateTiming,
   pendingTimingCount = 0,
   launchPreset = null,
+  complexityTier = 'ESSENTIALS',
 }) => {
   const {
     stopwatchRunning,
@@ -315,6 +317,11 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   } = useTracksideStopwatch(50);
 
   const [showEnvPhysicsPanel, setShowEnvPhysicsPanel] = useState<boolean>(false);
+  useEffect(() => {
+    if (complexityTier === 'ESSENTIALS') {
+      setShowEnvPhysicsPanel(false);
+    }
+  }, [complexityTier]);
   const [showToolsDrawer, setShowToolsDrawer] = useState<boolean>(false);
   const [mobileSetupExpanded, setMobileSetupExpanded] = useState<boolean>(false);
   const [lastTappedRunnerId, setLastTappedRunnerId] = useState<string | null>(null);
@@ -1852,79 +1859,83 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 justify-end">
-            <button
-              type="button"
-              data-testid="stopwatch-gun-btn"
-              onPointerDown={() => {
-                if (stopwatchRunning && isMobileViewport) {
-                  handleStartHudHoldPause();
-                }
-              }}
-              onPointerUp={cancelHudHoldPause}
-              onPointerLeave={cancelHudHoldPause}
-              onPointerCancel={cancelHudHoldPause}
-              onClick={(e) => {
-                if (stopwatchRunning && isMobileViewport && e.detail > 0) {
-                  e.preventDefault();
-                  return;
-                }
-                if (hudHoldPauseSucceededRef.current) {
-                  hudHoldPauseSucceededRef.current = false;
-                  return;
-                }
-                handleGunToggle();
-              }}
-              className={
-                stopwatchRunning
-                  ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3 sm:px-4 rounded-xl ap-status-caution font-bold text-xs cursor-pointer select-none'
-                  : 'ap-btn-primary min-h-[44px] px-3 sm:px-4 text-xs cursor-pointer'
-              }
-            >
-              {stopwatchRunning ? (
-                <>
-                  <Pause className="w-4 h-4" weight="fill" />
-                  <span>
-                    {isMobileViewport
-                      ? isHoldingHudPause
-                        ? 'Hold to Pause...'
-                        : 'Hold to Pause'
-                      : 'Pause'}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" weight="fill" />
-                  <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
-                </>
-              )}
-            </button>
+            {(!isMobileViewport || (!stopwatchRunning && stopwatchElapsedMs === 0)) && (
+              <>
+                <button
+                  type="button"
+                  data-testid="stopwatch-gun-btn"
+                  onPointerDown={() => {
+                    if (stopwatchRunning && isMobileViewport) {
+                      handleStartHudHoldPause();
+                    }
+                  }}
+                  onPointerUp={cancelHudHoldPause}
+                  onPointerLeave={cancelHudHoldPause}
+                  onPointerCancel={cancelHudHoldPause}
+                  onClick={(e) => {
+                    if (stopwatchRunning && isMobileViewport && e.detail > 0) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (hudHoldPauseSucceededRef.current) {
+                      hudHoldPauseSucceededRef.current = false;
+                      return;
+                    }
+                    handleGunToggle();
+                  }}
+                  className={
+                    stopwatchRunning
+                      ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3 sm:px-4 rounded-xl ap-status-caution font-bold text-xs cursor-pointer select-none'
+                      : 'ap-btn-primary min-h-[44px] px-3 sm:px-4 text-xs cursor-pointer'
+                  }
+                >
+                  {stopwatchRunning ? (
+                    <>
+                      <Pause className="w-4 h-4" weight="fill" />
+                      <span>
+                        {isMobileViewport
+                          ? isHoldingHudPause
+                            ? 'Hold to Pause...'
+                            : 'Hold to Pause'
+                          : 'Pause'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4" weight="fill" />
+                      <span>{stopwatchElapsedMs > 0 ? 'Resume' : 'Start Gun'}</span>
+                    </>
+                  )}
+                </button>
 
-            <button
-              type="button"
-              data-testid="stopwatch-undo-btn"
-              onClick={handleUndo}
-              disabled={tapHistory.length === 0}
-              className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl ap-btn-secondary text-xs font-semibold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
-            >
-              <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
-              <span>Undo</span>
-            </button>
+                <button
+                  type="button"
+                  data-testid="stopwatch-undo-btn"
+                  onClick={handleUndo}
+                  disabled={tapHistory.length === 0}
+                  className="min-h-[44px] inline-flex items-center gap-1 px-3 rounded-xl ap-btn-secondary text-xs font-semibold disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
+                  <span>Undo</span>
+                </button>
 
-            {(showChuteBar || sessionType === 'RACE') && (
-              <button
-                type="button"
-                data-testid="stopwatch-chute-tap"
-                onClick={handleChuteTap}
-                className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-[#121413] hover:bg-[#242826] text-[#F6F3EC] dark:text-[#D8FF2A] border border-[#121413] dark:border-white/25 text-xs font-bold cursor-pointer transition-colors"
-              >
-                <Lightning className="w-4 h-4 shrink-0" weight="fill" />
-                <span>Chute</span>
-                {chuteQueueSecs.length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded bg-ap-clay text-[#F6F3EC] font-mono text-2xs">
-                    {chuteQueueSecs.length}
-                  </span>
+                {(showChuteBar || sessionType === 'RACE') && (
+                  <button
+                    type="button"
+                    data-testid="stopwatch-chute-tap"
+                    onClick={handleChuteTap}
+                    className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-[#121413] hover:bg-[#242826] text-[#F6F3EC] dark:text-[#D8FF2A] border border-[#121413] dark:border-white/25 text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    <Lightning className="w-4 h-4 shrink-0" weight="fill" />
+                    <span>Chute</span>
+                    {chuteQueueSecs.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded bg-ap-clay text-[#F6F3EC] font-mono text-2xs">
+                        {chuteQueueSecs.length}
+                      </span>
+                    )}
+                  </button>
                 )}
-              </button>
+              </>
             )}
 
             {(stopwatchRunning || stopwatchElapsedMs > 0) && (
@@ -2170,76 +2181,71 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         )}
 
         {heatAbortBannerNode}
-        {sessionType === 'WORKOUT' && (
+        {sessionType === 'WORKOUT' &&
+          (!stopwatchRunning || (restDurationSecs > 0 && podsAwaitingNextRep.length > 0)) && (
           <div
             data-testid="stopwatch-rep-stepper"
             className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2 pt-2 border-t border-ap-frame/15 dark:border-white/10"
           >
-            <div className="inline-flex items-center gap-1 shrink-0">
-              <span className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
-                Reps
-              </span>
-              <button
-                type="button"
-                data-testid="stopwatch-rep-dec"
-                aria-label="Decrease workout rep count"
-                disabled={stopwatchRunning}
-                onClick={() =>
-                  setCustomRepOverride(Math.max(1, activeWorkoutPreset.repCount - 1))
-                }
-                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
-              >
-                -
-              </button>
-              <span
-                data-testid="stopwatch-rep-count"
-                className="px-1.5 font-mono text-xs font-bold tabular-nums text-ap-ink dark:text-white whitespace-nowrap"
-              >
-                {activeWorkoutPreset.repCount} reps
-              </span>
-              <button
-                type="button"
-                data-testid="stopwatch-rep-inc"
-                aria-label="Increase workout rep count"
-                disabled={stopwatchRunning}
-                onClick={() =>
-                  setCustomRepOverride(Math.min(30, activeWorkoutPreset.repCount + 1))
-                }
-                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
-              >
-                +
-              </button>
-              {stopwatchRunning && (
-                <Lock
-                  className="w-3.5 h-3.5 text-ap-muted dark:text-ap-muted-dark ml-0.5"
-                  weight="bold"
-                  aria-hidden="true"
-                />
-              )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Quick rep distance">
-              {([30, 60, 100, 200, 400, 800, 1000, 1600] as const).map((dist) => {
-                const isSelected = activeWorkoutPreset.repDistanceMeters === dist;
-                return (
+            {!stopwatchRunning && (
+              <>
+                <div className="inline-flex items-center gap-1 shrink-0">
+                  <span className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
+                    Reps
+                  </span>
                   <button
-                    key={dist}
                     type="button"
-                    data-testid={`stopwatch-dist-${dist}`}
-                    aria-pressed={isSelected}
-                    disabled={stopwatchRunning}
-                    onClick={() => setCustomDistOverride(dist)}
-                    className={`min-h-[44px] sm:min-h-[34px] px-2 sm:px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
-                      isSelected
-                        ? 'liquid-capsule-active text-ap-ink dark:text-white'
-                        : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
-                    }`}
+                    data-testid="stopwatch-rep-dec"
+                    aria-label="Decrease workout rep count"
+                    onClick={() =>
+                      setCustomRepOverride(Math.max(1, activeWorkoutPreset.repCount - 1))
+                    }
+                    className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
                   >
-                    {dist}m
+                    -
                   </button>
-                );
-              })}
-            </div>
+                  <span
+                    data-testid="stopwatch-rep-count"
+                    className="px-1.5 font-mono text-xs font-bold tabular-nums text-ap-ink dark:text-white whitespace-nowrap"
+                  >
+                    {activeWorkoutPreset.repCount} reps
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="stopwatch-rep-inc"
+                    aria-label="Increase workout rep count"
+                    onClick={() =>
+                      setCustomRepOverride(Math.min(30, activeWorkoutPreset.repCount + 1))
+                    }
+                    className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
+                  >
+                    +
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Quick rep distance">
+                  {([30, 60, 100, 200, 400, 800, 1000, 1600] as const).map((dist) => {
+                    const isSelected = activeWorkoutPreset.repDistanceMeters === dist;
+                    return (
+                      <button
+                        key={dist}
+                        type="button"
+                        data-testid={`stopwatch-dist-${dist}`}
+                        aria-pressed={isSelected}
+                        onClick={() => setCustomDistOverride(dist)}
+                        className={`min-h-[44px] sm:min-h-[34px] px-2 sm:px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'liquid-capsule-active text-ap-ink dark:text-white'
+                            : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
+                        }`}
+                      >
+                        {dist}m
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
             {stopwatchRunning && restDurationSecs > 0 && podsAwaitingNextRep.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto sm:ml-auto">

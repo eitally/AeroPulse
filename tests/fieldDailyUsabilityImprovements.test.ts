@@ -28,6 +28,7 @@ import {
   CoachWorkspaceView,
   shouldShowPrimarySetupWizardChip,
 } from '../src/components/CoachWorkspaceView';
+import { CoachPracticeHome } from '../src/components/coach/CoachPracticeHome';
 import {
   CoachClipboardWorkoutBuilder,
   isScholasticTrackOrXcTeam,
@@ -584,7 +585,8 @@ describe('Field Daily Usability Improvements', () => {
       })
     );
     expect(opsHtml).toContain('data-testid="roll-call-counts"');
-    expect(opsHtml).toContain('max-h-[420px] sm:max-h-72');
+    expect(opsHtml).toContain('sm:max-h-80 sm:overflow-y-auto');
+    expect(opsHtml).not.toContain('max-h-[420px]');
   });
 
   it('7. CoachWorkspaceView adds 3:15 PM Quick Ops strip, tucks 60s Setup for established squads, and CoachClipboard collapses library on mobile & groups Multisport', () => {
@@ -632,17 +634,41 @@ describe('Field Daily Usability Improvements', () => {
         pendingTimingSubmissionsCount: 3,
       })
     );
-    expect(coachHtml).toContain('data-testid="coach-quick-ops-strip"');
-    expect(coachHtml).toContain('Take Roll Call');
-    expect(coachHtml).toContain('Track Stopwatch');
-    expect(coachHtml).toContain('Delegate Timing');
-    expect(coachHtml).toContain('Pending Splits (3)');
+    expect(coachHtml).toContain('data-testid="coach-compact-header"');
     expect(coachHtml).not.toContain('data-testid="coach-open-wizard-btn"');
+
+    const practiceHomeHtml = renderToStaticMarkup(
+      React.createElement(CoachPracticeHome, {
+        todayIso,
+        activeTeam: squad,
+        myTeams: [squad],
+        connectedAthletesOnly: [],
+        scopedConnectedAthletes: [],
+        primaryAthleteDisplayName: 'Coach Morales',
+        selfProfile: buildCompleteAthleteProfile({}),
+        complexityTier: 'ESSENTIALS',
+        flaggedTriageCount: 0,
+        effectivePendingTimingCount: 3,
+        onTeamsUpdated: () => {},
+        onCreatePlannedEvent: async () => {},
+        onOpenStopwatch: () => {},
+        onOpenDelegateModal: () => {},
+        onOpenHealthAttention: () => {},
+        onOpenRosterTab: () => {},
+        onOpenSetupWizard: () => {},
+        onOpenCreateTeamStudio: () => {},
+      })
+    );
+    expect(practiceHomeHtml).toContain('data-testid="coach-quick-ops-strip"');
+    expect(practiceHomeHtml).toContain('Take Roll Call');
+    expect(practiceHomeHtml).toContain('Track Stopwatch');
+    expect(practiceHomeHtml).toContain('Delegate Timing');
+    expect(practiceHomeHtml).toContain('Pending Splits (3)');
 
     expect(shouldDefaultExpandWorkoutLibrary(390)).toBe(false);
     expect(shouldDefaultExpandWorkoutLibrary(767)).toBe(false);
-    expect(shouldDefaultExpandWorkoutLibrary(768)).toBe(true);
-    expect(shouldDefaultExpandWorkoutLibrary(1440)).toBe(true);
+    expect(shouldDefaultExpandWorkoutLibrary(768)).toBe(false);
+    expect(shouldDefaultExpandWorkoutLibrary(1440)).toBe(false);
     expect(isScholasticTrackOrXcTeam(squad)).toBe(true);
 
     const stubProfile = buildCompleteAthleteProfile({});
@@ -683,8 +709,8 @@ describe('Field Daily Usability Improvements', () => {
         onOpenStopwatchSubTab: () => {},
       })
     );
-    expect(desktopBuilderHtml).toContain('data-testid="library-load-template-btn"');
-    expect(desktopBuilderHtml).toMatch(/data-testid="toggle-workout-library-btn"[^>]*aria-expanded="true"/);
+    expect(desktopBuilderHtml).not.toContain('data-testid="library-load-template-btn"');
+    expect(desktopBuilderHtml).toMatch(/data-testid="toggle-workout-library-btn"[^>]*aria-expanded="false"/);
   });
 
   it('8. Enforces line-count ceilings across modified components', () => {

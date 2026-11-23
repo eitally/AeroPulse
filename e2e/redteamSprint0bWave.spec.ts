@@ -35,25 +35,25 @@ async function signInAndEnterWorkspace(
 }
 
 async function openCoachStopwatchSubTab(page: Page) {
-  const gunBtn = page.getByTestId('stopwatch-gun-btn');
+  const masterClock = page.getByTestId('stopwatch-master-clock');
   if (
     new URL(page.url()).hash === '#coach/stopwatch' ||
-    (await gunBtn.isVisible().catch(() => false))
+    (await masterClock.isVisible().catch(() => false))
   ) {
-    await expect(gunBtn).toBeVisible({ timeout: 10000 });
+    await expect(masterClock).toBeVisible({ timeout: 10000 });
     return;
   }
   const isMobile = Boolean(page.viewportSize() && page.viewportSize()!.width < 768);
   if (isMobile) {
     const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
     await expect(mobileDock).toBeVisible({ timeout: 10000 });
-    await mobileDock.getByRole('button', { name: 'Stopwatch' }).click();
+    await mobileDock.getByRole('button', { name: 'Timing' }).click();
   } else {
     const subTabBtn = page.getByTestId('coach-subtab-stopwatch');
     await expect(subTabBtn).toBeVisible({ timeout: 10000 });
     await subTabBtn.click();
   }
-  await expect(gunBtn).toBeVisible({ timeout: 10000 });
+  await expect(masterClock).toBeVisible({ timeout: 10000 });
 }
 
 test.describe('Sprint 0 Wave 0B — RT-10, RT-11, RT-13, RT-15 & RT-26 E2E', () => {

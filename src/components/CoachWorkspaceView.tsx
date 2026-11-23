@@ -7,13 +7,11 @@ import type {
   ConnectedAthleteRecord,
   DistanceUnit,
   EnvironmentFilter,
-  NcaaCaraSeasonSegment,
   PlannedWorkoutEvent,
   PracticeVenueCategory,
   SessionCheckInRecord,
   SportCategory,
   TargetGoal,
-  TeamBroadcastWorkout,
   TeamSummaryWithRole,
   TrackWorkoutSpec,
   UnifiedActivity,
@@ -21,19 +19,13 @@ import type {
   WorkoutSessionSlot,
 } from '../types';
 import type { PlannedEventBatchItem } from './GoalsView';
-import {
-  buildNcaaCaraComplianceCsv,
-  summarizeNcaaCaraWeeklyHours,
-  type NcaaCaraCsvRow,
-  type VdotPodRosterInput,
-} from '../physiology/scholasticEngine';
+import type { VdotPodRosterInput } from '../physiology/scholasticEngine';
 import { evaluateSafeSportPatternWatch } from '../physiology/safeSportPatternWatchEngine';
 import { resolveAthleteAgeTier } from '../physiology/ageAndComplianceEngine';
 import { doesCoachOwnAthlete } from '../physiology/teamOnboardingEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
 import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
-import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
-import { emitFunnelEvent, resolveFunnelTierFromOrgType } from '../utils/funnelTelemetry';
+import { useCoachTeamPlanActions } from '../hooks/useCoachTeamPlanActions';
 import { hasSessionActiveHint } from '../utils/sessionHint';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
@@ -46,28 +38,33 @@ import type {
   StopwatchOutboxFlushResult,
   StopwatchSaveResult,
 } from '../utils/stopwatchTeamSync';
-import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
+import type { MeetsPlanSubView } from './coach/CoachMeetsAndPlanView';
+import type { TeamHubSubView } from './coach/CoachTeamHubView';
 import {
-  ChevronDown,
-  ClipboardText,
-  Download,
-  Globe,
   HeartPulse,
-  HelpCircle,
-  Layers,
-  Shield,
-  Timer,
-  Users,
+  SlidersHorizontal,
+  Trophy,
 } from './icons/PhosphorIcons';
 
-const CalendarView = lazyWithRetry(
-  () => import('./CalendarView').then((m) => ({ default: m.CalendarView })),
-  { chunkKey: 'CoachCalendarView', restoreTab: 'coach' }
+const CoachPracticeHome = lazyWithRetry(
+  () => import('./coach/CoachPracticeHome').then((m) => ({ default: m.CoachPracticeHome })),
+  { chunkKey: 'CoachPracticeHome', restoreTab: 'coach' }
 );
-const TeamManagementPanel = lazyWithRetry(
-  () => import('./TeamManagementPanel').then((m) => ({ default: m.TeamManagementPanel })),
-  { chunkKey: 'TeamManagementPanel', restoreTab: 'coach' }
+const CoachMeetsAndPlanView = lazyWithRetry(
+  () =>
+    import('./coach/CoachMeetsAndPlanView').then((m) => ({
+      default: m.CoachMeetsAndPlanView,
+    })),
+  { chunkKey: 'CoachMeetsAndPlanView', restoreTab: 'coach' }
+);
+const CoachTeamHubView = lazyWithRetry(
+  () => import('./coach/CoachTeamHubView').then((m) => ({ default: m.CoachTeamHubView })),
+  { chunkKey: 'CoachTeamHubView', restoreTab: 'coach' }
+);
+const CoachDeskDrawer = lazyWithRetry(
+  () => import('./coach/CoachDeskDrawer').then((m) => ({ default: m.CoachDeskDrawer })),
+  { chunkKey: 'CoachDeskDrawer', restoreTab: 'coach' }
 );
 const AthleticNetTfrrsSyncModal = lazyWithRetry(
   () =>
@@ -80,33 +77,12 @@ const TracksideStopwatchView = lazyWithRetry(
   () => import('./TracksideStopwatchView').then((m) => ({ default: m.TracksideStopwatchView })),
   { chunkKey: 'CoachTracksideStopwatchView', restoreTab: 'coach' }
 );
-const ScholasticRelayAndTopTimesPanel = lazyWithRetry(
-  () =>
-    import('./track/ScholasticRelayAndTopTimesPanel').then((m) => ({
-      default: m.ScholasticRelayAndTopTimesPanel,
-    })),
-  { chunkKey: 'ScholasticRelayAndTopTimesPanel', restoreTab: 'coach' }
-);
-const CoachClipboardWorkoutBuilder = lazyWithRetry(
-  () =>
-    import('./CoachClipboardWorkoutBuilder').then((m) => ({
-      default: m.CoachClipboardWorkoutBuilder,
-    })),
-  { chunkKey: 'CoachClipboardWorkoutBuilder', restoreTab: 'coach' }
-);
 const TracksideFieldEventsSheet = lazyWithRetry(
   () =>
     import('./track/TracksideFieldEventsSheet').then((m) => ({
       default: m.TracksideFieldEventsSheet,
     })),
   { chunkKey: 'TracksideFieldEventsSheet', restoreTab: 'coach' }
-);
-const CoachDailyOpsPanel = lazyWithRetry(
-  () =>
-    import('./coach/CoachDailyOpsPanel').then((m) => ({
-      default: m.CoachDailyOpsPanel,
-    })),
-  { chunkKey: 'CoachDailyOpsPanel', restoreTab: 'coach' }
 );
 const CoachAthleteSummaryDrawer = lazyWithRetry(
   () =>
@@ -121,20 +97,6 @@ const CoachOnboardingWizard = lazyWithRetry(
       default: m.CoachOnboardingWizard,
     })),
   { chunkKey: 'CoachOnboardingWizard', restoreTab: 'coach' }
-);
-const MeetDayHeatAndFlightModal = lazyWithRetry(
-  () =>
-    import('./coach/MeetDayHeatAndFlightModal').then((m) => ({
-      default: m.MeetDayHeatAndFlightModal,
-    })),
-  { chunkKey: 'MeetDayHeatAndFlightModal', restoreTab: 'coach' }
-);
-const AthleticTrainerInjuryHub = lazyWithRetry(
-  () =>
-    import('./coach/AthleticTrainerInjuryHub').then((m) => ({
-      default: m.AthleticTrainerInjuryHub,
-    })),
-  { chunkKey: 'AthleticTrainerInjuryHub', restoreTab: 'coach' }
 );
 const DistrictAdOverviewModal = lazyWithRetry(
   () =>
@@ -186,9 +148,9 @@ export interface CoachWorkspaceViewProps {
     workoutSyntax: string;
     description: string;
     scheduledTime?: string;
-    sessionSlot?: import('../types').WorkoutSessionSlot;
+    sessionSlot?: WorkoutSessionSlot;
     locationName?: string;
-    locationCategory?: import('../types').PracticeVenueCategory;
+    locationCategory?: PracticeVenueCategory;
     meetingNotes?: string;
     trackSpec?: TrackWorkoutSpec;
     replaceExistingDate?: boolean;
@@ -205,9 +167,9 @@ export interface CoachWorkspaceViewProps {
       workoutSyntax: string;
       description: string;
       scheduledTime?: string;
-      sessionSlot?: import('../types').WorkoutSessionSlot;
+      sessionSlot?: WorkoutSessionSlot;
       locationName?: string;
-      locationCategory?: import('../types').PracticeVenueCategory;
+      locationCategory?: PracticeVenueCategory;
       meetingNotes?: string;
       trackSpec?: TrackWorkoutSpec;
     }
@@ -215,17 +177,7 @@ export interface CoachWorkspaceViewProps {
   onDeletePlannedEvent: (id: string) => Promise<void>;
   onDeletePlanBlock?: (planBlockId: string) => Promise<void>;
   onBatchCreatePlannedEvents: (
-    events: {
-      date: string;
-      name: string;
-      sportCategory: SportCategory;
-      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-      plannedDurationSecs: number;
-      plannedLoad: number;
-      workoutSyntax: string;
-      description: string;
-      trackSpec?: TrackWorkoutSpec;
-    }[],
+    events: PlannedEventBatchItem[],
     clearFutureEvents?: boolean
   ) => Promise<void>;
   onOpenProfileModal: () => void;
@@ -270,7 +222,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   activeTeamId,
   onSelectActiveTeam,
   combinedRoster,
-  activeViewedAthleteId,
   onSelectAthleteViewport,
   primaryAthleteDisplayName,
   selfProfile,
@@ -299,7 +250,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onSaveStopwatchActivities,
   onFlushStopwatchOutbox,
   onOpenAthleteToday,
-  onOpenRosterModal,
   onOpenPublicTeamHub,
   onOpenCoachGuide,
   onOpenDelegateTimingModal,
@@ -310,6 +260,10 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   const [openBillingPlanOnRoster, setOpenBillingPlanOnRoster] = useState<'DISTRICT_2000' | null>(
     null
   );
+  const [meetsPlanSubView, setMeetsPlanSubView] = useState<MeetsPlanSubView>('CALENDAR');
+  const [teamHubSubView, setTeamHubSubView] = useState<TeamHubSubView>('ROSTER');
+  const [showDeskDrawer, setShowDeskDrawer] = useState<boolean>(false);
+
   const isDemoTeam = Boolean(
     isSampleDemoMode ||
       activeTeam?.brand.teamId.startsWith('demo_team_') ||
@@ -352,386 +306,27 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     }
   };
 
-  const [teamPlanError, setTeamPlanError] = useState<string | null>(null);
+  const {
+    teamPlanError,
+    teamPlanEvents,
+    handleTeamPlanCreate,
+    handleTeamPlanUpdate,
+    handleTeamPlanBatchCreate,
+    handleTeamPlanDelete,
+    handleTeamPlanBlockDelete,
+  } = useCoachTeamPlanActions({
+    activeTeam,
+    myTeams,
+    isDemoTeam,
+    effectivePlannedEvents,
+    onTeamsUpdated,
+    onCreatePlannedEvent,
+    onUpdatePlannedEvent,
+    onDeletePlannedEvent,
+    onDeletePlanBlock,
+    onBatchCreatePlannedEvents,
+  });
 
-  const handleTeamPlanCreate = async (eventInput: {
-    date: string;
-    name: string;
-    sportCategory: SportCategory;
-    environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-    plannedDurationSecs: number;
-    plannedLoad: number;
-    workoutSyntax: string;
-    description: string;
-    scheduledTime?: string;
-    sessionSlot?: WorkoutSessionSlot;
-    locationName?: string;
-    locationCategory?: PracticeVenueCategory;
-    meetingNotes?: string;
-    trackSpec?: TrackWorkoutSpec;
-    replaceExistingDate?: boolean;
-  }) => {
-    setTeamPlanError(null);
-    const canBroadcastTeam =
-      activeTeam &&
-      (activeTeam.myRole === 'HEAD_COACH' ||
-        activeTeam.myRole === 'ASSISTANT_COACH' ||
-        activeTeam.myRole === 'ORG_ADMIN');
-    if (canBroadcastTeam && activeTeam) {
-      if (isDemoTeam) {
-        const newBroadcast = {
-          broadcastId: `bw_demo_${Date.now()}`,
-          teamId: activeTeam.brand.teamId,
-          targetSquadGroup: 'ALL',
-          date: eventInput.date,
-          name: eventInput.name,
-          sportCategory: eventInput.sportCategory,
-          plannedDurationSecs: eventInput.plannedDurationSecs,
-          plannedLoad: eventInput.plannedLoad,
-          workoutSyntax: eventInput.workoutSyntax,
-          description: eventInput.description,
-          ...(eventInput.scheduledTime ? { scheduledTime: eventInput.scheduledTime } : {}),
-          ...(eventInput.sessionSlot ? { sessionSlot: eventInput.sessionSlot } : {}),
-          ...(eventInput.locationName ? { locationName: eventInput.locationName } : {}),
-          ...(eventInput.locationCategory
-            ? { locationCategory: eventInput.locationCategory }
-            : {}),
-          ...(eventInput.meetingNotes ? { meetingNotes: eventInput.meetingNotes } : {}),
-          ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
-          pushedByCoachName: activeTeam.brand.coachDisplayName || 'Coach',
-          createdAt: new Date().toISOString(),
-        };
-        const updatedTeam = {
-          ...activeTeam,
-          broadcastWorkouts: [...(activeTeam.broadcastWorkouts || []), newBroadcast],
-        };
-        onTeamsUpdated(
-          myTeams.map((t) =>
-            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
-          ),
-          updatedTeam.brand.teamId
-        );
-        return;
-      }
-      try {
-        const resp = await fetch(
-          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast`,
-          {
-            method: 'POST',
-            credentials: 'include',
-            headers: buildThreshSessionHeaders(),
-            body: JSON.stringify({
-              origin: window.location.origin,
-              targetSquadGroup: 'ALL',
-              date: eventInput.date,
-              name: eventInput.name,
-              sportCategory: eventInput.sportCategory,
-              plannedDurationSecs: eventInput.plannedDurationSecs,
-              plannedLoad: eventInput.plannedLoad,
-              workoutSyntax: eventInput.workoutSyntax,
-              description: eventInput.description,
-              ...(eventInput.scheduledTime ? { scheduledTime: eventInput.scheduledTime } : {}),
-              ...(eventInput.sessionSlot ? { sessionSlot: eventInput.sessionSlot } : {}),
-              ...(eventInput.locationName ? { locationName: eventInput.locationName } : {}),
-              ...(eventInput.locationCategory
-                ? { locationCategory: eventInput.locationCategory }
-                : {}),
-              ...(eventInput.meetingNotes ? { meetingNotes: eventInput.meetingNotes } : {}),
-              ...(eventInput.trackSpec ? { trackSpec: eventInput.trackSpec } : {}),
-              replaceSameDateTarget:
-                typeof eventInput.replaceExistingDate === 'boolean'
-                  ? eventInput.replaceExistingDate &&
-                    (eventInput.sessionSlot || 'SINGLE') === 'SINGLE'
-                  : (eventInput.sessionSlot || 'SINGLE') === 'SINGLE',
-            }),
-          }
-        );
-        const data = await resp.json().catch(() => ({}));
-        if (resp.ok) {
-          if (Array.isArray(data.teams)) {
-            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
-          }
-          emitFunnelEvent('workout_published', {
-            role: 'COACH',
-            tier: resolveFunnelTierFromOrgType(activeTeam.brand.orgType),
-          });
-          return;
-        }
-        setTeamPlanError(data?.error || 'Could not broadcast team session to server.');
-        return;
-      } catch {
-        // Fallback to local state only when offline
-      }
-    }
-    await onCreatePlannedEvent(eventInput);
-  };
-
-  const handleTeamPlanUpdate = async (
-    id: string,
-    patch: {
-      date: string;
-      name: string;
-      sportCategory: SportCategory;
-      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-      plannedDurationSecs: number;
-      plannedLoad: number;
-      workoutSyntax: string;
-      description: string;
-      scheduledTime?: string;
-      sessionSlot?: WorkoutSessionSlot;
-      locationName?: string;
-      locationCategory?: PracticeVenueCategory;
-      meetingNotes?: string;
-      trackSpec?: TrackWorkoutSpec;
-    }
-  ) => {
-    setTeamPlanError(null);
-    const canBroadcastTeam =
-      activeTeam &&
-      (activeTeam.myRole === 'HEAD_COACH' ||
-        activeTeam.myRole === 'ASSISTANT_COACH' ||
-        activeTeam.myRole === 'ORG_ADMIN');
-    const isTeamBroadcast = Boolean(
-      activeTeam &&
-        (activeTeam.broadcastWorkouts?.some((bw) => bw.broadcastId === id) ||
-          id.startsWith('bw_'))
-    );
-    if (canBroadcastTeam && activeTeam && isTeamBroadcast) {
-      if (isDemoTeam) {
-        const updatedBroadcasts = (activeTeam.broadcastWorkouts || []).map((bw) =>
-          bw.broadcastId === id
-            ? {
-                ...bw,
-                date: patch.date,
-                name: patch.name,
-                sportCategory: patch.sportCategory,
-                plannedDurationSecs: patch.plannedDurationSecs,
-                plannedLoad: patch.plannedLoad,
-                workoutSyntax: patch.workoutSyntax,
-                description: patch.description,
-                scheduledTime: patch.scheduledTime,
-                sessionSlot: patch.sessionSlot,
-                locationName: patch.locationName,
-                locationCategory: patch.locationCategory,
-                meetingNotes: patch.meetingNotes,
-                ...(patch.trackSpec ? { trackSpec: patch.trackSpec } : {}),
-              }
-            : bw
-        );
-        const updatedTeam = { ...activeTeam, broadcastWorkouts: updatedBroadcasts };
-        onTeamsUpdated(
-          myTeams.map((t) =>
-            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
-          ),
-          updatedTeam.brand.teamId
-        );
-        return;
-      }
-      try {
-        const resp = await fetch(
-          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
-          {
-            method: 'PUT',
-            credentials: 'include',
-            headers: buildThreshSessionHeaders(),
-            body: JSON.stringify({
-              origin: window.location.origin,
-              ...patch,
-            }),
-          }
-        );
-        const data = await resp.json().catch(() => ({}));
-        if (resp.ok) {
-          if (Array.isArray(data.teams)) {
-            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
-          }
-          return;
-        }
-        setTeamPlanError(data?.error || 'Could not update team session on server.');
-        return;
-      } catch {
-        setTeamPlanError('Offline — unable to update team session on server.');
-        return;
-      }
-    }
-    await onUpdatePlannedEvent?.(id, patch);
-  };
-
-  const handleTeamPlanBatchCreate = async (items: PlannedEventBatchItem[]) => {
-    setTeamPlanError(null);
-    if (!items || items.length === 0) return;
-    const canBroadcastTeam =
-      activeTeam &&
-      (activeTeam.myRole === 'HEAD_COACH' ||
-        activeTeam.myRole === 'ASSISTANT_COACH' ||
-        activeTeam.myRole === 'ORG_ADMIN');
-    if (canBroadcastTeam && activeTeam) {
-      if (isDemoTeam) {
-        const nowIso = new Date().toISOString();
-        const nowTs = Date.now();
-        const createdBroadcasts: TeamBroadcastWorkout[] = items.map((item, idx) => ({
-          broadcastId: `bw_demo_${nowTs}_${idx}`,
-          teamId: activeTeam.brand.teamId,
-          targetSquadGroup: 'ALL',
-          date: item.date,
-          name: item.name,
-          sportCategory: item.sportCategory,
-          plannedDurationSecs: item.plannedDurationSecs,
-          plannedLoad: item.plannedLoad,
-          workoutSyntax: item.workoutSyntax,
-          description: item.description,
-          ...(item.scheduledTime ? { scheduledTime: item.scheduledTime } : {}),
-          ...(item.sessionSlot ? { sessionSlot: item.sessionSlot } : {}),
-          ...(item.locationName ? { locationName: item.locationName } : {}),
-          ...(item.locationCategory ? { locationCategory: item.locationCategory } : {}),
-          ...(item.meetingNotes ? { meetingNotes: item.meetingNotes } : {}),
-          ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
-          ...(item.planBlockId ? { planBlockId: item.planBlockId } : {}),
-          ...(item.planBlockName ? { planBlockName: item.planBlockName } : {}),
-          ...(typeof item.planWeekNum === 'number' ? { planWeekNum: item.planWeekNum } : {}),
-          pushedByCoachName: activeTeam.brand.coachDisplayName || 'Coach',
-          createdAt: nowIso,
-        }));
-        const exactSigs = new Set(
-          createdBroadcasts.map(
-            (b) => `${b.date.slice(0, 10)}:${b.sportCategory}:${b.name.trim().toLowerCase()}`
-          )
-        );
-        const existing = (activeTeam.broadcastWorkouts || []).filter(
-          (bw) =>
-            !exactSigs.has(
-              `${bw.date.slice(0, 10)}:${bw.sportCategory}:${bw.name.trim().toLowerCase()}`
-            )
-        );
-        const updatedTeam = {
-          ...activeTeam,
-          broadcastWorkouts: [...existing, ...createdBroadcasts],
-        };
-        onTeamsUpdated(
-          myTeams.map((t) =>
-            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
-          ),
-          updatedTeam.brand.teamId
-        );
-        return;
-      }
-      try {
-        const resp = await fetch(
-          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast-batch`,
-          {
-            method: 'POST',
-            credentials: 'include',
-            headers: buildThreshSessionHeaders(),
-            body: JSON.stringify({
-              origin: window.location.origin,
-              targetSquadGroup: 'ALL',
-              planBlockId: items[0]?.planBlockId,
-              planBlockName: items[0]?.planBlockName,
-              replaceExistingCohortRange: false,
-              workouts: items.map((item) => ({
-                date: item.date,
-                name: item.name,
-                sportCategory: item.sportCategory,
-                plannedDurationSecs: item.plannedDurationSecs,
-                plannedLoad: item.plannedLoad,
-                workoutSyntax: item.workoutSyntax,
-                description: item.description,
-                ...(item.scheduledTime ? { scheduledTime: item.scheduledTime } : {}),
-                ...(item.sessionSlot ? { sessionSlot: item.sessionSlot } : {}),
-                ...(item.locationName ? { locationName: item.locationName } : {}),
-                ...(item.locationCategory ? { locationCategory: item.locationCategory } : {}),
-                ...(item.meetingNotes ? { meetingNotes: item.meetingNotes } : {}),
-                ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
-                ...(typeof item.planWeekNum === 'number'
-                  ? { planWeekNum: item.planWeekNum }
-                  : {}),
-              })),
-            }),
-          }
-        );
-        const data = await resp.json().catch(() => ({}));
-        if (resp.ok) {
-          if (Array.isArray(data.teams)) {
-            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
-          }
-          emitFunnelEvent('workout_published', {
-            role: 'COACH',
-            tier: resolveFunnelTierFromOrgType(activeTeam.brand.orgType),
-          });
-          return;
-        }
-        setTeamPlanError(data?.error || 'Could not batch-broadcast team sessions to server.');
-        return;
-      } catch {
-        setTeamPlanError('Offline — unable to batch-broadcast team sessions to server.');
-        return;
-      }
-    }
-    await onBatchCreatePlannedEvents(items);
-  };
-
-  const handleTeamPlanDelete = async (id: string) => {
-    setTeamPlanError(null);
-    const canBroadcastTeam = Boolean(
-      activeTeam &&
-        (activeTeam.myRole === 'HEAD_COACH' ||
-          activeTeam.myRole === 'ASSISTANT_COACH' ||
-          activeTeam.myRole === 'ORG_ADMIN')
-    );
-    const isTeamBroadcast = Boolean(
-      activeTeam &&
-        (activeTeam.broadcastWorkouts?.some((bw) => bw.broadcastId === id) ||
-          id.startsWith('bw_'))
-    );
-    if (canBroadcastTeam && activeTeam && isTeamBroadcast && isDemoTeam) {
-      const updatedTeam: TeamSummaryWithRole = {
-        ...activeTeam,
-        broadcastWorkouts: (activeTeam.broadcastWorkouts || []).filter(
-          (bw) => bw.broadcastId !== id
-        ),
-      };
-      onTeamsUpdated(
-        myTeams.map((t) =>
-          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
-        ),
-        updatedTeam.brand.teamId
-      );
-      await onDeletePlannedEvent(id);
-      return;
-    }
-    await onDeletePlannedEvent(id);
-  };
-
-  const handleTeamPlanBlockDelete = async (planBlockId: string) => {
-    setTeamPlanError(null);
-    const canBroadcastTeam = Boolean(
-      activeTeam &&
-        (activeTeam.myRole === 'HEAD_COACH' ||
-          activeTeam.myRole === 'ASSISTANT_COACH' ||
-          activeTeam.myRole === 'ORG_ADMIN')
-    );
-    const hasDemoTeamBlock = Boolean(
-      canBroadcastTeam &&
-        activeTeam &&
-        isDemoTeam &&
-        activeTeam.broadcastWorkouts?.some((bw) => bw.planBlockId === planBlockId)
-    );
-    if (hasDemoTeamBlock && activeTeam) {
-      const updatedTeam: TeamSummaryWithRole = {
-        ...activeTeam,
-        broadcastWorkouts: (activeTeam.broadcastWorkouts || []).filter(
-          (bw) => bw.planBlockId !== planBlockId
-        ),
-      };
-      onTeamsUpdated(
-        myTeams.map((t) =>
-          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
-        ),
-        updatedTeam.brand.teamId
-      );
-    }
-    await onDeletePlanBlock?.(planBlockId);
-  };
   const connectedAthletesOnly = useMemo(
     () =>
       combinedRoster.filter(
@@ -862,26 +457,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     }));
   }, [scopedConnectedAthletes, primaryAthleteDisplayName, selfProfile.thresholdPaceSecsPerKm]);
 
-  const relayCandidates = useMemo(
-    () =>
-      scopedConnectedAthletes
-        .filter((a) => a.teamMemberStatus !== 'INJURED')
-        .map((a) => ({
-          id: a.id,
-          name: a.name,
-          thresholdPaceSecsPerKm: a.athleteProfile.thresholdPaceSecsPerKm || 250,
-          genderDivision:
-            a.genderDivision ||
-            (a.athleteProfile.competitionGender === 'WOMEN'
-              ? 'F'
-              : a.athleteProfile.competitionGender === 'MEN'
-                ? 'M'
-                : undefined),
-        })),
-    [scopedConnectedAthletes]
-  );
-
-  const [showRelayAndTopTimes, setShowRelayAndTopTimes] = useState<boolean>(false);
   const [complexityTierState, setComplexityTierState] = useState<CoachComplexityTier | null>(() => {
     try {
       const saved = window.localStorage.getItem('thresh_coach_complexity_tier');
@@ -941,8 +516,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     connectedAthletesOnly.length,
     showOnboardingWizard,
   ]);
-  const [showMeetDayModal, setShowMeetDayModal] = useState<boolean>(false);
-  const [showInjuryHubModal, setShowInjuryHubModal] = useState<boolean>(false);
+
   const [showDistrictAdModal, setShowDistrictAdModal] = useState<boolean>(false);
   const [delegateModalOpen, setDelegateModalOpen] = useState<boolean>(false);
   const [delegateModalTab, setDelegateModalTab] = useState<'CREATE' | 'REVIEW'>('CREATE');
@@ -950,10 +524,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   const [stopwatchLaunchPreset, setStopwatchLaunchPreset] =
     useState<TracksideStopwatchLaunchPreset | null>(null);
   const [drawerAthleteId, setDrawerAthleteId] = useState<string | null>(null);
-  const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
-  const [caraStrengthHours, setCaraStrengthHours] = useState<number>(0);
-  const [caraMeetingHours, setCaraMeetingHours] = useState<number>(0);
-  const [caraVaraHours, setCaraVaraHours] = useState<number>(0);
 
   const workspaceScope = useMemo(
     () =>
@@ -973,15 +543,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   );
 
   const todayIso = getLocalDateIso();
-
-  const teamPlanEvents = useMemo(() => {
-    if (!activeTeam) return effectivePlannedEvents;
-    const broadcastIds = new Set(
-      (activeTeam.broadcastWorkouts || []).map((bw) => bw.broadcastId)
-    );
-    const scoped = effectivePlannedEvents.filter((ev) => broadcastIds.has(ev.id));
-    return scoped.length > 0 ? scoped : effectivePlannedEvents;
-  }, [activeTeam, effectivePlannedEvents]);
 
   const flaggedTriageCount = useMemo(() => {
     const digest = buildCoachSquadExecutionDigest({
@@ -1057,7 +618,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     return ids.size;
   }, [activeTeam?.injuryCases, activeTeam?.memberships, scopedConnectedAthletes, todayIso]);
 
-  const showPrimarySetupChip = shouldShowPrimarySetupWizardChip(activeTeam);
   const effectivePendingTimingCount =
     typeof pendingTimingSubmissionsCount === 'number'
       ? pendingTimingSubmissionsCount
@@ -1067,78 +627,29 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
 
   return (
     <div className="space-y-3 max-w-full" data-testid="coach-workspace-view">
-      {/* Unified Coach Mode Context Header — omitted on Stopwatch so athletes sit at 0px scroll */}
+      {/* Compact 1-Line Coach Field Header — omitted on Stopwatch so timing sits at 0px scroll */}
       {subTab !== 'STOPWATCH' && (
-        <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 sm:py-3 max-w-full">
+        <section
+          data-testid="coach-compact-header"
+          className="rounded-2xl liquid-glass px-3.5 py-2 sm:px-4 max-w-full"
+        >
           <div className="flex flex-wrap items-center justify-between gap-2 max-w-full">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <h1 className="text-base sm:text-lg font-bold text-ap-ink dark:text-ap-chalk tracking-tight truncate">
-                {activeTeam ? `${activeTeam.brand.name} · Coach` : 'Coach Workspace'}
+              <h1 className="text-sm sm:text-base font-bold text-ap-ink dark:text-ap-chalk tracking-tight truncate">
+                {activeTeam ? `${activeTeam.brand.shortName || activeTeam.brand.name} · Coach` : 'Coach Workspace'}
               </h1>
               {activeTeam && (
                 <span className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-ap-inset text-ap-clay dark:bg-ap-turf dark:text-ap-volt">
                   {activeTeam.brand.joinCode}
                 </span>
               )}
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 max-w-full">
-              <div
-                role="group"
-                aria-label="Coach Workspace Complexity"
-                className="inline-flex items-center gap-0.5 p-0.5 rounded-xl liquid-capsule-track text-2xs font-semibold"
-              >
-                <button
-                  type="button"
-                  data-testid="coach-complexity-essentials"
-                  aria-pressed={complexityTier === 'ESSENTIALS'}
-                  onClick={() => setComplexityTier('ESSENTIALS')}
-                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg cursor-pointer transition-colors ${
-                    complexityTier === 'ESSENTIALS'
-                      ? 'liquid-capsule-active text-ap-ink dark:text-white font-bold'
-                      : 'text-ap-ink dark:text-ap-chalk'
-                  }`}
-                >
-                  Simple
-                </button>
-                <button
-                  type="button"
-                  data-testid="coach-complexity-pro"
-                  aria-pressed={complexityTier === 'PRO'}
-                  onClick={() => setComplexityTier('PRO')}
-                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg cursor-pointer transition-colors ${
-                    complexityTier === 'PRO'
-                      ? 'liquid-capsule-active text-ap-ink dark:text-white font-bold'
-                      : 'text-ap-ink dark:text-ap-chalk'
-                  }`}
-                >
-                  Pro Metrics
-                </button>
-              </div>
-
-              {myTeams.length > 0 && (
-                <select
-                  value={activeTeamId || ''}
-                  onChange={(e) => onSelectActiveTeam(e.target.value || null)}
-                  aria-label="Select Team in Coach Workspace"
-                  className="h-[44px] sm:h-[36px] min-h-[44px] sm:min-h-[36px] py-1.5 leading-tight max-w-full rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
-                >
-                  {myTeams.map((t) => (
-                    <option key={t.brand.teamId} value={t.brand.teamId}>
-                      {t.brand.shortName || t.brand.name}
-                    </option>
-                  ))}
-                  <option value="">Personal Mode</option>
-                </select>
-              )}
-
               {activeTeam && (staffMembers.length > 1 || isScopedSelfCoach) && (
                 <select
                   data-testid="coach-scope-lens-select"
                   aria-label="Coach Scope Lens"
                   value={coachLensId}
                   onChange={(e) => setCoachLensId(e.target.value)}
-                  className="h-[44px] sm:h-[36px] min-h-[44px] sm:min-h-[36px] py-1.5 leading-tight max-w-full rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
+                  className="min-h-[44px] sm:h-[36px] sm:min-h-[36px] py-1 leading-tight max-w-[190px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-2xs font-semibold text-ap-ink dark:text-ap-chalk"
                 >
                   {isScopedSelfCoach && (
                     <option value="MY_SCOPE">
@@ -1159,35 +670,33 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                     ))}
                 </select>
               )}
+            </div>
 
-              {showPrimarySetupChip && (
-                <button
-                  type="button"
-                  data-testid="coach-open-wizard-btn"
-                  onClick={() => setShowOnboardingWizard(true)}
-                  className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
-                >
-                  60s Setup
-                </button>
-              )}
-
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 data-testid="coach-open-meet-packet-btn"
-                onClick={() => setShowMeetDayModal(true)}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
+                onClick={() => {
+                  setMeetsPlanSubView('MEET_DAY');
+                  setSubTab('TEAM_PLAN');
+                }}
+                className="min-h-[40px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
-                Meet Packet
+                <Trophy className="w-3.5 h-3.5 ap-text-brand" />
+                <span>Meet Day</span>
               </button>
 
               <button
                 type="button"
                 data-testid="coach-open-injury-hub-btn"
-                onClick={() => setShowInjuryHubModal(true)}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                onClick={() => {
+                  setTeamHubSubView('HEALTH');
+                  setSubTab('ROSTER');
+                }}
+                className="min-h-[40px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <HeartPulse className="w-3.5 h-3.5 text-ap-clay dark:text-ap-volt" />
-                <span>Injury Hub</span>
+                <span>Health</span>
                 {activeInjuryBadgeCount > 0 && (
                   <span
                     data-testid="coach-injury-hub-badge"
@@ -1200,343 +709,134 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
 
               <button
                 type="button"
-                data-testid="coach-open-cohort-plan-builder"
-                onClick={() => {
-                  try {
-                    window.sessionStorage.setItem('thresh_open_plan_cohort', 'TEAM_ALL');
-                  } catch {
-                    // ignore storage failures
-                  }
-                  onOpenGoalsTab();
-                }}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
+                data-testid="coach-desk-menu-btn"
+                onClick={() => setShowDeskDrawer(true)}
+                aria-label="Open Coach Desk & Admin Drawer"
+                className="min-h-[40px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
-                Build Cohort Plan
+                <SlidersHorizontal className="w-3.5 h-3.5 ap-text-brand" />
+                <span>Desk</span>
               </button>
-              <button
-                type="button"
-                data-testid="coach-open-external-sync-btn"
-                onClick={() => setIsExternalSyncOpen(true)}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Globe className="w-3.5 h-3.5" weight="duotone" />
-                <span>Athletic.net / TFRRS</span>
-              </button>
-              {myTeams.some(
-                (t) => t.myRole === 'HEAD_COACH' || t.myRole === 'ORG_ADMIN'
-              ) && (
-                <button
-                  type="button"
-                  data-testid="coach-open-district-ad-btn"
-                  onClick={() => setShowDistrictAdModal(true)}
-                  className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Layers className="w-3.5 h-3.5 ap-text-brand" />
-                  <span>District Overview</span>
-                </button>
-              )}
-              {onOpenCoachGuide && (
-                <button
-                  type="button"
-                  data-testid="coach-open-guide-btn"
-                  onClick={onOpenCoachGuide}
-                  className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <HelpCircle className="w-3.5 h-3.5 ap-text-brand" />
-                  <span>Coach Guide</span>
-                </button>
-              )}
             </div>
           </div>
         </section>
       )}
 
-      {/* 1. CLIPBOARD (COACH HOME — Opens at 0px scroll directly on Today Quick Ops & Workout Builder) */}
+      {/* 1. PRACTICE HOME */}
       {subTab === 'CLIPBOARD' && (
-        <div className="space-y-3">
-          <section
-            data-testid="coach-quick-ops-strip"
-            className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-2"
+        <WorkspaceErrorBoundary fallbackTitle="Practice Home" restoreTab="coach">
+          <Suspense
+            fallback={
+              <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                Loading Practice Ops…
+              </div>
+            }
           >
-            <div className="flex flex-wrap items-center gap-2 min-w-0">
-              <span className="px-2 py-0.5 rounded-md ap-status-info font-mono text-2xs font-bold uppercase tracking-wider">
-                Today · {todayIso}
-              </span>
-              <span className="text-xs font-extrabold text-ap-ink dark:text-ap-chalk">
-                3:15 PM Quick Ops
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                data-testid="quick-ops-roll-call-btn"
-                onClick={() => {
-                  const target =
-                    document.querySelector('[data-testid="coach-roll-call-panel"]') ||
-                    document.querySelector('[data-testid="coach-daily-ops-panel"]');
-                  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <ClipboardText className="w-3.5 h-3.5 ap-text-brand" />
-                <span>Take Roll Call</span>
-              </button>
-              <button
-                type="button"
-                data-testid="quick-ops-stopwatch-btn"
-                onClick={() => {
-                  setTracksideMode('STOPWATCH');
-                  setSubTab('STOPWATCH');
-                }}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-primary text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Timer className="w-3.5 h-3.5" weight="bold" />
-                <span>Track Stopwatch</span>
-              </button>
-              <button
-                type="button"
-                data-testid="quick-ops-delegate-timing-btn"
-                onClick={() => {
-                  setDelegatePreset(null);
-                  setDelegateModalTab('CREATE');
-                  setDelegateModalOpen(true);
-                  onOpenDelegateTimingModal?.();
-                }}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Users className="w-3.5 h-3.5 ap-text-brand" />
-                <span>Delegate Timing</span>
-              </button>
-              <button
-                type="button"
-                data-testid="quick-ops-pending-splits-btn"
-                onClick={() => {
-                  setDelegatePreset(null);
-                  setDelegateModalTab('REVIEW');
-                  setDelegateModalOpen(true);
-                  onOpenDelegateTimingModal?.();
-                }}
-                className={`min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
-                  effectivePendingTimingCount > 0 ? 'ap-status-caution font-bold' : 'ap-btn-secondary'
-                }`}
-              >
-                <span>Pending Splits ({effectivePendingTimingCount})</span>
-              </button>
-            </div>
-          </section>
-
-          {flaggedTriageCount > 0 ? (
-            <button
-              type="button"
-              data-testid="clipboard-flagged-triage-btn"
-              onClick={() => setSubTab('ROSTER')}
-              className="w-full min-h-[44px] rounded-xl ap-status-caution px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-bold cursor-pointer"
-            >
-              <span className="inline-flex items-center gap-2 min-w-0">
-                <Shield className="w-4 h-4 shrink-0" weight="bold" />
-                <span className="truncate">
-                  {flaggedTriageCount}{' '}
-                  {flaggedTriageCount === 1 ? 'Athlete' : 'Athletes'} Flagged (Pain / High Strain)
-                </span>
-              </span>
-              <span className="font-mono text-2xs shrink-0 underline">
-                Review Squad Triage →
-              </span>
-            </button>
-          ) : (
-            scopedConnectedAthletes.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSubTab('ROSTER')}
-                className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3.5 py-2 flex items-center justify-between gap-2 text-xs font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
-              >
-                <span className="truncate">
-                  All {scopedConnectedAthletes.length} connected athletes clear for full training today
-                </span>
-                <span className="font-mono text-2xs ap-text-brand shrink-0 underline">
-                  Open 7d Squad Triage →
-                </span>
-              </button>
-            )
-          )}
-
-          {myTeams.length === 0 && connectedAthletesOnly.length === 0 && (
-            <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <Users className="w-4 h-4 ap-text-brand shrink-0" weight="duotone" />
-                <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk truncate">
-                  No team roster connected yet
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  data-testid="coach-empty-wizard-btn"
-                  onClick={() => setShowOnboardingWizard(true)}
-                  className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold cursor-pointer"
-                >
-                  60-Sec Setup Wizard
-                </button>
-                <button
-                  type="button"
-                  data-testid="coach-empty-setup-btn"
-                  onClick={() => {
-                    setOpenCreateTeamOnSwitch(true);
-                    setSubTab('ROSTER');
-                  }}
-                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold cursor-pointer"
-                >
-                  Set Up Team or Import Roster
-                </button>
-              </div>
-            </section>
-          )}
-
-          {/* Track Multi-Set Workout Builder, Event Groups & Pace Pod Splits */}
-          <WorkspaceErrorBoundary fallbackTitle="Coach Clipboard" restoreTab="coach">
-            <Suspense
-              fallback={
-                <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                  Loading Coach Clipboard…
-                </div>
-              }
-            >
-              <CoachClipboardWorkoutBuilder
-                activeTeam={activeTeam}
-                myTeams={myTeams}
-                connectedAthletes={scopedConnectedAthletes}
-                primaryAthleteDisplayName={primaryAthleteDisplayName}
-                selfProfile={selfProfile}
-                complexityTier={complexityTier}
-                defaultEventGroup={defaultCoachEventGroup}
-                onTeamsUpdated={onTeamsUpdated}
-                onCreatePlannedEvent={onCreatePlannedEvent}
-                onOpenStopwatchSubTab={() => {
-                  setTracksideMode('STOPWATCH');
-                  setSubTab('STOPWATCH');
-                }}
-              />
-            </Suspense>
-          </WorkspaceErrorBoundary>
-
-          {/* Daily 3:15 PM Trackside Habit: Roll Call, Broadcasts & Quick Launch */}
-          <WorkspaceErrorBoundary fallbackTitle="Daily Practice Ops" restoreTab="coach">
-            <Suspense
-              fallback={
-                <div className="h-32 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                  Loading Practice Ops…
-                </div>
-              }
-            >
-              <CoachDailyOpsPanel
-                activeTeam={activeTeam}
-                myTeams={myTeams}
-                complexityTier={complexityTier}
-                allowedEventGroups={effectiveAllowedEventGroups}
-                onLaunchStopwatch={() => {
-                  setTracksideMode('STOPWATCH');
-                  setSubTab('STOPWATCH');
-                }}
-                onLaunchFieldSheet={() => {
-                  setTracksideMode('FIELD');
-                  setSubTab('STOPWATCH');
-                }}
-                onTeamsUpdated={onTeamsUpdated}
-              />
-            </Suspense>
-          </WorkspaceErrorBoundary>
-
-          {workspaceScope.showRelayOptimizer && (
-          <div className="rounded-2xl liquid-glass overflow-hidden">
-            <button
-              type="button"
-              aria-expanded={showRelayAndTopTimes}
-              onClick={() => setShowRelayAndTopTimes((prev) => !prev)}
-              className="w-full min-h-[44px] px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs font-bold text-ap-ink dark:text-ap-chalk cursor-pointer"
-            >
-              <span>Relay Optimizer &amp; NFHS FAT Top Times</span>
-              <ChevronDown
-                className={`w-4 h-4 text-ap-muted dark:text-ap-muted-dark transition-transform ${
-                  showRelayAndTopTimes ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-            {showRelayAndTopTimes && (
-              <div className="px-3 pb-3 pt-1">
-                <WorkspaceErrorBoundary fallbackTitle="Relay & Top Times" restoreTab="coach">
-                  <Suspense
-                    fallback={
-                      <div className="h-32 rounded-xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                        Loading Relay Optimizer…
-                      </div>
-                    }
-                  >
-                    <ScholasticRelayAndTopTimesPanel
-                      candidates={relayCandidates.length > 0 ? relayCandidates : podRoster}
-                      roster={combinedRoster.filter(
-                        (a) =>
-                          a.status === 'CONNECTED' &&
-                          a.teamMemberStatus !== 'REVOKED'
-                      )}
-                    />
-                  </Suspense>
-                </WorkspaceErrorBoundary>
-              </div>
-            )}
-          </div>
-          )}
-        </div>
+            <CoachPracticeHome
+              todayIso={todayIso}
+              activeTeam={activeTeam}
+              myTeams={myTeams}
+              connectedAthletesOnly={connectedAthletesOnly}
+              scopedConnectedAthletes={scopedConnectedAthletes}
+              primaryAthleteDisplayName={primaryAthleteDisplayName}
+              selfProfile={selfProfile}
+              complexityTier={complexityTier}
+              defaultCoachEventGroup={defaultCoachEventGroup}
+              effectiveAllowedEventGroups={effectiveAllowedEventGroups}
+              flaggedTriageCount={flaggedTriageCount}
+              effectivePendingTimingCount={effectivePendingTimingCount}
+              onTeamsUpdated={onTeamsUpdated}
+              onCreatePlannedEvent={onCreatePlannedEvent}
+              onOpenStopwatch={(mode) => {
+                setTracksideMode(mode);
+                setSubTab('STOPWATCH');
+              }}
+              onOpenDelegateModal={(tab) => {
+                setDelegatePreset(null);
+                setDelegateModalTab(tab);
+                setDelegateModalOpen(true);
+                onOpenDelegateTimingModal?.();
+              }}
+              onOpenHealthAttention={() => {
+                setTeamHubSubView('ROSTER');
+                setSubTab('ROSTER');
+              }}
+              onOpenRosterTab={() => {
+                setTeamHubSubView('ROSTER');
+                setSubTab('ROSTER');
+              }}
+              onOpenSetupWizard={() => setShowOnboardingWizard(true)}
+              onOpenCreateTeamStudio={() => {
+                setOpenCreateTeamOnSwitch(true);
+                setTeamHubSubView('ROSTER');
+                setSubTab('ROSTER');
+              }}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
       )}
 
-      {/* 2. TEAM PLAN */}
+      {/* 2. MEETS & PLAN */}
       {subTab === 'TEAM_PLAN' && (
-        <div className="space-y-3">
-          {teamPlanError && (
-            <div
-              role="alert"
-              className="rounded-xl border border-red-300 dark:border-red-800 bg-red-50/90 dark:bg-red-950/50 px-3.5 py-2 text-xs font-semibold text-red-700 dark:text-red-300"
-            >
-              {teamPlanError}
-            </div>
-          )}
-          <WorkspaceErrorBoundary fallbackTitle="Team Plan Calendar" restoreTab="coach">
-            <Suspense
-              fallback={
-                <div className="h-80 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                  Loading Team Plan Calendar…
-                </div>
-              }
-            >
-              <CalendarView
-                activities={effectiveActivities}
-                wellnessDays={effectiveWellnessDays}
-                plannedEvents={teamPlanEvents}
-                targetGoals={effectiveTargetGoals}
-                envFilter={envFilter}
-                selectedSport={selectedSport}
-                onSelectSport={onSelectSport}
-                distanceUnit={distanceUnit}
-                athleteFtp={athleteFtp}
-                athleteProfile={selfProfile}
-                onSelectActivity={onSelectActivityAndOpenTab}
-                onCreatePlannedEvent={handleTeamPlanCreate}
-                onUpdatePlannedEvent={handleTeamPlanUpdate}
-                onDeletePlannedEvent={handleTeamPlanDelete}
-                onDeletePlanBlock={onDeletePlanBlock || isDemoTeam ? handleTeamPlanBlockDelete : undefined}
-                onBatchCreatePlannedEvents={handleTeamPlanBatchCreate}
-                onOpenTodayWorkout={onOpenAthleteToday}
-                onOpenAthleteProfileModal={onOpenProfileModal}
-                onOpenGoalsArchitect={onOpenGoalsTab}
-                onOpenOfficialRaceModal={onOpenOfficialRaceModal}
-                onOpenCoachWithPrompt={onOpenCoachWithPrompt}
-                onOpenTracksideStopwatch={() => setSubTab('STOPWATCH')}
-              />
-            </Suspense>
-          </WorkspaceErrorBoundary>
-        </div>
+        <WorkspaceErrorBoundary fallbackTitle="Meets and Plan" restoreTab="coach">
+          <Suspense
+            fallback={
+              <div className="h-80 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                Loading Meets &amp; Plan…
+              </div>
+            }
+          >
+            <CoachMeetsAndPlanView
+              subView={meetsPlanSubView}
+              onSelectSubView={setMeetsPlanSubView}
+              showRelayOptimizer={workspaceScope.showRelayOptimizer}
+              teamPlanError={teamPlanError}
+              activeTeam={activeTeam}
+              myTeams={myTeams}
+              connectedAthletesOnly={connectedAthletesOnly}
+              scopedConnectedAthletes={scopedConnectedAthletes}
+              podRoster={podRoster}
+              primaryAthleteDisplayName={primaryAthleteDisplayName}
+              selfProfile={selfProfile}
+              athleteFtp={athleteFtp}
+              teamPlanEvents={teamPlanEvents}
+              effectiveActivities={effectiveActivities}
+              effectiveWellnessDays={effectiveWellnessDays}
+              effectiveTargetGoals={effectiveTargetGoals}
+              envFilter={envFilter}
+              selectedSport={selectedSport}
+              onSelectSport={onSelectSport}
+              distanceUnit={distanceUnit}
+              isDemoTeam={isDemoTeam}
+              onTeamsUpdated={onTeamsUpdated}
+              onSelectActivityAndOpenTab={onSelectActivityAndOpenTab}
+              onCreateTeamEvent={handleTeamPlanCreate}
+              onUpdateTeamEvent={handleTeamPlanUpdate}
+              onDeleteTeamEvent={handleTeamPlanDelete}
+              onDeleteTeamPlanBlock={handleTeamPlanBlockDelete}
+              onBatchCreateTeamEvents={handleTeamPlanBatchCreate}
+              onOpenAthleteToday={onOpenAthleteToday}
+              onOpenProfileModal={onOpenProfileModal}
+              onOpenGoalsTab={onOpenGoalsTab}
+              onOpenOfficialRaceModal={onOpenOfficialRaceModal}
+              onOpenCoachWithPrompt={onOpenCoachWithPrompt}
+              onLaunchStopwatchPreset={(preset) => {
+                setStopwatchLaunchPreset(preset);
+                setTracksideMode('STOPWATCH');
+                setSubTab('STOPWATCH');
+              }}
+              onOpenStopwatchDirect={() => setSubTab('STOPWATCH')}
+              onDelegateEventTimer={(preset) => {
+                setDelegatePreset(preset);
+                setDelegateModalTab('CREATE');
+                setDelegateModalOpen(true);
+              }}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
       )}
 
-      {/* 3. STOPWATCH & FIELD EVENTS */}
+      {/* 3. TIMING (STOPWATCH & FIELD MARKS) */}
       {subTab === 'STOPWATCH' && (
         <div className="space-y-3">
           <div
@@ -1597,7 +897,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   onSaveStopwatchActivities={onSaveStopwatchActivities}
                   onFlushStopwatchOutbox={onFlushStopwatchOutbox}
                   onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
-                  postSaveActionLabel="View Team Plan"
+                  postSaveActionLabel="View Meets & Plan"
                   onOpenRosterModal={() => setSubTab('ROSTER')}
                   onOpenDelegateTiming={() => {
                     setDelegatePreset(null);
@@ -1606,6 +906,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   }}
                   pendingTimingCount={effectivePendingTimingCount}
                   launchPreset={stopwatchLaunchPreset}
+                  complexityTier={complexityTier}
                 />
               </Suspense>
             </WorkspaceErrorBoundary>
@@ -1633,288 +934,86 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         </div>
       )}
 
-      {/* 4. ROSTER, SQUAD TRIAGE & TEAM SETTINGS */}
+      {/* 4. TEAM HUB (ROSTER, HEALTH & INJURIES, STAFF) */}
       {subTab === 'ROSTER' && (
-        <div className="space-y-3">
-          <CoachExecutionDigestPanel
-            roster={scopedConnectedAthletes}
-            selfFallback={{
-              id: 'SELF',
-              name: primaryAthleteDisplayName || 'Coach / Demo Athlete',
-              plannedEvents: effectivePlannedEvents,
-              activities: effectiveActivities,
-              sessionCheckIns: selfSessionCheckIns,
-            }}
-            todayIso={todayIso}
-            activeTeam={activeTeam}
-            myTeams={myTeams}
-            isSampleDemoMode={isSampleDemoMode}
-            onTeamsUpdated={onTeamsUpdated}
-            primaryAthleteDisplayName={primaryAthleteDisplayName}
-            complexityTier={complexityTier}
-            eventGroupFilter={effectiveAllowedEventGroups}
-            onQuickInspectDrawer={(athId) => setDrawerAthleteId(athId)}
-            onInspectAthlete={(athId) => {
-              onSelectAthleteViewport(athId);
-              onOpenAthleteToday();
-            }}
-            onOpenTeamPlan={() => setSubTab('TEAM_PLAN')}
-          />
-
-          <WorkspaceErrorBoundary fallbackTitle="Team Roster & Management" restoreTab="coach">
-            <Suspense
-              fallback={
-                <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                  Loading Team Management…
-                </div>
-              }
-            >
-              <TeamManagementPanel
-                selfName={primaryAthleteDisplayName}
-                myTeams={myTeams}
-                activeTeamId={activeTeamId}
-                resendConfigured={resendConfigured}
-                isSampleDemoMode={isSampleDemoMode}
-                initialShowCreateStudio={openCreateTeamOnSwitch}
-                initialOpenBillingPlan={openBillingPlanOnRoster}
-                onConsumedInitialBilling={() => setOpenBillingPlanOnRoster(null)}
-                onSelectActiveTeam={onSelectActiveTeam}
-                onTeamsUpdated={onTeamsUpdated}
-                onOpenClipboard={() => setSubTab('CLIPBOARD')}
-                onOpenExternalSync={() => setIsExternalSyncOpen(true)}
-                onOpenPublicTeamHub={onOpenPublicTeamHub}
-              />
-            </Suspense>
-          </WorkspaceErrorBoundary>
-
-          {!showPrimarySetupChip && (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                data-testid="coach-open-wizard-btn"
-                onClick={() => setShowOnboardingWizard(true)}
-                className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-card-inset text-xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk cursor-pointer"
-              >
-                Launch 60s Setup Wizard (New Squad)
-              </button>
-            </div>
-          )}
-
-          {activeTeam?.brand?.orgType === 'COLLEGIATE' && workspaceScope.showNcaaCara && (
-          <section
-            data-testid="coach-cara-audit"
-            className="rounded-2xl liquid-glass p-4 sm:p-5 space-y-3"
+        <WorkspaceErrorBoundary fallbackTitle="Team Hub" restoreTab="coach">
+          <Suspense
+            fallback={
+              <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                Loading Team Hub…
+              </div>
+            }
           >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                  Weekly Practice Hours ({caraSegment === 'OUT_OF_SEASON' ? '8h Out-of-Season' : '20h In-Season'} Cap)
-                </h2>
-                <span className="px-2 py-0.5 rounded font-mono text-2xs font-bold ap-status-info">
-                  3.0h Comp Day
-                </span>
-              </div>
+            <CoachTeamHubView
+              subView={teamHubSubView}
+              onSelectSubView={setTeamHubSubView}
+              activeInjuryBadgeCount={activeInjuryBadgeCount}
+              todayIso={todayIso}
+              activeTeam={activeTeam}
+              myTeams={myTeams}
+              activeTeamId={activeTeamId}
+              resendConfigured={resendConfigured}
+              isSampleDemoMode={isSampleDemoMode}
+              primaryAthleteDisplayName={primaryAthleteDisplayName}
+              complexityTier={complexityTier}
+              effectiveAllowedEventGroups={effectiveAllowedEventGroups}
+              connectedAthletesOnly={connectedAthletesOnly}
+              scopedConnectedAthletes={scopedConnectedAthletes}
+              effectivePlannedEvents={effectivePlannedEvents}
+              effectiveActivities={effectiveActivities}
+              selfSessionCheckIns={selfSessionCheckIns}
+              showNcaaCara={workspaceScope.showNcaaCara}
+              openCreateTeamOnSwitch={openCreateTeamOnSwitch}
+              openBillingPlanOnRoster={openBillingPlanOnRoster}
+              onConsumedInitialBilling={() => setOpenBillingPlanOnRoster(null)}
+              onSelectActiveTeam={onSelectActiveTeam}
+              onTeamsUpdated={onTeamsUpdated}
+              onQuickInspectDrawer={(athId) => setDrawerAthleteId(athId)}
+              onInspectAthlete={(athId) => {
+                onSelectAthleteViewport(athId);
+                onOpenAthleteToday();
+              }}
+              onOpenTeamPlan={() => setSubTab('TEAM_PLAN')}
+              onOpenClipboard={() => setSubTab('CLIPBOARD')}
+              onOpenExternalSync={() => setIsExternalSyncOpen(true)}
+              onOpenPublicTeamHub={onOpenPublicTeamHub}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div
-                  role="group"
-                  aria-label="NCAA CARA Season Segment"
-                  className="inline-flex items-center gap-0.5 p-0.5 rounded-lg liquid-capsule-track text-2xs font-semibold"
-                >
-                  <button
-                    type="button"
-                    data-testid="cara-segment-in-season"
-                    aria-pressed={caraSegment === 'IN_SEASON'}
-                    onClick={() => setCaraSegment('IN_SEASON')}
-                    className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md cursor-pointer ${
-                      caraSegment === 'IN_SEASON'
-                        ? 'ap-nav-volt-active'
-                        : 'text-ap-muted dark:text-ap-muted-dark'
-                    }`}
-                  >
-                    In-Season (20h)
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="cara-segment-out-of-season"
-                    aria-pressed={caraSegment === 'OUT_OF_SEASON'}
-                    onClick={() => setCaraSegment('OUT_OF_SEASON')}
-                    className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md cursor-pointer ${
-                      caraSegment === 'OUT_OF_SEASON'
-                        ? 'ap-nav-volt-active'
-                        : 'text-ap-muted dark:text-ap-muted-dark'
-                    }`}
-                  >
-                    Out-of-Season (8h)
-                  </button>
-                </div>
-
-                {connectedAthletesOnly.length > 0 && (
-                  <button
-                    type="button"
-                    data-testid="cara-export-csv-btn"
-                    onClick={() => {
-                      const csvRows: NcaaCaraCsvRow[] = connectedAthletesOnly.map((ath) => {
-                        const audit = summarizeNcaaCaraWeeklyHours(
-                          ath.activities,
-                          todayIso,
-                          0,
-                          [],
-                          {
-                            seasonSegment: caraSegment,
-                            strengthHours: caraStrengthHours,
-                            meetingFilmHours: caraMeetingHours,
-                            varaHours: caraVaraHours,
-                          }
-                        );
-                        return {
-                          athleteName: ath.name,
-                          seasonSegment: caraSegment,
-                          weekEndingIso: todayIso,
-                          audit,
-                          varaHours: caraVaraHours,
-                        };
-                      });
-                      const csvContent = buildNcaaCaraComplianceCsv(csvRows);
-                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' });
-                      const url = URL.createObjectURL(blob);
-                      const anchor = document.createElement('a');
-                      anchor.href = url;
-                      anchor.download = `meetready-ncaa-cara-${todayIso}.csv`;
-                      document.body.appendChild(anchor);
-                      anchor.click();
-                      document.body.removeChild(anchor);
-                      URL.revokeObjectURL(url);
-                    }}
-                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Download className="w-3.5 h-3.5 ap-text-brand" />
-                    <span>Export ARMS / Teamworks CSV</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
-              <label className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/70 dark:bg-ap-carbon px-3 py-2 flex items-center justify-between gap-2">
-                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
-                  Weights / S&amp;C (h)
-                </span>
-                <input
-                  data-testid="cara-weights-input"
-                  type="number"
-                  min={0}
-                  max={10}
-                  step={0.5}
-                  value={caraStrengthHours}
-                  onChange={(e) =>
-                    setCaraStrengthHours(Math.max(0, Math.min(10, Number(e.target.value) || 0)))
-                  }
-                  className="w-20 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 py-1 text-right font-mono text-xs text-slate-900 dark:text-white"
-                />
-              </label>
-              <label className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/70 dark:bg-ap-carbon px-3 py-2 flex items-center justify-between gap-2">
-                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
-                  Meetings / Film (h)
-                </span>
-                <input
-                  data-testid="cara-meetings-input"
-                  type="number"
-                  min={0}
-                  max={10}
-                  step={0.5}
-                  value={caraMeetingHours}
-                  onChange={(e) =>
-                    setCaraMeetingHours(Math.max(0, Math.min(10, Number(e.target.value) || 0)))
-                  }
-                  className="w-20 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 py-1 text-right font-mono text-xs text-slate-900 dark:text-white"
-                />
-              </label>
-              <label className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/70 dark:bg-ap-carbon px-3 py-2 flex items-center justify-between gap-2">
-                <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
-                  VARA Excluded (h)
-                </span>
-                <input
-                  data-testid="cara-vara-input"
-                  type="number"
-                  min={0}
-                  max={15}
-                  step={0.5}
-                  value={caraVaraHours}
-                  onChange={(e) =>
-                    setCaraVaraHours(Math.max(0, Math.min(15, Number(e.target.value) || 0)))
-                  }
-                  className="w-20 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 py-1 text-right font-mono text-xs text-slate-900 dark:text-white"
-                />
-              </label>
-            </div>
-
-            {connectedAthletesOnly.length === 0 ? (
-              <p className="text-xs text-slate-600 dark:text-slate-300">
-                Connect roster athletes above to monitor rolling 7-day {caraSegment === 'OUT_OF_SEASON' ? '8h out-of-season' : '20h in-season'} practice hour caps, mandatory days off, and 3.0h competition day limits.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {connectedAthletesOnly.map((ath) => {
-                  const baseAudit = summarizeNcaaCaraWeeklyHours(
-                    ath.activities,
-                    todayIso,
-                    0,
-                    [],
-                    {
-                      seasonSegment: caraSegment,
-                      strengthHours: caraStrengthHours,
-                      meetingFilmHours: caraMeetingHours,
-                      varaHours: caraVaraHours,
-                    }
-                  );
-                  const hours =
-                    ath.activities.length === 0 && typeof ath.caraHours7d === 'number'
-                      ? Number(
-                          (ath.caraHours7d + caraStrengthHours + caraMeetingHours).toFixed(1)
-                        )
-                      : baseAudit.rolling7dCountableHours;
-                  const compliant =
-                    hours <= baseAudit.weeklyCapHours &&
-                    baseAudit.maxSingleDayHours <= baseAudit.dailyCapHours &&
-                    (ath.activities.length === 0 || baseAudit.daysOffCompliant !== false) &&
-                    baseAudit.outOfSeasonSkillCompliant !== false;
-                  return (
-                    <div
-                      key={`cara-${ath.id}`}
-                      className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-carbon p-3 text-xs space-y-1.5"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-bold text-slate-900 dark:text-white">{ath.name}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded text-2xs font-mono font-bold ${
-                            compliant ? 'ap-status-prime' : 'ap-status-strained'
-                          }`}
-                        >
-                          {hours}h / {baseAudit.weeklyCapHours}h
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-between gap-1 text-2xs font-mono text-slate-600 dark:text-slate-300">
-                        <span>
-                          Days Off: {baseAudit.daysOffCount ?? 7}/{baseAudit.requiredDaysOff ?? 1}
-                        </span>
-                        {caraVaraHours > 0 && (
-                          <span>VARA Excl: {caraVaraHours.toFixed(1)}h</span>
-                        )}
-                      </div>
-                      {!compliant && (
-                        <div className="text-2xs font-semibold text-rose-700 dark:text-rose-300">
-                          {baseAudit.statusLabel}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-          )}
-        </div>
+      {showDeskDrawer && (
+        <WorkspaceErrorBoundary fallbackTitle="Coach Desk" restoreTab="coach">
+          <Suspense fallback={null}>
+            <CoachDeskDrawer
+              isOpen={showDeskDrawer}
+              onClose={() => setShowDeskDrawer(false)}
+              activeTeam={activeTeam}
+              myTeams={myTeams}
+              activeTeamId={activeTeamId}
+              onSelectActiveTeam={onSelectActiveTeam}
+              complexityTier={complexityTier}
+              onSetComplexityTier={setComplexityTier}
+              onOpenWizard={() => setShowOnboardingWizard(true)}
+              onOpenCohortPlanBuilder={() => {
+                try {
+                  window.sessionStorage.setItem('thresh_open_plan_cohort', 'TEAM_ALL');
+                } catch {
+                  // ignore storage failures
+                }
+                onOpenGoalsTab();
+              }}
+              onOpenExternalSync={() => setIsExternalSyncOpen(true)}
+              onOpenDistrictOverview={() => setShowDistrictAdModal(true)}
+              onOpenCoachGuide={onOpenCoachGuide}
+              onOpenTeamStaffTab={() => {
+                setTeamHubSubView('ROSTER');
+                setSubTab('ROSTER');
+              }}
+              onOpenProfileModal={onOpenProfileModal}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
       )}
 
       {isExternalSyncOpen && (
@@ -1949,6 +1048,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               }}
               onOpenRosterStudio={() => {
                 setOpenCreateTeamOnSwitch(false);
+                setTeamHubSubView('ROSTER');
                 setSubTab('ROSTER');
               }}
             />
@@ -1974,43 +1074,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         </WorkspaceErrorBoundary>
       )}
 
-      {showMeetDayModal && (
-        <WorkspaceErrorBoundary fallbackTitle="Meet-Day Entries & Packet" restoreTab="coach">
-          <Suspense fallback={null}>
-            <MeetDayHeatAndFlightModal
-              isOpen={showMeetDayModal}
-              onClose={() => setShowMeetDayModal(false)}
-              activeTeam={activeTeam}
-              myTeams={myTeams}
-              connectedAthletes={connectedAthletesOnly}
-              onTeamsUpdated={onTeamsUpdated}
-              onLaunchEventStopwatch={(preset) => {
-                setShowMeetDayModal(false);
-                setStopwatchLaunchPreset({
-                  meetTitle: preset.meetTitle,
-                  meetDate: preset.meetDate,
-                  eventCode: preset.eventCode,
-                  sessionType: 'RACE',
-                  runners: preset.runners.map((r) => ({
-                    membershipId: r.membershipId,
-                    athleteName: r.athleteName,
-                    hipOrLane: r.laneOrHip,
-                  })),
-                });
-                setTracksideMode('STOPWATCH');
-                setSubTab('STOPWATCH');
-              }}
-              onDelegateEventTimer={(preset) => {
-                setShowMeetDayModal(false);
-                setDelegatePreset(preset);
-                setDelegateModalTab('CREATE');
-                setDelegateModalOpen(true);
-              }}
-            />
-          </Suspense>
-        </WorkspaceErrorBoundary>
-      )}
-
       {delegateModalOpen && (
         <WorkspaceErrorBoundary fallbackTitle="Delegated Race Timing" restoreTab="coach">
           <Suspense fallback={null}>
@@ -2022,21 +1085,6 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               isSampleDemoMode={isSampleDemoMode}
               initialPreset={delegatePreset}
               initialTab={delegateModalTab}
-            />
-          </Suspense>
-        </WorkspaceErrorBoundary>
-      )}
-
-      {showInjuryHubModal && (
-        <WorkspaceErrorBoundary fallbackTitle="Athletic Trainer Injury Hub" restoreTab="coach">
-          <Suspense fallback={null}>
-            <AthleticTrainerInjuryHub
-              isOpen={showInjuryHubModal}
-              onClose={() => setShowInjuryHubModal(false)}
-              activeTeam={activeTeam}
-              myTeams={myTeams}
-              isSampleDemoMode={isSampleDemoMode}
-              onTeamsUpdated={onTeamsUpdated}
             />
           </Suspense>
         </WorkspaceErrorBoundary>
@@ -2061,6 +1109,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   if (firstGoverned) onSelectActiveTeam(firstGoverned.brand.teamId);
                 }
                 setOpenBillingPlanOnRoster('DISTRICT_2000');
+                setTeamHubSubView('ROSTER');
                 setSubTab('ROSTER');
               }}
             />

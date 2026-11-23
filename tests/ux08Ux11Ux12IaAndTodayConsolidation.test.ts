@@ -118,9 +118,11 @@ describe('UX-08, UX-11 & UX-12 Post-Login 3-Pillar IA, Today Consolidation & Pro
     expect(profileModal).not.toContain('min={180}\n                max={360}');
 
     const coachView = readSrc('src/components/CoachWorkspaceView.tsx');
-    expect(coachView).toContain('initialShowCreateStudio={openCreateTeamOnSwitch}');
+    const teamHub = readSrc('src/components/coach/CoachTeamHubView.tsx');
+    const teamPlanHook = readSrc('src/hooks/useCoachTeamPlanActions.ts');
+    expect(teamHub).toContain('initialShowCreateStudio={openCreateTeamOnSwitch}');
     expect(coachView).toContain("activeTeam?.brand?.orgType === 'COLLEGIATE'");
-    expect(coachView).toContain('/workouts/broadcast');
+    expect(teamPlanHook).toContain('/workouts/broadcast');
     expect(coachView).not.toContain('SUB_TABS');
 
     const customCharts = readSrc('src/components/CustomChartsView.tsx');

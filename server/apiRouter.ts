@@ -18,6 +18,7 @@ import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts'
 import { athleteStateRouter } from './routers/athleteStateRouter.ts';
 import { webhooksAndExportRouter } from './routers/webhooksAndExportRouter.ts';
 import { teamRouter } from './routers/teamRouter.ts';
+import { teamEventsRouter } from './routers/teamEventsRouter.ts';
 import { teamMeetDayRouter } from './routers/teamMeetDayRouter.ts';
 import { teamInjuryRouter } from './routers/teamInjuryRouter.ts';
 import { teamBillingRouter } from './routers/teamBillingRouter.ts';
@@ -109,6 +110,7 @@ apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
+apiRouter.use(teamEventsRouter);
 apiRouter.use(teamMeetDayRouter);
 apiRouter.use(teamInjuryRouter);
 apiRouter.use(teamBillingRouter);

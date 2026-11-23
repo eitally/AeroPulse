@@ -13,7 +13,7 @@ async function openRosterOrPersonalModeTab(page: Page) {
   const isMobile = Boolean(page.viewportSize() && page.viewportSize()!.width < 768);
   if (isMobile) {
     const mobileDock = page.locator('nav[aria-label="Mobile primary workspaces"]');
-    await mobileDock.getByRole('button', { name: 'Roster' }).click();
+    await mobileDock.getByRole('button', { name: 'Team' }).click();
   } else {
     await page.getByTestId('coach-subtab-roster').click();
   }

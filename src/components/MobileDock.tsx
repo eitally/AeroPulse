@@ -38,10 +38,10 @@ export const MobileDock: React.FC<MobileDockProps> = ({
       label: string;
       icon: typeof ClipboardText;
     }> = [
-      { id: 'CLIPBOARD', label: 'Clipboard', icon: ClipboardText },
-      { id: 'TEAM_PLAN', label: 'Team Plan', icon: Calendar },
-      { id: 'STOPWATCH', label: 'Stopwatch', icon: Timer },
-      { id: 'ROSTER', label: 'Roster', icon: Users },
+      { id: 'CLIPBOARD', label: 'Practice', icon: ClipboardText },
+      { id: 'TEAM_PLAN', label: 'Meets & Plan', icon: Calendar },
+      { id: 'STOPWATCH', label: 'Timing', icon: Timer },
+      { id: 'ROSTER', label: 'Team', icon: Users },
     ];
 
     return (
@@ -56,6 +56,7 @@ export const MobileDock: React.FC<MobileDockProps> = ({
             <button
               key={tab.id}
               type="button"
+              data-testid={`mobile-dock-coach-${tab.id.toLowerCase()}`}
               aria-current={isActive ? 'page' : undefined}
               onClick={() => onSelectCoachSubTab(tab.id)}
               className={`min-h-[46px] flex flex-col items-center justify-center rounded-xl transition-all cursor-pointer ${

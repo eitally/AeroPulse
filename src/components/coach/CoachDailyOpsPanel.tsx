@@ -40,6 +40,7 @@ export interface CoachDailyOpsPanelProps {
   myTeams: TeamSummaryWithRole[];
   complexityTier: CoachComplexityTier;
   allowedEventGroups?: CoachEventGroup[];
+  hideDuplicateLaunchers?: boolean;
   onLaunchStopwatch: () => void;
   onLaunchFieldSheet: () => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], activeId?: string) => void;
@@ -223,6 +224,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   myTeams,
   complexityTier,
   allowedEventGroups,
+  hideDuplicateLaunchers = false,
   onLaunchStopwatch,
   onLaunchFieldSheet,
   onTeamsUpdated,
@@ -235,6 +237,8 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   const [attendanceMap, setAttendanceMap] = useState<Record<string, TeamAttendanceStatus>>(() =>
     readSavedAttendanceMap(activeTeam, todayIso)
   );
+  const [showAllMembers, setShowAllMembers] = useState<boolean>(false);
+  const autoSaveTimerRef = React.useRef<number | null>(null);
   const [savingAttendance, setSavingAttendance] = useState<boolean>(false);
   const [attendanceBanner, setAttendanceBanner] = useState<{
     text: string;
@@ -309,60 +313,34 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
     });
   }, [athleteMembers, groupFilter, searchQuery]);
 
-  const handleMarkAllPresent = () => {
-    setAttendanceMap((prev) =>
-      applyMarkAllPresentDraft({
-        visibleMembers,
-        attendanceMap: prev,
-        atRtpByMemberId,
-      })
-    );
-    setAttendanceBanner(null);
-  };
+  useEffect(() => {
+    return () => {
+      if (autoSaveTimerRef.current !== null) {
+        window.clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, []);
 
-  const handleExportAttendanceCsv = () => {
-    if (!activeTeam) return;
-    const csv = buildAttendanceCsv({
-      dateIso: selectedDate,
-      teamName: activeTeam.brand.shortName || activeTeam.brand.name,
-      members: visibleMembers,
-      attendanceByMember: attendanceMap,
-      savedRecords: activeTeam.attendanceByDate?.[selectedDate],
-      injuryCases: activeTeam.injuryCases,
-    });
-    const slug = (activeTeam.brand.slug || activeTeam.brand.shortName || 'team')
-      .toLowerCase()
-      .replace(/[^a-z0-9-]+/g, '-');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${slug}-attendance-${selectedDate}.csv`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    document.body.removeChild(anchor);
-    URL.revokeObjectURL(url);
-    setAttendanceBanner({
-      text: `Exported attendance CSV for ${selectedDate} (${visibleMembers.length} athletes).`,
-      tone: 'ok',
-    });
-  };
-
-  const handleSaveAttendance = async () => {
+  const persistAttendanceMap = async (
+    targetMap: Record<string, TeamAttendanceStatus>,
+    opts?: { isAutoSave?: boolean }
+  ) => {
     if (!activeTeam) return;
     const entries = buildExplicitAttendanceSaveEntries({
       members: athleteMembers,
-      attendanceMap,
+      attendanceMap: targetMap,
     });
     if (entries.length === 0) {
-      setAttendanceBanner({
-        text: 'Mark at least one athlete (or tap Mark All Present) before saving roll call.',
-        tone: 'error',
-      });
+      if (!opts?.isAutoSave) {
+        setAttendanceBanner({
+          text: 'Mark at least one athlete (or tap Mark All Present) before saving roll call.',
+          tone: 'error',
+        });
+      }
       return;
     }
     const unmarkedAtSave = Math.max(0, athleteMembers.length - entries.length);
-    const savedSummaryText = `Saved roll call for ${entries.length} marked athlete${
+    const savedSummaryText = `${opts?.isAutoSave ? 'Auto-saved' : 'Saved'} roll call for ${entries.length} marked athlete${
       entries.length === 1 ? '' : 's'
     } (${selectedDate})${unmarkedAtSave > 0 ? ` · ${unmarkedAtSave} unmarked` : ''} ✓`;
 
@@ -412,7 +390,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
     }
 
     setSavingAttendance(true);
-    setAttendanceBanner(null);
+    if (!opts?.isAutoSave) setAttendanceBanner(null);
     try {
       const resp = await recordTeamAttendanceBatchApi({
         teamId: activeTeam.brand.teamId,
@@ -439,6 +417,63 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
     } finally {
       setSavingAttendance(false);
     }
+  };
+
+  const scheduleAutoSaveAttendance = (nextMap: Record<string, TeamAttendanceStatus>) => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+    }
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      void persistAttendanceMap(nextMap, { isAutoSave: true });
+    }, 600);
+  };
+
+  const handleMarkAllPresent = () => {
+    const nextMap = applyMarkAllPresentDraft({
+      visibleMembers,
+      attendanceMap,
+      atRtpByMemberId,
+    });
+    setAttendanceMap(nextMap);
+    setAttendanceBanner(null);
+    scheduleAutoSaveAttendance(nextMap);
+  };
+
+  const handleExportAttendanceCsv = () => {
+    if (!activeTeam) return;
+    const csv = buildAttendanceCsv({
+      dateIso: selectedDate,
+      teamName: activeTeam.brand.shortName || activeTeam.brand.name,
+      members: visibleMembers,
+      attendanceByMember: attendanceMap,
+      savedRecords: activeTeam.attendanceByDate?.[selectedDate],
+      injuryCases: activeTeam.injuryCases,
+    });
+    const slug = (activeTeam.brand.slug || activeTeam.brand.shortName || 'team')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${slug}-attendance-${selectedDate}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    setAttendanceBanner({
+      text: `Exported attendance CSV for ${selectedDate} (${visibleMembers.length} athletes).`,
+      tone: 'ok',
+    });
+  };
+
+  const handleSaveAttendance = async () => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+    await persistAttendanceMap(attendanceMap, { isAutoSave: false });
   };
 
   const handlePostAnnouncement = async (e: React.FormEvent) => {
@@ -701,26 +736,28 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
           </h2>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-testid="daily-ops-launch-stopwatch"
-            onClick={onLaunchStopwatch}
-            className="ap-btn-primary !min-h-[44px] px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Timer className="w-4 h-4" />
-            <span>Launch Stopwatch</span>
-          </button>
-          <button
-            type="button"
-            data-testid="daily-ops-launch-field"
-            onClick={onLaunchFieldSheet}
-            className="ap-btn-secondary !min-h-[44px] px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-          >
-            <Target className="w-4 h-4 ap-text-brand" />
-            <span>Field &amp; Multi Sheet</span>
-          </button>
-        </div>
+        {!hideDuplicateLaunchers && (
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="daily-ops-launch-stopwatch"
+              onClick={onLaunchStopwatch}
+              className="ap-btn-primary !min-h-[44px] px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Timer className="w-4 h-4" />
+              <span>Launch Stopwatch</span>
+            </button>
+            <button
+              type="button"
+              data-testid="daily-ops-launch-field"
+              onClick={onLaunchFieldSheet}
+              className="ap-btn-secondary !min-h-[44px] px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Target className="w-4 h-4 ap-text-brand" />
+              <span>Field &amp; Multi Sheet</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {activeTeam && (
@@ -806,14 +843,14 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
               </select>
             </div>
 
-            <div className="space-y-1.5 max-h-[420px] sm:max-h-72 overflow-y-auto pr-0.5">
+            <div className="space-y-1.5 sm:max-h-80 sm:overflow-y-auto pr-0.5">
               {visibleMembers.length === 0 ? (
                 <div className="text-xs text-ap-muted dark:text-ap-muted-dark py-2">
                   No athletes on roster yet. Invite athletes via join code{' '}
                   <strong className="font-mono">{activeTeam.brand.joinCode}</strong>.
                 </div>
               ) : (
-                visibleMembers.map((m) => {
+                (showAllMembers ? visibleMembers : visibleMembers.slice(0, 25)).map((m) => {
                   const status = attendanceMap[m.membershipId];
                   const todayRec = activeTeam.attendanceByDate?.[selectedDate]?.[m.membershipId];
                   const atRtpStage = atRtpByMemberId.get(m.membershipId);
@@ -880,9 +917,11 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                               aria-label={`${m.invitedName} ${code}`}
                               aria-pressed={active}
                               title={code === 'INJURED_MODIFIED' ? 'Injured / Modified Practice' : code}
-                              onClick={() =>
-                                setAttendanceMap((prev) => ({ ...prev, [m.membershipId]: code }))
-                              }
+                              onClick={() => {
+                                const nextMap = { ...attendanceMap, [m.membershipId]: code };
+                                setAttendanceMap(nextMap);
+                                scheduleAutoSaveAttendance(nextMap);
+                              }}
                               className={`min-h-[44px] sm:min-h-[32px] min-w-[36px] px-2 rounded-lg font-bold cursor-pointer ${
                                 active
                                   ? code === 'ABSENT'
@@ -905,6 +944,20 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                 })
               )}
             </div>
+
+            {visibleMembers.length > 25 && (
+              <div className="flex justify-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowAllMembers((prev) => !prev)}
+                  className="min-h-[38px] px-3 py-1 rounded-lg ap-card-inset text-2xs font-mono font-bold cursor-pointer"
+                >
+                  {showAllMembers
+                    ? 'Show First 25 Athletes'
+                    : `Show All ${visibleMembers.length} Athletes`}
+                </button>
+              </div>
+            )}
 
             {visibleMembers.length > 0 && (
               <div className="flex items-center justify-between gap-2 pt-1">

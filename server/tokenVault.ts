@@ -281,6 +281,42 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
           ON thresh_stripe_events (customer_id);
         CREATE INDEX IF NOT EXISTS idx_thresh_stripe_events_subscription
           ON thresh_stripe_events (subscription_id);
+        CREATE TABLE IF NOT EXISTS thresh_team_events (
+          team_id TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          date_iso TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          encrypted_payload TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (team_id, event_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_events_team_date
+          ON thresh_team_events (team_id, date_iso);
+        CREATE TABLE IF NOT EXISTS thresh_team_event_rsvps (
+          team_id TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          membership_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          travel_mode TEXT,
+          note TEXT,
+          updated_by_role TEXT NOT NULL,
+          updated_by_sid TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (team_id, event_id, membership_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_event_rsvps_event
+          ON thresh_team_event_rsvps (team_id, event_id);
+        CREATE TABLE IF NOT EXISTS thresh_team_messages (
+          team_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          event_id TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          encrypted_payload TEXT NOT NULL,
+          PRIMARY KEY (team_id, message_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_messages_channel_created
+          ON thresh_team_messages (team_id, channel_id, created_at DESC);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -1592,5 +1628,207 @@ export async function recordStripeEventPostgresAsync(params: {
   } catch (err: unknown) {
     warnServerFallback('stripe:postgres-record', err);
     throw err;
+  }
+}
+
+export async function listTeamEventsPostgresAsync<T>(teamId: string): Promise<T[] | null> {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!safeTeamId || (!txClient && !pool)) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    const res = await runner.query<{ encrypted_payload: string }>(
+      `SELECT encrypted_payload
+       FROM thresh_team_events
+       WHERE team_id = $1
+       ORDER BY date_iso ASC, updated_at DESC`,
+      [safeTeamId]
+    );
+    const items: T[] = [];
+    for (const row of res.rows) {
+      const parsed = decryptJsonFromVault<T>(row.encrypted_payload);
+      if (parsed !== null) {
+        items.push(parsed);
+      }
+    }
+    return items;
+  } catch (err: unknown) {
+    warnServerFallback('team-events:postgres-list', err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+
+export async function upsertTeamEventPostgresAsync(params: {
+  teamId: string;
+  eventId: string;
+  dateIso: string;
+  eventType: string;
+  eventPayload: unknown;
+}): Promise<boolean | null> {
+  const safeTeamId = sanitizeTenantId(params.teamId);
+  const cleanEventId = String(params.eventId || '').trim();
+  if (!safeTeamId || !cleanEventId) return null;
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    const encryptedPayload = encryptJsonForVault(params.eventPayload);
+    await runner.query(
+      `INSERT INTO thresh_team_events (team_id, event_id, date_iso, event_type, encrypted_payload, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (team_id, event_id)
+       DO UPDATE SET
+         date_iso = EXCLUDED.date_iso,
+         event_type = EXCLUDED.event_type,
+         encrypted_payload = EXCLUDED.encrypted_payload,
+         updated_at = NOW()`,
+      [safeTeamId, cleanEventId, params.dateIso, params.eventType, encryptedPayload]
+    );
+    return true;
+  } catch (err: unknown) {
+    warnServerFallback('team-events:postgres-upsert', err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+
+export async function deleteTeamEventPostgresAsync(
+  teamId: string,
+  eventId: string
+): Promise<boolean | null> {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const cleanEventId = String(eventId || '').trim();
+  if (!safeTeamId || !cleanEventId) return null;
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    await runner.query('DELETE FROM thresh_team_event_rsvps WHERE team_id = $1 AND event_id = $2', [
+      safeTeamId,
+      cleanEventId,
+    ]);
+    const res = await runner.query(
+      'DELETE FROM thresh_team_events WHERE team_id = $1 AND event_id = $2',
+      [safeTeamId, cleanEventId]
+    );
+    return (res.rowCount || 0) > 0;
+  } catch (err: unknown) {
+    warnServerFallback('team-events:postgres-delete', err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+
+export interface PostgresTeamEventRsvpRow {
+  team_id: string;
+  event_id: string;
+  membership_id: string;
+  status: string;
+  travel_mode: string | null;
+  note: string | null;
+  updated_by_role: string;
+  updated_at: string;
+}
+
+export async function listTeamEventRsvpsPostgresAsync(
+  teamId: string,
+  eventId?: string
+): Promise<PostgresTeamEventRsvpRow[] | null> {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!safeTeamId || (!txClient && !pool)) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    const cleanEventId = eventId ? String(eventId).trim() : '';
+    const res = cleanEventId
+      ? await runner.query<PostgresTeamEventRsvpRow>(
+          `SELECT team_id, event_id, membership_id, status, travel_mode, note, updated_by_role, updated_at::text
+           FROM thresh_team_event_rsvps
+           WHERE team_id = $1 AND event_id = $2`,
+          [safeTeamId, cleanEventId]
+        )
+      : await runner.query<PostgresTeamEventRsvpRow>(
+          `SELECT team_id, event_id, membership_id, status, travel_mode, note, updated_by_role, updated_at::text
+           FROM thresh_team_event_rsvps
+           WHERE team_id = $1`,
+          [safeTeamId]
+        );
+    return res.rows;
+  } catch (err: unknown) {
+    warnServerFallback('team-rsvps:postgres-list', err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+
+export async function upsertTeamEventRsvpPostgresAsync(params: {
+  teamId: string;
+  eventId: string;
+  membershipId: string;
+  status: string;
+  travelMode?: string;
+  note?: string;
+  updatedByRole: string;
+  updatedBySid?: string;
+  updatedAt: string;
+}): Promise<boolean | null> {
+  const safeTeamId = sanitizeTenantId(params.teamId);
+  const cleanEventId = String(params.eventId || '').trim();
+  const cleanMemId = String(params.membershipId || '').trim();
+  if (!safeTeamId || !cleanEventId || !cleanMemId) return null;
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    await runner.query(
+      `INSERT INTO thresh_team_event_rsvps
+         (team_id, event_id, membership_id, status, travel_mode, note, updated_by_role, updated_by_sid, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz)
+       ON CONFLICT (team_id, event_id, membership_id)
+       DO UPDATE SET
+         status = EXCLUDED.status,
+         travel_mode = EXCLUDED.travel_mode,
+         note = EXCLUDED.note,
+         updated_by_role = EXCLUDED.updated_by_role,
+         updated_by_sid = EXCLUDED.updated_by_sid,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        safeTeamId,
+        cleanEventId,
+        cleanMemId,
+        params.status,
+        params.travelMode || null,
+        params.note || null,
+        params.updatedByRole,
+        params.updatedBySid || null,
+        params.updatedAt,
+      ]
+    );
+    return true;
+  } catch (err: unknown) {
+    warnServerFallback('team-rsvps:postgres-upsert', err);
+    if (txClient) throw err;
+    return null;
   }
 }

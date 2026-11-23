@@ -70,7 +70,9 @@ test.describe('COACH-01 & COACH-02: 2-Tap Check-In, Safety Swap, Execution Diges
     await expect(digest).toBeVisible();
     await toggleDarkMode(page, false);
 
-    // 3. Open Cohort Plan Builder -> Rolling 2W -> 800m / Mile Cohort
+    // 3. Open Cohort Plan Builder via Coach Desk drawer -> Rolling 2W -> 800m / Mile Cohort
+    await page.getByTestId('coach-desk-menu-btn').click();
+    await expect(page.getByTestId('coach-desk-drawer')).toBeVisible();
     await page.getByTestId('coach-open-cohort-plan-builder').click();
     const publishBar = page.getByTestId('plan-builder-publish-bar');
     await publishBar.scrollIntoViewIfNeeded();
@@ -108,9 +110,9 @@ test.describe('COACH-01 & COACH-02: 2-Tap Check-In, Safety Swap, Execution Diges
     await page.getByTestId('checkin-submit-clear').click();
     await expect(page.getByTestId('checkin-logged-summary')).toContainText('RPE 5/10');
 
-    // Open Coach Digest inside Roster via mobile dock on mobile
+    // Open Coach Digest inside Team via mobile dock on mobile
     await page.getByTestId('toggle-coach-workspace').click();
-    await page.locator('nav[aria-label="Mobile primary workspaces"]').getByRole('button', { name: 'Roster' }).click();
+    await page.locator('nav[aria-label="Mobile primary workspaces"]').getByRole('button', { name: 'Team' }).click();
     const digest = page.getByTestId('coach-execution-digest');
     await expect(digest).toBeVisible({ timeout: 15000 });
     await expect(digest).toContainText('RPE 5/10');
@@ -120,7 +122,9 @@ test.describe('COACH-01 & COACH-02: 2-Tap Check-In, Safety Swap, Execution Diges
     );
     expect(overflowCoach).toBeLessThanOrEqual(2);
 
-    // Open Plan Builder and verify mobile touch target & overflow
+    // Open Plan Builder via Coach Desk drawer and verify mobile touch target & overflow
+    await page.getByTestId('coach-desk-menu-btn').click();
+    await expect(page.getByTestId('coach-desk-drawer')).toBeVisible();
     await page.getByTestId('coach-open-cohort-plan-builder').click();
     const publishBar = page.getByTestId('plan-builder-publish-bar');
     await publishBar.scrollIntoViewIfNeeded();

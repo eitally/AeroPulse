@@ -153,7 +153,8 @@ describe('Track C Sprint 0 UI, Brand & Mobile Polish Guards', () => {
 
     const coachView = readRel('src/components/CoachWorkspaceView.tsx');
     expect(coachView).toContain('setOpenCreateTeamOnSwitch(false);');
-    expect(coachView).toContain('initialShowCreateStudio={openCreateTeamOnSwitch}');
+    const teamHub = readRel('src/components/coach/CoachTeamHubView.tsx');
+    expect(teamHub).toContain('initialShowCreateStudio={openCreateTeamOnSwitch}');
 
     const teamPanel = readRel('src/components/TeamManagementPanel.tsx');
     expect(teamPanel.split('\n').length).toBeLessThanOrEqual(2500);

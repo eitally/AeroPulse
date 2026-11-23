@@ -81,14 +81,8 @@ import {
   Waves,
 } from './icons/PhosphorIcons';
 
-export function shouldDefaultExpandWorkoutLibrary(viewportWidth?: number): boolean {
-  if (typeof viewportWidth === 'number' && Number.isFinite(viewportWidth)) {
-    return viewportWidth >= 768;
-  }
-  if (typeof window !== 'undefined' && typeof window.innerWidth === 'number') {
-    return window.innerWidth >= 768;
-  }
-  return true;
+export function shouldDefaultExpandWorkoutLibrary(_viewportWidth?: number): boolean {
+  return false;
 }
 
 export function isScholasticTrackOrXcTeam(
@@ -373,6 +367,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     shouldDefaultExpandWorkoutLibrary()
   );
   const [showMultisportGroup, setShowMultisportGroup] = useState<boolean>(false);
+  const [individualSearch, setIndividualSearch] = useState<string>('');
   const [libraryFilter, setLibraryFilter] = useState<'ALL' | TeamWorkoutLibraryCategory>('ALL');
   const [isSavingLibrary, setIsSavingLibrary] = useState(false);
   const [deletingLibraryId, setDeletingLibraryId] = useState<string | null>(null);
@@ -1527,29 +1522,47 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         </div>
 
         {audienceMode === 'INDIVIDUAL' && connectedAthletes.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {connectedAthletes.map((ath) => {
-              const selected = selectedAthleteIds.includes(ath.id);
-              return (
-                <button
-                  key={ath.id}
-                  type="button"
-                  aria-pressed={selected}
-                  onClick={() =>
-                    setSelectedAthleteIds((prev) =>
-                      prev.includes(ath.id) ? prev.filter((x) => x !== ath.id) : [...prev, ath.id]
-                    )
-                  }
-                  className={`min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-medium border cursor-pointer ${
-                    selected
-                      ? 'border-ap-cobalt bg-[#E3ECE5] text-ap-cobalt dark:border-ap-volt dark:bg-ap-turf dark:text-ap-volt'
-                      : 'border-ap-frame/25 dark:border-ap-edge text-slate-700 dark:text-slate-300'
-                  }`}
-                >
-                  {ath.name}
-                </button>
-              );
-            })}
+          <div className="space-y-1.5 pt-1">
+            {connectedAthletes.length > 10 && (
+              <input
+                type="search"
+                data-testid="clipboard-individual-search"
+                aria-label="Filter individual athletes"
+                value={individualSearch}
+                onChange={(e) => setIndividualSearch(e.target.value)}
+                placeholder={`Filter ${connectedAthletes.length} athletes by name...`}
+                className="w-full sm:w-64 min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge bg-white dark:bg-ap-carbon px-2.5 text-xs text-ap-ink dark:text-ap-chalk"
+              />
+            )}
+            <div className="flex flex-wrap gap-1.5 max-h-44 overflow-y-auto">
+              {connectedAthletes
+                .filter((ath) => {
+                  const q = individualSearch.trim().toLowerCase();
+                  return !q || ath.name.toLowerCase().includes(q);
+                })
+                .map((ath) => {
+                  const selected = selectedAthleteIds.includes(ath.id);
+                  return (
+                    <button
+                      key={ath.id}
+                      type="button"
+                      aria-pressed={selected}
+                      onClick={() =>
+                        setSelectedAthleteIds((prev) =>
+                          prev.includes(ath.id) ? prev.filter((x) => x !== ath.id) : [...prev, ath.id]
+                        )
+                      }
+                      className={`min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-medium border cursor-pointer ${
+                        selected
+                          ? 'border-ap-cobalt bg-[#E3ECE5] text-ap-cobalt dark:border-ap-volt dark:bg-ap-turf dark:text-ap-volt'
+                          : 'border-ap-frame/25 dark:border-ap-edge text-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {ath.name}
+                    </button>
+                  );
+                })}
+            </div>
           </div>
         )}
       </div>
@@ -2255,7 +2268,12 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
         {showWorkoutLibrary && (
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter workout library">
-              {LIBRARY_CATEGORY_CHIPS.map((chip) => (
+              {LIBRARY_CATEGORY_CHIPS.filter(
+                (chip) =>
+                  !isScholasticTrack ||
+                  showMultisportButtons ||
+                  (chip.id !== 'CYCLING' && chip.id !== 'SWIMMING' && chip.id !== 'TRIATHLON')
+              ).map((chip) => (
                 <button
                   key={chip.id}
                   type="button"

@@ -1,9 +1,9 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express15 from "express";
+import express16 from "express";
 
 // server/apiRouter.ts
-import express13 from "express";
+import express14 from "express";
 
 // server/securityUtils.ts
 import crypto from "crypto";
@@ -795,6 +795,42 @@ async function ensurePostgresVaultSchema(pool) {
           ON thresh_stripe_events (customer_id);
         CREATE INDEX IF NOT EXISTS idx_thresh_stripe_events_subscription
           ON thresh_stripe_events (subscription_id);
+        CREATE TABLE IF NOT EXISTS thresh_team_events (
+          team_id TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          date_iso TEXT NOT NULL,
+          event_type TEXT NOT NULL,
+          encrypted_payload TEXT NOT NULL,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (team_id, event_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_events_team_date
+          ON thresh_team_events (team_id, date_iso);
+        CREATE TABLE IF NOT EXISTS thresh_team_event_rsvps (
+          team_id TEXT NOT NULL,
+          event_id TEXT NOT NULL,
+          membership_id TEXT NOT NULL,
+          status TEXT NOT NULL,
+          travel_mode TEXT,
+          note TEXT,
+          updated_by_role TEXT NOT NULL,
+          updated_by_sid TEXT,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (team_id, event_id, membership_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_event_rsvps_event
+          ON thresh_team_event_rsvps (team_id, event_id);
+        CREATE TABLE IF NOT EXISTS thresh_team_messages (
+          team_id TEXT NOT NULL,
+          message_id TEXT NOT NULL,
+          channel_id TEXT NOT NULL,
+          event_id TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          encrypted_payload TEXT NOT NULL,
+          PRIMARY KEY (team_id, message_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_team_messages_channel_created
+          ON thresh_team_messages (team_id, channel_id, created_at DESC);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -1787,6 +1823,168 @@ async function recordStripeEventPostgresAsync(params) {
   } catch (err) {
     warnServerFallback("stripe:postgres-record", err);
     throw err;
+  }
+}
+async function listTeamEventsPostgresAsync(teamId) {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!safeTeamId || !txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    const res = await runner.query(
+      `SELECT encrypted_payload
+       FROM thresh_team_events
+       WHERE team_id = $1
+       ORDER BY date_iso ASC, updated_at DESC`,
+      [safeTeamId]
+    );
+    const items = [];
+    for (const row of res.rows) {
+      const parsed = decryptJsonFromVault(row.encrypted_payload);
+      if (parsed !== null) {
+        items.push(parsed);
+      }
+    }
+    return items;
+  } catch (err) {
+    warnServerFallback("team-events:postgres-list", err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+async function upsertTeamEventPostgresAsync(params) {
+  const safeTeamId = sanitizeTenantId(params.teamId);
+  const cleanEventId = String(params.eventId || "").trim();
+  if (!safeTeamId || !cleanEventId) return null;
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    const encryptedPayload = encryptJsonForVault(params.eventPayload);
+    await runner.query(
+      `INSERT INTO thresh_team_events (team_id, event_id, date_iso, event_type, encrypted_payload, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NOW())
+       ON CONFLICT (team_id, event_id)
+       DO UPDATE SET
+         date_iso = EXCLUDED.date_iso,
+         event_type = EXCLUDED.event_type,
+         encrypted_payload = EXCLUDED.encrypted_payload,
+         updated_at = NOW()`,
+      [safeTeamId, cleanEventId, params.dateIso, params.eventType, encryptedPayload]
+    );
+    return true;
+  } catch (err) {
+    warnServerFallback("team-events:postgres-upsert", err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+async function deleteTeamEventPostgresAsync(teamId, eventId) {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const cleanEventId = String(eventId || "").trim();
+  if (!safeTeamId || !cleanEventId) return null;
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    await runner.query("DELETE FROM thresh_team_event_rsvps WHERE team_id = $1 AND event_id = $2", [
+      safeTeamId,
+      cleanEventId
+    ]);
+    const res = await runner.query(
+      "DELETE FROM thresh_team_events WHERE team_id = $1 AND event_id = $2",
+      [safeTeamId, cleanEventId]
+    );
+    return (res.rowCount || 0) > 0;
+  } catch (err) {
+    warnServerFallback("team-events:postgres-delete", err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+async function listTeamEventRsvpsPostgresAsync(teamId, eventId) {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!safeTeamId || !txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    const cleanEventId = eventId ? String(eventId).trim() : "";
+    const res = cleanEventId ? await runner.query(
+      `SELECT team_id, event_id, membership_id, status, travel_mode, note, updated_by_role, updated_at::text
+           FROM thresh_team_event_rsvps
+           WHERE team_id = $1 AND event_id = $2`,
+      [safeTeamId, cleanEventId]
+    ) : await runner.query(
+      `SELECT team_id, event_id, membership_id, status, travel_mode, note, updated_by_role, updated_at::text
+           FROM thresh_team_event_rsvps
+           WHERE team_id = $1`,
+      [safeTeamId]
+    );
+    return res.rows;
+  } catch (err) {
+    warnServerFallback("team-rsvps:postgres-list", err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+async function upsertTeamEventRsvpPostgresAsync(params) {
+  const safeTeamId = sanitizeTenantId(params.teamId);
+  const cleanEventId = String(params.eventId || "").trim();
+  const cleanMemId = String(params.membershipId || "").trim();
+  if (!safeTeamId || !cleanEventId || !cleanMemId) return null;
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    await runner.query(
+      `INSERT INTO thresh_team_event_rsvps
+         (team_id, event_id, membership_id, status, travel_mode, note, updated_by_role, updated_by_sid, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz)
+       ON CONFLICT (team_id, event_id, membership_id)
+       DO UPDATE SET
+         status = EXCLUDED.status,
+         travel_mode = EXCLUDED.travel_mode,
+         note = EXCLUDED.note,
+         updated_by_role = EXCLUDED.updated_by_role,
+         updated_by_sid = EXCLUDED.updated_by_sid,
+         updated_at = EXCLUDED.updated_at`,
+      [
+        safeTeamId,
+        cleanEventId,
+        cleanMemId,
+        params.status,
+        params.travelMode || null,
+        params.note || null,
+        params.updatedByRole,
+        params.updatedBySid || null,
+        params.updatedAt
+      ]
+    );
+    return true;
+  } catch (err) {
+    warnServerFallback("team-rsvps:postgres-upsert", err);
+    if (txClient) throw err;
+    return null;
   }
 }
 
@@ -10205,6 +10403,16 @@ function sanitizeDelegatedTimingSessionForCaller(session) {
   const { pinHash: _dropPinHash, ...clean } = session;
   return clean;
 }
+function resolveLinkedChildMembershipIds(memberships, myMembership) {
+  if (!myMembership || myMembership.role !== "PARENT_FOLLOWER") return null;
+  const parentFollowerEmail = myMembership.invitedEmail?.trim().toLowerCase();
+  if (!parentFollowerEmail) return /* @__PURE__ */ new Set();
+  return new Set(
+    memberships.filter(
+      (m) => m.role === "ATHLETE" && m.status !== "REVOKED" && m.parentGuardianEmail?.trim().toLowerCase() === parentFollowerEmail
+    ).map((m) => m.membershipId)
+  );
+}
 function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   const myMembership = doc.memberships.find(
     (m) => m.userSid === callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
@@ -10213,12 +10421,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   const isStaffViewer = canViewSafeguardingMedicalRole(myMembership.role);
   const isCoach = isStaffViewer;
   const isParentFollower = myMembership.role === "PARENT_FOLLOWER";
-  const parentFollowerEmail = myMembership.invitedEmail?.trim().toLowerCase();
-  const linkedChildMembershipIds = isParentFollower ? new Set(
-    doc.memberships.filter(
-      (m) => m.role === "ATHLETE" && m.status !== "REVOKED" && Boolean(parentFollowerEmail) && m.parentGuardianEmail?.trim().toLowerCase() === parentFollowerEmail
-    ).map((m) => m.membershipId)
-  ) : null;
+  const linkedChildMembershipIds = resolveLinkedChildMembershipIds(doc.memberships, myMembership);
   const athleteMembers = doc.memberships.filter(
     (m) => m.status !== "REVOKED" && (!isParentFollower || m.role === "ATHLETE")
   );
@@ -10494,6 +10697,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     ...Array.isArray(myMembership.coachEventGroups) && myMembership.coachEventGroups.length > 0 ? { myCoachEventGroups: myMembership.coachEventGroups } : {},
     ...myMembership.coachSpecialtyTitle ? { myCoachSpecialtyTitle: myMembership.coachSpecialtyTitle } : {},
     ...Array.isArray(myMembership.assignedAthleteMembershipIds) && myMembership.assignedAthleteMembershipIds.length > 0 ? { myAssignedAthleteMembershipIds: myMembership.assignedAthleteMembershipIds } : {},
+    ...linkedChildMembershipIds && linkedChildMembershipIds.size > 0 ? { myLinkedChildMembershipIds: Array.from(linkedChildMembershipIds) } : {},
     myMembershipId: myMembership.membershipId,
     totalInvited,
     openedCount,
@@ -20147,11 +20351,626 @@ teamRouter.post("/api/push/test", async (req, res) => {
   }
 });
 
-// server/routers/teamMeetDayRouter.ts
+// server/routers/teamEventsRouter.ts
 import express4 from "express";
 
-// server/teamMeetDayOpsService.ts
+// server/teamEventsService.ts
 import crypto18 from "crypto";
+var VALID_EVENT_TYPES = /* @__PURE__ */ new Set([
+  "PRACTICE",
+  "MEET",
+  "BUS_TRAVEL",
+  "TEAM_MEETING"
+]);
+var VALID_VISIBILITY_SCOPES = /* @__PURE__ */ new Set([
+  "TEAM_AND_FAMILIES_ONLY",
+  "PUBLIC_HUB",
+  "STAFF_ONLY"
+]);
+var VALID_RSVP_STATUSES = /* @__PURE__ */ new Set([
+  "GOING",
+  "OUT",
+  "LATE",
+  "MEET_CONFLICT",
+  "UNDECIDED"
+]);
+var VALID_TRAVEL_MODES = /* @__PURE__ */ new Set([
+  "TEAM_BUS",
+  "PARENT_PICKUP",
+  "SELF_TRAVEL"
+]);
+var VALID_ALBUM_PROVIDERS = /* @__PURE__ */ new Set([
+  "GOOGLE_PHOTOS",
+  "APPLE_ICLOUD",
+  "SMUGMUG",
+  "SHUTTERFLY",
+  "HUDL",
+  "OTHER"
+]);
+function teamEventsVaultKey(teamId) {
+  return `team_events_${sanitizeTenantId(teamId)}`;
+}
+function teamRsvpsVaultKey(teamId) {
+  return `team_rsvps_${sanitizeTenantId(teamId)}`;
+}
+function computeRsvpCounts(rsvps) {
+  const counts = {
+    going: 0,
+    out: 0,
+    late: 0,
+    conflict: 0,
+    undecided: 0
+  };
+  for (const r of rsvps) {
+    if (r.status === "GOING") counts.going += 1;
+    else if (r.status === "OUT") counts.out += 1;
+    else if (r.status === "LATE") counts.late += 1;
+    else if (r.status === "MEET_CONFLICT") counts.conflict += 1;
+    else counts.undecided += 1;
+  }
+  return counts;
+}
+function sanitizeCuratedAlbumLinks(raw, authorName, nowIso) {
+  if (!Array.isArray(raw)) return { links: [] };
+  const links = [];
+  for (const entry of raw.slice(0, 5)) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry;
+    const rawUrl = String(item.url || "").trim();
+    if (!rawUrl) continue;
+    if (!isSafeHttpsUrl(rawUrl)) {
+      return {
+        links: [],
+        error: "Album links must use https:// URLs."
+      };
+    }
+    const label = String(item.label || "Meet Photo Album").trim().slice(0, 80) || "Meet Photo Album";
+    const rawProvider = String(item.provider || "").trim().toUpperCase();
+    const visibility = item.visibility === "PUBLIC_HUB" ? "PUBLIC_HUB" : "TEAM_AND_FAMILIES_ONLY";
+    links.push({
+      id: String(item.id || `alb_${crypto18.randomBytes(4).toString("hex")}`).trim(),
+      label,
+      url: rawUrl,
+      ...VALID_ALBUM_PROVIDERS.has(rawProvider) ? { provider: rawProvider } : {},
+      visibility,
+      addedByName: String(item.addedByName || authorName).trim().slice(0, 60) || authorName,
+      addedAt: String(item.addedAt || nowIso)
+    });
+  }
+  return { links };
+}
+async function loadStoredEvents(teamId) {
+  const pgEvents = await listTeamEventsPostgresAsync(teamId);
+  if (pgEvents !== null) return pgEvents;
+  return loadTenantVaultAsync(teamEventsVaultKey(teamId), []);
+}
+async function loadStoredRsvps(teamId) {
+  const pgRows = await listTeamEventRsvpsPostgresAsync(teamId);
+  if (pgRows !== null) {
+    return pgRows.map((r) => ({
+      eventId: r.event_id,
+      membershipId: r.membership_id,
+      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
+      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
+      ...r.note ? { note: r.note } : {},
+      updatedByRole: r.updated_by_role,
+      updatedAt: r.updated_at
+    }));
+  }
+  return loadTenantVaultAsync(teamRsvpsVaultKey(teamId), []);
+}
+function projectSyntheticEventsFromTeamDoc(params) {
+  const byId = /* @__PURE__ */ new Map();
+  const matchedBroadcastIds = /* @__PURE__ */ new Set();
+  const matchedPacketIds = /* @__PURE__ */ new Set();
+  for (const ev of params.storedEvents) {
+    byId.set(ev.eventId, ev);
+    if (ev.broadcastId) matchedBroadcastIds.add(ev.broadcastId);
+    if (ev.packetId) matchedPacketIds.add(ev.packetId);
+  }
+  for (const pkt of params.meetDayPackets || []) {
+    if (matchedPacketIds.has(pkt.packetId)) continue;
+    const syntheticId = pkt.eventId || `pkt_${pkt.packetId}`;
+    if (byId.has(syntheticId)) continue;
+    const liveUrl = pkt.liveResultsUrl || pkt.athleticLiveUrl;
+    byId.set(syntheticId, {
+      eventId: syntheticId,
+      teamId: params.teamId,
+      eventType: "MEET",
+      title: pkt.meetTitle,
+      date: pkt.meetDate,
+      ...typeof pkt.meetDelayMinutes === "number" ? { meetDelayMinutes: pkt.meetDelayMinutes } : {},
+      ...liveUrl && isSafeHttpsUrl(liveUrl) ? { liveResultsUrl: liveUrl } : {},
+      ...pkt.liveResultsLabel ? { liveResultsLabel: pkt.liveResultsLabel } : {},
+      ...pkt.curatedAlbumLinks?.length ? { curatedAlbumLinks: pkt.curatedAlbumLinks } : {},
+      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
+      packetId: pkt.packetId,
+      createdAt: pkt.updatedAt,
+      updatedAt: pkt.updatedAt
+    });
+  }
+  for (const bc of params.broadcastWorkouts || []) {
+    if (matchedBroadcastIds.has(bc.broadcastId)) continue;
+    const syntheticId = bc.eventId || `bc_${bc.broadcastId}`;
+    if (byId.has(syntheticId)) continue;
+    if (!bc.isOfficialMeet && !bc.scheduledTime) continue;
+    byId.set(syntheticId, {
+      eventId: syntheticId,
+      teamId: params.teamId,
+      eventType: bc.isOfficialMeet ? "MEET" : "PRACTICE",
+      title: bc.name,
+      date: bc.date,
+      ...bc.scheduledTime ? { startTime: bc.scheduledTime } : {},
+      ...bc.locationName ? { locationName: bc.locationName } : {},
+      ...bc.liveResultsUrl && isSafeHttpsUrl(bc.liveResultsUrl) ? { liveResultsUrl: bc.liveResultsUrl } : {},
+      ...bc.liveResultsLabel ? { liveResultsLabel: bc.liveResultsLabel } : {},
+      ...bc.curatedAlbumLinks?.length ? { curatedAlbumLinks: bc.curatedAlbumLinks } : {},
+      ...bc.targetEventGroups?.length ? { targetEventGroups: bc.targetEventGroups } : {},
+      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
+      broadcastId: bc.broadcastId,
+      createdAt: bc.createdAt,
+      updatedAt: bc.createdAt
+    });
+  }
+  return Array.from(byId.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+async function listTeamEventsForCaller(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem) {
+    return { ok: false, status: 403, error: "Team membership required." };
+  }
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
+  const [storedEvents, storedRsvps] = await Promise.all([
+    loadStoredEvents(params.teamId),
+    loadStoredRsvps(params.teamId)
+  ]);
+  const allEvents = projectSyntheticEventsFromTeamDoc({
+    teamId: params.teamId,
+    storedEvents,
+    broadcastWorkouts: doc.broadcastWorkouts,
+    meetDayPackets: doc.meetDayPackets
+  }).filter((ev) => isStaff || ev.visibilityScope !== "STAFF_ONLY");
+  const rsvpsGrouped = /* @__PURE__ */ new Map();
+  for (const rsvp of storedRsvps) {
+    const arr = rsvpsGrouped.get(rsvp.eventId) || [];
+    arr.push(rsvp);
+    rsvpsGrouped.set(rsvp.eventId, arr);
+  }
+  const rsvpCountsByEventId = {};
+  const rsvpsByEventId = {};
+  const myRsvps = [];
+  for (const ev of allEvents) {
+    const list = rsvpsGrouped.get(ev.eventId) || [];
+    rsvpCountsByEventId[ev.eventId] = computeRsvpCounts(list);
+    if (isStaff) {
+      rsvpsByEventId[ev.eventId] = list;
+    }
+    for (const rsvp of list) {
+      const isOwn = rsvp.membershipId === callerMem.membershipId;
+      const isChild = Boolean(linkedChildIds && linkedChildIds.has(rsvp.membershipId));
+      if (isOwn || isChild) {
+        myRsvps.push(rsvp);
+      }
+    }
+  }
+  return {
+    ok: true,
+    payload: {
+      events: allEvents,
+      rsvpCountsByEventId,
+      myRsvps,
+      ...isStaff ? { rsvpsByEventId } : {}
+    }
+  };
+}
+async function upsertTeamEvent(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
+  }
+  const cleanDate = String(params.input.date || "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    return { ok: false, status: 400, error: "Valid YYYY-MM-DD event date required." };
+  }
+  const cleanTitle = String(params.input.title || "").trim().slice(0, 140);
+  if (!cleanTitle) {
+    return { ok: false, status: 400, error: "Event title is required." };
+  }
+  const rawType = String(params.input.eventType || "PRACTICE").trim().toUpperCase();
+  const eventType = VALID_EVENT_TYPES.has(rawType) ? rawType : "PRACTICE";
+  const rawVis = String(params.input.visibilityScope || "TEAM_AND_FAMILIES_ONLY").trim().toUpperCase();
+  const visibilityScope = VALID_VISIBILITY_SCOPES.has(rawVis) ? rawVis : "TEAM_AND_FAMILIES_ONLY";
+  const liveResultsUrl = String(params.input.liveResultsUrl || "").trim();
+  if (liveResultsUrl && !isSafeHttpsUrl(liveResultsUrl)) {
+    return { ok: false, status: 400, error: "Live timing link must use an https:// URL." };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const albumValidation = sanitizeCuratedAlbumLinks(
+    params.input.curatedAlbumLinks,
+    callerMem.invitedName,
+    nowIso
+  );
+  if (albumValidation.error) {
+    return { ok: false, status: 400, error: albumValidation.error };
+  }
+  const hasPublicAlbum = albumValidation.links.some((l) => l.visibility === "PUBLIC_HUB");
+  const photoReleaseOptOutNames = hasPublicAlbum ? doc.memberships.filter((m) => m.role === "ATHLETE" && m.status !== "REVOKED" && m.photoReleaseOptOut).map((m) => m.invitedName) : [];
+  const targetEventGroups = Array.isArray(params.input.targetEventGroups) ? sanitizeTargetEventGroups(
+    params.input.targetEventGroups.map((g) => String(g))
+  ) || [] : [];
+  const eventId = String(params.input.eventId || "").trim().slice(0, 80) || `ev_${crypto18.randomBytes(6).toString("hex")}`;
+  const safeDelay = typeof params.input.meetDelayMinutes === "number" && Number.isFinite(params.input.meetDelayMinutes) ? Math.max(0, Math.min(240, Math.round(params.input.meetDelayMinutes))) : void 0;
+  const existingPg = await listTeamEventsPostgresAsync(params.teamId);
+  let createdAt = nowIso;
+  if (existingPg) {
+    const prev = existingPg.find((e) => e.eventId === eventId);
+    if (prev?.createdAt) createdAt = prev.createdAt;
+  }
+  const nextEvent = {
+    eventId,
+    teamId: params.teamId,
+    eventType,
+    title: cleanTitle,
+    date: cleanDate,
+    ...typeof params.input.startTime === "string" && params.input.startTime.trim() ? { startTime: params.input.startTime.trim().slice(0, 16) } : {},
+    ...typeof params.input.endTime === "string" && params.input.endTime.trim() ? { endTime: params.input.endTime.trim().slice(0, 16) } : {},
+    ...typeof params.input.timezone === "string" && params.input.timezone.trim() ? { timezone: params.input.timezone.trim().slice(0, 64) } : {},
+    ...typeof params.input.locationName === "string" && params.input.locationName.trim() ? { locationName: params.input.locationName.trim().slice(0, 120) } : {},
+    ...typeof params.input.venueId === "string" && params.input.venueId.trim() ? { venueId: params.input.venueId.trim().slice(0, 64) } : {},
+    ...typeof params.input.busDepartureTime === "string" && params.input.busDepartureTime.trim() ? { busDepartureTime: params.input.busDepartureTime.trim().slice(0, 24) } : {},
+    ...typeof params.input.busReturnTime === "string" && params.input.busReturnTime.trim() ? { busReturnTime: params.input.busReturnTime.trim().slice(0, 24) } : {},
+    ...safeDelay !== void 0 ? { meetDelayMinutes: safeDelay } : {},
+    ...liveResultsUrl ? { liveResultsUrl } : {},
+    ...typeof params.input.liveResultsLabel === "string" && params.input.liveResultsLabel.trim() ? { liveResultsLabel: params.input.liveResultsLabel.trim().slice(0, 60) } : {},
+    ...albumValidation.links.length > 0 ? { curatedAlbumLinks: albumValidation.links } : {},
+    ...targetEventGroups.length > 0 ? { targetEventGroups } : {},
+    visibilityScope,
+    ...typeof params.input.broadcastId === "string" && params.input.broadcastId.trim() ? { broadcastId: params.input.broadcastId.trim().slice(0, 80) } : {},
+    ...typeof params.input.packetId === "string" && params.input.packetId.trim() ? { packetId: params.input.packetId.trim().slice(0, 80) } : {},
+    ...typeof params.input.notes === "string" && params.input.notes.trim() ? { notes: params.input.notes.trim().slice(0, 500) } : {},
+    createdAt,
+    updatedAt: nowIso
+  };
+  const savedToPg = await upsertTeamEventPostgresAsync({
+    teamId: params.teamId,
+    eventId,
+    dateIso: cleanDate,
+    eventType,
+    eventPayload: nextEvent
+  });
+  if (savedToPg === null) {
+    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
+      const existingList = await loadTenantVaultAsync(
+        teamEventsVaultKey(params.teamId),
+        []
+      );
+      const prev = existingList.find((e) => e.eventId === eventId);
+      if (prev?.createdAt) {
+        nextEvent.createdAt = prev.createdAt;
+      }
+      const nextList = [
+        ...existingList.filter((e) => e.eventId !== eventId),
+        nextEvent
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextList);
+    });
+  }
+  await appendAuditLogAsync({
+    teamId: params.teamId,
+    actorSid: params.callerSid,
+    action: "TEAM_EVENT_UPSERTED",
+    targetId: eventId,
+    metadata: { eventType, date: cleanDate, visibilityScope }
+  });
+  return {
+    ok: true,
+    event: nextEvent,
+    ...photoReleaseOptOutNames.length > 0 ? { photoReleaseOptOutNames } : {}
+  };
+}
+async function deleteTeamEvent(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
+  }
+  const cleanEventId = String(params.eventId || "").trim();
+  if (!cleanEventId) return { ok: false, status: 400, error: "Event ID required." };
+  const deletedPg = await deleteTeamEventPostgresAsync(params.teamId, cleanEventId);
+  let deleted = Boolean(deletedPg);
+  if (deletedPg === null) {
+    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
+      const events = await loadTenantVaultAsync(
+        teamEventsVaultKey(params.teamId),
+        []
+      );
+      const nextEvents = events.filter((e) => e.eventId !== cleanEventId);
+      deleted = nextEvents.length !== events.length;
+      if (deleted) {
+        await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextEvents);
+      }
+    });
+    if (deleted) {
+      await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
+        const rsvps = await loadTenantVaultAsync(
+          teamRsvpsVaultKey(params.teamId),
+          []
+        );
+        const filtered = rsvps.filter((r) => r.eventId !== cleanEventId);
+        if (filtered.length !== rsvps.length) {
+          await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), filtered);
+        }
+      });
+    }
+  }
+  return { ok: true, deleted };
+}
+async function submitTeamEventRsvp(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem) {
+    return { ok: false, status: 403, error: "Team membership required." };
+  }
+  const cleanEventId = String(params.eventId || "").trim();
+  if (!cleanEventId) {
+    return { ok: false, status: 400, error: "Event ID required." };
+  }
+  const cleanStatus = String(params.status || "").trim().toUpperCase();
+  if (!VALID_RSVP_STATUSES.has(cleanStatus)) {
+    return { ok: false, status: 400, error: "Invalid RSVP status." };
+  }
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
+  let targetMembershipId = String(params.membershipId || "").trim();
+  if (!targetMembershipId) {
+    if (callerMem.role === "PARENT_FOLLOWER") {
+      const firstChild = linkedChildIds ? Array.from(linkedChildIds)[0] : "";
+      if (!firstChild) {
+        return {
+          ok: false,
+          status: 403,
+          error: "No linked student-athlete found for this guardian account."
+        };
+      }
+      targetMembershipId = firstChild;
+    } else {
+      targetMembershipId = callerMem.membershipId;
+    }
+  }
+  const targetMem = doc.memberships.find(
+    (m) => m.membershipId === targetMembershipId && m.status !== "REVOKED"
+  );
+  if (!targetMem) {
+    return { ok: false, status: 404, error: "Target athlete membership not found." };
+  }
+  if (!isStaff) {
+    if (callerMem.role === "PARENT_FOLLOWER") {
+      if (!linkedChildIds || !linkedChildIds.has(targetMembershipId)) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Guardians may only submit RSVPs for their linked student-athletes."
+        };
+      }
+    } else if (targetMembershipId !== callerMem.membershipId) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Athletes may only submit RSVPs for themselves."
+      };
+    }
+  }
+  const rawTravel = typeof params.travelMode === "string" ? params.travelMode.trim().toUpperCase() : void 0;
+  const travelMode = rawTravel && VALID_TRAVEL_MODES.has(rawTravel) ? rawTravel : void 0;
+  const note = typeof params.note === "string" && params.note.trim() ? params.note.trim().slice(0, 140) : void 0;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const nextRsvp = {
+    eventId: cleanEventId,
+    membershipId: targetMembershipId,
+    status: cleanStatus,
+    ...travelMode ? { travelMode } : {},
+    ...note ? { note } : {},
+    updatedByRole: callerMem.role,
+    updatedAt: nowIso
+  };
+  const savedToPg = await upsertTeamEventRsvpPostgresAsync({
+    teamId: params.teamId,
+    eventId: cleanEventId,
+    membershipId: targetMembershipId,
+    status: cleanStatus,
+    travelMode,
+    note,
+    updatedByRole: callerMem.role,
+    updatedBySid: params.callerSid,
+    updatedAt: nowIso
+  });
+  let eventRsvps = [];
+  if (savedToPg !== null) {
+    const pgRows = await listTeamEventRsvpsPostgresAsync(params.teamId, cleanEventId);
+    eventRsvps = (pgRows || []).map((r) => ({
+      eventId: r.event_id,
+      membershipId: r.membership_id,
+      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
+      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
+      ...r.note ? { note: r.note } : {},
+      updatedByRole: r.updated_by_role,
+      updatedAt: r.updated_at
+    }));
+  } else {
+    await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
+      const existingList = await loadTenantVaultAsync(
+        teamRsvpsVaultKey(params.teamId),
+        []
+      );
+      const nextList = [
+        ...existingList.filter(
+          (r) => !(r.eventId === cleanEventId && r.membershipId === targetMembershipId)
+        ),
+        nextRsvp
+      ];
+      await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), nextList);
+      eventRsvps = nextList.filter((r) => r.eventId === cleanEventId);
+    });
+  }
+  return {
+    ok: true,
+    rsvp: nextRsvp,
+    counts: computeRsvpCounts(eventRsvps)
+  };
+}
+
+// server/routers/teamEventsRouter.ts
+var teamEventsRouter = express4.Router();
+teamEventsRouter.get("/api/teams/:teamId/events", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const result = await listTeamEventsForCaller({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || "")
+    });
+    if (!result.ok || !result.payload) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to load team events."
+      });
+      return;
+    }
+    res.json({ ok: true, ...result.payload });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading team events."
+    });
+  }
+});
+teamEventsRouter.post("/api/teams/:teamId/events", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const body = req.body || {};
+    const result = await upsertTeamEvent({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      input: body,
+      originUrl
+    });
+    if (!result.ok || !result.event) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to save team event."
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      event: result.event,
+      ...result.photoReleaseOptOutNames?.length ? { photoReleaseOptOutNames: result.photoReleaseOptOutNames } : {}
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed saving team event."
+    });
+  }
+});
+teamEventsRouter.delete(
+  "/api/teams/:teamId/events/:eventId",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const result = await deleteTeamEvent({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        eventId: String(req.params.eventId || "")
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to delete team event."
+        });
+        return;
+      }
+      res.json({ ok: true, deleted: Boolean(result.deleted) });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed deleting team event."
+      });
+    }
+  }
+);
+teamEventsRouter.put(
+  "/api/teams/:teamId/events/:eventId/rsvp",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const body = req.body || {};
+      const result = await submitTeamEventRsvp({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        eventId: String(req.params.eventId || ""),
+        membershipId: typeof body.membershipId === "string" ? body.membershipId : void 0,
+        status: body.status,
+        travelMode: body.travelMode,
+        note: body.note
+      });
+      if (!result.ok || !result.rsvp) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to submit RSVP."
+        });
+        return;
+      }
+      res.json({
+        ok: true,
+        rsvp: result.rsvp,
+        counts: result.counts
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed submitting RSVP."
+      });
+    }
+  }
+);
+
+// server/routers/teamMeetDayRouter.ts
+import express5 from "express";
+
+// server/teamMeetDayOpsService.ts
+import crypto19 from "crypto";
 var ALLOWED_ASSIGNMENT_SOURCES = /* @__PURE__ */ new Set([
   "UNASSIGNED",
   "IMPORTED_HYTEK",
@@ -20198,7 +21017,7 @@ function sanitizeMeetDayPacketEntry(raw, idx) {
   const bibNumber = sanitizeOptionalText(obj.bibNumber, 20);
   const rawAssignSource = sanitizeOptionalText(obj.assignmentSource, 32);
   const assignmentSource = rawAssignSource && ALLOWED_ASSIGNMENT_SOURCES.has(rawAssignSource) ? rawAssignSource : void 0;
-  const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 64) : `entry_${idx}_${crypto18.randomBytes(4).toString("hex")}`;
+  const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 64) : `entry_${idx}_${crypto19.randomBytes(4).toString("hex")}`;
   return {
     id,
     athleteName,
@@ -20262,7 +21081,7 @@ async function saveMeetDayPacket(params) {
     if (clean) entries.push(clean);
   }
   const requestedPacketId = typeof params.packet?.packetId === "string" ? params.packet.packetId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : "";
-  const packetId = requestedPacketId || `mdp_${crypto18.randomBytes(6).toString("hex")}`;
+  const packetId = requestedPacketId || `mdp_${crypto19.randomBytes(6).toString("hex")}`;
   return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) {
@@ -20363,7 +21182,7 @@ async function deleteMeetDayPacket(params) {
 }
 
 // server/routers/teamMeetDayRouter.ts
-var teamMeetDayRouter = express4.Router();
+var teamMeetDayRouter = express5.Router();
 teamMeetDayRouter.get(
   "/api/teams/:teamId/meet-day-packets",
   async (req, res) => {
@@ -20484,10 +21303,10 @@ teamMeetDayRouter.delete(
 );
 
 // server/routers/teamInjuryRouter.ts
-import express5 from "express";
+import express6 from "express";
 
 // server/teamInjuryService.ts
-import crypto19 from "crypto";
+import crypto20 from "crypto";
 var VALID_RTP_STAGES = /* @__PURE__ */ new Set([
   "OUT",
   "MODIFIED",
@@ -20605,7 +21424,7 @@ async function upsertTeamInjuryCase(params) {
     const nextPrivateNotes = isTrainer ? hasClinicalInput ? cleanClinicalInput || void 0 : existingCase?.privateClinicalNotes : existingCase?.privateClinicalNotes;
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const savedCase = {
-      id: existingCase?.id || requestedId || `inj_${crypto19.randomBytes(6).toString("hex")}`,
+      id: existingCase?.id || requestedId || `inj_${crypto20.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       membershipId: targetMem.membershipId,
       athleteName: targetMem.invitedName,
@@ -20723,7 +21542,7 @@ async function deleteTeamInjuryCase(params) {
 }
 
 // server/routers/teamInjuryRouter.ts
-var teamInjuryRouter = express5.Router();
+var teamInjuryRouter = express6.Router();
 teamInjuryRouter.get("/api/teams/:teamId/injuries", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -20837,10 +21656,10 @@ teamInjuryRouter.delete(
 );
 
 // server/routers/teamBillingRouter.ts
-import express6 from "express";
+import express7 from "express";
 
 // server/teamBillingService.ts
-import crypto20 from "crypto";
+import crypto21 from "crypto";
 var TEAM_BILLING_PLANS = {
   FREE_FOUNDING: {
     planCode: "FREE_FOUNDING",
@@ -20952,7 +21771,7 @@ async function issueSchoolPoInvoice(params) {
     const now = /* @__PURE__ */ new Date();
     const nowIso = now.toISOString();
     const year = now.getUTCFullYear();
-    const suffix = crypto20.randomInt(1e3, 1e4);
+    const suffix = crypto21.randomInt(1e3, 1e4);
     const invoiceNumber = `MR-PO-${year}-${suffix}`;
     const dueDate = new Date(now.getTime() + 30 * 864e5).toISOString().slice(0, 10);
     const invoice = {
@@ -21186,12 +22005,12 @@ function verifyStripeWebhookSignature(params) {
     Buffer.from(`${timestamp}.`, "utf8"),
     rawBuffer
   ]);
-  const expectedHex = crypto20.createHmac("sha256", secret).update(signedPayload).digest("hex").toLowerCase();
+  const expectedHex = crypto21.createHmac("sha256", secret).update(signedPayload).digest("hex").toLowerCase();
   const expectedBuf = Buffer.from(expectedHex, "utf8");
   const matched = v1Signatures.some((sig) => {
     const sigBuf = Buffer.from(sig, "utf8");
     if (sigBuf.length !== expectedBuf.length) return false;
-    return crypto20.timingSafeEqual(sigBuf, expectedBuf);
+    return crypto21.timingSafeEqual(sigBuf, expectedBuf);
   });
   if (!matched) {
     return { valid: false, timestamp, reason: "Stripe webhook signature mismatch." };
@@ -21729,7 +22548,7 @@ async function getDistrictAdOverview(params) {
 }
 
 // server/routers/teamBillingRouter.ts
-var teamBillingRouter = express6.Router();
+var teamBillingRouter = express7.Router();
 teamBillingRouter.get("/api/teams/district-overview", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -21893,9 +22712,9 @@ teamBillingRouter.post("/api/billing/stripe/webhook", async (req, res) => {
 });
 
 // server/routers/teamSyncRouter.ts
-import crypto21 from "crypto";
-import express7 from "express";
-var teamSyncRouter = express7.Router();
+import crypto22 from "crypto";
+import express8 from "express";
+var teamSyncRouter = express8.Router();
 function resolveSyncOrigin(req) {
   return resolveTrustedRequestOrigin(req);
 }
@@ -22041,7 +22860,7 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
     let sid = existing?.sid;
     let sessionToken;
     if (!sid) {
-      const anonSid = crypto21.randomBytes(16).toString("hex");
+      const anonSid = crypto22.randomBytes(16).toString("hex");
       sessionToken = setSessionCookie(
         req,
         res,
@@ -22293,11 +23112,11 @@ teamSyncRouter.post(
 );
 
 // server/routers/authRouter.ts
-import express8 from "express";
-import crypto23 from "crypto";
+import express9 from "express";
+import crypto24 from "crypto";
 
 // server/webauthnVerify.ts
-import crypto22 from "crypto";
+import crypto23 from "crypto";
 function readCborLength(buf, addtl, offset) {
   if (addtl < 24) {
     return { length: addtl, nextOffset: offset };
@@ -22408,7 +23227,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 1 || !Buffer.isBuffer(xBuf) || !Buffer.isBuffer(yBuf)) {
       throw new Error("Invalid COSE EC2 P-256 public key parameters.");
     }
-    const pubKey = crypto22.createPublicKey({
+    const pubKey = crypto23.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -22429,7 +23248,7 @@ function coseKeyMapToSpki(coseMap) {
     if (!Buffer.isBuffer(nBuf) || !Buffer.isBuffer(eBuf)) {
       throw new Error("Invalid COSE RSA public key parameters.");
     }
-    const pubKey = crypto22.createPublicKey({
+    const pubKey = crypto23.createPublicKey({
       key: {
         kty: "RSA",
         n: nBuf.toString("base64url"),
@@ -22449,7 +23268,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 6 || !Buffer.isBuffer(xBuf)) {
       throw new Error("Invalid COSE Ed25519 public key parameters.");
     }
-    const pubKey = crypto22.createPublicKey({
+    const pubKey = crypto23.createPublicKey({
       key: {
         kty: "OKP",
         crv: "Ed25519",
@@ -22496,9 +23315,9 @@ function assertRpIdHashAndFlags(authData, expectedRpId, requireAtFlag) {
   if (!Buffer.isBuffer(authData) || authData.length < minLen) {
     throw new Error("Truncated WebAuthn authenticatorData.");
   }
-  const expectedRpHash = crypto22.createHash("sha256").update(expectedRpId).digest();
+  const expectedRpHash = crypto23.createHash("sha256").update(expectedRpId).digest();
   const actualRpHash = authData.subarray(0, 32);
-  if (!crypto22.timingSafeEqual(actualRpHash, expectedRpHash)) {
+  if (!crypto23.timingSafeEqual(actualRpHash, expectedRpHash)) {
     throw new Error("WebAuthn RP ID hash mismatch.");
   }
   const flags = authData.readUInt8(32);
@@ -22601,15 +23420,15 @@ function verifyWebAuthnAssertion(params) {
         error: "Passkey record lacks stored public key."
       };
     }
-    const pubKey = crypto22.createPublicKey({
+    const pubKey = crypto23.createPublicKey({
       key: Buffer.from(params.publicKeySpkiBase64, "base64"),
       format: "der",
       type: "spki"
     });
-    const clientDataHash = crypto22.createHash("sha256").update(clientDataBytes).digest();
+    const clientDataHash = crypto23.createHash("sha256").update(clientDataBytes).digest();
     const signedData = Buffer.concat([authData, clientDataHash]);
     const algDigest = params.coseAlg === -8 ? null : "sha256";
-    const isValidSig = crypto22.verify(algDigest, signedData, pubKey, sigBuf);
+    const isValidSig = crypto23.verify(algDigest, signedData, pubKey, sigBuf);
     if (!isValidSig) {
       return {
         verified: false,
@@ -23269,7 +24088,7 @@ async function deleteThreshAccountPermanently(req, res) {
 }
 
 // server/routers/authRouter.ts
-var authRouter = express8.Router();
+var authRouter = express9.Router();
 var PENDING_DOB_TTL_MS = 15 * 60 * 1e3;
 async function savePendingSignupDob(key, birthMonthYear) {
   if (!birthMonthYear) return;
@@ -23776,8 +24595,8 @@ authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
   const rpId = getRpId(req);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
-  const challenge = crypto23.randomBytes(32).toString("base64url");
-  const userId = crypto23.randomBytes(16).toString("base64url");
+  const challenge = crypto24.randomBytes(32).toString("base64url");
+  const userId = crypto24.randomBytes(16).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "register",
@@ -23904,7 +24723,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
 });
 authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
   const rpId = getRpId(req);
-  const challenge = crypto23.randomBytes(32).toString("base64url");
+  const challenge = crypto24.randomBytes(32).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "auth"
@@ -24176,7 +24995,7 @@ authRouter.delete("/api/auth/account", async (req, res) => {
 
 // server/routers/configRouter.ts
 import { Router as Router8 } from "express";
-import crypto26 from "crypto";
+import crypto27 from "crypto";
 import fs7 from "fs";
 
 // server/secretManager.ts
@@ -24560,7 +25379,7 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
 }
 
 // server/oauthHelpers.ts
-import crypto24 from "crypto";
+import crypto25 from "crypto";
 function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
   const verified = getVerifiedSessionClaims(req);
   if (verified?.sid) {
@@ -24573,7 +25392,7 @@ function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
     );
     return { sid: verified.sid, sessionToken: sessionToken2 };
   }
-  const sid = crypto24.randomBytes(16).toString("hex");
+  const sid = crypto25.randomBytes(16).toString("hex");
   const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return { sid, sessionToken };
@@ -24786,7 +25605,7 @@ function resolveCorosCallbackUrl(req) {
 var resolveCallbackUrl = resolveStravaCallbackUrl;
 
 // server/routers/intervalsRouter.ts
-import express10 from "express";
+import express11 from "express";
 
 // server/routers/activitiesRouter.ts
 import { Router as Router2 } from "express";
@@ -25128,8 +25947,8 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 });
 
 // server/routers/stravaRouter.ts
-import express9 from "express";
-import crypto25 from "crypto";
+import express10 from "express";
+import crypto26 from "crypto";
 import fs6 from "fs";
 
 // server/stravaIdUtils.ts
@@ -25935,7 +26754,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = (prevClaims?.sub === canonicalUserId ? prevClaims.sid : void 0) || (opts.expectedUserId === canonicalUserId ? opts.expectedSid : void 0) || deriveUserSessionSid(canonicalUserId);
     sessionSubject = canonicalUserId;
   } else {
-    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto25.randomBytes(16).toString("hex");
+    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto26.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
   if (opts.athleteId) {
@@ -26446,7 +27265,7 @@ var stravaCallbackHandler = async (req, res) => {
     );
   }
 };
-var stravaRouter = express9.Router();
+var stravaRouter = express10.Router();
 stravaRouter.post("/api/strava/credentials", async (req, res) => {
   const clientId = (req.body?.clientId || "").trim();
   const clientSecret = (req.body?.clientSecret || "").trim();
@@ -28087,7 +28906,7 @@ var intervalsCallbackHandler = async (req, res) => {
     );
   }
 };
-var intervalsRouter = express10.Router();
+var intervalsRouter = express11.Router();
 intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
@@ -31087,7 +31906,7 @@ configRouter.post("/api/auth/session", (req, res) => {
     res.json({ ok: true, authLevel: "verified" });
     return;
   }
-  const anonSub = `anon_${crypto26.randomBytes(8).toString("hex")}`;
+  const anonSub = `anon_${crypto27.randomBytes(8).toString("hex")}`;
   setSessionCookie(req, res, anonSub, void 0, "anon");
   res.json({ ok: true, authLevel: "anon" });
 });
@@ -31507,7 +32326,7 @@ configRouter.post("/api/auth/logout", async (req, res) => {
 });
 
 // server/routers/webhookRouter.ts
-import express11 from "express";
+import express12 from "express";
 import fs8 from "fs";
 async function executeHourlyBackgroundPoll() {
   const results = {
@@ -31540,7 +32359,7 @@ async function executeHourlyBackgroundPoll() {
   await saveSessionCacheAsync();
   return results;
 }
-var webhookRouter = express11.Router();
+var webhookRouter = express12.Router();
 webhookRouter.all("/api/cron/hourly-sync", async (req, res) => {
   if (!hasValidCronAuthorization(req)) {
     res.status(401).json({ ok: false, error: "Unauthorized cron invocation." });
@@ -31699,7 +32518,7 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
 });
 
 // server/routers/analyticsRouter.ts
-import express12 from "express";
+import express13 from "express";
 
 // server/funnelAnalyticsService.ts
 var FUNNEL_EVENT_NAMES = [
@@ -31966,7 +32785,7 @@ async function getFunnelSummaryAsync(opts) {
 }
 
 // server/routers/analyticsRouter.ts
-var analyticsRouter = express12.Router();
+var analyticsRouter = express13.Router();
 analyticsRouter.post("/api/analytics/event", async (req, res) => {
   try {
     const rateLimit = await checkDistributedRateLimitAsync(
@@ -32026,9 +32845,9 @@ analyticsRouter.get("/api/analytics/summary", async (req, res) => {
 
 // server/apiRouter.ts
 var SERVER_BOOT_ISO = (/* @__PURE__ */ new Date()).toISOString();
-var apiRouter = express13.Router();
+var apiRouter = express14.Router();
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use(express13.urlencoded({ extended: false }));
+apiRouter.use(express14.urlencoded({ extended: false }));
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
@@ -32049,7 +32868,7 @@ apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
   const env = process.env;
-  const buildTimestamp = "2026-11-23T08:47:10Z" ? "2026-11-23T08:47:10Z" : SERVER_BOOT_ISO;
+  const buildTimestamp = "2026-11-23T15:23:01Z" ? "2026-11-23T15:23:01Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",
@@ -32086,6 +32905,7 @@ apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
+apiRouter.use(teamEventsRouter);
 apiRouter.use(teamMeetDayRouter);
 apiRouter.use(teamInjuryRouter);
 apiRouter.use(teamBillingRouter);
@@ -32107,7 +32927,7 @@ apiRouter.use(analyticsRouter);
 import fs9 from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
-import express14 from "express";
+import express15 from "express";
 
 // src/utils/shareWorkoutCodec.ts
 var FORBIDDEN_RAW_TELEMETRY_KEYS = [
@@ -32398,7 +33218,7 @@ function buildJoinOgMetadata(slug, preview) {
   };
 }
 function createOgPreviewRouter(options = {}) {
-  const router = express14.Router();
+  const router = express15.Router();
   let cachedHtmlShell = options.htmlShell ?? null;
   const getHtmlShell = () => {
     if (cachedHtmlShell !== null) {
@@ -32477,10 +33297,10 @@ function createOgPreviewRouter(options = {}) {
 var ogPreviewRouter = createOgPreviewRouter();
 
 // server/vercelApp.ts
-var app = express15();
+var app = express16();
 app.disable("x-powered-by");
 app.use(
-  express15.json({
+  express16.json({
     limit: "2mb",
     reviver: strava64BitJsonReviver,
     verify: (req, _res, buf) => {

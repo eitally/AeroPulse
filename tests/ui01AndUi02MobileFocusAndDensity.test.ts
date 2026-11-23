@@ -35,8 +35,10 @@ describe('UI-01 & UI-02 Mobile Focus Stopwatch, Squad Triage Placement & Compact
     expect(stopwatch).not.toContain('stopwatch-focus-mode-toggle');
 
     const coachView = readSrc('src/components/CoachWorkspaceView.tsx');
-    expect(coachView).toContain('clipboard-flagged-triage-btn');
-    expect(coachView).toContain("<CoachExecutionDigestPanel");
+    const practiceHome = readSrc('src/components/coach/CoachPracticeHome.tsx');
+    const teamHub = readSrc('src/components/coach/CoachTeamHubView.tsx');
+    expect(practiceHome).toContain('clipboard-flagged-triage-btn');
+    expect(teamHub).toContain('<CoachExecutionDigestPanel');
     expect(coachView).toContain("sessionStorage.setItem('thresh_open_plan_cohort', 'TEAM_ALL')");
 
     const goalsView = readSrc('src/components/GoalsView.tsx');

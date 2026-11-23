@@ -474,10 +474,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             {activeTab === 'coach' && onSelectCoachSubTab ? (
               (
                 [
-                  { id: 'CLIPBOARD', label: 'Clipboard', icon: ClipboardText },
-                  { id: 'TEAM_PLAN', label: 'Team Plan', icon: Calendar },
-                  { id: 'STOPWATCH', label: 'Stopwatch', icon: Timer },
-                  { id: 'ROSTER', label: 'Roster', icon: Users },
+                  { id: 'CLIPBOARD', label: 'Practice', icon: ClipboardText },
+                  { id: 'TEAM_PLAN', label: 'Meets & Plan', icon: Calendar },
+                  { id: 'STOPWATCH', label: 'Timing', icon: Timer },
+                  { id: 'ROSTER', label: 'Team', icon: Users },
                 ] as const
               ).map((item) => {
                 const NavIcon = item.icon;
@@ -621,7 +621,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 <MessageSquare className="w-4 h-4 sm:w-3.5 sm:h-3.5 ap-text-brand" />
                 <span className="hidden lg:inline">Team Chat</span>
                 {(activeTeam.teamMessages?.length || 0) > 0 && (
-                  <span className="hidden lg:inline px-1.5 py-0.5 rounded-full text-2xs font-mono font-bold bg-[#EDE9DF] text-[#121413] dark:bg-[#242826] dark:text-[#D8FF2A]">
+                  <span
+                    data-testid="header-team-chat-count"
+                    className="absolute -top-1 -right-1 lg:static px-1.5 py-0.5 rounded-full text-2xs font-mono font-bold leading-none bg-ap-clay text-white lg:bg-[#EDE9DF] lg:text-[#121413] dark:bg-ap-volt dark:text-[#121413] lg:dark:bg-[#242826] lg:dark:text-[#D8FF2A]"
+                  >
                     {activeTeam.teamMessages!.length}
                   </span>
                 )}
@@ -1053,17 +1056,23 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           </div>
         </div>
 
-        {/* Mobile (< md) Context Strip: strictly hidden on >= md/lg and during live stopwatch timing */}
+        {/* Mobile (< md) Context Strip: strictly hidden on >= md/lg, during live timing, and when Coach Mode has nothing active to show */}
         {activeTab !== 'stopwatch' &&
           !(activeTab === 'coach' && coachSubTab === 'STOPWATCH') &&
-          ((activeTab !== 'coach' && hasActiveStopwatchPill) ||
-            myTeams.length > 0 ||
-            activeViewedAthleteId !== 'SELF') && (
+          (hasActiveStopwatchPill ||
+            (activeTab !== 'coach' &&
+              (myTeams.length > 0 || activeViewedAthleteId !== 'SELF'))) && (
           <div className="md:hidden mt-2 pt-2 border-t border-ap-frame/15 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            {activeTab !== 'coach' && (
+            {hasActiveStopwatchPill && (
               <div className="shrink-0">
                 <TracksideLiveHeaderPill
-                  onOpenTracksidePad={() => setActiveTab('stopwatch')}
+                  onOpenTracksidePad={() => {
+                    if (activeTab === 'coach' && onSelectCoachSubTab) {
+                      onSelectCoachSubTab('STOPWATCH');
+                    } else {
+                      setActiveTab('stopwatch');
+                    }
+                  }}
                   showIdleLauncher={false}
                 />
               </div>

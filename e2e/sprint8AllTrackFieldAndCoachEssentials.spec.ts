@@ -32,8 +32,9 @@ test.describe('Sprint 8: All Track & Field First-Class + Coach Essentials & Trac
     await page.getByTestId('watchless-did-workout-btn').click();
     await expect(page.getByTestId('checkin-logged-summary')).toBeVisible({ timeout: 10000 });
 
-    // Switch to Coach Workspace -> defaults to Simple (Essentials), supports Pro toggle
+    // Switch to Coach Workspace -> defaults to Simple (Essentials) inside Desk drawer, supports Pro toggle
     await page.getByTestId('toggle-coach-workspace').click();
+    await page.getByTestId('coach-desk-menu-btn').click();
     const simpleBtn = page.getByTestId('coach-complexity-essentials');
     const proBtn = page.getByTestId('coach-complexity-pro');
     await expect(simpleBtn).toBeVisible({ timeout: 15000 });
@@ -42,10 +43,11 @@ test.describe('Sprint 8: All Track & Field First-Class + Coach Essentials & Trac
     await expect(proBtn).toHaveAttribute('aria-pressed', 'true');
     await simpleBtn.click();
     await expect(simpleBtn).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Close Coach Desk' }).click();
 
-    // Coach Daily Ops panel is visible on Clipboard and launches Field & Multi Sheet cleanly
+    // Coach Daily Ops panel is visible on Practice and launches Field & Multi Sheet cleanly via Quick Ops
     await expect(page.getByTestId('coach-daily-ops-panel')).toBeVisible({ timeout: 10000 });
-    await page.getByTestId('daily-ops-launch-field').click();
+    await page.getByTestId('quick-ops-field-marks-btn').click();
 
     const fieldSheet = page.getByTestId('trackside-field-events-sheet');
     await expect(fieldSheet).toBeVisible({ timeout: 15000 });
@@ -65,11 +67,10 @@ test.describe('Sprint 8: All Track & Field First-Class + Coach Essentials & Trac
     await page.getByTestId('field-sheet-save-btn').click();
     await expect(page.getByTestId('field-sheet-saved-banner')).toBeVisible();
 
-    // Return to Clipboard & test 4x100m Relay Optimizer
-    await page.getByRole('button', { name: 'Clipboard' }).click();
-    const relayAccordion = page.getByRole('button', { name: /Relay Optimizer/i });
-    await expect(relayAccordion).toBeVisible({ timeout: 10000 });
-    await relayAccordion.click();
+    // Open Meets & Plan -> Relays & Top Times & test 4x100m Relay Optimizer
+    await page.getByTestId('coach-subtab-team_plan').click();
+    await page.getByTestId('meets-subview-relays').click();
+    await expect(page.getByTestId('relay-optimizer-panel')).toBeVisible({ timeout: 10000 });
     const r4x1Btn = page.getByTestId('relay-event-btn-4x100m');
     await expect(r4x1Btn).toBeVisible({ timeout: 10000 });
     await r4x1Btn.click();
@@ -94,13 +95,15 @@ test.describe('Sprint 8: All Track & Field First-Class + Coach Essentials & Trac
     expect(watchlessBox!.height).toBeGreaterThanOrEqual(44);
 
     await page.getByTestId('toggle-coach-workspace').click();
+    await page.getByTestId('coach-desk-menu-btn').click();
     const simpleBtn = page.getByTestId('coach-complexity-essentials');
     await expect(simpleBtn).toBeVisible({ timeout: 15000 });
     const simpleBox = await simpleBtn.boundingBox();
     expect(simpleBox).not.toBeNull();
     expect(simpleBox!.height).toBeGreaterThanOrEqual(44);
+    await page.getByRole('button', { name: 'Close Coach Desk' }).click();
 
-    const launchFieldBtn = page.getByTestId('daily-ops-launch-field');
+    const launchFieldBtn = page.getByTestId('quick-ops-field-marks-btn');
     await expect(launchFieldBtn).toBeVisible({ timeout: 10000 });
     await launchFieldBtn.click();
 

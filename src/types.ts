@@ -1581,6 +1581,7 @@ export interface TeamMembershipRecord {
   externalAthleteId?: string;
   externalProfileUrl?: string;
   genderDivision?: 'M' | 'F' | 'NONBINARY';
+  photoReleaseOptOut?: boolean;
   status: TeamInviteStatus;
   emailDeliveryStatus?: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
   magicJoinUrl?: string; // Populated for coaches so they can copy or share via free sms:/mailto:
@@ -1634,6 +1635,10 @@ export interface TeamBroadcastWorkout {
   publishMode?: 'ROLLING_1W' | 'ROLLING_2W' | 'FULL_BLOCK';
   isOfficialMeet?: boolean;
   externalSource?: ExternalTeamPlatform;
+  eventId?: string;
+  liveResultsUrl?: string;
+  liveResultsLabel?: string;
+  curatedAlbumLinks?: CuratedMeetAlbumLink[];
   pushedByCoachName: string;
   createdAt: string;
 }
@@ -1764,6 +1769,7 @@ export interface MeetDayPacketEntryRecord {
 
 export interface MeetDayPacketRecord {
   packetId: string;
+  eventId?: string;
   meetTitle: string;
   meetDate: string;
   laneCount: number;
@@ -1771,6 +1777,9 @@ export interface MeetDayPacketRecord {
   partitionByDivision: boolean;
   seedingAuthority?: MeetSeedingAuthority;
   athleticLiveUrl?: string;
+  liveResultsUrl?: string;
+  liveResultsLabel?: string;
+  curatedAlbumLinks?: CuratedMeetAlbumLink[];
   meetDelayMinutes?: number;
   entries: MeetDayPacketEntryRecord[];
   updatedAt: string;
@@ -1789,6 +1798,7 @@ export interface DelegatedTimingRunner {
 export interface DelegatedTimingSessionRecord {
   sessionId: string;
   teamId: string;
+  eventId?: string;
   passCode: string;
   meetTitle: string;
   meetDate: string;
@@ -1832,6 +1842,7 @@ export interface DelegatedSplitSubmissionRecord {
   submissionId: string;
   sessionId: string;
   teamId: string;
+  eventId?: string;
   clientSubmissionId: string;
   meetTitle: string;
   meetDate: string;
@@ -2029,6 +2040,7 @@ export interface TeamSummaryWithRole {
   myCoachEventGroups?: CoachEventGroup[];
   myCoachSpecialtyTitle?: string;
   myAssignedAthleteMembershipIds?: string[];
+  myLinkedChildMembershipIds?: string[];
   myMembershipId: string;
   totalInvited: number;
   openedCount: number;
@@ -2197,6 +2209,7 @@ export type TeamAttendanceMethod = 'COACH_MANUAL' | 'GPS_GEOFENCE';
 
 export interface TeamAttendanceRecord {
   date: string;
+  eventId?: string;
   membershipId: string;
   status: TeamAttendanceStatus;
   note?: string;
@@ -2289,6 +2302,92 @@ export interface PushDispatchPayload {
   tag: string;
   isEmergency?: boolean;
 }
+
+export type TeamEventType = 'PRACTICE' | 'MEET' | 'BUS_TRAVEL' | 'TEAM_MEETING';
+
+export type TeamEventVisibilityScope =
+  | 'TEAM_AND_FAMILIES_ONLY'
+  | 'PUBLIC_HUB'
+  | 'STAFF_ONLY';
+
+export type CuratedMeetAlbumProvider =
+  | 'GOOGLE_PHOTOS'
+  | 'APPLE_ICLOUD'
+  | 'SMUGMUG'
+  | 'SHUTTERFLY'
+  | 'HUDL'
+  | 'OTHER';
+
+export interface CuratedMeetAlbumLink {
+  id: string;
+  label: string;
+  url: string;
+  provider?: CuratedMeetAlbumProvider;
+  visibility: 'TEAM_AND_FAMILIES_ONLY' | 'PUBLIC_HUB';
+  addedByName?: string;
+  addedAt: string;
+}
+
+export type TeamEventRsvpStatus =
+  | 'GOING'
+  | 'OUT'
+  | 'LATE'
+  | 'MEET_CONFLICT'
+  | 'UNDECIDED';
+
+export type TeamEventTravelMode = 'TEAM_BUS' | 'PARENT_PICKUP' | 'SELF_TRAVEL';
+
+export interface TeamEventRsvpRecord {
+  eventId: string;
+  membershipId: string;
+  status: TeamEventRsvpStatus;
+  note?: string;
+  travelMode?: TeamEventTravelMode;
+  updatedByRole: TeamMemberRole;
+  updatedAt: string;
+}
+
+export interface TeamEventRsvpCounts {
+  going: number;
+  out: number;
+  late: number;
+  conflict: number;
+  undecided: number;
+}
+
+export interface TeamEventRecord {
+  eventId: string;
+  teamId: string;
+  eventType: TeamEventType;
+  title: string;
+  date: string; // YYYY-MM-DD
+  startTime?: string; // HH:mm
+  endTime?: string; // HH:mm
+  timezone?: string;
+  locationName?: string;
+  venueId?: string;
+  busDepartureTime?: string;
+  busReturnTime?: string;
+  meetDelayMinutes?: number;
+  liveResultsUrl?: string;
+  liveResultsLabel?: string;
+  curatedAlbumLinks?: CuratedMeetAlbumLink[];
+  targetEventGroups?: CoachEventGroup[];
+  visibilityScope: TeamEventVisibilityScope;
+  broadcastId?: string;
+  packetId?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TeamEventsOverviewPayload {
+  events: TeamEventRecord[];
+  rsvpCountsByEventId: Record<string, TeamEventRsvpCounts>;
+  myRsvps: TeamEventRsvpRecord[];
+  rsvpsByEventId?: Record<string, TeamEventRsvpRecord[]>;
+}
+
 
 
 

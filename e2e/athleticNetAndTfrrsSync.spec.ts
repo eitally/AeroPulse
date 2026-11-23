@@ -49,10 +49,11 @@ test.describe('Athletic.net & TFRRS Team Sync + Safe-Sport Clean-Room Parent Hub
     const viewport = page.viewportSize();
     const isMobile = Boolean(viewport && viewport.width < 640);
 
-    // 1. Open Coach Workspace directly in demo mode and launch Athletic.net / TFRRS Sync modal
+    // 1. Open Coach Workspace directly in demo mode and launch Athletic.net / TFRRS Sync modal via Desk
     await page.goto('/?demo=1#coach');
     await expect(page.getByTestId('coach-workspace-view')).toBeVisible({ timeout: 15000 });
 
+    await page.getByTestId('coach-desk-menu-btn').click();
     const openSyncBtn = page.getByTestId('coach-open-external-sync-btn');
     await expect(openSyncBtn).toBeVisible({ timeout: 10000 });
     await openSyncBtn.click();
@@ -115,7 +116,8 @@ test.describe('Athletic.net & TFRRS Team Sync + Safe-Sport Clean-Room Parent Hub
     await backBtn.click();
     const coachView = page.getByTestId('coach-workspace-view');
     await expect(coachView).toBeVisible({ timeout: 15000 });
-    await expect(coachView).toContainText('Willow Glen High School XC · Coach');
+    await expect(coachView).toContainText('WGHS XC · Coach');
+    await expect(coachView).toContainText('Willow Glen High School XC Daily Ops');
 
     expect(pageErrors).toEqual([]);
   });

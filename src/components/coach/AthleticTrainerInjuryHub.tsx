@@ -35,6 +35,7 @@ import type {
 
 export interface AthleticTrainerInjuryHubProps {
   isOpen: boolean;
+  inline?: boolean;
   onClose: () => void;
   activeTeam: TeamSummaryWithRole | null;
   myTeams: TeamSummaryWithRole[];
@@ -130,6 +131,7 @@ function heatTileClass(
 
 export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> = ({
   isOpen,
+  inline = false,
   onClose,
   activeTeam,
   myTeams,
@@ -140,7 +142,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
   const headingId = useId();
   const formId = useId();
 
-  useModalDialog({ isOpen, onClose, dialogRef });
+  useModalDialog({ isOpen: isOpen && !inline, onClose, dialogRef });
 
   const activeTeamRef = useRef(activeTeam);
   activeTeamRef.current = activeTeam;
@@ -516,20 +518,14 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
     }
   };
 
-  return (
+  const panelBody = (
     <div
-      ref={dialogRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={headingId}
-      tabIndex={-1}
-      data-testid="athletic-trainer-injury-hub"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 sm:p-5"
+      className={
+        inline
+          ? 'w-full rounded-2xl liquid-glass border border-ap-frame/25 dark:border-ap-edge p-4 sm:p-5 space-y-4 text-ap-ink dark:text-ap-chalk'
+          : 'w-full max-w-5xl max-h-[92dvh] overflow-y-auto rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-frame/25 dark:border-ap-edge p-4 sm:p-6 space-y-4 shadow-2xl text-ap-ink dark:text-ap-chalk'
+      }
     >
-      <div className="w-full max-w-5xl max-h-[92dvh] overflow-y-auto rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-frame/25 dark:border-ap-edge p-4 sm:p-6 space-y-4 shadow-2xl text-ap-ink dark:text-ap-chalk">
         {/* Top Bar */}
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ap-frame/15 dark:border-ap-edge pb-3">
           <div className="space-y-1 min-w-0">
@@ -1215,6 +1211,33 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
           </aside>
         </div>
       </div>
+  );
+
+  if (inline) {
+    return (
+      <section
+        aria-labelledby={headingId}
+        data-testid="athletic-trainer-injury-hub"
+      >
+        {panelBody}
+      </section>
+    );
+  }
+
+  return (
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={headingId}
+      tabIndex={-1}
+      data-testid="athletic-trainer-injury-hub"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 sm:p-5"
+    >
+      {panelBody}
     </div>
   );
 };

@@ -480,6 +480,25 @@ function sanitizeDelegatedTimingSessionForCaller(
   return clean;
 }
 
+export function resolveLinkedChildMembershipIds(
+  memberships: TeamMembershipRecord[],
+  myMembership: Pick<TeamMembershipRecord, 'role' | 'invitedEmail'> | undefined
+): Set<string> | null {
+  if (!myMembership || myMembership.role !== 'PARENT_FOLLOWER') return null;
+  const parentFollowerEmail = myMembership.invitedEmail?.trim().toLowerCase();
+  if (!parentFollowerEmail) return new Set<string>();
+  return new Set(
+    memberships
+      .filter(
+        (m) =>
+          m.role === 'ATHLETE' &&
+          m.status !== 'REVOKED' &&
+          m.parentGuardianEmail?.trim().toLowerCase() === parentFollowerEmail
+      )
+      .map((m) => m.membershipId)
+  );
+}
+
 export function projectTeamSummaryForCaller(
   doc: StoredTeamDocument,
   callerSid: string,
@@ -496,20 +515,7 @@ export function projectTeamSummaryForCaller(
   const isStaffViewer = canViewSafeguardingMedicalRole(myMembership.role);
   const isCoach = isStaffViewer;
   const isParentFollower = myMembership.role === 'PARENT_FOLLOWER';
-  const parentFollowerEmail = myMembership.invitedEmail?.trim().toLowerCase();
-  const linkedChildMembershipIds = isParentFollower
-    ? new Set(
-        doc.memberships
-          .filter(
-            (m) =>
-              m.role === 'ATHLETE' &&
-              m.status !== 'REVOKED' &&
-              Boolean(parentFollowerEmail) &&
-              m.parentGuardianEmail?.trim().toLowerCase() === parentFollowerEmail
-          )
-          .map((m) => m.membershipId)
-      )
-    : null;
+  const linkedChildMembershipIds = resolveLinkedChildMembershipIds(doc.memberships, myMembership);
 
   const athleteMembers = doc.memberships.filter(
     (m) =>
@@ -910,6 +916,9 @@ export function projectTeamSummaryForCaller(
     ...(Array.isArray(myMembership.assignedAthleteMembershipIds) &&
     myMembership.assignedAthleteMembershipIds.length > 0
       ? { myAssignedAthleteMembershipIds: myMembership.assignedAthleteMembershipIds }
+      : {}),
+    ...(linkedChildMembershipIds && linkedChildMembershipIds.size > 0
+      ? { myLinkedChildMembershipIds: Array.from(linkedChildMembershipIds) }
       : {}),
     myMembershipId: myMembership.membershipId,
     totalInvited,

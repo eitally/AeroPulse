@@ -52,8 +52,13 @@ test.describe('Red-Team Sprint 2: Legal/Procurement, Coach Features, Goals & Off
     await page.getByTestId('clipboard-save-library-btn').click();
     await expect(page.getByTestId('coach-clipboard-builder')).toContainText(/Saved .* Library/i);
 
-    // Switch to Roster subtab
-    await page.getByRole('button', { name: /^Roster$/i }).first().click();
+    // Switch to Team (Roster) subtab across Desktop header or MobileDock
+    const isMobile = Boolean(page.viewportSize() && page.viewportSize()!.width < 768);
+    if (isMobile) {
+      await page.getByTestId('mobile-dock-coach-roster').click();
+    } else {
+      await page.getByTestId('coach-subtab-roster').click();
+    }
     await expect(page.getByTestId('coach-execution-digest')).toBeVisible({ timeout: 15000 });
     await expect(page.getByTestId('coach-execution-digest')).toContainText('All (12)');
     await expect(page.getByTestId('guardian-safety-alerts-banner')).toContainText('Maya Chen');
