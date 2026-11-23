@@ -1,9 +1,12 @@
 import crypto from 'crypto';
 import type {
+  MeetAssignmentSource,
   MeetDayPacketEntryRecord,
   MeetDayPacketRecord,
+  MeetSeedingAuthority,
   TeamSummaryWithRole,
 } from '../src/types.ts';
+import { isSafeHttpsUrl } from './securityUtils.ts';
 import {
   canProgramWorkoutsRole,
   canViewSafeguardingMedicalRole,
@@ -12,6 +15,28 @@ import {
   saveTeamDocRaw,
 } from './teamStoreCore.ts';
 import { appendAuditLogAsync, withTeamRowLock } from './tokenVault.ts';
+
+const ALLOWED_ASSIGNMENT_SOURCES: ReadonlySet<MeetAssignmentSource> = new Set([
+  'UNASSIGNED',
+  'IMPORTED_HYTEK',
+  'IMPORTED_ATHLETICLIVE',
+  'CLERK_OVERRIDE',
+  'LOCAL_HOST_SEED',
+]);
+
+function parsePositiveBoundedInt(raw: unknown, min: number, max: number): number | undefined {
+  if (raw === null || raw === undefined || raw === '') return undefined;
+  const num = Number(raw);
+  if (!Number.isFinite(num)) return undefined;
+  const rounded = Math.round(num);
+  return rounded >= min && rounded <= max ? rounded : undefined;
+}
+
+function sanitizeOptionalText(raw: unknown, maxLen: number): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().slice(0, maxLen);
+  return trimmed ? trimmed : undefined;
+}
 
 function sanitizeMeetDayPacketEntry(
   raw: unknown,
@@ -60,6 +85,23 @@ function sanitizeMeetDayPacketEntry(
   const relayLegOrder =
     rawLeg === 1 || rawLeg === 2 || rawLeg === 3 || rawLeg === 4 ? rawLeg : undefined;
 
+  const isAlternate = obj.isAlternate === true;
+  const scratched = obj.scratched === true;
+  const officialHeat = parsePositiveBoundedInt(obj.officialHeat, 1, 99);
+  const officialLaneOrHip = sanitizeOptionalText(obj.officialLaneOrHip, 24);
+  const officialFlight = parsePositiveBoundedInt(obj.officialFlight, 1, 99);
+  const officialOrder = parsePositiveBoundedInt(obj.officialOrder, 1, 200);
+  const eventStartTime = sanitizeOptionalText(obj.eventStartTime, 24);
+  const checkInCallTime = sanitizeOptionalText(obj.checkInCallTime, 24);
+  const bibNumber = sanitizeOptionalText(obj.bibNumber, 20);
+  const rawAssignSource = sanitizeOptionalText(obj.assignmentSource, 32) as
+    | MeetAssignmentSource
+    | undefined;
+  const assignmentSource =
+    rawAssignSource && ALLOWED_ASSIGNMENT_SOURCES.has(rawAssignSource)
+      ? rawAssignSource
+      : undefined;
+
   const id =
     typeof obj.id === 'string' && obj.id.trim()
       ? obj.id.trim().slice(0, 64)
@@ -76,6 +118,16 @@ function sanitizeMeetDayPacketEntry(
     seedMarkRaw,
     ...(relayTeamCode ? { relayTeamCode } : {}),
     ...(relayLegOrder ? { relayLegOrder } : {}),
+    ...(isAlternate ? { isAlternate: true } : {}),
+    ...(scratched ? { scratched: true } : {}),
+    ...(officialHeat !== undefined ? { officialHeat } : {}),
+    ...(officialLaneOrHip ? { officialLaneOrHip } : {}),
+    ...(officialFlight !== undefined ? { officialFlight } : {}),
+    ...(officialOrder !== undefined ? { officialOrder } : {}),
+    ...(eventStartTime ? { eventStartTime } : {}),
+    ...(checkInCallTime ? { checkInCallTime } : {}),
+    ...(bibNumber ? { bibNumber } : {}),
+    ...(assignmentSource ? { assignmentSource } : {}),
   };
 }
 
@@ -115,6 +167,9 @@ export async function saveMeetDayPacket(params: {
     laneCount?: unknown;
     flightSize?: unknown;
     partitionByDivision?: unknown;
+    seedingAuthority?: unknown;
+    athleticLiveUrl?: unknown;
+    meetDelayMinutes?: unknown;
     entries?: unknown;
   };
 }): Promise<{
@@ -146,6 +201,23 @@ export async function saveMeetDayPacket(params: {
     : 12;
 
   const partitionByDivision = params.packet?.partitionByDivision !== false;
+
+  const seedingAuthority: MeetSeedingAuthority =
+    params.packet?.seedingAuthority === 'HOST_DUAL_MEET'
+      ? 'HOST_DUAL_MEET'
+      : 'EXTERNAL_MEET';
+
+  const rawLiveUrl =
+    typeof params.packet?.athleticLiveUrl === 'string'
+      ? params.packet.athleticLiveUrl.trim().slice(0, 500)
+      : '';
+  const athleticLiveUrl =
+    rawLiveUrl && isSafeHttpsUrl(rawLiveUrl) ? rawLiveUrl : undefined;
+
+  const rawDelay = Number(params.packet?.meetDelayMinutes);
+  const meetDelayMinutes = Number.isFinite(rawDelay)
+    ? Math.max(0, Math.min(240, Math.round(rawDelay)))
+    : 0;
 
   const rawEntries = Array.isArray(params.packet?.entries) ? params.packet.entries : [];
   const entries: MeetDayPacketEntryRecord[] = [];
@@ -188,6 +260,9 @@ export async function saveMeetDayPacket(params: {
       laneCount,
       flightSize,
       partitionByDivision,
+      seedingAuthority,
+      ...(athleticLiveUrl ? { athleticLiveUrl } : {}),
+      meetDelayMinutes,
       entries,
       updatedAt: nowIso,
       updatedByName: callerMem.invitedName || doc.brand.coachDisplayName || 'Coach',

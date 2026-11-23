@@ -6,6 +6,7 @@ import {
   timingSafeStringEqual,
 } from './securityUtils.ts';
 import type {
+  ActivitySourceBadge,
   CoachEventGroup,
   ExternalTeamPlatform,
   PublicTeamHubAthleteResultItem,
@@ -509,14 +510,6 @@ export async function applyExternalTeamSyncBatch(params: {
       const existingActs = Array.isArray(mem.coachRecordedActivities)
         ? mem.coachRecordedActivities
         : [];
-      const duplicate = existingActs.some(
-        (a) =>
-          a.startDateLocal?.slice(0, 10) === row.date &&
-          a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters &&
-          Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
-      );
-      if (duplicate) continue;
-
       const activity: UnifiedActivity = synthesizeOfficialRaceActivity({
         id: `ext-meet-${crypto.randomBytes(5).toString('hex')}`,
         date: row.date,
@@ -535,12 +528,105 @@ export async function applyExternalTeamSyncBatch(params: {
               ? 1000
               : 400,
         lapSplitsSecs: [],
+        splitsEstimated: true,
+        preserveEmptySplits: true,
         includeWarmupCooldown: false,
         sourceUrl: row.externalProfileUrl || row.sourceUrl,
         startDateLocalIso: `${row.date}T09:00:00`,
       });
+      if (activity.officialRaceData) {
+        activity.officialRaceData = {
+          ...activity.officialRaceData,
+          timingMethod: 'FAT',
+          splitsEstimated: true,
+          lapSplitsSecs: [],
+        };
+      }
 
-      mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
+      const duplicate = existingActs.some(
+        (a) =>
+          !a.id?.startsWith('stopwatch-race-') &&
+          a.officialRaceData?.platform !== 'MeetReady Stopwatch' &&
+          a.officialRaceData?.timingMethod !== 'HAND' &&
+          a.startDateLocal?.slice(0, 10) === row.date &&
+          a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters &&
+          Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
+      );
+      if (duplicate) continue;
+
+      // Check if an existing same-date stopwatch / hand-timed race matches within tolerance so we reconcile without overwriting real splits
+      const matchingStopwatchIdx = existingActs.findIndex((a) => {
+        if (a.startDateLocal?.slice(0, 10) !== row.date) return false;
+        const exRace = a.officialRaceData;
+        if (!exRace) return false;
+        const isStopwatchOrigin =
+          a.id?.startsWith('stopwatch-race-') ||
+          exRace.platform === 'MeetReady Stopwatch' ||
+          exRace.timingMethod === 'HAND' ||
+          Boolean(a.matchedStopwatchId);
+        if (!isStopwatchOrigin) return false;
+        const exDist = exRace.eventDistanceMeters || a.distanceMeters || 0;
+        if (row.eventDistanceMeters <= 0 || exDist <= 0) return false;
+        if (Math.abs(exDist - row.eventDistanceMeters) > row.eventDistanceMeters * 0.02) {
+          return false;
+        }
+        const exTime = exRace.handTimedTotalSecs ?? exRace.fatTimeSecs ?? a.movingTimeSecs;
+        if (!exTime || exTime <= 0) return false;
+        return Math.abs(row.fatTimeSecs - exTime) <= Math.max(3.5, row.fatTimeSecs * 0.02);
+      });
+
+      if (matchingStopwatchIdx >= 0) {
+        const existingMatch = existingActs[matchingStopwatchIdx];
+        const exRace = existingMatch.officialRaceData!;
+        const existingRealSplits =
+          Array.isArray(exRace.lapSplitsSecs) && exRace.lapSplitsSecs.length > 0 && !exRace.splitsEstimated
+            ? exRace.lapSplitsSecs
+            : [];
+        const resolvedHandTime =
+          exRace.handTimedTotalSecs ??
+          (exRace.platform === 'MeetReady Stopwatch' ||
+          existingMatch.id?.startsWith('stopwatch-race-') ||
+          exRace.timingMethod === 'HAND'
+            ? exRace.fatTimeSecs
+            : undefined);
+        const normalizedBadges = Array.from(
+          new Set([
+            ...(existingMatch.sourceBadges || []).map((b) =>
+              b === 'Official FAT' && existingMatch.id?.startsWith('stopwatch-race-')
+                ? 'Hand-Timed'
+                : b
+            ),
+            row.platform,
+            'Official FAT',
+          ])
+        ) as ActivitySourceBadge[];
+
+        const reconciled: UnifiedActivity = {
+          ...existingMatch,
+          name: activity.name,
+          trainingLoad: existingMatch.trainingLoad || activity.trainingLoad,
+          stravaPrCount: Math.max(existingMatch.stravaPrCount || 0, activity.stravaPrCount || 0),
+          officialRaceData: {
+            ...exRace,
+            ...activity.officialRaceData,
+            timingMethod: 'FAT',
+            placeFinish: row.placeFinish ?? exRace.placeFinish,
+            sourceUrl: row.externalProfileUrl || row.sourceUrl || exRace.sourceUrl,
+            lapSplitsSecs: existingRealSplits,
+            splitsEstimated: existingRealSplits.length > 0 ? false : true,
+            ...(resolvedHandTime !== undefined ? { handTimedTotalSecs: resolvedHandTime } : {}),
+            ...(exRace.capturedByName ? { capturedByName: exRace.capturedByName } : {}),
+            ...(exRace.timingStation ? { timingStation: exRace.timingStation } : {}),
+            ...(exRace.handSplitCaptures ? { handSplitCaptures: exRace.handSplitCaptures } : {}),
+          },
+          sourceBadges: normalizedBadges,
+        };
+        mem.coachRecordedActivities = existingActs
+          .map((item, idx) => (idx === matchingStopwatchIdx ? reconciled : item))
+          .slice(0, 80);
+      } else {
+        mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
+      }
       if (!mem.seedMarkOrFtp) {
         mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
       }

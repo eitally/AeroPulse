@@ -1,26 +1,42 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ArrowSquareOut,
   CheckCircle2,
+  ClipboardPaste,
   ClipboardText,
+  Clock,
   Download,
   Plus,
+  Timer,
   Trash2,
   Trophy,
+  Users,
   X,
 } from '../icons/PhosphorIcons';
 import { useModalDialog } from '../../hooks/useModalDialog';
+import { formatFieldMarkImperial } from '../../physiology/fieldEventsEngine';
 import {
   ALL_MEET_DAY_EVENTS,
   MEET_DIVISION_CHOICES,
+  applyDelayToMeetTimeString,
+  applyImportedAssignmentsToEntries,
+  deserializePacketEntriesToMeetEntries,
+  downloadMeetPacketHtmlFallback,
+  formatOfficialLaneOrHip,
   generateAthleticNetEntryCsv,
   generateHyTekHy3File,
   generateHyTekSemiColonEntryCsv,
+  groupEntriesIntoRelaySquads,
   inferDivisionFromSquadGroup,
+  isRelayEventCode,
   openPrintableMeetDayPacketWindow,
+  parseTrackSeedTimeToSecs,
   seedFieldFlights,
   seedTrackHeats,
+  serializeMeetEntriesToPacketEntries,
   validateNfhsFourEventLimits,
+  type ExternalHeatSheetParseResult,
   type MeetEntryRecord,
   type MeetFlightAssignment,
   type MeetGenderDivision,
@@ -31,17 +47,18 @@ import {
   deleteMeetDayPacketApi,
   fetchMeetDayPacketsApi,
   loadLocalMeetDayPackets,
-  meetEntriesToPacketEntries,
-  packetEntriesToMeetEntries,
   saveLocalMeetDayPacket,
   saveMeetDayPacketApi,
 } from '../../utils/meetDayOpsApi';
 import { getLocalDateIso } from '../../physiology/stravaLoadCalibration';
 import type {
   ConnectedAthleteRecord,
+  FieldEventLogRecord,
   MeetDayPacketRecord,
+  MeetSeedingAuthority,
   TeamSummaryWithRole,
 } from '../../types';
+import { ExternalHeatSheetImportPanel, MeetDayEntryRow } from './ExternalHeatSheetImportPanel';
 
 export interface MeetDayHeatAndFlightModalProps {
   isOpen: boolean;
@@ -50,6 +67,19 @@ export interface MeetDayHeatAndFlightModalProps {
   connectedAthletes: ConnectedAthleteRecord[];
   myTeams?: TeamSummaryWithRole[];
   onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
+  onLaunchEventStopwatch?: (preset: {
+    meetTitle: string;
+    meetDate: string;
+    eventCode: string;
+    runners: Array<{ membershipId?: string; athleteName: string; laneOrHip?: string }>;
+  }) => void;
+  onDelegateEventTimer?: (preset: {
+    meetTitle: string;
+    meetDate: string;
+    eventCode: string;
+    heatLabel?: string;
+    runners: Array<{ membershipId?: string; athleteName: string; hipOrLane?: string }>;
+  }) => void;
 }
 
 function resolveCompetitionGender(
@@ -79,6 +109,21 @@ function matchMeetEventCodeFromText(
   if (!rawLabel) return null;
   const trimmed = rawLabel.trim();
   if (!trimmed) return null;
+  const normalizedNameMap: Array<[RegExp, string]> = [
+    [/^(?:1\s*)?mile(?:\s+(.*))?$/i, '1600m'],
+    [/^long\s+jump(?:\s+(.*))?$/i, 'LJ'],
+    [/^triple\s+jump(?:\s+(.*))?$/i, 'TJ'],
+    [/^high\s+jump(?:\s+(.*))?$/i, 'HJ'],
+    [/^pole\s+vault(?:\s+(.*))?$/i, 'PV'],
+    [/^shot\s+put(?:\s+(.*))?$/i, 'SP'],
+    [/^discus(?:\s+throw)?(?:\s+(.*))?$/i, 'DISCUS'],
+    [/^javelin(?:\s+throw)?(?:\s+(.*))?$/i, 'JAVELIN'],
+    [/^hammer(?:\s+throw)?(?:\s+(.*))?$/i, 'HAMMER'],
+  ];
+  for (const [re, code] of normalizedNameMap) {
+    const m = trimmed.match(re);
+    if (m) return { code, trailingMark: m[1]?.trim() || undefined };
+  }
   const orderedSpecs = [...ALL_MEET_DAY_EVENTS].sort(
     (a, b) => b.code.length - a.code.length
   );
@@ -96,6 +141,28 @@ function matchMeetEventCodeFromText(
   return null;
 }
 
+function resolveBestLegalFieldMeters(log: FieldEventLogRecord): number | null {
+  if (log.isNoHeight) return null;
+  if (typeof log.bestWindLegalMeters === 'number' && log.bestWindLegalMeters > 0) {
+    return log.bestWindLegalMeters;
+  }
+  if (
+    typeof log.bestMarkMeters === 'number' &&
+    log.bestMarkMeters > 0 &&
+    !log.isWindAidedBest
+  ) {
+    return log.bestMarkMeters;
+  }
+  let bestLegal = 0;
+  for (const att of log.attempts || []) {
+    if (att.outcome !== 'MARK' && att.outcome !== 'CLEAR') continue;
+    if (typeof att.windMps === 'number' && att.windMps > 2.0) continue;
+    const m = att.markMeters ?? att.barHeightMeters ?? 0;
+    if (m > bestLegal) bestLegal = m;
+  }
+  return bestLegal > 0 ? bestLegal : null;
+}
+
 export function buildEntriesFromRosterMarks(
   activeTeam: TeamSummaryWithRole | null
 ): MeetEntryRecord[] {
@@ -103,34 +170,88 @@ export function buildEntriesFromRosterMarks(
   const members = (activeTeam.memberships || []).filter(
     (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
   );
+  const supportedFieldCodes = new Set(
+    ALL_MEET_DAY_EVENTS.filter((e) => e.category === 'FIELD').map((e) => e.code)
+  );
   const seeded: MeetEntryRecord[] = [];
+
   for (const m of members) {
     const gender = resolveCompetitionGender(m.genderDivision, undefined, m.squadGroup);
     const division = inferDivisionFromSquadGroup(m.squadGroup) || 'Varsity';
-    let addedForMember = false;
+    const bestTrackByCode = new Map<
+      string,
+      { displayMark: string; secs: number | null }
+    >();
 
     for (const act of m.coachRecordedActivities || []) {
       const race = act.officialRaceData;
       if (!race?.eventLabel || !race?.displayFatTime) continue;
       const matched = matchMeetEventCodeFromText(race.eventLabel, gender);
       if (!matched) continue;
+      const secs =
+        typeof race.fatTimeSecs === 'number' && race.fatTimeSecs > 0
+          ? race.fatTimeSecs
+          : parseTrackSeedTimeToSecs(race.displayFatTime);
+      const prev = bestTrackByCode.get(matched.code);
+      if (!prev || (secs !== null && (prev.secs === null || secs < prev.secs))) {
+        bestTrackByCode.set(matched.code, {
+          displayMark: race.displayFatTime,
+          secs,
+        });
+      }
+    }
+
+    for (const [eventCode, markInfo] of bestTrackByCode.entries()) {
       seeded.push({
-        id: `roster-${m.membershipId}-${matched.code}-${seeded.length}`,
+        id: `roster-${m.membershipId}-${eventCode}-${seeded.length}`,
         athleteId: m.membershipId,
         athleteName: m.invitedName,
         ...(gender ? { genderDivision: gender } : {}),
         division,
         graduationYear: m.graduationYear,
-        eventCode: matched.code,
-        seedMark: race.displayFatTime,
+        eventCode,
+        seedMark: markInfo.displayMark,
       });
-      addedForMember = true;
-      break;
     }
 
-    if (!addedForMember && m.seedMarkOrFtp) {
+    // Pull best legal field marks from activeTeam.fieldMarkLogs
+    const bestFieldByCode = new Map<string, number>();
+    const normalizedMemberName = m.invitedName.trim().toLowerCase();
+    for (const log of activeTeam.fieldMarkLogs || []) {
+      if (!supportedFieldCodes.has(log.eventCode)) continue;
+      const belongsToMember =
+        log.membershipId === m.membershipId ||
+        (!log.membershipId && log.athleteName.trim().toLowerCase() === normalizedMemberName);
+      if (!belongsToMember) continue;
+      const legalMeters = resolveBestLegalFieldMeters(log);
+      if (!legalMeters) continue;
+      const prevMeters = bestFieldByCode.get(log.eventCode) || 0;
+      if (legalMeters > prevMeters) {
+        bestFieldByCode.set(log.eventCode, legalMeters);
+      }
+    }
+
+    for (const [eventCode, meters] of bestFieldByCode.entries()) {
+      seeded.push({
+        id: `roster-${m.membershipId}-${eventCode}-${seeded.length}`,
+        athleteId: m.membershipId,
+        athleteName: m.invitedName,
+        ...(gender ? { genderDivision: gender } : {}),
+        division,
+        graduationYear: m.graduationYear,
+        eventCode,
+        seedMark: formatFieldMarkImperial(meters),
+      });
+    }
+
+    if (m.seedMarkOrFtp) {
       const parsed = matchMeetEventCodeFromText(m.seedMarkOrFtp, gender);
-      if (parsed && parsed.trailingMark) {
+      if (
+        parsed &&
+        parsed.trailingMark &&
+        !bestTrackByCode.has(parsed.code) &&
+        !bestFieldByCode.has(parsed.code)
+      ) {
         seeded.push({
           id: `roster-${m.membershipId}-${parsed.code}-${seeded.length}`,
           athleteId: m.membershipId,
@@ -269,6 +390,8 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   connectedAthletes,
   myTeams,
   onTeamsUpdated,
+  onLaunchEventStopwatch,
+  onDelegateEventTimer,
 }) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
@@ -292,10 +415,20 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   const [meetDate, setMeetDate] = useState<string>(
     () => initialInlinePacket?.meetDate || getLocalDateIso()
   );
+  const [seedingAuthority, setSeedingAuthority] = useState<MeetSeedingAuthority>(
+    () => initialInlinePacket?.seedingAuthority || 'EXTERNAL_MEET'
+  );
+  const [athleticLiveUrl, setAthleticLiveUrl] = useState<string>(
+    () => initialInlinePacket?.athleticLiveUrl || ''
+  );
+  const [meetDelayMinutes, setMeetDelayMinutes] = useState<number>(
+    () => initialInlinePacket?.meetDelayMinutes || 0
+  );
+  const [hostSlowToFast, setHostSlowToFast] = useState<boolean>(false);
   const [subTab, setSubTab] = useState<'ENTRIES' | 'HEATS' | 'FLIGHTS'>('ENTRIES');
   const [entries, setEntries] = useState<MeetEntryRecord[]>(() =>
     initialInlinePacket
-      ? packetEntriesToMeetEntries(initialInlinePacket.entries)
+      ? deserializePacketEntriesToMeetEntries(initialInlinePacket.entries)
       : buildInitialMeetEntries(activeTeam, connectedAthletes)
   );
   const [partitionByDivision, setPartitionByDivision] = useState<boolean>(
@@ -303,6 +436,10 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   );
   const [genderFilter, setGenderFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
   const [divisionFilter, setDivisionFilter] = useState<string>('ALL');
+  const [exportScope, setExportScope] = useState<'FULL_TEAM' | 'FILTERED_ONLY'>('FULL_TEAM');
+  const [showExternalImportPanel, setShowExternalImportPanel] = useState<boolean>(false);
+  const [editingClerkEntryId, setEditingClerkEntryId] = useState<string | null>(null);
+  const [printPopupBlocked, setPrintPopupBlocked] = useState<boolean>(false);
 
   const [newAthleteKey, setNewAthleteKey] = useState<string>('');
   const [newEventCode, setNewEventCode] = useState<string>('100m');
@@ -311,6 +448,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   const [newDivisionOverride, setNewDivisionOverride] = useState<string>('');
   const [newRelayTeam, setNewRelayTeam] = useState<string>('A');
   const [newRelayLeg, setNewRelayLeg] = useState<1 | 2 | 3 | 4>(1);
+  const [newIsAlternate, setNewIsAlternate] = useState<boolean>(false);
 
   const [selectedHeatEvent, setSelectedHeatEvent] = useState<string>('100m');
   const [selectedFlightEvent, setSelectedFlightEvent] = useState<string>('LJ');
@@ -327,7 +465,10 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     setMeetTitle(pkt.meetTitle);
     setMeetDate(pkt.meetDate || getLocalDateIso());
     setPartitionByDivision(pkt.partitionByDivision !== false);
-    setEntries(packetEntriesToMeetEntries(pkt.entries));
+    setSeedingAuthority(pkt.seedingAuthority || 'EXTERNAL_MEET');
+    setAthleticLiveUrl(pkt.athleticLiveUrl || '');
+    setMeetDelayMinutes(pkt.meetDelayMinutes || 0);
+    setEntries(deserializePacketEntriesToMeetEntries(pkt.entries));
   };
 
   useEffect(() => {
@@ -338,6 +479,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     if (hydratedOpenRef.current === teamScopeKey) return;
     hydratedOpenRef.current = teamScopeKey;
     setPacketFeedback(null);
+    setPrintPopupBlocked(false);
 
     const localList = loadLocalMeetDayPackets(teamScopeKey);
     const serverInline = activeTeam?.meetDayPackets || [];
@@ -351,6 +493,9 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       setMeetTitle('League Dual / Saturday Invitational');
       setMeetDate(getLocalDateIso());
       setPartitionByDivision(true);
+      setSeedingAuthority('EXTERNAL_MEET');
+      setAthleticLiveUrl('');
+      setMeetDelayMinutes(0);
       setEntries(buildInitialMeetEntries(activeTeam, connectedAthletes));
     }
 
@@ -441,8 +586,23 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     [entries, genderFilter, divisionFilter]
   );
 
+  const isFilterActive = genderFilter !== 'ALL' || divisionFilter !== 'ALL';
+  const activeAllEntries = useMemo(() => entries.filter((e) => !e.scratched), [entries]);
+  const activeFilteredEntries = useMemo(
+    () => filteredEntries.filter((e) => !e.scratched),
+    [filteredEntries]
+  );
+  const effectiveExportEntries =
+    isFilterActive && exportScope === 'FILTERED_ONLY'
+      ? activeFilteredEntries
+      : activeAllEntries;
+
   const nfhsAudit = useMemo(() => validateNfhsFourEventLimits(entries, 4), [entries]);
   const violations = useMemo(() => nfhsAudit.filter((r) => r.overLimit), [nfhsAudit]);
+  const alternateAdvisories = useMemo(
+    () => nfhsAudit.filter((r) => !r.overLimit && r.hasAlternateAdvisory),
+    [nfhsAudit]
+  );
 
   const activeHeatDefaultLanes = useMemo(
     () => ALL_MEET_DAY_EVENTS.find((e) => e.code === selectedHeatEvent)?.defaultLanes || 8,
@@ -455,9 +615,10 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
         filteredEntries,
         selectedHeatEvent,
         activeHeatDefaultLanes,
-        partitionByDivision
+        partitionByDivision,
+        { slowToFast: hostSlowToFast }
       ),
-    [filteredEntries, selectedHeatEvent, activeHeatDefaultLanes, partitionByDivision]
+    [filteredEntries, selectedHeatEvent, activeHeatDefaultLanes, partitionByDivision, hostSlowToFast]
   );
   const fieldFlights = useMemo(
     () => seedFieldFlights(filteredEntries, selectedFlightEvent, 12, partitionByDivision),
@@ -486,6 +647,55 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     return Array.from(groups.entries());
   }, [fieldFlights]);
 
+  const partitionEntriesByLabel = (list: MeetEntryRecord[]) => {
+    const byPart = new Map<string, MeetEntryRecord[]>();
+    for (const e of list) {
+      const gLabel =
+        e.genderDivision === 'F' ? 'Girls' : e.genderDivision === 'M' ? 'Boys' : e.genderDivision === 'NONBINARY' ? 'Non-Binary' : '';
+      const label = partitionByDivision
+        ? [gLabel, e.division || 'Varsity'].filter(Boolean).join(' ') || 'Open'
+        : 'Open';
+      const arr = byPart.get(label) || [];
+      arr.push(e);
+      byPart.set(label, arr);
+    }
+    return Array.from(byPart.entries());
+  };
+
+  const externalTrackGroups = useMemo(() => {
+    const matching = filteredEntries.filter(
+      (e) => e.eventCode === selectedHeatEvent && !e.scratched
+    );
+    const isRelay = isRelayEventCode(selectedHeatEvent);
+    return partitionEntriesByLabel(matching).map(([partLabel, partEntries]) => {
+      if (isRelay) {
+        const squads = groupEntriesIntoRelaySquads(partEntries).sort(
+          (a, b) => (a.officialHeat ?? 999) - (b.officialHeat ?? 999) || a.relayTeamCode.localeCompare(b.relayTeamCode)
+        );
+        return { partLabel, isRelay: true as const, squads, entries: [] as MeetEntryRecord[] };
+      }
+      const individual = partEntries
+        .filter((e) => !e.isAlternate)
+        .sort((a, b) => (a.officialHeat ?? 999) - (b.officialHeat ?? 999) || a.athleteName.localeCompare(b.athleteName));
+      return { partLabel, isRelay: false as const, squads: [], entries: individual };
+    });
+  }, [filteredEntries, selectedHeatEvent, partitionByDivision]);
+
+  const externalFieldGroups = useMemo(() => {
+    const matching = filteredEntries.filter(
+      (e) => e.eventCode === selectedFlightEvent && !e.scratched && !e.isAlternate
+    );
+    return partitionEntriesByLabel(matching).map(([partLabel, partEntries]) => ({
+      partLabel,
+      entries: [...partEntries].sort(
+        (a, b) =>
+          (a.officialFlight ?? 999) - (b.officialFlight ?? 999) ||
+          (a.officialOrder ?? 999) - (b.officialOrder ?? 999) ||
+          a.athleteName.localeCompare(b.athleteName)
+      ),
+    }));
+  }, [filteredEntries, selectedFlightEvent, partitionByDivision]);
+
   const selectedEventSpec = useMemo(
     () => ALL_MEET_DAY_EVENTS.find((ev) => ev.code === newEventCode),
     [newEventCode]
@@ -507,16 +717,45 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       eventCode: newEventCode,
       seedMark: newSeedMark.trim() || (selectedEventSpec?.category === 'FIELD' ? 'NM' : 'NT'),
       ...(isRelay ? { relayTeamCode: newRelayTeam, relayLegOrder: newRelayLeg } : {}),
+      ...(newIsAlternate ? { isAlternate: true } : {}),
     };
     setEntries((prev) => [next, ...prev]);
     if (selectedEventSpec?.category === 'FIELD') setSelectedFlightEvent(newEventCode);
     else setSelectedHeatEvent(newEventCode);
   };
 
+  const updateEntryById = (entryId: string, patch: Partial<MeetEntryRecord>) => {
+    setEntries((prev) => prev.map((x) => (x.id === entryId ? { ...x, ...patch } : x)));
+  };
+
+  const handleApplyImportedAssignments = (params: {
+    parseResult: ExternalHeatSheetParseResult;
+    mode: 'MERGE_PRESERVE_CLERK' | 'REPLACE_ALL_ASSIGNMENTS';
+    overwriteClerkOverrides: boolean;
+  }) => {
+    setEntries((prev) => {
+      const applied = applyImportedAssignmentsToEntries({
+        entries: prev,
+        parseResult: params.parseResult,
+        mode: params.mode,
+        overwriteClerkOverrides: params.overwriteClerkOverrides,
+      });
+      setPacketFeedback({
+        tone: 'prime',
+        text: `Applied official program (${applied.updatedCount} updated, ${applied.addedCount} added${
+          !params.overwriteClerkOverrides ? `, ${applied.preservedClerkCount} Clerk Overrides preserved` : ''
+        }).`,
+      });
+      return applied.entries;
+    });
+    setSeedingAuthority('EXTERNAL_MEET');
+    setShowExternalImportPanel(false);
+  };
+
   const handleExportHyTekCsv = () => {
     const csv = generateHyTekSemiColonEntryCsv({
       teamName: activeTeam?.brand.shortName || activeTeam?.brand.name || 'MeetReady',
-      entries: filteredEntries,
+      entries: effectiveExportEntries,
     });
     const slug = (activeTeam?.brand.slug || 'meetready').toLowerCase();
     triggerFileDownload(csv, `${slug}-hytek-entries.csv`, 'text/csv;charset=utf-8;');
@@ -526,7 +765,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     const hy3 = generateHyTekHy3File({
       meetTitle,
       meetDate,
-      entries: filteredEntries,
+      entries: effectiveExportEntries,
       teamCode: activeTeam?.brand.shortName || 'MTRDY',
       teamName: activeTeam?.brand.name || 'MeetReady Track & Field',
     });
@@ -535,7 +774,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   };
 
   const handleExportAthleticNetCsv = () => {
-    const csv = generateAthleticNetEntryCsv(filteredEntries);
+    const csv = generateAthleticNetEntryCsv(effectiveExportEntries);
     const slug = (activeTeam?.brand.slug || 'meetready').toLowerCase();
     triggerFileDownload(csv, `${slug}-athleticnet-entries.csv`, 'text/csv;charset=utf-8;');
   };
@@ -556,15 +795,21 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     if (isSavingPacket) return;
     setIsSavingPacket(true);
     setPacketFeedback(null);
+    setPrintPopupBlocked(false);
     const packetId = activePacketId || `mdp_${Date.now()}`;
-    const packetPayload = {
+    const trimmedLiveUrl = athleticLiveUrl.trim();
+    const packetPayload: MeetDayPacketRecord = {
       packetId,
       meetTitle: meetTitle.trim() || 'Track & Field Meet',
       meetDate: meetDate || getLocalDateIso(),
       laneCount: 8,
       flightSize: 12,
       partitionByDivision,
-      entries: meetEntriesToPacketEntries(entries),
+      seedingAuthority,
+      ...(trimmedLiveUrl ? { athleticLiveUrl: trimmedLiveUrl } : {}),
+      meetDelayMinutes,
+      entries: serializeMeetEntriesToPacketEntries(entries),
+      updatedAt: new Date().toISOString(),
     };
 
     try {
@@ -690,6 +935,60 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     </div>
   );
 
+  const renderEventTimingButtons = (
+    partLabel: string,
+    runners: Array<{ membershipId?: string; athleteName: string; laneOrHip?: string }>
+  ) => {
+    if (runners.length === 0 || (!onLaunchEventStopwatch && !onDelegateEventTimer)) {
+      return null;
+    }
+    return (
+      <div className="inline-flex flex-wrap items-center gap-1.5">
+        {onLaunchEventStopwatch && (
+          <button
+            type="button"
+            data-testid={`meet-time-event-${partLabel}`}
+            onClick={() =>
+              onLaunchEventStopwatch({
+                meetTitle,
+                meetDate,
+                eventCode: selectedHeatEvent,
+                runners,
+              })
+            }
+            className="ap-btn-primary !min-h-[32px] px-2.5 py-0.5 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
+          >
+            <Timer className="w-3.5 h-3.5" />
+            <span>Time This Event</span>
+          </button>
+        )}
+        {onDelegateEventTimer && (
+          <button
+            type="button"
+            data-testid={`meet-delegate-event-${partLabel}`}
+            onClick={() =>
+              onDelegateEventTimer({
+                meetTitle,
+                meetDate,
+                eventCode: selectedHeatEvent,
+                heatLabel: partLabel,
+                runners: runners.map((r) => ({
+                  membershipId: r.membershipId,
+                  athleteName: r.athleteName,
+                  hipOrLane: r.laneOrHip,
+                })),
+              })
+            }
+            className="ap-btn-secondary !min-h-[32px] px-2.5 py-0.5 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>Delegate</span>
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div
       ref={dialogRef}
@@ -706,86 +1005,107 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-ap-chalk dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border border-ap-edge flex flex-col shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="px-3 py-3 sm:px-5 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-start justify-between gap-2">
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <div className="flex items-center gap-2">
-              <Trophy className="w-5 h-5 ap-text-brand shrink-0" />
-              <h2 id={headingId} className="text-sm sm:text-lg font-extrabold tracking-tight truncate">
-                Meet-Day Entries, Heats, Flights &amp; NFHS 4-Event Check
-              </h2>
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Trophy className="w-5 h-5 ap-text-brand shrink-0" />
+                <h2 id={headingId} className="text-sm sm:text-lg font-extrabold tracking-tight truncate">
+                  Meet-Day Entries, Heats, Flights &amp; NFHS 4-Event Check
+                </h2>
+              </div>
+              <div className="inline-flex flex-wrap items-center gap-1 p-0.5 rounded-xl liquid-capsule-track text-2xs font-mono font-bold">
+                <button
+                  type="button" data-testid="meet-authority-external" aria-pressed={seedingAuthority === 'EXTERNAL_MEET'}
+                  onClick={() => setSeedingAuthority('EXTERNAL_MEET')}
+                  className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'EXTERNAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+                >External Meet (Athletic.net / Hy-Tek)</button>
+                <button
+                  type="button" data-testid="meet-authority-host" aria-pressed={seedingAuthority === 'HOST_DUAL_MEET'}
+                  onClick={() => setSeedingAuthority('HOST_DUAL_MEET')}
+                  className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'HOST_DUAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+                >Host / Dual Meet Seeding</button>
+              </div>
             </div>
+
             <div className="flex flex-wrap items-center gap-2">
               <input
-                type="text"
-                value={meetTitle}
-                onChange={(e) => setMeetTitle(e.target.value)}
-                aria-label="Meet Title"
-                className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold w-full sm:w-64"
+                type="text" value={meetTitle} onChange={(e) => setMeetTitle(e.target.value)} aria-label="Meet Title"
+                className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold w-full sm:w-56"
               />
               <input
-                type="date"
-                value={meetDate}
-                onChange={(e) => setMeetDate(e.target.value)}
-                aria-label="Meet Date"
+                type="date" value={meetDate} onChange={(e) => setMeetDate(e.target.value)} aria-label="Meet Date"
                 className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs"
               />
               <button
-                type="button"
-                data-testid="meet-save-packet-btn"
-                disabled={isSavingPacket}
+                type="button" data-testid="meet-save-packet-btn" disabled={isSavingPacket}
                 onClick={() => void handleSavePacket()}
                 className="ap-btn-primary !min-h-[38px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
-              >
-                {isSavingPacket ? 'Saving…' : 'Save Packet'}
-              </button>
+              >{isSavingPacket ? 'Saving…' : 'Save Packet'}</button>
               {savedPackets.length > 0 && (
                 <div className="inline-flex items-center gap-1 min-w-0">
                   <select
-                    aria-label="Saved Meet Packets"
-                    data-testid="meet-saved-packets-select"
-                    value={activePacketId}
+                    aria-label="Saved Meet Packets" data-testid="meet-saved-packets-select" value={activePacketId}
                     onChange={(e) => {
                       const val = e.target.value;
                       if (!val) {
-                        setActivePacketId('');
-                        setMeetTitle('New Track & Field Meet');
+                        setActivePacketId(''); setMeetTitle('New Track & Field Meet');
+                        setSeedingAuthority('EXTERNAL_MEET'); setAthleticLiveUrl(''); setMeetDelayMinutes(0);
                         setEntries(buildInitialMeetEntries(activeTeam, connectedAthletes));
                         return;
                       }
                       const found = savedPackets.find((p) => p.packetId === val);
                       if (found) applyPacketToEditor(found);
                     }}
-                    className="min-h-[38px] max-w-[190px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs"
+                    className="min-h-[38px] max-w-[170px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs"
                   >
                     <option value="">+ New Packet</option>
                     {savedPackets.map((p) => (
-                      <option key={p.packetId} value={p.packetId}>
-                        {p.meetTitle} ({p.meetDate})
-                      </option>
+                      <option key={p.packetId} value={p.packetId}>{p.meetTitle} ({p.meetDate})</option>
                     ))}
                   </select>
                   {activePacketId && (
                     <button
-                      type="button"
-                      aria-label="Delete saved meet packet"
-                      data-testid="meet-delete-packet-btn"
+                      type="button" aria-label="Delete saved meet packet" data-testid="meet-delete-packet-btn"
                       onClick={() => void handleDeleteSavedPacket(activePacketId)}
                       className="min-h-[38px] min-w-[38px] rounded-lg ap-card-inset inline-flex items-center justify-center text-rose-600 dark:text-rose-400 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    ><Trash2 className="w-3.5 h-3.5" /></button>
                   )}
                 </div>
               )}
             </div>
+
+            <div className="flex flex-wrap items-center gap-2 text-2xs font-mono">
+              <div className="flex items-center gap-1 flex-1 min-w-[200px]">
+                <input
+                  type="url" data-testid="meet-athleticlive-url-input" value={athleticLiveUrl}
+                  onChange={(e) => setAthleticLiveUrl(e.target.value)} aria-label="AthleticLIVE URL"
+                  placeholder="https://live.athletic.net/meets/..."
+                  className="flex-1 min-w-0 min-h-[34px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-2xs font-mono"
+                />
+                {/^https:\/\//i.test(athleticLiveUrl.trim()) && (
+                  <a
+                    href={athleticLiveUrl.trim()} target="_blank" rel="noopener noreferrer" aria-label="Open AthleticLIVE meet link"
+                    className="min-h-[34px] min-w-[34px] rounded-lg ap-card-inset inline-flex items-center justify-center text-ap-clay dark:text-ap-volt"
+                  ><ArrowSquareOut className="w-3.5 h-3.5" /></a>
+                )}
+              </div>
+              <div className="inline-flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-ap-muted dark:text-ap-muted-dark" />
+                <span className="text-ap-muted dark:text-ap-muted-dark font-semibold">Delay:</span>
+                {([0, 15, 30] as const).map((mins) => (
+                  <button
+                    key={mins} type="button" data-testid={`meet-delay-${mins}`} aria-pressed={meetDelayMinutes === mins}
+                    onClick={() => setMeetDelayMinutes(mins)}
+                    className={`min-h-[32px] px-2 rounded-lg font-bold cursor-pointer ${meetDelayMinutes === mins ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark'}`}
+                  >{mins === 0 ? 'On Time' : `+${mins}m`}</button>
+                ))}
+              </div>
+            </div>
           </div>
           <button
-            type="button"
-            aria-label="Close Meet-Day Modal"
-            onClick={onClose}
+            type="button" aria-label="Close Meet-Day Modal" onClick={onClose}
             className="min-h-[44px] min-w-[44px] rounded-xl ap-card-inset inline-flex items-center justify-center cursor-pointer shrink-0"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          ><X className="w-4 h-4" /></button>
         </div>
 
         {/* Sub-Tabs & Export Buttons */}
@@ -799,70 +1119,37 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               ] as const
             ).map((t) => (
               <button
-                key={t.id}
-                type="button"
-                data-testid={t.testId}
-                aria-pressed={subTab === t.id}
-                onClick={() => setSubTab(t.id)}
-                className={`min-h-[44px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg cursor-pointer ${
-                  subTab === t.id ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'
-                }`}
-              >
-                {t.label}
-              </button>
+                key={t.id} type="button" data-testid={t.testId} aria-pressed={subTab === t.id} onClick={() => setSubTab(t.id)}
+                className={`min-h-[44px] sm:min-h-[34px] px-2.5 sm:px-3 py-1 rounded-lg cursor-pointer ${subTab === t.id ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+              >{t.label}</button>
             ))}
           </div>
 
           <div className="flex flex-wrap items-center gap-1.5">
-            <button
-              type="button"
-              data-testid="meet-export-hy3-btn"
-              onClick={handleExportHy3}
-              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export .hy3 (Hy-Tek)</span>
+            <button type="button" data-testid="meet-export-hy3-btn" onClick={handleExportHy3} className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer">
+              <Download className="w-3.5 h-3.5" /><span>Export .hy3 (Hy-Tek)</span>
+            </button>
+            <button type="button" data-testid="meet-export-athleticnet-btn" onClick={handleExportAthleticNetCsv} className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer">
+              <Download className="w-3.5 h-3.5" /><span>Athletic.net CSV</span>
+            </button>
+            <button type="button" data-testid="meet-export-hytek-btn" onClick={handleExportHyTekCsv} className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer">
+              <Download className="w-3.5 h-3.5" /><span>Download Hy-Tek CSV</span>
             </button>
             <button
-              type="button"
-              data-testid="meet-export-athleticnet-btn"
-              onClick={handleExportAthleticNetCsv}
-              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Athletic.net CSV</span>
-            </button>
-            <button
-              type="button"
-              data-testid="meet-export-hytek-btn"
-              onClick={handleExportHyTekCsv}
-              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download Hy-Tek CSV</span>
-            </button>
-            <button
-              type="button"
-              data-testid="meet-print-packet-btn"
+              type="button" data-testid="meet-print-packet-btn"
               onClick={() => {
                 const opened = openPrintableMeetDayPacketWindow({
                   teamName: activeTeam?.brand.name || 'MeetReady Track & Field',
-                  meetTitle,
-                  entries: filteredEntries,
-                  partitionByDivision,
+                  meetTitle, meetDate, entries: effectiveExportEntries, partitionByDivision,
+                  seedingAuthority, athleticLiveUrl: athleticLiveUrl.trim() || undefined, meetDelayMinutes, showItinerary: true,
                 });
+                setPrintPopupBlocked(!opened);
                 if (!opened) {
-                  setPacketFeedback({
-                    tone: 'caution',
-                    text: 'Print window was blocked by the browser. Allow pop-ups for MeetReady to open the printable Meet Packet.',
-                  });
+                  setPacketFeedback({ tone: 'caution', text: 'Print window was blocked by the browser. Allow pop-ups or use Download Offline HTML below.' });
                 }
               }}
               className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-            >
-              <ClipboardText className="w-3.5 h-3.5" />
-              <span>Print Packet</span>
-            </button>
+            ><ClipboardText className="w-3.5 h-3.5" /><span>Print Packet</span></button>
           </div>
         </div>
 
@@ -870,281 +1157,178 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
         <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-3 text-xs">
           {packetFeedback && (
             <div
-              role="status"
-              data-testid="meet-packet-feedback"
-              className={`rounded-xl px-3.5 py-2 font-semibold flex items-center gap-2 ${
-                packetFeedback.tone === 'prime' ? 'ap-status-prime' : 'ap-status-caution'
-              }`}
+              role="status" data-testid="meet-packet-feedback"
+              className={`rounded-xl px-3.5 py-2 font-semibold flex flex-wrap items-center justify-between gap-2 ${packetFeedback.tone === 'prime' ? 'ap-status-prime' : 'ap-status-caution'}`}
             >
-              {packetFeedback.tone === 'prime' ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0" />
-              ) : (
-                <AlertTriangle className="w-4 h-4 shrink-0" />
+              <div className="flex items-center gap-2 min-w-0">
+                {packetFeedback.tone === 'prime' ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                <span>{packetFeedback.text}</span>
+              </div>
+              {printPopupBlocked && (
+                <button
+                  type="button" data-testid="meet-download-offline-html-btn"
+                  onClick={() => {
+                    downloadMeetPacketHtmlFallback({
+                      teamName: activeTeam?.brand.name || 'MeetReady Track & Field',
+                      meetTitle, meetDate, entries: effectiveExportEntries, partitionByDivision,
+                      seedingAuthority, athleticLiveUrl: athleticLiveUrl.trim() || undefined, meetDelayMinutes, showItinerary: true,
+                    });
+                    setPacketFeedback({ tone: 'prime', text: 'Downloaded offline HTML meet packet.' });
+                    setPrintPopupBlocked(false);
+                  }}
+                  className="ap-btn-secondary !min-h-[34px] px-2.5 py-1 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer shrink-0"
+                ><Download className="w-3.5 h-3.5" /><span>Download Offline HTML</span></button>
               )}
-              <span>{packetFeedback.text}</span>
             </div>
           )}
 
           {/* NFHS Rule 4-2 Banner */}
-          <div data-testid="nfhs-event-limit-panel">
+          <div data-testid="nfhs-event-limit-panel" className="space-y-1.5">
             {violations.length > 0 ? (
-              <div
-                data-testid="nfhs-over-limit-alert"
-                className="rounded-xl ap-status-strained px-3.5 py-2.5 flex items-center gap-2 font-bold"
-              >
+              <div data-testid="nfhs-over-limit-alert" className="rounded-xl ap-status-strained px-3.5 py-2.5 flex items-center gap-2 font-bold">
                 <AlertTriangle className="w-4 h-4 shrink-0" />
-                <span>
-                  NFHS Rule 4-2 Violation (&gt;4 events):{' '}
-                  {violations
-                    .map((v) => `${v.athleteName} (${v.eventCount}: ${v.events.join(', ')})`)
-                    .join(' · ')}
-                </span>
+                <span>NFHS Rule 4-2 Violation (&gt;4 events): {violations.map((v) => `${v.athleteName} (${v.eventCount}: ${v.events.join(', ')})`).join(' · ')}</span>
               </div>
             ) : (
               <div className="rounded-xl ap-status-prime px-3.5 py-2 flex items-center gap-2 font-semibold">
                 <CheckCircle2 className="w-4 h-4 shrink-0" />
-                <span>
-                  NFHS Rule 4-2 Verified: All entered athletes are within the 4-event limit.
-                </span>
+                <span>NFHS Rule 4-2 Verified: All active entered athletes are within the 4-event limit.</span>
+              </div>
+            )}
+            {alternateAdvisories.length > 0 && (
+              <div data-testid="nfhs-alternate-advisory" className="rounded-xl ap-status-caution px-3.5 py-2 flex items-center gap-2 font-semibold">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>Alternate Advisory (count if activated): {alternateAdvisories.map((a) => `${a.athleteName} (${a.eventCount} active + ${a.alternateCount} alt: ${(a.alternateEvents || []).join(', ')})`).join(' · ')}</span>
               </div>
             )}
           </div>
 
           {genderAndDivisionFilterBar}
 
+          {isFilterActive && (
+            <div data-testid="meet-export-scope-banner" className="rounded-xl ap-status-caution px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-2xs font-semibold">
+                Filter active ({activeFilteredEntries.length} shown of {activeAllEntries.length} active team entries). Exports default to Full Team.
+              </span>
+              <div className="inline-flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button" data-testid="meet-export-scope-full" aria-pressed={exportScope === 'FULL_TEAM'} onClick={() => setExportScope('FULL_TEAM')}
+                  className={`min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${exportScope === 'FULL_TEAM' ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk border border-ap-frame/20'}`}
+                >Export Full Team ({activeAllEntries.length})</button>
+                <button
+                  type="button" data-testid="meet-export-scope-filtered" aria-pressed={exportScope === 'FILTERED_ONLY'} onClick={() => setExportScope('FILTERED_ONLY')}
+                  className={`min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${exportScope === 'FILTERED_ONLY' ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk border border-ap-frame/20'}`}
+                >Export Filtered Only ({activeFilteredEntries.length})</button>
+              </div>
+            </div>
+          )}
+
           {subTab === 'ENTRIES' && (
             <>
-              {activeTeam && (
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl ap-card-inset px-3 py-2">
-                  <span className="text-2xs text-ap-muted dark:text-ap-muted-dark">
-                    {entries.length === 0
-                      ? 'Start from a clean slate or pull verified athlete seed marks on file.'
-                      : 'Seed missing roster athletes using verified marks or official race results.'}
-                  </span>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl ap-card-inset px-3 py-2">
+                <span className="text-2xs text-ap-muted dark:text-ap-muted-dark">
+                  {entries.length === 0
+                    ? 'Start from a clean slate, pull verified marks, or paste official Friday-night heat sheets.'
+                    : 'Seed missing roster marks or import official Hy-Tek / AthleticLIVE heat & flight assignments.'}
+                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
                   <button
-                    type="button"
-                    data-testid="meet-seed-roster-marks-btn"
-                    onClick={() => {
-                      const rosterEntries = buildEntriesFromRosterMarks(activeTeam);
-                      if (rosterEntries.length === 0) {
-                        setPacketFeedback({
-                          tone: 'caution',
-                          text: 'No verified roster seed marks or official results found yet. Add entries manually or sync Athletic.net / TFRRS marks.',
+                    type="button" data-testid="toggle-external-heat-import-btn" onClick={() => setShowExternalImportPanel((v) => !v)}
+                    className={`!min-h-[44px] sm:!min-h-[34px] px-3 py-1 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer ${showExternalImportPanel ? 'ap-nav-volt-active' : 'ap-btn-secondary'}`}
+                  ><ClipboardPaste className="w-3.5 h-3.5" /><span>{showExternalImportPanel ? 'Hide Heat Sheet Importer' : 'Import Heat Sheet'}</span></button>
+                  {activeTeam && (
+                    <button
+                      type="button" data-testid="meet-seed-roster-marks-btn"
+                      onClick={() => {
+                        const rosterEntries = buildEntriesFromRosterMarks(activeTeam);
+                        if (rosterEntries.length === 0) {
+                          setPacketFeedback({ tone: 'caution', text: 'No verified roster seed marks or official results found yet. Add entries manually or sync Athletic.net / TFRRS marks.' });
+                          return;
+                        }
+                        setEntries((prev) => {
+                          const existingKeys = new Set(prev.map((e) => `${e.athleteId}:${e.eventCode}`));
+                          return [...prev, ...rosterEntries.filter((r) => !existingKeys.has(`${r.athleteId}:${r.eventCode}`))];
                         });
-                        return;
-                      }
-                      setEntries((prev) => {
-                        const existingKeys = new Set(
-                          prev.map((e) => `${e.athleteId}:${e.eventCode}`)
-                        );
-                        const merged = [
-                          ...prev,
-                          ...rosterEntries.filter(
-                            (r) => !existingKeys.has(`${r.athleteId}:${r.eventCode}`)
-                          ),
-                        ];
-                        return merged;
-                      });
-                      setPacketFeedback({
-                        tone: 'prime',
-                        text: `Seeded ${rosterEntries.length} verified roster mark${rosterEntries.length === 1 ? '' : 's'}.`,
-                      });
-                    }}
-                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
-                  >
-                    Seed from Roster Marks
-                  </button>
+                        setPacketFeedback({ tone: 'prime', text: `Seeded ${rosterEntries.length} verified roster mark${rosterEntries.length === 1 ? '' : 's'}.` });
+                      }}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
+                    >Seed from Roster Marks</button>
+                  )}
                 </div>
+              </div>
+
+              {showExternalImportPanel && (
+                <ExternalHeatSheetImportPanel
+                  entries={entries} memberships={activeTeam?.memberships || []}
+                  onApplyImportedAssignments={handleApplyImportedAssignments} onClose={() => setShowExternalImportPanel(false)}
+                />
               )}
-              <form
-                onSubmit={handleAddEntry}
-                className="rounded-xl ap-card-inset p-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-end"
-              >
+
+              <form onSubmit={handleAddEntry} className="rounded-xl ap-card-inset p-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
                 <label className="sm:col-span-3 space-y-1">
-                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-                    Athlete
-                  </span>
-                  <select
-                    data-testid="meet-add-athlete-select"
-                    value={activeAthleteChoice?.id || ''}
-                    onChange={(e) => setNewAthleteKey(e.target.value)}
-                    className="w-full min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-semibold"
-                  >
-                    {athleteChoices.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} ({a.gender === 'F' ? 'F' : 'M'})
-                      </option>
-                    ))}
+                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">Athlete</span>
+                  <select data-testid="meet-add-athlete-select" value={activeAthleteChoice?.id || ''} onChange={(e) => setNewAthleteKey(e.target.value)} className="w-full min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-semibold">
+                    {athleteChoices.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.gender === 'F' ? 'F' : 'M'})</option>)}
                   </select>
                 </label>
-
                 <label className="sm:col-span-2 space-y-1">
-                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-                    Gender / Div
-                  </span>
+                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">Gender / Div</span>
                   <div className="flex gap-1">
-                    <select
-                      aria-label="New Entry Gender"
-                      value={newGenderOverride || activeAthleteChoice?.gender || 'M'}
-                      onChange={(e) =>
-                        setNewGenderOverride(e.target.value as MeetGenderDivision)
-                      }
-                      className="w-16 min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-1.5 font-mono font-bold"
-                    >
-                      <option value="M">Boys</option>
-                      <option value="F">Girls</option>
-                      <option value="NONBINARY">NB</option>
+                    <select aria-label="New Entry Gender" value={newGenderOverride || activeAthleteChoice?.gender || 'M'} onChange={(e) => setNewGenderOverride(e.target.value as MeetGenderDivision)} className="w-16 min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-1.5 font-mono font-bold">
+                      <option value="M">Boys</option><option value="F">Girls</option><option value="NONBINARY">NB</option>
                     </select>
-                    <select
-                      aria-label="New Entry Division"
-                      value={newDivisionOverride || activeAthleteChoice?.division || 'Varsity'}
-                      onChange={(e) => setNewDivisionOverride(e.target.value)}
-                      className="flex-1 min-w-0 min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-1.5 font-mono text-2xs"
-                    >
-                      {MEET_DIVISION_CHOICES.map((d) => (
-                        <option key={d} value={d}>
-                          {d === 'Junior Varsity' ? 'JV' : d}
-                        </option>
-                      ))}
+                    <select aria-label="New Entry Division" value={newDivisionOverride || activeAthleteChoice?.division || 'Varsity'} onChange={(e) => setNewDivisionOverride(e.target.value)} className="flex-1 min-w-0 min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-1.5 font-mono text-2xs">
+                      {MEET_DIVISION_CHOICES.map((d) => <option key={d} value={d}>{d === 'Junior Varsity' ? 'JV' : d}</option>)}
                     </select>
                   </div>
                 </label>
-
                 <label className="sm:col-span-3 space-y-1">
-                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-                    Event
-                  </span>
-                  <select
-                    data-testid="meet-add-event-select"
-                    value={newEventCode}
-                    onChange={(e) => setNewEventCode(e.target.value)}
-                    className="w-full min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono font-bold"
-                  >
-                    {ALL_MEET_DAY_EVENTS.map((ev) => (
-                      <option key={ev.code} value={ev.code}>
-                        {ev.label}
-                      </option>
-                    ))}
+                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">Event</span>
+                  <select data-testid="meet-add-event-select" value={newEventCode} onChange={(e) => setNewEventCode(e.target.value)} className="w-full min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono font-bold">
+                    {ALL_MEET_DAY_EVENTS.map((ev) => <option key={ev.code} value={ev.code}>{ev.label}</option>)}
                   </select>
                 </label>
-
                 <label className="sm:col-span-2 space-y-1">
-                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-                    Seed Time / Mark
-                  </span>
-                  <input
-                    type="text"
-                    data-testid="meet-add-seed-input"
-                    value={newSeedMark}
-                    onChange={(e) => setNewSeedMark(e.target.value)}
-                    placeholder="11.20 or 21' 6&quot;"
-                    className="w-full min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono"
-                  />
+                  <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">Seed Time / Mark</span>
+                  <input type="text" data-testid="meet-add-seed-input" value={newSeedMark} onChange={(e) => setNewSeedMark(e.target.value)} placeholder="11.20 or 21' 6&quot;" className="w-full min-h-[44px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono" />
                 </label>
-
-                <button
-                  type="submit"
-                  data-testid="meet-add-entry-btn"
-                  className="sm:col-span-2 ap-btn-primary !min-h-[44px] px-3 py-2 font-bold inline-flex items-center justify-center gap-1 cursor-pointer"
-                >
+                <button type="submit" data-testid="meet-add-entry-btn" className="sm:col-span-2 ap-btn-primary !min-h-[44px] px-3 py-2 font-bold inline-flex items-center justify-center gap-1 cursor-pointer">
                   <Plus className="w-4 h-4" /> Add
                 </button>
-
-                {selectedEventSpec?.category === 'RELAY' && (
-                  <div className="sm:col-span-12 flex flex-wrap items-center gap-2 pt-1 text-2xs font-mono">
-                    <span className="text-ap-muted dark:text-ap-muted-dark">Relay Quartet:</span>
-                    <select
-                      aria-label="Relay Squad Letter"
-                      value={newRelayTeam}
-                      onChange={(e) => setNewRelayTeam(e.target.value)}
-                      className="min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold"
-                    >
-                      <option value="A">Team A</option>
-                      <option value="B">Team B</option>
-                      <option value="C">Team C</option>
-                    </select>
-                    <select
-                      aria-label="Relay Leg Order"
-                      value={newRelayLeg}
-                      onChange={(e) => setNewRelayLeg(Number(e.target.value) as 1 | 2 | 3 | 4)}
-                      className="min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold"
-                    >
-                      <option value={1}>Leg 1 (Leadoff)</option>
-                      <option value={2}>Leg 2</option>
-                      <option value={3}>Leg 3</option>
-                      <option value={4}>Leg 4 (Anchor)</option>
-                    </select>
-                  </div>
-                )}
+                <div className="sm:col-span-12 flex flex-wrap items-center gap-3 pt-1 text-2xs font-mono">
+                  {selectedEventSpec?.category === 'RELAY' && (
+                    <>
+                      <span className="text-ap-muted dark:text-ap-muted-dark">Relay Quartet:</span>
+                      <select aria-label="Relay Squad Letter" value={newRelayTeam} onChange={(e) => setNewRelayTeam(e.target.value)} className="min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold">
+                        <option value="A">Team A</option><option value="B">Team B</option><option value="C">Team C</option>
+                      </select>
+                      <select aria-label="Relay Leg Order" value={newRelayLeg} onChange={(e) => setNewRelayLeg(Number(e.target.value) as 1 | 2 | 3 | 4)} className="min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold">
+                        <option value={1}>Leg 1 (Leadoff)</option><option value={2}>Leg 2</option><option value={3}>Leg 3</option><option value={4}>Leg 4 (Anchor)</option>
+                      </select>
+                    </>
+                  )}
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" checked={newIsAlternate} onChange={(e) => setNewIsAlternate(e.target.checked)} className="accent-[#B83A24]" />
+                    <span>Mark as Alternate</span>
+                  </label>
+                </div>
               </form>
 
               <div className="space-y-1.5">
                 {filteredEntries.map((entry) => (
-                  <div
+                  <MeetDayEntryRow
                     key={entry.id}
-                    className="rounded-xl ap-card-inset px-3 py-2 flex flex-wrap items-center justify-between gap-2 font-mono"
-                  >
-                    <div className="min-w-0 flex flex-wrap items-center gap-1.5">
-                      <span className="font-bold text-ap-ink dark:text-ap-chalk font-sans">
-                        {entry.athleteName}
-                      </span>
-                      {injuredMemberIds.has(entry.athleteId) && (
-                        <span
-                          data-testid={`meet-entry-injured-${entry.athleteId}`}
-                          className="px-1.5 py-0.5 rounded ap-status-strained font-bold text-2xs"
-                        >
-                          [INJURED — AT RTP]
-                        </span>
-                      )}
-                      <select
-                        aria-label={`Gender for ${entry.athleteName} ${entry.eventCode}`}
-                        value={entry.genderDivision || 'M'}
-                        onChange={(e) => {
-                          const nextG = e.target.value as MeetGenderDivision;
-                          setEntries((prev) =>
-                            prev.map((x) => (x.id === entry.id ? { ...x, genderDivision: nextG } : x))
-                          );
-                        }}
-                        className="min-h-[30px] rounded-md border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-1.5 text-2xs font-bold"
-                      >
-                        <option value="M">Boys</option>
-                        <option value="F">Girls</option>
-                        <option value="NONBINARY">NB</option>
-                      </select>
-                      <select
-                        aria-label={`Division for ${entry.athleteName} ${entry.eventCode}`}
-                        value={entry.division || 'Varsity'}
-                        onChange={(e) => {
-                          const nextDiv = e.target.value;
-                          setEntries((prev) =>
-                            prev.map((x) => (x.id === entry.id ? { ...x, division: nextDiv } : x))
-                          );
-                        }}
-                        className="min-h-[30px] rounded-md border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-1.5 text-2xs"
-                      >
-                        {availableDivisions.map((d) => (
-                          <option key={d} value={d}>
-                            {d}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="px-1.5 py-0.5 rounded bg-ap-clay/15 dark:bg-ap-volt/15 text-ap-clay dark:text-ap-volt font-bold">
-                        {entry.eventCode}
-                        {entry.relayTeamCode ? ` (${entry.relayTeamCode}${entry.relayLegOrder ? ` #${entry.relayLegOrder}` : ''})` : ''}
-                      </span>
-                      <span className="text-ap-muted dark:text-ap-muted-dark">
-                        Seed: {entry.seedMark}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      aria-label={`Remove ${entry.athleteName} ${entry.eventCode}`}
-                      onClick={() => setEntries((prev) => prev.filter((x) => x.id !== entry.id))}
-                      className="min-h-[36px] min-w-[36px] inline-flex items-center justify-center text-rose-500 hover:text-rose-400 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                    entry={entry}
+                    availableDivisions={availableDivisions}
+                    isInjured={injuredMemberIds.has(entry.athleteId)}
+                    isClerkOpen={editingClerkEntryId === entry.id}
+                    meetDelayMinutes={meetDelayMinutes}
+                    onToggleClerk={() =>
+                      setEditingClerkEntryId(editingClerkEntryId === entry.id ? null : entry.id)
+                    }
+                    onUpdate={(patch) => updateEntryById(entry.id, patch)}
+                    onRemove={() => setEntries((prev) => prev.filter((x) => x.id !== entry.id))}
+                  />
                 ))}
               </div>
             </>
@@ -1152,47 +1336,111 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
 
           {subTab === 'HEATS' && (
             <div className="space-y-3">
-              <div className="flex flex-wrap gap-1.5">
-                {ALL_MEET_DAY_EVENTS.filter((e) => e.category !== 'FIELD').map((ev) => (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {ALL_MEET_DAY_EVENTS.filter((e) => e.category !== 'FIELD').map((ev) => (
+                    <button key={ev.code} type="button" onClick={() => setSelectedHeatEvent(ev.code)} className={`min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${selectedHeatEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'}`}>
+                      {ev.code}
+                    </button>
+                  ))}
+                </div>
+                {seedingAuthority === 'HOST_DUAL_MEET' && (
                   <button
-                    key={ev.code}
-                    type="button"
-                    onClick={() => setSelectedHeatEvent(ev.code)}
-                    className={`min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${
-                      selectedHeatEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'
-                    }`}
+                    type="button" data-testid="meet-host-slow-to-fast-toggle" aria-pressed={hostSlowToFast}
+                    onClick={() => setHostSlowToFast((v) => !v)}
+                    className="min-h-[34px] px-2.5 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
                   >
-                    {ev.code}
+                    Order: {hostSlowToFast ? 'Slow-to-Fast' : 'Fast-First'}
                   </button>
-                ))}
+                )}
               </div>
-              {groupedHeats.length === 0 ? (
+
+              {seedingAuthority === 'EXTERNAL_MEET' ? (
+                externalTrackGroups.length === 0 ? (
+                  <div className="rounded-xl ap-card-inset p-4 text-ap-muted dark:text-ap-muted-dark">
+                    No active entries in {selectedHeatEvent} matching the active division filter.
+                  </div>
+                ) : (
+                  <div className="space-y-3 font-mono">
+                    {externalTrackGroups.map((grp) => {
+                      const runnersForEvent = grp.isRelay
+                        ? grp.squads.map((sq) => ({ membershipId: sq.representativeEntry.athleteId, athleteName: `${sq.eventCode} Team ${sq.relayTeamCode}`, laneOrHip: sq.officialLaneOrHip }))
+                        : grp.entries.map((e) => ({ membershipId: e.athleteId, athleteName: e.athleteName, laneOrHip: e.officialLaneOrHip }));
+                      return (
+                        <div key={grp.partLabel} className="space-y-1.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                            <span className="text-2xs font-bold uppercase tracking-wider text-ap-clay dark:text-ap-volt">
+                              {grp.partLabel} · {selectedHeatEvent} (Official Program)
+                            </span>
+                            {renderEventTimingButtons(grp.partLabel, runnersForEvent)}
+                          </div>
+                          {grp.isRelay
+                            ? grp.squads.map((sq) => {
+                                const slotLabel = sq.officialHeat || sq.officialLaneOrHip
+                                  ? [sq.officialHeat ? `Heat ${sq.officialHeat}` : '', sq.officialLaneOrHip ? formatOfficialLaneOrHip(selectedHeatEvent, sq.officialLaneOrHip) : ''].filter(Boolean).join(' · ')
+                                  : 'TBD (Official Program)';
+                                const delayedStart = applyDelayToMeetTimeString(sq.eventStartTime, meetDelayMinutes);
+                                const delayedCall = applyDelayToMeetTimeString(sq.checkInCallTime, meetDelayMinutes);
+                                return (
+                                  <div key={sq.squadKey} className="rounded-xl ap-card-inset px-3 py-2 space-y-1">
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                      <span className="min-w-0"><strong className="text-ap-clay dark:text-ap-volt">{slotLabel}</strong> — Team {sq.relayTeamCode}</span>
+                                      <span className="font-bold shrink-0">Seed {sq.seedMark}{delayedCall ? ` · Call ${delayedCall}` : ''}{delayedStart ? ` · ${delayedStart}` : ''}</span>
+                                    </div>
+                                    <div className="text-2xs text-ap-muted dark:text-ap-muted-dark">
+                                      Legs: {sq.activeLegs.map((l, i) => `${l.relayLegOrder || i + 1}) ${l.athleteName}`).join(' · ')}
+                                      {sq.alternates.length > 0 ? ` · Alt: ${sq.alternates.map((a) => a.athleteName).join(', ')}` : ''}
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            : grp.entries.map((entry) => {
+                                const slotLabel = entry.officialHeat || entry.officialLaneOrHip
+                                  ? [entry.officialHeat ? `Heat ${entry.officialHeat}` : '', entry.officialLaneOrHip ? formatOfficialLaneOrHip(selectedHeatEvent, entry.officialLaneOrHip) : ''].filter(Boolean).join(' · ')
+                                  : 'TBD (Official Program)';
+                                const delayedStart = applyDelayToMeetTimeString(entry.eventStartTime, meetDelayMinutes);
+                                const delayedCall = applyDelayToMeetTimeString(entry.checkInCallTime, meetDelayMinutes);
+                                return (
+                                  <div key={entry.id} className="rounded-xl ap-card-inset px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+                                    <span className="min-w-0 truncate">
+                                      <strong className="text-ap-clay dark:text-ap-volt">{slotLabel}</strong> — {entry.athleteName}{entry.bibNumber ? ` #${entry.bibNumber}` : ''}
+                                    </span>
+                                    <span className="font-bold shrink-0">Seed {entry.seedMark}{delayedCall ? ` · Call ${delayedCall}` : ''}{delayedStart ? ` · ${delayedStart}` : ''}</span>
+                                  </div>
+                                );
+                              })}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )
+              ) : groupedHeats.length === 0 ? (
                 <div className="rounded-xl ap-card-inset p-4 text-ap-muted dark:text-ap-muted-dark">
                   No entries in {selectedHeatEvent} matching the active division filter. Add an athlete in Entries tab.
                 </div>
               ) : (
                 <div className="space-y-3 font-mono">
-                  {groupedHeats.map(([partLabel, rows]) => (
-                    <div key={partLabel} className="space-y-1.5">
-                      <div className="text-2xs font-bold uppercase tracking-wider text-ap-clay dark:text-ap-volt px-1">
-                        {partLabel} · {selectedHeatEvent}
-                      </div>
-                      {rows.map((h) => (
-                        <div
-                          key={`${partLabel}-${h.heatNumber}-${h.lane}-${h.athleteId}`}
-                          className="rounded-xl ap-card-inset px-3 py-2 flex items-center justify-between gap-2"
-                        >
-                          <span className="min-w-0 truncate">
-                            <strong className="text-ap-clay dark:text-ap-volt">
-                              Heat {h.heatNumber} · Lane {h.lane}
-                            </strong>{' '}
-                            — {h.athleteName}
-                          </span>
-                          <span className="font-bold shrink-0">Seed {h.seedMark}</span>
+                  {groupedHeats.map(([partLabel, rows]) => {
+                    const runnersForGroup = rows.map((h) => ({ membershipId: h.athleteId, athleteName: h.athleteName, laneOrHip: h.officialLaneOrHip || h.positionLabel || `Lane ${h.lane}` }));
+                    return (
+                      <div key={partLabel} className="space-y-1.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                          <span className="text-2xs font-bold uppercase tracking-wider text-ap-clay dark:text-ap-volt">{partLabel} · {selectedHeatEvent}</span>
+                          {renderEventTimingButtons(partLabel, runnersForGroup)}
                         </div>
-                      ))}
-                    </div>
-                  ))}
+                        {rows.map((h) => {
+                          const posDisp = h.officialLaneOrHip ? formatOfficialLaneOrHip(selectedHeatEvent, h.officialLaneOrHip) : h.positionLabel || `Lane ${h.lane}`;
+                          const heatDisp = h.officialHeat ?? h.heatNumber;
+                          return (
+                            <div key={`${partLabel}-${h.heatNumber}-${h.lane}-${h.athleteId}`} className="rounded-xl ap-card-inset px-3 py-2 flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate"><strong className="text-ap-clay dark:text-ap-volt">Heat {heatDisp} · {posDisp}</strong> — {h.athleteName}</span>
+                              <span className="font-bold shrink-0">Seed {h.seedMark}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1202,19 +1450,38 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
             <div className="space-y-3">
               <div className="flex flex-wrap gap-1.5">
                 {ALL_MEET_DAY_EVENTS.filter((e) => e.category === 'FIELD').map((ev) => (
-                  <button
-                    key={ev.code}
-                    type="button"
-                    onClick={() => setSelectedFlightEvent(ev.code)}
-                    className={`min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${
-                      selectedFlightEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'
-                    }`}
-                  >
+                  <button key={ev.code} type="button" onClick={() => setSelectedFlightEvent(ev.code)} className={`min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${selectedFlightEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'}`}>
                     {ev.code}
                   </button>
                 ))}
               </div>
-              {groupedFlights.length === 0 ? (
+              {seedingAuthority === 'EXTERNAL_MEET' ? (
+                externalFieldGroups.length === 0 ? (
+                  <div className="rounded-xl ap-card-inset p-4 text-ap-muted dark:text-ap-muted-dark">
+                    No active field entries in {selectedFlightEvent} matching the active division filter.
+                  </div>
+                ) : (
+                  <div className="space-y-3 font-mono">
+                    {externalFieldGroups.map((grp) => (
+                      <div key={grp.partLabel} className="space-y-1.5">
+                        <div className="text-2xs font-bold uppercase tracking-wider text-ap-clay dark:text-ap-volt px-1">
+                          {grp.partLabel} · {selectedFlightEvent} (Official Program)
+                        </div>
+                        {grp.entries.map((entry) => {
+                          const flightLabel = entry.officialFlight ? `Flight ${entry.officialFlight}${entry.officialOrder ? ` #${entry.officialOrder}` : ''}` : 'TBD (Official Program)';
+                          const delayedStart = applyDelayToMeetTimeString(entry.eventStartTime, meetDelayMinutes);
+                          return (
+                            <div key={entry.id} className="rounded-xl ap-card-inset px-3 py-2 flex items-center justify-between gap-2">
+                              <span className="min-w-0 truncate"><strong className="text-ap-clay dark:text-ap-volt">{flightLabel}</strong> — {entry.athleteName}</span>
+                              <span className="font-bold shrink-0">Seed {entry.seedMark}{delayedStart ? ` · ${delayedStart}` : ''}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : groupedFlights.length === 0 ? (
                 <div className="rounded-xl ap-card-inset p-4 text-ap-muted dark:text-ap-muted-dark">
                   No field entries in {selectedFlightEvent} matching the active division filter. Add an athlete in Entries tab.
                 </div>
@@ -1222,20 +1489,10 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 <div className="space-y-3 font-mono">
                   {groupedFlights.map(([partLabel, rows]) => (
                     <div key={partLabel} className="space-y-1.5">
-                      <div className="text-2xs font-bold uppercase tracking-wider text-ap-clay dark:text-ap-volt px-1">
-                        {partLabel} · {selectedFlightEvent}
-                      </div>
+                      <div className="text-2xs font-bold uppercase tracking-wider text-ap-clay dark:text-ap-volt px-1">{partLabel} · {selectedFlightEvent}</div>
                       {rows.map((f) => (
-                        <div
-                          key={`${partLabel}-${f.flightNumber}-${f.orderIndex}-${f.athleteId}`}
-                          className="rounded-xl ap-card-inset px-3 py-2 flex items-center justify-between gap-2"
-                        >
-                          <span className="min-w-0 truncate">
-                            <strong className="text-ap-clay dark:text-ap-volt">
-                              Flight {f.flightNumber} #{f.orderIndex}
-                            </strong>{' '}
-                            — {f.athleteName}
-                          </span>
+                        <div key={`${partLabel}-${f.flightNumber}-${f.orderIndex}-${f.athleteId}`} className="rounded-xl ap-card-inset px-3 py-2 flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate"><strong className="text-ap-clay dark:text-ap-volt">Flight {f.flightNumber} #{f.orderIndex}</strong> — {f.athleteName}</span>
                           <span className="font-bold shrink-0">Seed {f.seedMark}</span>
                         </div>
                       ))}

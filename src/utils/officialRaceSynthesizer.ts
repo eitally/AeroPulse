@@ -191,6 +191,8 @@ export interface ParsedOfficialRaceCandidate {
   windReading?: string;
   lapSplitDistanceMeters: 60 | 100 | 200 | 400 | 1000;
   lapSplitsSecs: number[];
+  splitsEstimated?: boolean;
+  preserveEmptySplits?: boolean;
   includeWarmupCooldown: boolean;
   sourceUrl?: string;
   startDateLocalIso?: string;
@@ -406,10 +408,14 @@ export function synthesizeOfficialRaceActivity(
   athleteMaxHr = 192
 ): UnifiedActivity {
   const splitMeters = candidate.lapSplitDistanceMeters || (candidate.eventDistanceMeters <= 400 ? 200 : candidate.eventDistanceMeters >= 5000 ? 1000 : 400);
-  const splits =
-    candidate.lapSplitsSecs && candidate.lapSplitsSecs.length > 0
-      ? candidate.lapSplitsSecs
+  const hasCandidateSplits = Boolean(candidate.lapSplitsSecs && candidate.lapSplitsSecs.length > 0);
+  const splits = hasCandidateSplits
+    ? candidate.lapSplitsSecs
+    : candidate.preserveEmptySplits
+      ? []
       : generateDefaultLapSplits(candidate.eventDistanceMeters, candidate.fatTimeSecs, splitMeters);
+  const splitsEstimated =
+    candidate.splitsEstimated !== undefined ? candidate.splitsEstimated : !hasCandidateSplits;
 
   const vdot = computeJackDanielsVdot(candidate.eventDistanceMeters, candidate.fatTimeSecs);
   const trainingLoad = computeOfficialRaceTrainingLoad(
@@ -491,12 +497,17 @@ export function synthesizeOfficialRaceActivity(
   const firstHalfSplits = splits.slice(0, Math.ceil(splits.length / 2));
   const secondHalfSplits = splits.slice(Math.ceil(splits.length / 2));
   const firstHalfAvg =
-    firstHalfSplits.reduce((s, v) => s + v, 0) / Math.max(1, firstHalfSplits.length);
+    firstHalfSplits.length > 0
+      ? firstHalfSplits.reduce((s, v) => s + v, 0) / firstHalfSplits.length
+      : 0;
   const secondHalfAvg =
     secondHalfSplits.length > 0
       ? secondHalfSplits.reduce((s, v) => s + v, 0) / secondHalfSplits.length
       : firstHalfAvg;
-  const splitFadePct = Number((((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100).toFixed(1));
+  const splitFadePct =
+    firstHalfAvg > 0
+      ? Number((((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100).toFixed(1))
+      : 0;
 
   // Effort zone distribution: high Z5/Z6/Z7 for race effort, plus Z1/Z2 if warmup/cooldown is included
   const warmupSecs = candidate.includeWarmupCooldown ? 2100 : 0; // 35 mins warmup + cooldown
@@ -531,6 +542,7 @@ export function synthesizeOfficialRaceActivity(
     windReading: candidate.windReading,
     lapSplitDistanceMeters: splitMeters,
     lapSplitsSecs: splits,
+    ...(splitsEstimated ? { splitsEstimated: true } : {}),
     vdotScore: vdot,
     includeWarmupCooldown: candidate.includeWarmupCooldown,
     sourceUrl: candidate.sourceUrl,
@@ -722,7 +734,8 @@ export function parseOfficialResultsTextDeterministically(
         .map((s) => parseFatTimeString(s))
         .filter((n) => n > 4 && n < 600);
     }
-    if (lapSplitsSecs.length === 0) {
+    const hasExplicitSplits = lapSplitsSecs.length > 0;
+    if (!hasExplicitSplits) {
       lapSplitsSecs = generateDefaultLapSplits(
         matchedDef.distanceMeters,
         fatTimeSecs,
@@ -788,7 +801,8 @@ export function parseOfficialResultsTextDeterministically(
       placeFinish,
       lapSplitDistanceMeters: matchedDef.defaultSplitMeters,
       lapSplitsSecs,
-      includeWarmupCooldown: true,
+      splitsEstimated: !hasExplicitSplits,
+      includeWarmupCooldown: false,
       sourceUrl: defaultUrl,
     });
   }

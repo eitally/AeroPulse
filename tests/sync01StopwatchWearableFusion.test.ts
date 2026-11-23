@@ -196,7 +196,7 @@ describe('SYNC-01 · Coach #stopwatch + Athlete Wearable Deduplication & Stream 
       expect(unified.stimulusCompletionRatio).toBe(0.92);
       expect(unified.autoRegPivotSummary).toBe('+30s Rest (60s -> 90s)');
       expect(unified.matchedStopwatchId).toBe(coachStopwatch.id);
-      expect(unified.sourceBadges).toEqual(expect.arrayContaining(['Garmin', 'Official FAT']));
+      expect(unified.sourceBadges).toEqual(expect.arrayContaining(['Garmin', 'Hand-Timed']));
       // Unfused summary keeps 0.01s splits and strips fake estimated HR until 1Hz streams arrive
       const workSplits = (unified.intervals || []).filter((iv) => iv.type === 'WORK');
       expect(workSplits.map((w) => w.durationSecs)).toEqual(splits);
@@ -442,9 +442,9 @@ describe('SYNC-01 · Coach #stopwatch + Athlete Wearable Deduplication & Stream 
     expect(athleteViewMerged).toHaveLength(1);
     const merged = athleteViewMerged[0];
     expect(merged.stravaId).toBe('99887766');
-    expect(merged.sourceBadges).toEqual(expect.arrayContaining(['Strava', 'Official FAT']));
+    expect(merged.sourceBadges).toEqual(expect.arrayContaining(['Strava', 'Hand-Timed']));
 
-    // CRITICAL CMP-01 ASSERTION: 'Official FAT' MUST NOT bypass the Strava Clean-Room firewall
+    // CRITICAL CMP-01 ASSERTION: 'Hand-Timed' MUST NOT bypass the Strava Clean-Room firewall
     expect(isStravaOriginRecord(merged)).toBe(true);
     const cleaned = sanitizeTelemetryForCleanRoom({ activities: [merged] });
     expect(cleaned.activities).toHaveLength(0);
