@@ -440,6 +440,11 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                         className="flex-1 min-w-0 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                       />
                     </div>
+                    {birthYear && !birthMonth && (
+                      <p className="mt-1 text-2xs text-slate-600 dark:text-slate-400">
+                        Year-only age verification defaults conservatively to December ({birthYear}-12) for COPPA &amp; U18 safety.
+                      </p>
+                    )}
                   </div>
                 </div>
 

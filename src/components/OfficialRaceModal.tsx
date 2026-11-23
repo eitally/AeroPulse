@@ -291,6 +291,7 @@ export const OfficialRaceModal: React.FC<OfficialRaceModalProps> = ({
       // Also call server-side /api/races/parse if URL or complex text is provided
       const resp = await fetch('/api/races/parse', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           url: profileOrMeetUrl.trim() || undefined,

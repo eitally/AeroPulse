@@ -227,6 +227,14 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS idx_thresh_audit_log_team_created
           ON thresh_audit_log (team_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS thresh_rate_limits (
+          rate_key TEXT PRIMARY KEY,
+          window_start BIGINT NOT NULL,
+          request_count INTEGER NOT NULL,
+          expires_at BIGINT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_rate_limits_expires
+          ON thresh_rate_limits (expires_at);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -923,4 +931,201 @@ export async function listTeamAuditLogAsync(
 
   const local = await loadTenantVaultAsync<PersistedAuditLogEntry[]>(auditVaultKey(safeTeamId), []);
   return [...local].reverse().slice(0, clampedLimit);
+}
+
+/**
+ * Atomic Postgres distributed rate-limit counter in `thresh_rate_limits`.
+ * Returns `null` when Postgres is unconfigured or unreachable so callers can fall back cleanly.
+ */
+export async function consumeRateLimitPostgresAsync(
+  key: string,
+  limit: number,
+  windowMs: number
+): Promise<{ allowed: boolean; retryAfterSecs: number; remaining: number } | null> {
+  const cleanKey = String(key || '').trim().slice(0, 180);
+  if (!cleanKey) {
+    return { allowed: true, retryAfterSecs: 0, remaining: Math.max(0, limit) };
+  }
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    const now = Date.now();
+    const nextExpiresAt = now + Math.max(1000, Math.floor(windowMs));
+    const res = await runner.query<{ request_count: number | string; expires_at: number | string }>(
+      `INSERT INTO thresh_rate_limits (rate_key, window_start, request_count, expires_at)
+       VALUES ($1, $2, 1, $3)
+       ON CONFLICT (rate_key) DO UPDATE SET
+         window_start = CASE
+           WHEN thresh_rate_limits.expires_at <= $2 THEN $2
+           ELSE thresh_rate_limits.window_start
+         END,
+         request_count = CASE
+           WHEN thresh_rate_limits.expires_at <= $2 THEN 1
+           ELSE thresh_rate_limits.request_count + 1
+         END,
+         expires_at = CASE
+           WHEN thresh_rate_limits.expires_at <= $2 THEN $3
+           ELSE thresh_rate_limits.expires_at
+         END
+       RETURNING request_count, expires_at`,
+      [cleanKey, now, nextExpiresAt]
+    );
+
+    if (res.rows.length === 0) return null;
+    const count = Number(res.rows[0].request_count);
+    const expiresAt = Number(res.rows[0].expires_at);
+    const allowed = count <= limit;
+
+    if (!txClient && pool && Math.random() < 0.02) {
+      void pool
+        .query('DELETE FROM thresh_rate_limits WHERE expires_at <= $1', [now])
+        .catch(() => undefined);
+    }
+
+    return {
+      allowed,
+      retryAfterSecs: allowed ? 0 : Math.max(1, Math.ceil((expiresAt - now) / 1000)),
+      remaining: Math.max(0, limit - count),
+    };
+  } catch (err: unknown) {
+    warnServerFallback('rate-limit:postgres', err);
+    return null;
+  }
+}
+
+export async function resetRateLimitsPostgresForTesting(prefix?: string): Promise<void> {
+  const pool = getPostgresPool();
+  if (!pool) return;
+  try {
+    await ensurePostgresVaultSchema(pool);
+    if (prefix) {
+      await pool.query('DELETE FROM thresh_rate_limits WHERE rate_key LIKE $1', [
+        `${prefix}%`,
+      ]);
+    } else {
+      await pool.query('DELETE FROM thresh_rate_limits');
+    }
+  } catch {
+    // ignore cleanup errors in tests
+  }
+}
+
+/**
+ * Deletes normalized Postgres rows (`thresh_team_members`, `thresh_teams`, `thresh_audit_log`)
+ * for a purged or deleted team.
+ */
+export async function deleteTeamPostgresRowsAsync(teamId: string): Promise<void> {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return;
+
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    await runner.query('DELETE FROM thresh_team_members WHERE team_id = $1', [safeTeamId]);
+    await runner.query('DELETE FROM thresh_teams WHERE team_id = $1', [safeTeamId]);
+    await runner.query('DELETE FROM thresh_audit_log WHERE team_id = $1', [safeTeamId]);
+  } catch (err: unknown) {
+    warnServerFallback('vault:delete-team-postgres', err);
+    if (txClient) throw err;
+  }
+}
+
+/**
+ * Deletes normalized Postgres `thresh_team_members` rows and scrubs PII in `thresh_audit_log`
+ * for an erased athlete/user or declined minor consent.
+ */
+export async function deleteMemberPostgresRowsAsync(params: {
+  teamId?: string;
+  membershipIds?: string[];
+  userSids?: string[];
+  emails?: string[];
+}): Promise<void> {
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return;
+
+  const safeTeamId = params.teamId ? sanitizeTenantId(params.teamId) : undefined;
+  const membershipIds = Array.from(
+    new Set((params.membershipIds || []).map((v) => String(v || '').trim()).filter(Boolean))
+  );
+  const userSids = Array.from(
+    new Set((params.userSids || []).map((v) => String(v || '').trim()).filter(Boolean))
+  );
+  const emails = Array.from(
+    new Set((params.emails || []).map((v) => String(v || '').trim().toLowerCase()).filter(Boolean))
+  );
+
+  if (membershipIds.length === 0 && userSids.length === 0 && emails.length === 0) {
+    return;
+  }
+
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    if (safeTeamId && membershipIds.length > 0) {
+      await runner.query(
+        'DELETE FROM thresh_team_members WHERE team_id = $1 AND membership_id = ANY($2::text[])',
+        [safeTeamId, membershipIds]
+      );
+      await runner.query(
+        `UPDATE thresh_audit_log
+         SET metadata_json = '{"redacted":true}'
+         WHERE team_id = $1 AND target_id = ANY($2::text[])`,
+        [safeTeamId, membershipIds]
+      );
+    }
+    if (userSids.length > 0) {
+      if (safeTeamId) {
+        await runner.query(
+          'DELETE FROM thresh_team_members WHERE team_id = $1 AND user_sid = ANY($2::text[])',
+          [safeTeamId, userSids]
+        );
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET actor_sid = 'deleted_user', metadata_json = '{"redacted":true}'
+           WHERE team_id = $1 AND actor_sid = ANY($2::text[])`,
+          [safeTeamId, userSids]
+        );
+      } else {
+        await runner.query(
+          'DELETE FROM thresh_team_members WHERE user_sid = ANY($1::text[])',
+          [userSids]
+        );
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET actor_sid = 'deleted_user', metadata_json = '{"redacted":true}'
+           WHERE actor_sid = ANY($1::text[])`,
+          [userSids]
+        );
+      }
+    }
+    if (emails.length > 0) {
+      if (safeTeamId) {
+        await runner.query(
+          'DELETE FROM thresh_team_members WHERE team_id = $1 AND LOWER(invited_email) = ANY($2::text[])',
+          [safeTeamId, emails]
+        );
+      } else {
+        await runner.query(
+          'DELETE FROM thresh_team_members WHERE LOWER(invited_email) = ANY($1::text[])',
+          [emails]
+        );
+      }
+    }
+  } catch (err: unknown) {
+    warnServerFallback('vault:delete-member-postgres', err);
+    if (txClient) throw err;
+  }
 }

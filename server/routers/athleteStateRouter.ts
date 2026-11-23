@@ -9,6 +9,8 @@ import {
   saveTenantVaultAsync,
 } from '../sessionContext.ts';
 import { isCanonicalAuthenticatedClaims } from '../securityUtils.ts';
+import { getUserById } from '../authService.ts';
+import { validateCoppaAgeInput } from '../coppaGuard.ts';
 import type { RuntimeSessionStore } from '../sessionContext.ts';
 import type {
   AnnualMileageGoal,
@@ -200,6 +202,9 @@ export function sanitizeAthleteCloudState(
         (picked as Record<string, unknown>)[key] = input.athleteProfile[key];
       }
     }
+    if (!picked.birthMonthYear && base.athleteProfile?.birthMonthYear) {
+      picked.birthMonthYear = base.athleteProfile.birthMonthYear;
+    }
     if (Object.keys(picked).length > 0) {
       athleteProfile = picked;
     }
@@ -368,7 +373,36 @@ athleteStateRouter.put('/api/athlete-state', async (req: Request, res: Response)
       res.status(401).json({ error: 'Authentication required to persist athlete cloud state.' });
       return;
     }
-    const saved = await saveAthleteCloudState(req, (req.body || {}) as Partial<AthleteCloudStateEnvelope>);
+    const patch = (req.body || {}) as Partial<AthleteCloudStateEnvelope>;
+    const existingState = await loadAthleteCloudState(req);
+    const claims = getVerifiedSessionClaims(req);
+    const existingUser = claims?.sub?.startsWith('usr_')
+      ? await getUserById(claims.sub).catch(() => null)
+      : null;
+    const existingBirthMonthYear =
+      existingUser?.birthMonthYear || existingState?.athleteProfile?.birthMonthYear;
+
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: patch.athleteProfile?.birthMonthYear,
+      existingBirthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+      return;
+    }
+
+    const normalizedPatch: Partial<AthleteCloudStateEnvelope> =
+      patch.athleteProfile && ageCheck.birthMonthYear
+        ? {
+            ...patch,
+            athleteProfile: {
+              ...patch.athleteProfile,
+              birthMonthYear: ageCheck.birthMonthYear,
+            },
+          }
+        : patch;
+
+    const saved = await saveAthleteCloudState(req, normalizedPatch);
     res.json({ ok: true, authenticated: true, state: saved });
   } catch (err) {
     res.status(500).json({

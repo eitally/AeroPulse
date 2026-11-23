@@ -8,6 +8,7 @@ import {
 import { parseOfficialResultsTextDeterministically } from '../src/utils/officialRaceSynthesizer';
 import { getTrackEventSeedPresets } from '../src/components/goals/TrackSpeedReservePanel';
 import { apiRouter, resetAiRateLimitsForTesting } from '../server/apiRouter';
+import { SESSION_COOKIE_NAME, issueSessionToken } from '../server/securityUtils';
 import type { UnifiedActivity } from '../src/types';
 
 function makeRunDay(id: string, isoDate: string, durationSecs: number): UnifiedActivity {
@@ -160,9 +161,13 @@ describe('Sprint 5B: NCAA CARA v2, Solo TFRRS/Athletic.net Parser & Event-Aware 
     expect(localParsed[2]?.date).toBe('2026-05-14');
     expect(localParsed[3]?.eventLabel).toBe('5000m');
 
+    const sessionCookie = `${SESSION_COOKIE_NAME}=${issueSessionToken('usr_sprint5b_tfrrs', '0123456789abcdef0123456789abcdef', 'verified')}`;
     const resp = await fetch(`${baseUrl}/api/races/parse`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: sessionCookie,
+      },
       body: JSON.stringify({
         url: 'https://www.tfrrs.org/athletes/1234567',
         rawText: tfrrsPaste,

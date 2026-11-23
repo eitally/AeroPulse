@@ -1022,7 +1022,14 @@ describe('Sprint 0: Track A Security, SafeSport & Serverless Reliability P0s', (
       });
       expect(verifyResp.status).toBe(200);
       const verifyData = await verifyResp.json();
-      const verifiedClaims = decodeAndVerifyToken(verifyData.sessionToken);
+      expect(verifyData.sessionToken).toBeUndefined();
+      const setCookies =
+        verifyResp.headers.getSetCookie?.() || [verifyResp.headers.get('set-cookie') || ''];
+      const sessionCookieEntry = setCookies.find((c) => c.startsWith(`${SESSION_COOKIE_NAME}=`));
+      expect(sessionCookieEntry).toBeTruthy();
+      expect(sessionCookieEntry).toMatch(/HttpOnly/i);
+      const mintedCookieToken = sessionCookieEntry!.split(';')[0]!.slice(`${SESSION_COOKIE_NAME}=`.length);
+      const verifiedClaims = decodeAndVerifyToken(decodeURIComponent(mintedCookieToken));
       expect(verifiedClaims?.sid).toBeTruthy();
       expect(verifiedClaims?.sid).not.toBe(attackerAnonSid);
       expect(verifiedClaims?.sub).toMatch(/^usr_/);

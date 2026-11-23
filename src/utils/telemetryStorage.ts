@@ -2364,10 +2364,6 @@ export function getSavedIntervalsHeaders(): Record<string, string> {
   };
   try {
     const notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
-    const sessionToken = localStorage.getItem('aeropulse_session_token') || '';
-    if (sessionToken && notLoggedOut) {
-      setClean('x-session-token', sessionToken);
-    }
     const apiKey = localStorage.getItem('aeropulse_intervals_api_key') || '';
     const athleteId = localStorage.getItem('aeropulse_intervals_athlete_id') || '0';
     if (apiKey && notLoggedOut) {

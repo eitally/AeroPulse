@@ -32,6 +32,11 @@ import {
 import { getUserById, getUserByProvider } from '../authService.ts';
 import { getScopedRuntimeStore } from '../sessionContext.ts';
 import {
+  checkDistributedRateLimitAsync,
+  getClientRateLimitIp,
+  resetRateLimitsForTesting,
+} from '../rateLimiter.ts';
+import {
   declineAndPurgeParentConsent,
   graduateTeamClass,
   issueOrResendParentConsentLink,
@@ -86,41 +91,10 @@ import type {
 
 export const teamRouter = express.Router();
 
-const emailOtpRateStore = new Map<string, { count: number; resetAt: number }>();
-
-function checkEmailOtpRateLimit(
-  key: string,
-  limit: number,
-  windowMs = 10 * 60 * 1000
-): boolean {
-  const now = Date.now();
-  if (emailOtpRateStore.size > 2000) {
-    for (const [k, v] of emailOtpRateStore.entries()) {
-      if (now > v.resetAt) emailOtpRateStore.delete(k);
-    }
-  }
-  const existing = emailOtpRateStore.get(key);
-  if (!existing || now > existing.resetAt) {
-    emailOtpRateStore.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (existing.count >= limit) {
-    return false;
-  }
-  existing.count += 1;
-  return true;
-}
+const OTP_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 export function resetEmailOtpRateLimitsForTesting(): void {
-  emailOtpRateStore.clear();
-}
-
-function getClientRateLimitIp(req: Request): string {
-  return (
-    String(req.headers['x-vercel-forwarded-for'] || req.ip || 'local')
-      .split(',')[0]
-      .trim() || 'local'
-  );
+  resetRateLimitsForTesting('otp_');
 }
 
 function resolveRequestOrigin(req: Request): string {
@@ -132,19 +106,30 @@ teamRouter.post('/api/auth/email/send-otp', async (req: Request, res: Response) 
   try {
     const email = String(req.body?.email || '').trim().toLowerCase();
     const clientIp = getClientRateLimitIp(req);
-    if (
-      !checkEmailOtpRateLimit(`otp_send_ip:${clientIp}`, 10) ||
-      (email && !checkEmailOtpRateLimit(`otp_send_em:${email}`, 5))
-    ) {
+    const ipRate = await checkDistributedRateLimitAsync(
+      `otp_send_ip:${clientIp}`,
+      10,
+      OTP_RATE_WINDOW_MS
+    );
+    const emailRate = email
+      ? await checkDistributedRateLimitAsync(`otp_send_em:${email}`, 5, OTP_RATE_WINDOW_MS)
+      : { allowed: true, retryAfterSecs: 0 };
+    if (!ipRate.allowed || !emailRate.allowed) {
       res.status(429).json({
         ok: false,
         error: 'Too many verification code requests. Please wait a few minutes and try again.',
+        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs),
       });
       return;
     }
-    const result = await requestEmailOtpCode(email);
+    const result = await requestEmailOtpCode(email, {
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+    });
     if (!result.ok) {
-      res.status(400).json({ ok: false, error: result.error || 'Unable to send OTP.' });
+      res
+        .status(result.statusCode || 400)
+        .json({ ok: false, error: result.error || 'Unable to send OTP.' });
       return;
     }
     res.json({
@@ -169,13 +154,19 @@ teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response
     const email = String(req.body?.email || '').trim().toLowerCase();
     const code = String(req.body?.code || '').trim();
     const clientIp = getClientRateLimitIp(req);
-    if (
-      !checkEmailOtpRateLimit(`otp_verify_ip:${clientIp}`, 20) ||
-      (email && !checkEmailOtpRateLimit(`otp_verify_em:${email}`, 10))
-    ) {
+    const ipRate = await checkDistributedRateLimitAsync(
+      `otp_verify_ip:${clientIp}`,
+      20,
+      OTP_RATE_WINDOW_MS
+    );
+    const emailRate = email
+      ? await checkDistributedRateLimitAsync(`otp_verify_em:${email}`, 10, OTP_RATE_WINDOW_MS)
+      : { allowed: true, retryAfterSecs: 0 };
+    if (!ipRate.allowed || !emailRate.allowed) {
       res.status(429).json({
         ok: false,
         error: 'Too many verification attempts. Please wait a few minutes and try again.',
+        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs),
       });
       return;
     }
@@ -184,13 +175,18 @@ teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response
       currentClaims && isCanonicalAuthenticatedClaims(currentClaims)
         ? currentClaims.sid
         : undefined;
-    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid);
+    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid, {
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+    });
     if (!result.ok || !result.sid) {
-      res.status(400).json({ ok: false, error: result.error || 'Invalid code.' });
+      res
+        .status(result.statusCode || 400)
+        .json({ ok: false, error: result.error || 'Invalid code.' });
       return;
     }
 
-    const sessionToken = setSessionCookie(
+    setSessionCookie(
       req,
       res,
       result.userId || `usr_${result.sid}`,
@@ -202,7 +198,6 @@ teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response
 
     res.json({
       ok: true,
-      sessionToken,
       email: result.email,
       displayName: result.displayName,
       teams,

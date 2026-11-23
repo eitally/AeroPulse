@@ -10,13 +10,11 @@ import {
   clearOAuthStateCookie,
   setSessionCookie,
   clearSessionCookie,
-  decodeAndVerifyToken,
   getVerifiedSessionClaims,
   isCanonicalAuthenticatedClaims,
   isProductionDeployment,
   timingSafeStringEqual,
   escapeHtml,
-  issueSessionToken,
   appendSetCookieHeader,
   parseCookies,
   resolveSafeOrigin,
@@ -27,23 +25,35 @@ import {
   verifyWebAuthnAssertion,
   verifyWebAuthnRegistration,
 } from '../webauthnVerify.ts';
-import { resolveAthleteAgeTier } from '../../src/physiology/ageAndComplianceEngine.ts';
 import {
   USER_VAULT_COOKIE_NAME,
   buildEncryptedUserCookieHeader,
   decryptJsonFromVault,
+  deleteTenantVault,
+  loadTenantVaultAsync,
+  saveTenantVaultAsync,
 } from '../tokenVault.ts';
 import {
   autoLinkPendingTeamInvitesByEmail,
   migrateAnonymousTeamsToSid,
   updateTeamMemberEmailsForUser,
 } from '../teamService.ts';
-import { deleteThreshAccountPermanently } from '../accountLifecycleService.ts';
+import {
+  buildUserDataExportPayload,
+  deleteThreshAccountPermanently,
+  formatUserDataExportCsv,
+} from '../accountLifecycleService.ts';
+import { validateCoppaAgeInput } from '../coppaGuard.ts';
+import {
+  checkDistributedRateLimitAsync,
+  getClientRateLimitIp,
+} from '../rateLimiter.ts';
 import {
   findOrCreateUser,
   getUserById,
   getUserByEmail,
   getUserByProvider,
+  hashAuthLookupKey,
   linkProviderToUser,
   saveUser,
   unlinkProviderFromUser,
@@ -63,25 +73,25 @@ import {
 
 export const authRouter = express.Router();
 
-const magicLinkRateStore = new Map<string, { count: number; resetAt: number }>();
+const PENDING_DOB_TTL_MS = 15 * 60 * 1000;
 
-function checkMagicLinkRateLimit(key: string, limit: number, windowMs = 10 * 60 * 1000): boolean {
-  const now = Date.now();
-  if (magicLinkRateStore.size > 2000) {
-    for (const [k, v] of magicLinkRateStore.entries()) {
-      if (now > v.resetAt) magicLinkRateStore.delete(k);
-    }
-  }
-  const existing = magicLinkRateStore.get(key);
-  if (!existing || now > existing.resetAt) {
-    magicLinkRateStore.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (existing.count >= limit) {
-    return false;
-  }
-  existing.count += 1;
-  return true;
+async function savePendingSignupDob(key: string, birthMonthYear?: string): Promise<void> {
+  if (!birthMonthYear) return;
+  await saveTenantVaultAsync(key, {
+    birthMonthYear,
+    exp: Date.now() + PENDING_DOB_TTL_MS,
+  });
+}
+
+async function consumePendingSignupDob(key: string): Promise<string | undefined> {
+  const stored = await loadTenantVaultAsync<{ birthMonthYear?: string; exp?: number } | null>(
+    key,
+    null
+  );
+  if (!stored) return undefined;
+  await deleteTenantVault(key).catch(() => undefined);
+  if (stored.exp && Date.now() > stored.exp) return undefined;
+  return stored.birthMonthYear;
 }
 
 function getRequestHostCandidate(req: Request): string {
@@ -315,7 +325,6 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
     return res.json({
       authenticated: true,
       user,
-      sessionToken: issueSessionToken(claims.sub, claims.sid),
     });
   } catch (err) {
     console.error('[MeetReady Auth] /api/auth/me error:', err);
@@ -324,10 +333,63 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/auth/export?format=json|csv
+ * Self-serve FERPA / GDPR data export for the authenticated MeetReady account.
+ */
+authRouter.get('/api/auth/export', async (req: Request, res: Response) => {
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+    return res.status(401).json({ ok: false, error: 'Authentication required to export your data.' });
+  }
+
+  const rl = await checkDistributedRateLimitAsync(`export_u:${claims.sid}`, 20, 10 * 60 * 1000);
+  if (!rl.allowed) {
+    return res.status(429).json({
+      ok: false,
+      error: 'Too many data export requests. Please wait a few minutes and try again.',
+      retryAfterSecs: rl.retryAfterSecs,
+    });
+  }
+
+  const rawFormat = String(req.query.format || 'json').trim().toLowerCase();
+  if (rawFormat !== 'json' && rawFormat !== 'csv') {
+    return res.status(400).json({ ok: false, error: 'Unsupported export format. Use json or csv.' });
+  }
+
+  try {
+    const payload = await buildUserDataExportPayload(req);
+    if (!payload) {
+      return res.status(401).json({ ok: false, error: 'Authentication required to export your data.' });
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    if (rawFormat === 'csv') {
+      const csvBody = formatUserDataExportCsv(payload);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="meetready-data-export.csv"');
+      return res.status(200).send(csvBody);
+    }
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="meetready-data-export.json"');
+    return res.status(200).send(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error('[MeetReady Auth] /api/auth/export error:', err);
+    return res.status(500).json({ ok: false, error: 'Failed building personal data export.' });
+  }
+});
+
+/**
  * GET /api/auth/google/url
  * Returns Google OAuth URL, or dev mock fallback when running in non-production without credentials.
  */
-authRouter.get('/api/auth/google/url', (req: Request, res: Response) => {
+authRouter.get('/api/auth/google/url', async (req: Request, res: Response) => {
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.query.birthMonthYear,
+    birthYear: req.query.birthYear,
+  });
+  if (!ageCheck.ok) {
+    return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+  }
+
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const redirectUri = resolveGoogleCallbackUrl(req);
 
@@ -361,6 +423,7 @@ authRouter.get('/api/auth/google/url', (req: Request, res: Response) => {
     inviteToken,
   });
   setOAuthStateCookie(req, res, nonce);
+  await savePendingSignupDob(`oauth_dob_${nonce}`, ageCheck.birthMonthYear);
 
   const googleAuthUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   googleAuthUrl.searchParams.set('client_id', clientId);
@@ -447,12 +510,28 @@ authRouter.get('/api/auth/google/callback', async (req: Request, res: Response) 
       picture?: string;
     };
 
+    const pendingDob = await consumePendingSignupDob(`oauth_dob_${stateClaims.nonce}`);
+    const existingGoogleUser =
+      (await getUserByProvider('google', googleUser.sub)) ||
+      (googleUser.email ? await getUserByEmail(googleUser.email) : null);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: pendingDob ?? req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+      existingBirthMonthYear: existingGoogleUser?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      return res.redirect(`/?auth_error=${encodeURIComponent(ageCheck.error || 'coppa_under_13')}`);
+    }
+
     // 3. Find or create MeetReady user
-    const user = await findOrCreateUser('google', googleUser.sub, {
+    let user = await findOrCreateUser('google', googleUser.sub, {
       email: googleUser.email,
       name: googleUser.name,
       picture: googleUser.picture,
     });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = (await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear)) || user;
+    }
 
     // 4. Set HttpOnly session & encrypted user cookies & auto-link team rosters by email
     await finalizeUserAuthentication(req, res, user);
@@ -474,16 +553,24 @@ authRouter.post('/api/auth/magic-link/send', async (req: Request, res: Response)
     return res.status(400).json({ error: 'Please enter a valid email address.' });
   }
 
-  const clientIp = String(req.headers['x-vercel-forwarded-for'] || req.ip || 'local')
-    .split(',')[0]
-    .trim();
-  if (
-    !checkMagicLinkRateLimit(`ml_ip:${clientIp}`, 10) ||
-    !checkMagicLinkRateLimit(`ml_em:${email}`, 5)
-  ) {
+  const clientIp = getClientRateLimitIp(req);
+  const ipRate = await checkDistributedRateLimitAsync(`ml_ip:${clientIp}`, 10, 10 * 60 * 1000);
+  const emailRate = await checkDistributedRateLimitAsync(`ml_em:${email}`, 5, 10 * 60 * 1000);
+  if (!ipRate.allowed || !emailRate.allowed) {
     return res.status(429).json({
       error: 'Too many sign-in link requests. Please wait a few minutes and try again.',
+      retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs),
     });
+  }
+
+  const existingMlUser = await getUserByEmail(email);
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.body?.birthMonthYear,
+    birthYear: req.body?.birthYear,
+    existingBirthMonthYear: existingMlUser?.birthMonthYear,
+  });
+  if (!ageCheck.ok) {
+    return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
   }
 
   const joinCode = String(req.body?.joinCode || '').trim().slice(0, 32) || undefined;
@@ -494,6 +581,7 @@ authRouter.post('/api/auth/magic-link/send', async (req: Request, res: Response)
 
   try {
     const { token } = await createMagicLinkToken(email, pendingJoin);
+    await savePendingSignupDob(`magic_link_dob_${hashAuthLookupKey(token)}`, ageCheck.birthMonthYear);
     const baseUrl = getAppBaseUrl(req);
     const verifyUrl = `${baseUrl}/api/auth/magic-link/verify?token=${encodeURIComponent(token)}`;
 
@@ -577,10 +665,24 @@ authRouter.post('/api/auth/magic-link/verify', async (req: Request, res: Respons
     }
 
     const email = verifiedPayload.email;
-    const user = await findOrCreateUser('magic_link', email, {
+    const pendingDob = await consumePendingSignupDob(`magic_link_dob_${hashAuthLookupKey(token)}`);
+    const existingMlUser = await getUserByEmail(email);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: pendingDob ?? req.body?.birthMonthYear ?? req.query.birthMonthYear,
+      birthYear: req.body?.birthYear ?? req.query.birthYear,
+      existingBirthMonthYear: existingMlUser?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      return res.redirect(303, `/?auth_error=${encodeURIComponent(ageCheck.error || 'coppa_under_13')}`);
+    }
+
+    let user = await findOrCreateUser('magic_link', email, {
       email,
       name: email.split('@')[0],
     });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = (await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear)) || user;
+    }
 
     await finalizeUserAuthentication(req, res, user);
     return res.redirect(303, buildAuthReturnRedirectUrl(verifiedPayload.pendingJoin || null));
@@ -595,6 +697,14 @@ authRouter.post('/api/auth/magic-link/verify', async (req: Request, res: Respons
  * Generates WebAuthn registration options.
  */
 authRouter.post('/api/auth/passkey/register-options', async (req: Request, res: Response) => {
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.body?.birthMonthYear,
+    birthYear: req.body?.birthYear,
+  });
+  if (!ageCheck.ok) {
+    return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+  }
+
   const rpId = getRpId(req);
   const email = String(req.body?.email || '').trim().toLowerCase();
   const name = String(req.body?.name || email.split('@')[0] || 'Athlete').trim();
@@ -677,6 +787,22 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
   try {
     const cleanEmail = email ? String(email).trim().toLowerCase() : '';
     const activeClaims = getVerifiedSessionClaims(req);
+    let existingCandidate: ThreshUser | null = null;
+    if (isCanonicalAuthenticatedClaims(activeClaims) && activeClaims?.sub?.startsWith('usr_')) {
+      existingCandidate = await getUserById(activeClaims.sub);
+    } else if (cleanEmail) {
+      existingCandidate = await getUserByEmail(cleanEmail);
+    }
+
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+      existingBirthMonthYear: existingCandidate?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+    }
+
     let user: ThreshUser | null = null;
     if (isCanonicalAuthenticatedClaims(activeClaims) && activeClaims?.sub?.startsWith('usr_')) {
       user = await getUserById(activeClaims.sub);
@@ -704,6 +830,10 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
       });
     }
 
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user.birthMonthYear = ageCheck.birthMonthYear;
+    }
+
     if (!user.passkeys) user.passkeys = [];
     const existingIdx = user.passkeys.findIndex((p) => p.id === verifiedReg.credId);
     const passkeyObj: ThreshPasskeyCredential = {
@@ -720,9 +850,9 @@ authRouter.post('/api/auth/passkey/register-verify', async (req: Request, res: R
     }
 
     await saveUser(user);
-    const { sessionToken } = await finalizeUserAuthentication(req, res, user);
+    await finalizeUserAuthentication(req, res, user);
 
-    return res.json({ ok: true, user, sessionToken });
+    return res.json({ ok: true, user });
   } catch (err) {
     console.error('[MeetReady Auth] Passkey registration verification error:', err);
     return res.status(500).json({ error: 'Failed completing passkey registration.' });
@@ -805,8 +935,8 @@ authRouter.post('/api/auth/passkey/auth-verify', async (req: Request, res: Respo
       await saveUser(user);
     }
 
-    const { sessionToken } = await finalizeUserAuthentication(req, res, user);
-    return res.json({ ok: true, user, sessionToken });
+    await finalizeUserAuthentication(req, res, user);
+    return res.json({ ok: true, user });
   } catch (err) {
     console.error('[MeetReady Auth] Passkey auth verification error:', err);
     return res.status(500).json({ error: 'Failed verifying passkey.' });
@@ -826,10 +956,23 @@ authRouter.post('/api/auth/mock-login', async (req: Request, res: Response) => {
   const provider = (String(req.body?.provider || req.query.provider || 'dev_mock')) as 'dev_mock' | 'google';
 
   try {
-    const user = await findOrCreateUser(provider, email, {
+    const existingMockUser = await getUserByEmail(email);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear ?? req.query.birthMonthYear,
+      birthYear: req.body?.birthYear ?? req.query.birthYear,
+      existingBirthMonthYear: existingMockUser?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+    }
+
+    let user = await findOrCreateUser(provider, email, {
       email,
       name,
     });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = (await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear)) || user;
+    }
 
     await finalizeUserAuthentication(req, res, user);
 
@@ -858,7 +1001,20 @@ authRouter.get('/api/auth/mock-login', async (req: Request, res: Response) => {
   const provider = (String(req.query.provider || 'dev_mock')) as 'dev_mock' | 'google';
 
   try {
-    const user = await findOrCreateUser(provider, email, { email, name });
+    const existingMockUser = await getUserByEmail(email);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+      existingBirthMonthYear: existingMockUser?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      return res.redirect(`/?auth_error=${encodeURIComponent(ageCheck.error || 'coppa_under_13')}`);
+    }
+
+    let user = await findOrCreateUser(provider, email, { email, name });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = (await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear)) || user;
+    }
     await finalizeUserAuthentication(req, res, user);
     return res.redirect('/?auth_just_signed_in=1');
   } catch (err) {
@@ -947,13 +1103,13 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
     console.warn('[MeetReady Auth] Team membership email update warning:', err);
   }
 
-  const { sessionToken } = await finalizeUserAuthentication(req, res, result.user);
-  return res.json({ ok: true, user: result.user, sessionToken });
+  await finalizeUserAuthentication(req, res, result.user);
+  return res.json({ ok: true, user: result.user });
 });
 
 /**
  * POST /api/auth/birth-month
- * Updates canonical YYYY-MM birth month-year on the authenticated ThreshUser.
+ * Updates canonical YYYY-MM birth month-year on the authenticated MeetReady user.
  * Enforces COPPA <13 block and prevents minors from altering stored DOB to an adult date.
  */
 authRouter.post('/api/auth/birth-month', async (req: Request, res: Response) => {
@@ -961,36 +1117,28 @@ authRouter.post('/api/auth/birth-month', async (req: Request, res: Response) => 
   if (!claims?.sub?.startsWith('usr_') || !isCanonicalAuthenticatedClaims(claims)) {
     return res.status(401).json({ error: 'MeetReady account required.' });
   }
-  const birthMonthYear = String(req.body?.birthMonthYear || '').trim();
-  const incomingAge = resolveAthleteAgeTier({ birthMonthYear });
-  if (incomingAge.ageTier === 'UNKNOWN') {
-    return res.status(400).json({ error: 'Valid YYYY-MM birth month-year required.' });
-  }
-  if (incomingAge.isUnder13) {
-    return res.status(400).json({
-      error: 'MeetReady accounts require athletes to be 13 or older (COPPA).',
-    });
-  }
 
   const existingUser = await getUserById(claims.sub);
   if (!existingUser) {
     return res.status(404).json({ error: 'Account not found.' });
   }
-  if (existingUser.birthMonthYear) {
-    const existingAge = resolveAthleteAgeTier({ birthMonthYear: existingUser.birthMonthYear });
-    if (existingAge.isMinorU18 && incomingAge.ageTier === 'ADULT_18_PLUS') {
-      return res.status(403).json({
-        error: 'Minor birth date cannot be altered to an adult date directly.',
-      });
-    }
+
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.body?.birthMonthYear,
+    birthYear: req.body?.birthYear,
+    existingBirthMonthYear: existingUser.birthMonthYear,
+    required: true,
+  });
+  if (!ageCheck.ok || !ageCheck.birthMonthYear) {
+    return res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
   }
 
-  const updated = await updateUserBirthMonthYear(claims.sub, birthMonthYear);
+  const updated = await updateUserBirthMonthYear(claims.sub, ageCheck.birthMonthYear);
   if (!updated) {
     return res.status(400).json({ error: 'Valid YYYY-MM birth month-year required.' });
   }
-  const { sessionToken } = await finalizeUserAuthentication(req, res, updated);
-  return res.json({ ok: true, user: updated, sessionToken });
+  await finalizeUserAuthentication(req, res, updated);
+  return res.json({ ok: true, user: updated });
 });
 
 /**

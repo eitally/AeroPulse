@@ -8,6 +8,12 @@ import {
   resolveSessionScopeKey,
   readCompactVaultFromCookie,
 } from './sessionContext.ts';
+import {
+  checkDistributedRateLimitAsync,
+  checkMemoryRateLimitSync,
+  getClientRateLimitIp,
+  resetRateLimitsForTesting,
+} from './rateLimiter.ts';
 
 /**
  * SEC-01: Server-owned secrets (platform Strava app secret, platform AI/map keys, vault keys)
@@ -109,39 +115,23 @@ export function isAuthorizedForAi(req?: Request): boolean {
   return hasClientByoGeminiKey(req) || isAuthorizedForServerAi(req);
 }
 
-// In-memory sliding-window rate limiter per session / IP for AI endpoints
-interface AiRateLimitRecord {
-  count: number;
-  resetAt: number;
-}
-const aiRateLimitStore = new Map<string, AiRateLimitRecord>();
-
+// Shared sliding-window rate limiter per session / IP for AI endpoints
 export function checkAiRateLimit(
   key: string,
   limit = 20,
   windowMs = 60_000
 ): { allowed: boolean; retryAfterSecs: number } {
-  const now = Date.now();
-  if (aiRateLimitStore.size > 2000) {
-    for (const [k, rec] of aiRateLimitStore.entries()) {
-      if (rec.resetAt <= now) {
-        aiRateLimitStore.delete(k);
-      }
-    }
-  }
-  const record = aiRateLimitStore.get(key);
-  if (!record || record.resetAt <= now) {
-    aiRateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, retryAfterSecs: 0 };
-  }
-  if (record.count >= limit) {
-    return {
-      allowed: false,
-      retryAfterSecs: Math.max(1, Math.ceil((record.resetAt - now) / 1000)),
-    };
-  }
-  record.count += 1;
-  return { allowed: true, retryAfterSecs: 0 };
+  const result = checkMemoryRateLimitSync(`ai:${key}`, limit, windowMs);
+  return { allowed: result.allowed, retryAfterSecs: result.retryAfterSecs };
+}
+
+export async function checkAiRateLimitAsync(
+  key: string,
+  limit = 20,
+  windowMs = 60_000
+): Promise<{ allowed: boolean; retryAfterSecs: number }> {
+  const result = await checkDistributedRateLimitAsync(`ai:${key}`, limit, windowMs);
+  return { allowed: result.allowed, retryAfterSecs: result.retryAfterSecs };
 }
 
 export function getClientAiRateLimitKey(req: Request): string {
@@ -149,13 +139,9 @@ export function getClientAiRateLimitKey(req: Request): string {
   if (scopeKey && scopeKey !== 'unauthenticated') {
     return `session:${scopeKey}`;
   }
-  const ip =
-    (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ||
-    req.socket.remoteAddress ||
-    'unknown';
-  return `ip:${ip}`;
+  return `ip:${getClientRateLimitIp(req)}`;
 }
 
 export function resetAiRateLimitsForTesting(): void {
-  aiRateLimitStore.clear();
+  resetRateLimitsForTesting('ai:');
 }

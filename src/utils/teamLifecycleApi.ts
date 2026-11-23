@@ -25,14 +25,9 @@ import type {
 import { getSavedIntervalsHeaders } from './telemetryStorage.ts';
 
 export function buildThreshSessionHeaders(): Record<string, string> {
-  const token =
-    typeof window !== 'undefined'
-      ? localStorage.getItem('aeropulse_session_token') || ''
-      : '';
   return {
     'Content-Type': 'application/json',
     ...getSavedIntervalsHeaders(),
-    ...(token ? { 'x-session-token': token } : {}),
   };
 }
 
@@ -271,6 +266,30 @@ export function deleteAccountApi() {
     method: 'DELETE',
     body: JSON.stringify({ confirm: 'DELETE' }),
   });
+}
+
+export async function exportUserAccountDataApi(format: 'json' | 'csv'): Promise<{
+  filename: string;
+  contentType: string;
+  blob: Blob;
+}> {
+  const resp = await fetch(`/api/auth/export?format=${encodeURIComponent(format)}`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  if (!resp.ok) {
+    const data = await resp.json().catch(() => ({}));
+    throw new TeamLifecycleApiError(
+      data?.error || 'Could not export your account data.',
+      resp.status
+    );
+  }
+  const blob = await resp.blob();
+  const filename =
+    format === 'csv' ? 'meetready-data-export.csv' : 'meetready-data-export.json';
+  const contentType =
+    format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json;charset=utf-8';
+  return { filename, contentType, blob };
 }
 
 export async function recordTeamAttendanceBatchApi(params: {

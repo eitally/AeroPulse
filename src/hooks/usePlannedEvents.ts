@@ -220,6 +220,7 @@ export function usePlannedEvents({
       try {
         const resp = await fetch('/api/calendar/events', {
           method: 'POST',
+          credentials: 'include',
           headers: buildThreshSessionHeaders(),
           body: JSON.stringify(eventInput),
         });
@@ -623,6 +624,7 @@ export function usePlannedEvents({
       try {
         await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
           method: 'PUT',
+          credentials: 'include',
           headers: buildThreshSessionHeaders(),
           body: JSON.stringify(patch),
         });
@@ -727,6 +729,7 @@ export function usePlannedEvents({
       try {
         await fetch(`/api/calendar/events/${encodeURIComponent(id)}`, {
           method: 'DELETE',
+          credentials: 'include',
           headers: buildThreshSessionHeaders(),
         });
       } catch {
@@ -835,6 +838,7 @@ export function usePlannedEvents({
       try {
         await fetch(`/api/calendar/blocks/${encodeURIComponent(planBlockId)}`, {
           method: 'DELETE',
+          credentials: 'include',
           headers: buildThreshSessionHeaders(),
         });
       } catch {

@@ -4,7 +4,12 @@ import {
   escapeHtml,
   isProductionDeployment,
 } from './securityUtils.ts';
-import { findOrCreateUser } from './authService.ts';
+import {
+  findOrCreateUser,
+  getUserByEmail,
+  updateUserBirthMonthYear,
+} from './authService.ts';
+import { validateCoppaAgeInput } from './coppaGuard.ts';
 import { loadTenantVaultAsync, saveTenantVaultAsync, withVaultLock } from './tokenVault.ts';
 import {
   computeAccessibleTeamPalette,
@@ -45,6 +50,7 @@ interface StoredEmailOtpRecord {
   codeHash: string;
   expiresAt: number;
   attempts: number;
+  pendingBirthMonthYear?: string;
 }
 
 function emailOtpVaultKey(email: string): string {
@@ -281,15 +287,39 @@ export function buildParentConsentEmailContent(params: {
   return { subject, html, text };
 }
 
-export async function requestEmailOtpCode(rawEmail: string): Promise<{
+export async function requestEmailOtpCode(
+  rawEmail: string,
+  options?: { birthMonthYear?: unknown; birthYear?: unknown }
+): Promise<{
   ok: boolean;
   deliveryStatus: 'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED';
   devPreviewCode?: string;
+  statusCode?: 400 | 403;
   error?: string;
 }> {
   const email = String(rawEmail || '').trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { ok: false, deliveryStatus: 'FAILED', error: 'Enter a valid email address.' };
+    return {
+      ok: false,
+      deliveryStatus: 'FAILED',
+      statusCode: 400,
+      error: 'Enter a valid email address.',
+    };
+  }
+
+  const existingUser = await getUserByEmail(email);
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: options?.birthMonthYear,
+    birthYear: options?.birthYear,
+    existingBirthMonthYear: existingUser?.birthMonthYear,
+  });
+  if (!ageCheck.ok) {
+    return {
+      ok: false,
+      deliveryStatus: 'FAILED',
+      statusCode: ageCheck.statusCode || 400,
+      error: ageCheck.error,
+    };
   }
 
   const code = String(crypto.randomInt(100000, 999999));
@@ -298,6 +328,7 @@ export async function requestEmailOtpCode(rawEmail: string): Promise<{
     codeHash: hashToken(`${email}:${code}`),
     expiresAt: Date.now() + 10 * 60 * 1000,
     attempts: 0,
+    ...(ageCheck.birthMonthYear ? { pendingBirthMonthYear: ageCheck.birthMonthYear } : {}),
   };
   const otpKey = emailOtpVaultKey(email);
   await withVaultLock(otpKey, async () => {
@@ -339,29 +370,53 @@ export async function requestEmailOtpCode(rawEmail: string): Promise<{
 export async function verifyEmailOtpCode(
   rawEmail: string,
   rawCode: string,
-  preferredSid?: string
+  preferredSid?: string,
+  options?: { birthMonthYear?: unknown; birthYear?: unknown }
 ): Promise<{
   ok: boolean;
   sid?: string;
   userId?: string;
   email?: string;
   displayName?: string;
+  statusCode?: 400 | 403;
   error?: string;
 }> {
   const email = String(rawEmail || '').trim().toLowerCase();
   const code = String(rawCode || '').replace(/\D/g, '');
   if (!email || code.length !== 6) {
-    return { ok: false, error: 'Enter the 6-digit verification code.' };
+    return { ok: false, statusCode: 400, error: 'Enter the 6-digit verification code.' };
+  }
+
+  const existingUser = await getUserByEmail(email);
+  const preAgeCheck = validateCoppaAgeInput({
+    birthMonthYear: options?.birthMonthYear,
+    birthYear: options?.birthYear,
+    existingBirthMonthYear: existingUser?.birthMonthYear,
+  });
+  if (!preAgeCheck.ok) {
+    return {
+      ok: false,
+      statusCode: preAgeCheck.statusCode || 400,
+      error: preAgeCheck.error,
+    };
   }
 
   const key = emailOtpVaultKey(email);
   const otpCheck = await withVaultLock(key, async () => {
     const stored = await loadTenantVaultAsync<StoredEmailOtpRecord | null>(key, null);
     if (!stored || Date.now() > stored.expiresAt) {
-      return { ok: false as const, error: 'Verification code expired. Request a fresh code.' };
+      return {
+        ok: false as const,
+        statusCode: 400 as const,
+        error: 'Verification code expired. Request a fresh code.',
+      };
     }
     if (stored.attempts >= 5) {
-      return { ok: false as const, error: 'Too many attempts. Request a fresh code.' };
+      return {
+        ok: false as const,
+        statusCode: 400 as const,
+        error: 'Too many attempts. Request a fresh code.',
+      };
     }
 
     const candidateHash = hashToken(`${email}:${code}`);
@@ -370,23 +425,39 @@ export async function verifyEmailOtpCode(
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
       stored.attempts += 1;
       await saveTenantVaultAsync(key, stored);
-      return { ok: false as const, error: 'Incorrect 6-digit code.' };
+      return { ok: false as const, statusCode: 400 as const, error: 'Incorrect 6-digit code.' };
+    }
+
+    const finalAgeCheck = validateCoppaAgeInput({
+      birthMonthYear: options?.birthMonthYear ?? stored.pendingBirthMonthYear,
+      birthYear: options?.birthYear,
+      existingBirthMonthYear: existingUser?.birthMonthYear,
+    });
+    if (!finalAgeCheck.ok) {
+      return {
+        ok: false as const,
+        statusCode: finalAgeCheck.statusCode || 400,
+        error: finalAgeCheck.error,
+      };
     }
 
     // Consume OTP atomically inside lock
     await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
-    return { ok: true as const };
+    return { ok: true as const, birthMonthYear: finalAgeCheck.birthMonthYear };
   });
 
   if (!otpCheck.ok) {
-    return { ok: false, error: otpCheck.error };
+    return { ok: false, statusCode: otpCheck.statusCode, error: otpCheck.error };
   }
 
-  // Bind or retrieve persistent deterministic sid via unified ThreshUser
-  const otpUser = await findOrCreateUser('magic_link', email, {
+  // Bind or retrieve persistent deterministic sid via unified MeetReady user
+  let otpUser = await findOrCreateUser('magic_link', email, {
     email,
     name: email.split('@')[0],
   });
+  if (otpCheck.birthMonthYear && !otpUser.birthMonthYear) {
+    otpUser = (await updateUserBirthMonthYear(otpUser.id, otpCheck.birthMonthYear)) || otpUser;
+  }
   const canonicalOtpSid = deriveUserSessionSid(otpUser.id);
   const account = await withVaultLock(EMAIL_DIRECTORY_KEY, async () => {
     const emailDir = await loadTenantVaultAsync<EmailAccountDirectory>(EMAIL_DIRECTORY_KEY, {

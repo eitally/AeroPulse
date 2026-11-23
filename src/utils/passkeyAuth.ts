@@ -1,4 +1,5 @@
 import type { ThreshUser } from '../types';
+import { markSessionActiveHint } from './sessionHint';
 
 /**
  * MeetReady Client-Side Passkey & WebAuthn Utilities
@@ -41,13 +42,19 @@ export async function isPasskeySupported(): Promise<boolean> {
 
 export async function registerPasskey(
   email: string,
-  name?: string
+  name?: string,
+  birthMonthYear?: string
 ): Promise<{ ok: boolean; user?: ThreshUser; error?: string }> {
   try {
     const optRes = await fetch('/api/auth/passkey/register-options', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name }),
+      body: JSON.stringify({
+        email,
+        name,
+        ...(birthMonthYear ? { birthMonthYear } : {}),
+      }),
     });
 
     if (!optRes.ok) {
@@ -88,12 +95,14 @@ export async function registerPasskey(
 
     const verifyRes = await fetch('/api/auth/passkey/register-verify', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         credential: credPayload,
         challengeToken,
         email,
         name,
+        ...(birthMonthYear ? { birthMonthYear } : {}),
       }),
     });
 
@@ -103,14 +112,7 @@ export async function registerPasskey(
     }
 
     const result = await verifyRes.json();
-    try {
-      localStorage.removeItem('aeropulse_logged_out');
-      if (result.sessionToken) {
-        localStorage.setItem('aeropulse_session_token', String(result.sessionToken));
-      }
-    } catch {
-      // ignore storage quota errors
-    }
+    markSessionActiveHint();
     return { ok: true, user: result.user };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -129,6 +131,7 @@ export async function authenticateWithPasskey(): Promise<{
   try {
     const optRes = await fetch('/api/auth/passkey/auth-options', {
       method: 'POST',
+      credentials: 'include',
     });
 
     if (!optRes.ok) {
@@ -165,6 +168,7 @@ export async function authenticateWithPasskey(): Promise<{
 
     const verifyRes = await fetch('/api/auth/passkey/auth-verify', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         credential: credPayload,
@@ -178,14 +182,7 @@ export async function authenticateWithPasskey(): Promise<{
     }
 
     const result = await verifyRes.json();
-    try {
-      localStorage.removeItem('aeropulse_logged_out');
-      if (result.sessionToken) {
-        localStorage.setItem('aeropulse_session_token', String(result.sessionToken));
-      }
-    } catch {
-      // ignore storage quota errors
-    }
+    markSessionActiveHint();
     return { ok: true, user: result.user };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

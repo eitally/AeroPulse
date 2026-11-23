@@ -24,6 +24,7 @@ import {
   buildInitialConnectedAthletes,
 } from '../data/athleteRosterData';
 import { clearAllUserBrowserStorage } from '../utils/storageKeys';
+import { markSessionActiveHint } from '../utils/sessionHint';
 import { clearFieldOutboxDb } from '../utils/fieldEventsOutbox';
 import {
   buildCompleteAthleteProfile,
@@ -349,9 +350,7 @@ export function useWorkspaceOnboarding({
         localStorage.removeItem('aeropulse_logged_out');
         localStorage.setItem('aeropulse_auth_gate_passed', '1');
         localStorage.setItem('aeropulse_calibrated_v1', '1');
-        if (payload.sessionToken) {
-          localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-        }
+        markSessionActiveHint();
         if (
           window.location.pathname.startsWith('/join/') ||
           window.location.search.includes('join=')
@@ -437,27 +436,18 @@ export function useWorkspaceOnboarding({
     try {
       localStorage.removeItem('aeropulse_logged_out');
       localStorage.setItem('aeropulse_auth_gate_passed', '1');
-      const res = await fetch('/api/auth/session', {
+      markSessionActiveHint();
+      await fetch('/api/auth/session', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ athleteName: athleteProfile.name || 'Athlete' }),
       });
-      if (res.ok) {
-        const data = (await res.json()) as { sessionToken?: string };
-        if (data.sessionToken) {
-          localStorage.setItem('aeropulse_session_token', data.sessionToken);
-        }
-      }
-      if (!localStorage.getItem('aeropulse_session_token')) {
-        localStorage.setItem('aeropulse_session_token', `offline_${Date.now()}`);
-      }
     } catch {
       try {
         localStorage.removeItem('aeropulse_logged_out');
         localStorage.setItem('aeropulse_auth_gate_passed', '1');
-        if (!localStorage.getItem('aeropulse_session_token')) {
-          localStorage.setItem('aeropulse_session_token', `offline_${Date.now()}`);
-        }
+        markSessionActiveHint();
       } catch {
         // ignore storage quota errors
       }

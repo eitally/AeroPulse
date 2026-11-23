@@ -53,6 +53,7 @@ import {
   clearPendingSharedWorkout,
   peekPendingSharedWorkout,
 } from '../utils/shareWorkoutEngine';
+import { markSessionActiveHint } from '../utils/sessionHint';
 
 export interface FirstRunCalibrationPayload {
   athleteName: string;
@@ -328,7 +329,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   const parsedBirthYear = parseInt(birthYear, 10);
   const validBirthYear = !isNaN(parsedBirthYear) && parsedBirthYear > 1900 ? parsedBirthYear : null;
   const composedBirthMonthYear =
-    validBirthYear !== null && birthMonth ? `${validBirthYear}-${birthMonth}` : undefined;
+    validBirthYear !== null && birthMonth
+      ? `${validBirthYear}-${birthMonth}`
+      : validBirthYear !== null
+        ? `${validBirthYear}-12`
+        : undefined;
   const step2AgeTier = useMemo(
     () =>
       resolveAthleteAgeTier({
@@ -415,9 +420,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
           if (data?.authenticated && data?.user) {
             try {
               const notLoggedOut = !isBrowserSessionLoggedOut();
-              if (justSignedIn) localStorage.removeItem('aeropulse_logged_out');
-              if ((justSignedIn || notLoggedOut) && data.sessionToken) {
-                localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
+              if (justSignedIn || notLoggedOut) {
+                markSessionActiveHint();
               }
             } catch {
               // ignore
@@ -817,14 +821,9 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         confirmedAt: new Date().toISOString(),
         grantedScope: status.stravaGrantedScope,
       };
-      const sessionTokenHeader =
-        typeof window !== 'undefined'
-          ? localStorage.getItem('aeropulse_session_token') || ''
-          : '';
       const authHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
         ...getSavedIntervalsHeaders(),
-        ...(sessionTokenHeader ? { 'x-session-token': sessionTokenHeader } : {}),
       };
 
       if (status.stravaConnected) {
@@ -924,13 +923,21 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         setClaimedTeamsState(claimedResult);
       }
 
-      if (composedBirthMonthYear && (localUser || currentUser)) {
-        await fetch('/api/auth/birth-month', {
+      if ((composedBirthMonthYear || validBirthYear !== null) && (localUser || currentUser)) {
+        const dobResp = await fetch('/api/auth/birth-month', {
           method: 'POST',
           credentials: 'include',
           headers: authHeaders,
-          body: JSON.stringify({ birthMonthYear: composedBirthMonthYear }),
-        }).catch(() => {});
+          body: JSON.stringify({
+            ...(composedBirthMonthYear ? { birthMonthYear: composedBirthMonthYear } : {}),
+            ...(validBirthYear !== null ? { birthYear: validBirthYear } : {}),
+          }),
+        }).catch(() => null);
+        if (dobResp && !dobResp.ok) {
+          const dobErr = await dobResp.json().catch(() => ({}));
+          setJoinError(dobErr?.error || 'Could not save birth date.');
+          return;
+        }
       }
 
       // Kick off consented Strava sync non-blockingly in the background
@@ -961,16 +968,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setIsConnectingGarmin(true);
     setStepNotice(null);
     try {
-      const sessionTokenHeader =
-        typeof window !== 'undefined'
-          ? localStorage.getItem('aeropulse_session_token') || ''
-          : '';
       const resp = await fetch('/api/config/garmin', {
         method: 'POST',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(sessionTokenHeader ? { 'x-session-token': sessionTokenHeader } : {}),
         },
         body: JSON.stringify({ personalApiKey: garminPersonalKey.trim() }),
       });

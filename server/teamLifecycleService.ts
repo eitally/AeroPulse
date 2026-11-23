@@ -7,6 +7,7 @@ import {
 } from './teamEmailAndOtpService.ts';
 import type {
   CoachDataSharingTier,
+  FieldEventLogRecord,
   TeamInviteStatus,
   TeamMemberRole,
   TeamSummaryWithRole,
@@ -26,8 +27,13 @@ import {
   teamDocVaultKey,
 } from './teamService.ts';
 import {
+  type PersistedAuditLogEntry,
   appendAuditLogAsync,
+  deleteMemberPostgresRowsAsync,
+  deleteTeamPostgresRowsAsync,
   deleteTenantVault,
+  loadTenantVaultAsync,
+  sanitizeTenantId,
   saveTenantVaultAsync,
   withTeamRowLock,
   withVaultLock,
@@ -45,6 +51,192 @@ function sanitizeMemberPublicNameForDeletion(m: StoredMembershipInternal): void 
   m.liveSnapshot = undefined;
   m.rawInviteToken = undefined;
   m.inviteTokenHash = undefined;
+  m.birthMonthYear = undefined;
+  m.birthYear = undefined;
+  m.graduationYear = undefined;
+  m.seedMarkOrFtp = undefined;
+  m.externalAthleteId = undefined;
+  m.externalProfileUrl = undefined;
+  m.genderDivision = undefined;
+}
+
+/**
+ * Scrubs all PII and nested references for erased memberships across a StoredTeamDocument
+ * (memberships, broadcast overrides/targets, workout comments, guardian alerts, attendance,
+ * inline field mark logs, meet-day packets, injury cases, and team messages).
+ */
+export function scrubMemberFromTeamDocument(params: {
+  doc: StoredTeamDocument;
+  targetMembershipIds: Set<string>;
+  targetSids: Set<string>;
+  replacementName: string;
+}): void {
+  const { doc, targetMembershipIds, targetSids, replacementName } = params;
+  const nowIso = new Date().toISOString();
+
+  for (const m of doc.memberships) {
+    const isTarget =
+      targetMembershipIds.has(m.membershipId) ||
+      (m.userSid ? targetSids.has(m.userSid) : false);
+    if (isTarget) {
+      targetMembershipIds.add(m.membershipId);
+      if (m.userSid) targetSids.add(m.userSid);
+      m.status = 'REVOKED';
+      m.leftAt = nowIso;
+      m.invitedName = replacementName;
+      sanitizeMemberPublicNameForDeletion(m);
+      m.coachRecordedActivities = undefined;
+    } else if (Array.isArray(m.assignedAthleteMembershipIds)) {
+      m.assignedAthleteMembershipIds = m.assignedAthleteMembershipIds.filter(
+        (id) => !targetMembershipIds.has(id)
+      );
+    }
+  }
+
+  for (const bw of doc.broadcastWorkouts || []) {
+    if (Array.isArray(bw.targetMembershipIds)) {
+      bw.targetMembershipIds = bw.targetMembershipIds.filter(
+        (id) => !targetMembershipIds.has(id)
+      );
+    }
+    if (bw.athleteOverrides) {
+      for (const memId of targetMembershipIds) {
+        delete bw.athleteOverrides[memId];
+      }
+    }
+  }
+
+  if (Array.isArray(doc.workoutComments)) {
+    doc.workoutComments = doc.workoutComments.filter(
+      (c) => !targetMembershipIds.has(c.targetMembershipId) && !targetSids.has(c.authorSid)
+    );
+  }
+
+  if (Array.isArray(doc.guardianSafetyAlerts)) {
+    doc.guardianSafetyAlerts = doc.guardianSafetyAlerts.filter(
+      (a) => !targetMembershipIds.has(a.targetMembershipId)
+    );
+  }
+
+  if (doc.attendanceByDate && typeof doc.attendanceByDate === 'object') {
+    for (const dateKey of Object.keys(doc.attendanceByDate)) {
+      const dayMap = doc.attendanceByDate[dateKey];
+      if (!dayMap || typeof dayMap !== 'object') continue;
+      for (const key of Object.keys(dayMap)) {
+        const rec = dayMap[key];
+        if (
+          targetMembershipIds.has(key) ||
+          (rec?.membershipId && targetMembershipIds.has(rec.membershipId))
+        ) {
+          delete dayMap[key];
+        }
+      }
+      if (Object.keys(dayMap).length === 0) {
+        delete doc.attendanceByDate[dateKey];
+      }
+    }
+  }
+
+  if (Array.isArray(doc.fieldMarkLogs)) {
+    doc.fieldMarkLogs = doc.fieldMarkLogs.filter(
+      (log) => !log.membershipId || !targetMembershipIds.has(log.membershipId)
+    );
+  }
+
+  if (Array.isArray(doc.meetDayPackets)) {
+    for (const pkt of doc.meetDayPackets) {
+      if (Array.isArray(pkt.entries)) {
+        pkt.entries = pkt.entries.filter(
+          (entry) => !entry.membershipId || !targetMembershipIds.has(entry.membershipId)
+        );
+      }
+    }
+  }
+
+  if (Array.isArray(doc.injuryCases)) {
+    doc.injuryCases = doc.injuryCases.filter(
+      (c) => !targetMembershipIds.has(c.membershipId)
+    );
+  }
+
+  if (Array.isArray(doc.teamMessages)) {
+    doc.teamMessages = doc.teamMessages
+      .filter(
+        (msg) =>
+          !targetSids.has(msg.senderSid) &&
+          !targetMembershipIds.has(msg.senderMembershipId) &&
+          (!msg.targetMembershipId || !targetMembershipIds.has(msg.targetMembershipId))
+      )
+      .map((msg) =>
+        Array.isArray(msg.acknowledgedByMembershipIds)
+          ? {
+              ...msg,
+              acknowledgedByMembershipIds: msg.acknowledgedByMembershipIds.filter(
+                (id) => !targetMembershipIds.has(id)
+              ),
+            }
+          : msg
+      );
+  }
+
+  doc.updatedAt = nowIso;
+}
+
+/**
+ * Scrubs member records from external sidecar vaults (`team_field_logs_*`, `audit_log_*`)
+ * and normalized PostgreSQL tables (`thresh_team_members`, `thresh_audit_log`).
+ */
+export async function scrubMemberSidecarVaultsAndPostgres(params: {
+  teamId: string;
+  targetMembershipIds: Set<string>;
+  targetSids: Set<string>;
+  emails?: string[];
+}): Promise<number | undefined> {
+  const { teamId, targetMembershipIds, targetSids, emails } = params;
+  let updatedFieldLogCount: number | undefined;
+
+  const fieldKey = teamFieldLogsVaultKey(teamId);
+  await withVaultLock(fieldKey, async () => {
+    const existingLogs = await loadTenantVaultAsync<FieldEventLogRecord[] | null>(fieldKey, null);
+    if (Array.isArray(existingLogs)) {
+      const filtered = existingLogs.filter(
+        (log) => !log.membershipId || !targetMembershipIds.has(log.membershipId)
+      );
+      updatedFieldLogCount = filtered.length;
+      if (filtered.length !== existingLogs.length) {
+        await saveTenantVaultAsync(fieldKey, filtered);
+      }
+    }
+  });
+
+  const auditKey = `audit_log_${sanitizeTenantId(teamId).slice(0, 40)}`;
+  await withVaultLock(auditKey, async () => {
+    const entries = await loadTenantVaultAsync<PersistedAuditLogEntry[]>(auditKey, []);
+    let changed = false;
+    const scrubbed = entries.map((entry) => {
+      const matchesTarget = entry.targetId ? targetMembershipIds.has(entry.targetId) : false;
+      const matchesActor = targetSids.has(entry.actorSid);
+      if (!matchesTarget && !matchesActor) return entry;
+      changed = true;
+      return {
+        ...entry,
+        ...(matchesActor ? { actorSid: 'deleted_user' } : {}),
+        metadata: { redacted: true },
+      };
+    });
+    if (changed) {
+      await saveTenantVaultAsync(auditKey, scrubbed);
+    }
+  });
+
+  await deleteMemberPostgresRowsAsync({
+    teamId,
+    membershipIds: Array.from(targetMembershipIds),
+    userSids: Array.from(targetSids),
+    emails,
+  });
+
+  return updatedFieldLogCount;
 }
 
 /**
@@ -691,19 +883,33 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
       const mem = freshDoc.memberships.find((m) => matchesToken(m));
       if (!mem) return;
       detachedSid = mem.userSid;
-      mem.status = 'REVOKED';
-      mem.leftAt = new Date().toISOString();
-      mem.invitedName = 'Withdrawn Minor';
-      sanitizeMemberPublicNameForDeletion(mem);
-      mem.coachRecordedActivities = undefined;
-      freshDoc.updatedAt = mem.leftAt;
+      const targetMembershipIds = new Set<string>([mem.membershipId]);
+      const targetSids = new Set<string>(mem.userSid ? [mem.userSid] : []);
+      const emails = mem.invitedEmail ? [mem.invitedEmail] : [];
+      scrubMemberFromTeamDocument({
+        doc: freshDoc,
+        targetMembershipIds,
+        targetSids,
+        replacementName: 'Withdrawn Minor',
+      });
+      const updatedFieldCount = await scrubMemberSidecarVaultsAndPostgres({
+        teamId,
+        targetMembershipIds,
+        targetSids,
+        emails,
+      });
+      if (typeof updatedFieldCount === 'number') {
+        freshDoc.fieldMarkLogsTotalCount = updatedFieldCount;
+      } else if (Array.isArray(freshDoc.fieldMarkLogs)) {
+        freshDoc.fieldMarkLogsTotalCount = freshDoc.fieldMarkLogs.length;
+      }
       await saveTeamDocRaw(teamId, freshDoc);
       await appendAuditLogAsync({
         teamId,
         actorSid: 'guardian',
         action: 'PARENT_CONSENT_DECLINED',
         targetId: mem.membershipId,
-        metadata: { originalName: athleteName },
+        metadata: { consentOutcome: 'DECLINED_AND_PURGED' },
       });
     });
 
@@ -823,15 +1029,28 @@ export async function issueOrResendParentConsentLink(params: {
 }
 
 export async function removeTeamFromDirectoryAndVault(teamId: string): Promise<void> {
+  const memberSids: string[] = [];
   await withVaultLock(TEAMS_DIRECTORY_KEY, async () => {
     const doc = await loadTeamDocRaw(teamId);
     const dir = await loadDirectory();
     if (doc) {
       delete dir.bySlug[doc.brand.slug];
       delete dir.byJoinCode[doc.brand.joinCode.toUpperCase()];
+      for (const m of doc.memberships || []) {
+        if (m.userSid) memberSids.push(m.userSid);
+      }
     }
     dir.allTeamIds = dir.allTeamIds.filter((id) => id !== teamId);
     await saveTenantVaultAsync(TEAMS_DIRECTORY_KEY, dir);
   });
+  for (const sid of memberSids) {
+    await removeTeamFromUserIndex(sid, teamId).catch(() => undefined);
+  }
+  const safeId = sanitizeTenantId(teamId);
+  await deleteTenantVault(teamDocVaultKey(teamId)).catch(() => undefined);
   await deleteTenantVault(teamFieldLogsVaultKey(teamId)).catch(() => undefined);
+  await deleteTenantVault(`audit_log_${safeId.slice(0, 40)}`).catch(() => undefined);
+  await deleteTenantVault(`team_parent_email_subs_${safeId.slice(0, 40)}`).catch(() => undefined);
+  await deleteTenantVault(`team_parent_email_subs_${safeId}`).catch(() => undefined);
+  await deleteTeamPostgresRowsAsync(teamId).catch(() => undefined);
 }

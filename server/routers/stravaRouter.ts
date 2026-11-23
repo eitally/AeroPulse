@@ -51,9 +51,12 @@ import {
   connectServiceToUser,
   disconnectServiceFromUser,
   findOrCreateUser,
+  getUserById,
   getUserByProvider,
   linkProviderToUser,
+  updateUserBirthMonthYear,
 } from '../authService.ts';
+import { validateCoppaAgeInput } from '../coppaGuard.ts';
 import { extractStravaId, readStravaResponseJson } from '../stravaIdUtils.ts';
 import type {
   RawStravaActivity,
@@ -814,10 +817,50 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       }
     }
 
+    const pendingDobRecord = verifiedState?.nonce
+      ? await loadTenantVaultAsync<{ birthMonthYear?: string; exp?: number } | null>(
+          `oauth_dob_${verifiedState.nonce}`,
+          null
+        )
+      : null;
+    if (verifiedState?.nonce && pendingDobRecord) {
+      await deleteTenantVault(`oauth_dob_${verifiedState.nonce}`).catch(() => undefined);
+    }
+    const pendingDob =
+      pendingDobRecord && (!pendingDobRecord.exp || Date.now() <= pendingDobRecord.exp)
+        ? pendingDobRecord.birthMonthYear
+        : undefined;
+    const existingStravaUser = athleteId
+      ? await getUserByProvider('strava', athleteId)
+      : null;
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: pendingDob ?? req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+      existingBirthMonthYear: existingStravaUser?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      clearOAuthStateCookie(res);
+      const errMsg = ageCheck.error || 'MeetReady accounts require athletes to be 13 or older (COPPA).';
+      res
+        .status(ageCheck.statusCode || 400)
+        .type('html')
+        .send(
+          renderThreshOAuthHtml({
+            title: 'Age Requirement · MeetReady',
+            heading: 'Account Eligibility Check',
+            accentColor: '#FB7185',
+            body: escapeHtml(errMsg),
+            ctaLabel: 'Return to MeetReady',
+            ctaHref: buildReturnOnboardingUrl(verifiedState, { auth_error: errMsg }),
+          })
+        );
+      return;
+    }
+
     if (!athleteName) athleteName = 'Strava Athlete';
 
     // Canonical athlete session activation & scope binding
-    const { canonicalSid, sessionToken, store, linkedUserId } =
+    const { canonicalSid, store, linkedUserId } =
       await activateStravaCanonicalScope(req, res, {
         athleteId,
         athleteName,
@@ -852,11 +895,23 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
     // AUTH-01: Auto-link/migrate into unified MeetReady accounts directory if not already linked to canonical usr_
     if (athleteId && !linkedUserId) {
       try {
-        await findOrCreateUser('strava', athleteId, {
+        const createdUser = await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
         });
+        if (ageCheck.birthMonthYear && !createdUser.birthMonthYear) {
+          await updateUserBirthMonthYear(createdUser.id, ageCheck.birthMonthYear);
+        }
       } catch (err) {
         console.warn('[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:', err);
+      }
+    } else if (linkedUserId && ageCheck.birthMonthYear) {
+      try {
+        const linked = await getUserById(linkedUserId);
+        if (linked && !linked.birthMonthYear) {
+          await updateUserBirthMonthYear(linked.id, ageCheck.birthMonthYear);
+        }
+      } catch {
+        // non-fatal
       }
     }
 
@@ -899,7 +954,6 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
       provider: 'strava',
       athleteId,
       athleteName,
-      sessionToken,
       hasExistingSyncPolicy,
       hasPendingTeamJoin,
       measurementPreference,
@@ -920,7 +974,8 @@ export const stravaCallbackHandler = async (req: Request, res: Response) => {
     });
 
     const successHydrationScript = `try {
-      if (payload.sessionToken) localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+      localStorage.setItem('thresh_session_active_hint', '1');
+      localStorage.removeItem('aeropulse_session_token');
       if (payload.tokens) {
         var prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
         if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
@@ -1036,8 +1091,13 @@ stravaRouter.post('/api/strava/credentials', async (req: Request, res: Response)
   res.json({ saved: true, clientId });
 });
 
-async function buildStravaAuthorizeRequest(req: Request, res: Response, clientId: string) {
-  const { sid, sessionToken } = ensureRequestSession(req, res);
+async function buildStravaAuthorizeRequest(
+  req: Request,
+  res: Response,
+  clientId: string,
+  pendingBirthMonthYear?: string
+) {
+  const { sid } = ensureRequestSession(req, res);
   const mode = String(req.query.mode || 'cloud').toLowerCase();
   const flow = String(req.query.flow || 'redirect').toLowerCase() === 'popup' ? 'popup' : 'redirect';
   const prompt = String(req.query.prompt || 'auto').toLowerCase() === 'force' ? 'force' : 'auto';
@@ -1061,6 +1121,12 @@ async function buildStravaAuthorizeRequest(req: Request, res: Response, clientId
     userId: callerClaims?.sub?.startsWith('usr_') ? callerClaims.sub : undefined,
   });
   setOAuthStateCookie(req, res, nonce);
+  if (pendingBirthMonthYear) {
+    await saveTenantVaultAsync(`oauth_dob_${nonce}`, {
+      birthMonthYear: pendingBirthMonthYear,
+      exp: Date.now() + 15 * 60 * 1000,
+    });
+  }
 
   const redirectUri =
     mode === 'localhost'
@@ -1076,12 +1142,21 @@ async function buildStravaAuthorizeRequest(req: Request, res: Response, clientId
   });
 
   const authUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-  return { authUrl, redirectUri, stateToken, sessionToken };
+  return { authUrl, redirectUri, stateToken };
 }
 
 stravaRouter.get(
   ['/api/strava/auth/url', '/api/auth/strava/url'],
   async (req: Request, res: Response) => {
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
+      return;
+    }
+
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
     if (!clientId || !clientSecret) {
       res.status(400).json({
@@ -1091,18 +1166,31 @@ stravaRouter.get(
       return;
     }
 
-    const { authUrl, redirectUri, stateToken, sessionToken } = await buildStravaAuthorizeRequest(
+    const { authUrl, redirectUri, stateToken } = await buildStravaAuthorizeRequest(
       req,
       res,
-      clientId
+      clientId,
+      ageCheck.birthMonthYear
     );
-    res.json({ url: authUrl, redirectUri, clientId, state: stateToken, sessionToken });
+    res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
   }
 );
 
 stravaRouter.get(
   ['/api/strava/auth/login', '/api/auth/strava/login'],
   async (req: Request, res: Response) => {
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+    });
+    if (!ageCheck.ok) {
+      const msg = encodeURIComponent(
+        ageCheck.error || 'MeetReady accounts require athletes to be 13 or older (COPPA).'
+      );
+      res.redirect(302, `/?auth_error=${msg}`);
+      return;
+    }
+
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
     if (!clientId || !clientSecret) {
       const msg = encodeURIComponent(
@@ -1112,7 +1200,12 @@ stravaRouter.get(
       return;
     }
 
-    const { authUrl } = await buildStravaAuthorizeRequest(req, res, clientId);
+    const { authUrl } = await buildStravaAuthorizeRequest(
+      req,
+      res,
+      clientId,
+      ageCheck.birthMonthYear
+    );
     res.redirect(302, authUrl);
   }
 );
@@ -1172,7 +1265,7 @@ stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) =>
   await deleteTenantVault(`oauth_poll_${lookupNonce}`);
   clearOAuthStateCookie(res);
 
-  const { canonicalSid, sessionToken, store } = await activateStravaCanonicalScope(req, res, {
+  const { canonicalSid, store } = await activateStravaCanonicalScope(req, res, {
     athleteId: found.athleteId,
     athleteName: found.athleteName || 'Strava Athlete',
   });
@@ -1197,7 +1290,6 @@ stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) =>
     hasExistingSyncPolicy: Boolean(
       found.hasExistingSyncPolicy || store.stravaSyncPolicy?.confirmedAt
     ),
-    sessionToken,
     athleteId: found.athleteId,
     athleteName: found.athleteName,
     measurementPreference: found.measurementPreference,
@@ -1217,6 +1309,15 @@ stravaRouter.get('/api/strava/auth/poll', async (req: Request, res: Response) =>
 
 stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Response) => {
   try {
+    const preAgeCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+    });
+    if (!preAgeCheck.ok) {
+      res.status(preAgeCheck.statusCode || 400).json({ error: preAgeCheck.error });
+      return;
+    }
+
     const codeOrUrl = String(req.body?.code || req.body?.url || '').trim();
     const tokenData = await exchangeStravaAuthCode(codeOrUrl, req);
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
@@ -1225,6 +1326,16 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
       tokenData.athlete?.username?.trim() ||
       'Strava Athlete';
     const athleteId = extractStravaId(tokenData.athlete) || undefined;
+    const existingStravaUser = athleteId ? await getUserByProvider('strava', athleteId) : null;
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+      existingBirthMonthYear: existingStravaUser?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
+      return;
+    }
     const weightKg =
       typeof tokenData.athlete?.weight === 'number' && tokenData.athlete.weight > 30
         ? Number(tokenData.athlete.weight.toFixed(1))
@@ -1240,7 +1351,7 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
           ? 'mi'
           : undefined;
 
-    const { canonicalSid, sessionToken, store, linkedUserId } =
+    const { canonicalSid, store, linkedUserId } =
       await activateStravaCanonicalScope(req, res, {
         athleteId,
         athleteName,
@@ -1259,11 +1370,23 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
     // AUTH-01: Auto-link/migrate into unified MeetReady accounts directory if not already linked to canonical usr_
     if (athleteId && !linkedUserId) {
       try {
-        await findOrCreateUser('strava', athleteId, {
+        const createdUser = await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
         });
+        if (ageCheck.birthMonthYear && !createdUser.birthMonthYear) {
+          await updateUserBirthMonthYear(createdUser.id, ageCheck.birthMonthYear);
+        }
       } catch (err) {
         console.warn('[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:', err);
+      }
+    } else if (linkedUserId && ageCheck.birthMonthYear) {
+      try {
+        const linked = await getUserById(linkedUserId);
+        if (linked && !linked.birthMonthYear) {
+          await updateUserBirthMonthYear(linked.id, ageCheck.birthMonthYear);
+        }
+      } catch {
+        // non-fatal
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -1271,7 +1394,6 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
     res.json({
       connected: true,
       hasExistingSyncPolicy,
-      sessionToken,
       athleteId,
       athleteName,
       weightKg,
@@ -1291,6 +1413,15 @@ stravaRouter.post('/api/strava/exchange-code', async (req: Request, res: Respons
 
 stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
   try {
+    const preAgeCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+    });
+    if (!preAgeCheck.ok) {
+      res.status(preAgeCheck.statusCode || 400).json({ error: preAgeCheck.error });
+      return;
+    }
+
     const refreshToken = String(req.body?.refreshToken || '').trim();
     const accessToken = String(req.body?.accessToken || '').trim();
     const allowIdentityOnly = Boolean(req.body?.allowIdentityOnly);
@@ -1397,7 +1528,18 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
       else if (athlete.measurement_preference === 'feet') measurementPreference = 'mi';
     }
 
-    const { canonicalSid, sessionToken, store, linkedUserId } =
+    const existingTokenUser = athleteId ? await getUserByProvider('strava', athleteId) : null;
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+      existingBirthMonthYear: existingTokenUser?.birthMonthYear,
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
+      return;
+    }
+
+    const { canonicalSid, store, linkedUserId } =
       await activateStravaCanonicalScope(req, res, {
         athleteId,
         athleteName,
@@ -1417,11 +1559,23 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     // AUTH-01: Auto-link/migrate into unified MeetReady accounts directory if not already linked to canonical usr_
     if (athleteId && !linkedUserId) {
       try {
-        await findOrCreateUser('strava', athleteId, {
+        const createdUser = await findOrCreateUser('strava', athleteId, {
           name: !isGenericName(athleteName) ? athleteName : undefined,
         });
+        if (ageCheck.birthMonthYear && !createdUser.birthMonthYear) {
+          await updateUserBirthMonthYear(createdUser.id, ageCheck.birthMonthYear);
+        }
       } catch (err) {
         console.warn('[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:', err);
+      }
+    } else if (linkedUserId && ageCheck.birthMonthYear) {
+      try {
+        const linked = await getUserById(linkedUserId);
+        if (linked && !linked.birthMonthYear) {
+          await updateUserBirthMonthYear(linked.id, ageCheck.birthMonthYear);
+        }
+      } catch {
+        // non-fatal
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -1429,7 +1583,6 @@ stravaRouter.post('/api/strava/token', async (req: Request, res: Response) => {
     res.json({
       connected: true,
       hasExistingSyncPolicy,
-      sessionToken,
       athleteId,
       athleteName,
       weightKg,

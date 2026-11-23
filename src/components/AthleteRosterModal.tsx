@@ -3,6 +3,7 @@ import {
   Activity,
   Check,
   Copy,
+  Download,
   Eye,
   HeartPulse,
   MapPin,
@@ -30,10 +31,12 @@ import { AeroPulseLogo } from './AeroPulseLogo';
 import {
   changePrimaryEmailApi,
   deleteAccountApi,
+  exportUserAccountDataApi,
   leaveOrGraduateTeamApi,
   revokeGuardianCcApi,
   updateMyTeamSharingTierApi,
 } from '../utils/teamLifecycleApi';
+import { markSessionActiveHint } from '../utils/sessionHint';
 
 export type RosterTab =
   | 'TEAMS_BRANDING'
@@ -138,6 +141,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   const [showDeleteAccountConfirm, setShowDeleteAccountConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<'json' | 'csv' | null>(null);
 
   useEffect(() => {
     if (currentUser?.email) {
@@ -238,14 +242,10 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         );
         return;
       }
-      if (data.sessionToken) {
-        try {
-          localStorage.setItem('aeropulse_session_token', data.sessionToken);
-        } catch {
-          // ignore
-        }
+      if (data.user) {
+        markSessionActiveHint();
+        onUserUpdated?.(data.user);
       }
-      if (data.user) onUserUpdated?.(data.user);
       setPendingEmailVerify(null);
       setEmailVerifyCodeInput('');
       setEmailVerifyDevCode(null);
@@ -256,6 +256,36 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
       setPrivacyActionErr(err instanceof Error ? err.message : 'Could not update login email.');
     } finally {
       setIsUpdatingEmail(false);
+    }
+  };
+
+  const handleDownloadDataExport = async (format: 'json' | 'csv') => {
+    setExportingFormat(format);
+    setPrivacyActionMsg(null);
+    setPrivacyActionErr(null);
+    try {
+      const { filename, blob } = await exportUserAccountDataApi(format);
+      if (typeof window !== 'undefined' && typeof URL !== 'undefined') {
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+      }
+      setPrivacyActionMsg(
+        `Your MeetReady ${format.toUpperCase()} data export (${filename}) is downloading.`
+      );
+    } catch (err) {
+      setPrivacyActionErr(
+        err instanceof Error
+          ? err.message
+          : 'Sign in with a verified MeetReady account to download your data export.'
+      );
+    } finally {
+      setExportingFormat(null);
     }
   };
 
@@ -1122,6 +1152,43 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                     </div>
                   )}
                 </form>
+
+                <div className="rounded-xl ap-card-inset p-3.5 space-y-2.5">
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                      Self-Serve Data Export (FERPA / GDPR)
+                    </h4>
+                    <p className="text-2xs text-slate-600 dark:text-slate-300 mt-0.5">
+                      Download a portable copy of your profile, planned workouts, check-ins, gear, and team-scoped athletic marks.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      data-testid="account-export-json-btn"
+                      disabled={exportingFormat !== null}
+                      onClick={() => void handleDownloadDataExport('json')}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>
+                        {exportingFormat === 'json' ? 'Exporting JSON…' : 'Download My Data (JSON)'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="account-export-csv-btn"
+                      disabled={exportingFormat !== null}
+                      onClick={() => void handleDownloadDataExport('csv')}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>
+                        {exportingFormat === 'csv' ? 'Exporting CSV…' : 'Download My Data (CSV)'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
 
                 <div className="pt-2 space-y-2.5">
                   {!showDeleteAccountConfirm ? (

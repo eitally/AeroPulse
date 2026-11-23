@@ -108,7 +108,11 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     const body = await urlResp.json();
     expect(body.url).toContain('https://www.strava.com/oauth/authorize');
     expect(body.state).toBeTruthy();
-    expect(body.sessionToken).toBeTruthy();
+    expect(body.sessionToken).toBeUndefined();
+    const urlSetCookies = urlResp.headers.getSetCookie?.() || [urlResp.headers.get('set-cookie') || ''];
+    expect(
+      urlSetCookies.some((c) => c.includes('thresh_session=') && /HttpOnly/i.test(c))
+    ).toBe(true);
 
     // Untrusted origin must NOT receive Access-Control-Allow-Origin
     const evilResp = await originalFetch(`${baseUrl}/api/strava/auth/url`, {
@@ -368,7 +372,7 @@ describe('Strava OAuth Popup Close + "Failed to fetch" & Domain Migration Regres
     };
     try {
       const headers = getSavedIntervalsHeaders();
-      expect(headers['x-session-token']).toBe('tok_clean');
+      expect(headers['x-session-token']).toBeUndefined();
       expect(headers['x-strava-client-id']).toBe('121717');
     } finally {
       (globalThis as any).localStorage = origStorage;

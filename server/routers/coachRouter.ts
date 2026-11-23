@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { GoogleGenAI, Type } from '@google/genai';
 import {
   isAuthorizedForAi,
-  checkAiRateLimit,
+  checkAiRateLimitAsync,
   getClientAiRateLimitKey,
   isServerOwnedSecret,
   isAuthorizedForServerAi,
@@ -463,7 +463,7 @@ coachRouter.post('/api/gemini/config', async (req: Request, res: Response) => {
 });
 
 coachRouter.post('/api/coach/options', async (req: Request, res: Response) => {
-  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  const rateCheck = await checkAiRateLimitAsync(getClientAiRateLimitKey(req));
   if (!rateCheck.allowed) {
     res.status(429).json({
       error: 'AI request limit reached. Please wait a moment before requesting another workout option.',
@@ -579,7 +579,7 @@ coachRouter.post('/api/coach/chat', async (req: Request, res: Response) => {
     return;
   }
 
-  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  const rateCheck = await checkAiRateLimitAsync(getClientAiRateLimitKey(req));
   if (!rateCheck.allowed) {
     res.status(429).json({
       error: 'AI request limit reached. Please wait a moment before sending another message.',
@@ -730,7 +730,13 @@ ${message}
 
 // Parse Official Race Results from Athletic.net, TFRRS, MileSplit, or RunSignup URL / Raw Text
 coachRouter.post(['/api/races/parse', '/races/parse'], async (req: Request, res: Response) => {
-  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+    res.status(401).json({ error: 'Authentication required to parse official race results.' });
+    return;
+  }
+
+  const rateCheck = await checkAiRateLimitAsync(getClientAiRateLimitKey(req));
   if (!rateCheck.allowed) {
     res.status(429).json({
       error: 'Race parser rate limit reached. Please wait a moment.',
@@ -738,6 +744,8 @@ coachRouter.post(['/api/races/parse', '/races/parse'], async (req: Request, res:
     });
     return;
   }
+
+  const youthStatus = await resolveCallerYouthSafeguardStatus(req, req.body?.telemetrySummary);
 
   try {
     const { url, rawText } = req.body as { url?: string; rawText?: string };
@@ -795,7 +803,7 @@ coachRouter.post(['/api/races/parse', '/races/parse'], async (req: Request, res:
       return;
     }
 
-    const ai = getGeminiClient(req);
+    const ai = youthStatus.isMinorU18 ? null : getGeminiClient(req);
     if (ai) {
       try {
         const response = await generateGeminiContentWithFallback(ai, {

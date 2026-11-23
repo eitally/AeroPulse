@@ -259,6 +259,6 @@ describe('OAuth Regressions — Strava Handoff & Google/Vercel Cold-Start Auth',
     expect(meData.authenticated).toBe(true);
     expect(meData.user?.email).toBe('vercel.runner@example.com');
     expect(meData.user?.name).toBe('Vercel Runner');
-    expect(meData.sessionToken).toBeTruthy();
+    expect(meData.sessionToken).toBeUndefined();
   });
 });

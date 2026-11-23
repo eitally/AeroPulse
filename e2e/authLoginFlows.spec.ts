@@ -419,7 +419,7 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
       await page.evaluate(() => {
         localStorage.clear();
         localStorage.setItem('aeropulse_auth_gate_passed', '1');
-        localStorage.setItem('aeropulse_session_token', 'tok_returning_1');
+        localStorage.setItem('thresh_session_active_hint', '1');
         localStorage.setItem('aeropulse_strava_athlete_id', '554433');
         localStorage.setItem('aeropulse_strava_athlete_name', 'Returning Runner');
         localStorage.setItem(

@@ -372,10 +372,6 @@ export async function persistCoachStopwatchActivitiesToServer(
   }
 
   try {
-    const token =
-      typeof localStorage !== 'undefined'
-        ? localStorage.getItem(STORAGE_KEYS.SESSION_TOKEN) || ''
-        : '';
     const res = await fetch(
       `/api/teams/${encodeURIComponent(teamId)}/stopwatch-activities`,
       {
@@ -383,7 +379,6 @@ export async function persistCoachStopwatchActivitiesToServer(
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { 'x-session-token': token } : {}),
         },
         body: JSON.stringify({ entries }),
       }
