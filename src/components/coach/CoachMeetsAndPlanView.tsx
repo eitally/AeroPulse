@@ -9,6 +9,9 @@ import type {
   PracticeVenueCategory,
   SportCategory,
   TargetGoal,
+  TeamEventRecord,
+  TeamEventRsvpCounts,
+  TeamEventRsvpRecord,
   TeamSummaryWithRole,
   TrackWorkoutSpec,
   UnifiedActivity,
@@ -17,11 +20,20 @@ import type {
 } from '../../types';
 import type { PlannedEventBatchItem } from '../GoalsView';
 import type { VdotPodRosterInput } from '../../physiology/scholasticEngine';
+import type { SaveTeamEventInput } from '../../utils/teamEventsApi';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from '../WorkspaceErrorBoundary';
 import { Calendar, Trophy, Users } from '../icons/PhosphorIcons';
 import type { CoachDelegateTimingPreset } from '../stopwatch/CoachDelegateTimingModal';
 import type { TracksideStopwatchLaunchPreset } from '../TracksideStopwatchView';
+
+const CoachTeamEventsBar = lazyWithRetry(
+  () =>
+    import('./CoachTeamEventsBar').then((m) => ({
+      default: m.CoachTeamEventsBar,
+    })),
+  { chunkKey: 'CoachTeamEventsBar', restoreTab: 'coach' }
+);
 
 const CalendarView = lazyWithRetry(
   () => import('../CalendarView').then((m) => ({ default: m.CalendarView })),
@@ -127,6 +139,12 @@ export interface CoachMeetsAndPlanViewProps {
   onLaunchStopwatchPreset: (preset: TracksideStopwatchLaunchPreset) => void;
   onOpenStopwatchDirect: () => void;
   onDelegateEventTimer: (preset: CoachDelegateTimingPreset) => void;
+  teamEvents?: TeamEventRecord[];
+  teamEventRsvpCounts?: Record<string, TeamEventRsvpCounts>;
+  nextMeetRsvpsByMemberId?: Record<string, TeamEventRsvpRecord>;
+  isSavingTeamEvent?: boolean;
+  onSaveTeamEvent?: (input: SaveTeamEventInput) => Promise<void>;
+  onDeleteScheduleEvent?: (eventId: string) => Promise<void>;
 }
 
 export const CoachMeetsAndPlanView: React.FC<CoachMeetsAndPlanViewProps> = ({
@@ -165,6 +183,12 @@ export const CoachMeetsAndPlanView: React.FC<CoachMeetsAndPlanViewProps> = ({
   onLaunchStopwatchPreset,
   onOpenStopwatchDirect,
   onDelegateEventTimer,
+  teamEvents = [],
+  teamEventRsvpCounts = {},
+  nextMeetRsvpsByMemberId = {},
+  isSavingTeamEvent = false,
+  onSaveTeamEvent,
+  onDeleteScheduleEvent,
 }) => {
   const [calendarGroupFilter, setCalendarGroupFilter] = useState<CoachEventGroup | 'ALL'>('ALL');
 
@@ -203,6 +227,19 @@ export const CoachMeetsAndPlanView: React.FC<CoachMeetsAndPlanViewProps> = ({
 
   return (
     <div className="space-y-3">
+      {activeTeam && onSaveTeamEvent && onDeleteScheduleEvent && (
+        <Suspense fallback={null}>
+          <CoachTeamEventsBar
+            teamId={activeTeam.brand.teamId}
+            isDemoMode={isDemoTeam}
+            events={teamEvents}
+            rsvpCountsByEventId={teamEventRsvpCounts}
+            isSaving={isSavingTeamEvent}
+            onSaveEvent={onSaveTeamEvent}
+            onDeleteEvent={onDeleteScheduleEvent}
+          />
+        </Suspense>
+      )}
       {/* Clean Sub-View Segmented Bar */}
       <div className="rounded-2xl liquid-glass px-3 py-2 flex flex-wrap items-center justify-between gap-2">
         <div
@@ -275,6 +312,7 @@ export const CoachMeetsAndPlanView: React.FC<CoachMeetsAndPlanViewProps> = ({
               onClose={() => onSelectSubView('CALENDAR')}
               activeTeam={activeTeam}
               myTeams={myTeams}
+              meetRsvpsByMemberId={nextMeetRsvpsByMemberId}
               connectedAthletes={connectedAthletesOnly}
               onTeamsUpdated={onTeamsUpdated}
               onLaunchEventStopwatch={(preset) => {
@@ -308,6 +346,7 @@ export const CoachMeetsAndPlanView: React.FC<CoachMeetsAndPlanViewProps> = ({
             <ScholasticRelayAndTopTimesPanel
               candidates={relayCandidates.length > 0 ? relayCandidates : podRoster}
               roster={combinedFilterRoster(combinedFromScoped(connectedAthletesOnly))}
+              meetRsvpsByMemberId={nextMeetRsvpsByMemberId}
             />
           </Suspense>
         </WorkspaceErrorBoundary>
@@ -383,6 +422,8 @@ export const CoachMeetsAndPlanView: React.FC<CoachMeetsAndPlanViewProps> = ({
                 onOpenOfficialRaceModal={onOpenOfficialRaceModal}
                 onOpenCoachWithPrompt={onOpenCoachWithPrompt}
                 onOpenTracksideStopwatch={onOpenStopwatchDirect}
+                activeTeam={activeTeam}
+                isSampleDemoMode={isDemoTeam}
               />
             </Suspense>
           </WorkspaceErrorBoundary>

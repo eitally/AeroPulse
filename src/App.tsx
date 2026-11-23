@@ -17,6 +17,7 @@ import type {
   PracticeVenueCategory,
   SportCategory,
   TargetGoal,
+  TeamMessageChannelScope,
   TeamSummaryWithRole,
   ThreshUser,
   TrackWorkoutSpec,
@@ -112,7 +113,7 @@ export function parseWorkspaceHash(rawHash: string): {
     if (sub === 'PLAN' || sub === 'TEAM_PLAN') {
       return { tab: 'coach', coachSubTab: 'TEAM_PLAN' };
     }
-    if (sub === 'ROSTER' || sub === 'CLIPBOARD' || sub === 'STOPWATCH') {
+    if (sub === 'ROSTER' || sub === 'CLIPBOARD' || sub === 'WORKOUTS' || sub === 'STOPWATCH') {
       return { tab: 'coach', coachSubTab: sub as CoachWorkspaceSubTab };
     }
     return { tab: 'coach' };
@@ -281,7 +282,7 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState<boolean>(false);
   const [isOfficialRaceModalOpen, setIsOfficialRaceModalOpen] = useState<boolean>(false);
   const [isRosterModalOpen, setIsRosterModalOpen] = useState<boolean>(false);
-  const [isTeamMessagesOpen, setIsTeamMessagesOpen] = useState<boolean>(false);
+  const [teamMessagesScope, setTeamMessagesScope] = useState<TeamMessageChannelScope | null>(null);
   const [rosterInitialTab, setRosterInitialTab] = useState<RosterTab>('CONNECT_INVITE');
   const [showMetricsGuide, setShowMetricsGuide] = useState<boolean>(false);
   const [guideInitialChapter, setGuideInitialChapter] =
@@ -746,7 +747,7 @@ export default function App() {
         if (targetTeamId && effectiveTeams.some((t) => t.brand.teamId === targetTeamId)) {
           effectiveOnSelectActiveTeam(targetTeamId);
         }
-        setIsTeamMessagesOpen(true);
+        setTeamMessagesScope('ALL_TEAM');
         params.delete('openMessages');
         params.delete('teamId');
         const nextSearch = params.toString();
@@ -770,10 +771,10 @@ export default function App() {
           effectiveOnSelectActiveTeam(targetTeamId);
         }
         if (parsed.searchParams.get('openMessages') === '1') {
-          setIsTeamMessagesOpen(true);
+          setTeamMessagesScope('ALL_TEAM');
         }
       } catch {
-        setIsTeamMessagesOpen(true);
+        setTeamMessagesScope('ALL_TEAM');
       }
     };
     navigator.serviceWorker.addEventListener('message', handleSwMessage);
@@ -1680,6 +1681,7 @@ export default function App() {
       onPushCoachWorkout: handlePushCoachWorkout,
       onOpenPublicTeamHub: openPublicTeamHub,
       onOpenCoachGuide: handleOpenCoachGuideModal,
+      onOpenTeamMessages: (scope?: TeamMessageChannelScope) => setTeamMessagesScope(scope || 'ALL_TEAM'),
       onOpenFullScreenStopwatch: () => {
         setIsRosterModalOpen(false);
         if (activeTab === 'coach') {
@@ -1939,7 +1941,7 @@ export default function App() {
           anySourceConnected={anySourceConnected}
           onOpenDataSources={handleOpenDataSourcesModal}
           onOpenCoach={handleOpenCoachDrawerModal}
-          onOpenTeamMessages={() => setIsTeamMessagesOpen(true)}
+          onOpenTeamMessages={() => setTeamMessagesScope('ALL_TEAM')}
           isDark={isDark}
           onToggleDark={toggleQuickLightDark}
           activeThemeVariant={activeThemeVariant}
@@ -2066,14 +2068,12 @@ export default function App() {
           lastProgressTab={lastLabTabRef.current}
           coachSubTab={coachSubTab}
           onSelectCoachSubTab={setCoachSubTab}
-          onSelectTab={(tab) => {
-            setActiveTab(tab);
-          }}
+          onSelectTab={(tab) => setActiveTab(tab)}
         />
 
         <CockpitModals
-          isTeamMessagesOpen={isTeamMessagesOpen}
-          onCloseTeamMessages={() => setIsTeamMessagesOpen(false)}
+          teamMessagesScope={teamMessagesScope}
+          onCloseTeamMessages={() => setTeamMessagesScope(null)}
           isCoachDrawerOpen={isCoachDrawerOpen}
           onCloseCoachDrawer={() => setIsCoachDrawerOpen(false)}
           isProfileModalOpen={isProfileModalOpen}

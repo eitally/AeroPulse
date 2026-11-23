@@ -85,6 +85,7 @@ import {
 import { CalendarMobileAgenda } from './calendar/CalendarMobileAgenda';
 import { CalendarPlannedTooltip } from './calendar/CalendarPlannedTooltip';
 import { CalendarCopyWeekPopover } from './calendar/CalendarCopyWeekPopover';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 import {
   buildCopiedWeekBatchItems,
   buildReschedulePlannedEventPatch,
@@ -92,6 +93,14 @@ import {
   setCalendarDragPayload,
 } from './calendar/calendarDragAndWeekCopyUtils';
 import type { PlannedEventBatchItem } from './GoalsView';
+
+const TeamCalendarSubscribeButton = lazyWithRetry(
+  () =>
+    import('./calendar/TeamCalendarSubscribeButton').then((m) => ({
+      default: m.TeamCalendarSubscribeButton,
+    })),
+  { chunkKey: 'TeamCalendarSubscribeButton', restoreTab: 'calendar' }
+);
 
 export { INTERVALS_EFFORT_ZONES };
 export type { DayPlannedEffortStripe, EffortSlice, ActivityEffortPresentation };
@@ -157,6 +166,7 @@ interface CalendarViewProps {
   onOpenCoachWithPrompt: (prompt: string) => void;
   onOpenTracksideStopwatch?: () => void;
   activeTeam?: TeamSummaryWithRole | null;
+  isSampleDemoMode?: boolean;
 }
 
 
@@ -184,6 +194,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   onOpenCoachWithPrompt,
   onOpenTracksideStopwatch,
   activeTeam: activeTeamProp,
+  isSampleDemoMode = false,
 }) => {
   let teamCtx: TeamCoachContextValue | null = null;
   try {
@@ -1118,6 +1129,21 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                 Clear Block ({activePlanBlock.count})
               </button>
             )
+          )}
+          {effectiveActiveTeam && (
+            <React.Suspense fallback={null}>
+              <TeamCalendarSubscribeButton
+                teamId={effectiveActiveTeam.brand.teamId}
+                isDemoMode={isSampleDemoMode}
+                canRotate={
+                  effectiveActiveTeam.myRole === 'HEAD_COACH' ||
+                  effectiveActiveTeam.myRole === 'ASSISTANT_COACH'
+                }
+                compact
+                label="Feed"
+                testId="calendar-team-subscribe-btn"
+              />
+            </React.Suspense>
           )}
           <button
             type="button"

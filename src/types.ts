@@ -1487,6 +1487,7 @@ export interface TeamExternalSyncConfig {
   teamFilterKeyword?: string;
   icsCalendarUrl?: string;
   enablePublicParentHub?: boolean;
+  publishUnofficialSplits?: boolean;
   lastSyncedAt?: string;
 }
 
@@ -1508,6 +1509,7 @@ export interface TeamBrandConfig {
   shortName: string; // e.g. 'PALY XC'
   mascotOrMotto?: string;
   districtName?: string;
+  timezone?: string;
   practiceVenues?: PracticeVenueGeofence[];
   orgType: TeamOrgType;
   primarySport: 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid';
@@ -1647,11 +1649,31 @@ export interface PublicTeamHubMeetItem {
   id: string;
   date: string;
   name: string;
+  eventType?: TeamEventType;
   scheduledTime?: string;
+  endTime?: string;
   locationName?: string;
   locationCategory?: PracticeVenueCategory;
   description?: string;
   externalSource?: ExternalTeamPlatform;
+  liveResultsUrl?: string;
+  liveResultsLabel?: string;
+  meetDelayMinutes?: number;
+  busDepartureTime?: string;
+  curatedAlbumLinks?: CuratedMeetAlbumLink[];
+}
+
+export interface PublicTeamHubUnofficialSplitItem {
+  id: string;
+  date: string;
+  meetName: string;
+  eventLabel: string;
+  athleteDisplayName: string;
+  displayTime: string;
+  lapSplitsSecs: number[];
+  lapSplitDistanceMeters?: number;
+  timingLabel: 'Hand-Timed';
+  capturedByName?: string;
 }
 
 export interface PublicTeamHubAthleteResultItem {
@@ -1718,12 +1740,14 @@ export interface PublicTeamHubPayload {
     secondaryHex: string;
     defaultSafeSportShield: boolean;
     coachDisplayName: string;
+    timezone?: string;
     externalSync?: TeamExternalSyncConfig;
   };
   upcomingMeets: PublicTeamHubMeetItem[];
   recentSchedule: PublicTeamHubMeetItem[];
   rosterLeaderboard: PublicTeamHubRosterEntry[];
   fieldLeaderboard?: PublicTeamHubFieldPrItem[];
+  unofficialStopwatchSplits?: PublicTeamHubUnofficialSplitItem[];
   announcements?: Array<
     Pick<TeamAnnouncementRecord, 'id' | 'title' | 'body' | 'category' | 'createdAt'>
   >;
@@ -2095,7 +2119,7 @@ export type ActiveTab =
   | 'stopwatch'
   | 'coach';
 
-export type CoachWorkspaceSubTab = 'CLIPBOARD' | 'TEAM_PLAN' | 'STOPWATCH' | 'ROSTER';
+export type CoachWorkspaceSubTab = 'CLIPBOARD' | 'WORKOUTS' | 'TEAM_PLAN' | 'STOPWATCH' | 'ROSTER';
 
 export interface SessionCheckInRecord {
   id: string;

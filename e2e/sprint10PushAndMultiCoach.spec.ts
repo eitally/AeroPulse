@@ -56,10 +56,13 @@ test.describe('Wave 4: Device Push Notifications & Multi-Coach Staff (Desktop & 
     await expect(lensSelect).toBeVisible();
     await expect(lensSelect).toHaveValue('ALL_TEAM');
     await lensSelect.selectOption('demo-mem-coach-thr');
-    await expect(page.getByTestId('coach-workspace-view')).toContainText('1 connected athlete');
+    await expect(page.getByTestId('coach-workspace-view')).toContainText('1 active in scope');
     await lensSelect.selectOption('ALL_TEAM');
-    await expect(page.getByTestId('coach-workspace-view')).toContainText('1-Tap Roll Call (2/12 Present)');
+    await expect(page.getByTestId('coach-workspace-view')).toContainText('12 active in scope');
     await expect(page.getByTestId('coach-workspace-view')).toContainText('2 Athletes Flagged');
+    await page.getByTestId('quick-ops-roll-call-btn').click();
+    await expect(page.getByTestId('coach-daily-ops-panel')).toContainText('1-Tap Roll Call (2/12 Present)');
+    await page.getByTestId('coach-back-to-home-btn').click();
 
     // 3. Open Roster -> verify 7-lane Coaching Staff Coverage Matrix & Invite Specialty Coach
     await openCoachRosterTab(page);

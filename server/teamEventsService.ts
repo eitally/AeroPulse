@@ -14,12 +14,18 @@ import type {
   TeamEventsOverviewPayload,
 } from '../src/types.ts';
 import {
+  canManageTeamGovernanceRole,
+  canProgramWorkoutsRole,
   canViewSafeguardingMedicalRole,
+  hashToken,
   loadTeamDocRaw,
   resolveLinkedChildMembershipIds,
   sanitizeTargetEventGroups,
+  saveTeamDocRaw,
+  type StoredTeamDocument,
 } from './teamStoreCore.ts';
-import { isSafeHttpsUrl } from './securityUtils.ts';
+import { isSafeHttpsUrl, timingSafeStringEqual } from './securityUtils.ts';
+import { buildTimedTeamCalendarIcs, type TimedTeamCalendarEventInput } from './teamCalendarIcs.ts';
 import {
   appendAuditLogAsync,
   deleteTeamEventPostgresAsync,
@@ -30,6 +36,7 @@ import {
   saveTenantVaultAsync,
   upsertTeamEventPostgresAsync,
   upsertTeamEventRsvpPostgresAsync,
+  withTeamRowLock,
   withVaultLock,
 } from './tokenVault.ts';
 
@@ -662,5 +669,229 @@ export async function submitTeamEventRsvp(params: {
     ok: true,
     rsvp: nextRsvp,
     counts: computeRsvpCounts(eventRsvps),
+  };
+}
+
+export async function loadPublicHubTeamEventsForTeamDoc(
+  doc: StoredTeamDocument
+): Promise<TeamEventRecord[]> {
+  const storedEvents = await loadStoredEvents(doc.brand.teamId);
+  return storedEvents
+    .filter((ev) => ev.visibilityScope === 'PUBLIC_HUB')
+    .map((ev) => ({
+      ...ev,
+      ...(ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl)
+        ? { liveResultsUrl: ev.liveResultsUrl }
+        : { liveResultsUrl: undefined }),
+      ...(Array.isArray(ev.curatedAlbumLinks)
+        ? {
+            curatedAlbumLinks: ev.curatedAlbumLinks.filter(
+              (a) => a.visibility === 'PUBLIC_HUB' && isSafeHttpsUrl(a.url)
+            ),
+          }
+        : {}),
+    }));
+}
+
+function buildCalendarFeedUrls(params: {
+  teamId: string;
+  token: string;
+  originUrl?: string;
+}): {
+  feedUrl: string;
+  webcalUrl: string;
+  googleCalendarUrl: string;
+} {
+  const cleanOrigin = (params.originUrl || 'https://meetready.app').replace(/\/+$/, '');
+  const feedUrl = `${cleanOrigin}/api/teams/${encodeURIComponent(params.teamId)}/calendar-feed/${encodeURIComponent(params.token)}.ics`;
+  const webcalUrl = feedUrl.replace(/^https?:\/\//i, 'webcal://');
+  const googleCalendarUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(feedUrl)}`;
+  return { feedUrl, webcalUrl, googleCalendarUrl };
+}
+
+export async function getOrMintPrivateCalendarMeta(params: {
+  callerSid: string;
+  teamId: string;
+  originUrl?: string;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  feedUrl?: string;
+  webcalUrl?: string;
+  googleCalendarUrl?: string;
+  canRotate?: boolean;
+  error?: string;
+}> {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: 'Team not found.' };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: 'Team membership required.' };
+    }
+
+    let rawToken = doc.calendarFeedTokenPlain;
+    if (!rawToken || !doc.calendarFeedTokenHash) {
+      rawToken = crypto.randomBytes(24).toString('hex');
+      doc.calendarFeedTokenPlain = rawToken;
+      doc.calendarFeedTokenHash = hashToken(rawToken);
+      doc.updatedAt = new Date().toISOString();
+      await saveTeamDocRaw(params.teamId, doc);
+    }
+
+    const urls = buildCalendarFeedUrls({
+      teamId: params.teamId,
+      token: rawToken,
+      originUrl: params.originUrl,
+    });
+    return {
+      ok: true,
+      ...urls,
+      canRotate:
+        canProgramWorkoutsRole(callerMem.role) || canManageTeamGovernanceRole(callerMem.role),
+    };
+  });
+}
+
+export async function rotatePrivateCalendarToken(params: {
+  callerSid: string;
+  teamId: string;
+  originUrl?: string;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  feedUrl?: string;
+  webcalUrl?: string;
+  googleCalendarUrl?: string;
+  canRotate?: boolean;
+  error?: string;
+}> {
+  const outcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: 'Team not found.' };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (!canProgramWorkoutsRole(callerMem.role) && !canManageTeamGovernanceRole(callerMem.role))
+    ) {
+      return { ok: false, status: 403, error: 'Coach or team admin permissions required.' };
+    }
+
+    const rawToken = crypto.randomBytes(24).toString('hex');
+    doc.calendarFeedTokenPlain = rawToken;
+    doc.calendarFeedTokenHash = hashToken(rawToken);
+    doc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+
+    const urls = buildCalendarFeedUrls({
+      teamId: params.teamId,
+      token: rawToken,
+      originUrl: params.originUrl,
+    });
+    return {
+      ok: true,
+      ...urls,
+      canRotate: true,
+    };
+  });
+
+  if (outcome.ok) {
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'CALENDAR_FEED_TOKEN_ROTATED',
+      targetId: params.teamId,
+    });
+  }
+
+  return outcome;
+}
+
+export async function getPrivateTeamCalendarIcsByToken(params: {
+  teamId: string;
+  token: string;
+  originUrl?: string;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  icsBody?: string;
+  slug?: string;
+  error?: string;
+}> {
+  const cleanToken = String(params.token || '')
+    .trim()
+    .replace(/\.ics$/i, '');
+  if (!cleanToken || !/^[a-f0-9]{24,96}$/i.test(cleanToken)) {
+    return { ok: false, status: 404, error: 'Calendar feed not found.' };
+  }
+
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc || !doc.calendarFeedTokenHash) {
+    return { ok: false, status: 404, error: 'Calendar feed not found.' };
+  }
+  const incomingHash = hashToken(cleanToken);
+  if (!timingSafeStringEqual(incomingHash, doc.calendarFeedTokenHash)) {
+    return { ok: false, status: 404, error: 'Calendar feed link invalidated or rotated.' };
+  }
+
+  const storedEvents = await loadStoredEvents(params.teamId);
+  const visibleEvents = projectSyntheticEventsFromTeamDoc({
+    teamId: params.teamId,
+    storedEvents,
+    broadcastWorkouts: doc.broadcastWorkouts,
+    meetDayPackets: doc.meetDayPackets,
+  }).filter((ev) => ev.visibilityScope !== 'STAFF_ONLY');
+
+  const mappedEvents: TimedTeamCalendarEventInput[] = visibleEvents.map((ev) => ({
+    uid: ev.eventId,
+    title: ev.title,
+    date: ev.date,
+    startTime: ev.startTime,
+    endTime: ev.endTime,
+    locationName: ev.locationName,
+    description: ev.notes,
+    busDepartureTime: ev.busDepartureTime,
+    meetDelayMinutes: ev.meetDelayMinutes,
+    liveResultsUrl: ev.liveResultsUrl,
+    updatedAt: ev.updatedAt,
+  }));
+
+  const coveredBroadcastIds = new Set(
+    visibleEvents.map((ev) => ev.broadcastId).filter((id): id is string => Boolean(id))
+  );
+  for (const bc of doc.broadcastWorkouts || []) {
+    if (coveredBroadcastIds.has(bc.broadcastId)) continue;
+    if (Array.isArray(bc.targetMembershipIds) && bc.targetMembershipIds.length > 0) continue;
+    mappedEvents.push({
+      uid: `bc-${bc.broadcastId}`,
+      title: bc.name,
+      date: bc.date,
+      startTime: bc.scheduledTime,
+      locationName: bc.locationName,
+      description: bc.description,
+      liveResultsUrl: bc.liveResultsUrl,
+      updatedAt: bc.createdAt,
+    });
+  }
+
+  const icsBody = buildTimedTeamCalendarIcs({
+    teamName: doc.brand.name,
+    shortName: doc.brand.shortName,
+    slug: doc.brand.slug,
+    timezone: doc.brand.timezone,
+    originUrl: params.originUrl,
+    calNameSuffix: 'Team Schedule',
+    prodId: '-//MeetReady//Private Team Calendar//EN',
+    events: mappedEvents,
+  });
+
+  return {
+    ok: true,
+    icsBody,
+    slug: doc.brand.slug,
   };
 }

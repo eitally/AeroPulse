@@ -19,6 +19,10 @@ import {
 } from '../src/utils/officialRaceSynthesizer.ts';
 import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import {
+  dispatchPushPayloadToUsers,
+  isWithinQuietHours,
+} from './pushNotificationService.ts';
+import {
   sanitizeTelemetryForCleanRoom,
   stripSafeSportWeightAndBodyCompFields,
 } from './cleanRoomFirewall.ts';
@@ -947,6 +951,7 @@ export async function reviewDelegatedSplitSubmission(params: {
   submissionId: string;
   action: unknown;
   originUrl: string;
+  clientLocalHour?: number;
 }): Promise<{
   ok: boolean;
   statusCode: number;
@@ -975,6 +980,16 @@ export async function reviewDelegatedSplitSubmission(params: {
   const archiveQueue: Array<{
     member: StoredMembershipInternal;
     activity: UnifiedActivity;
+  }> = [];
+  const pushQueue: Array<{
+    recipientSids: string[];
+    teamId: string;
+    teamShortName: string;
+    eventLabel: string;
+    meetTitle: string;
+    isMinorTarget: boolean;
+    quietHoursStart: number;
+    quietHoursEnd: number;
   }> = [];
 
   const outcome = await withTeamRowLock(params.teamId, async () => {
@@ -1147,6 +1162,42 @@ export async function reviewDelegatedSplitSubmission(params: {
           safeSportHideWeight: baseSnap.safeSportHideWeight || enforceHideWeight,
           activities: nextSnapActs.slice(0, 30),
         };
+
+        const recipientSet = new Set<string>();
+        if (mem.userSid && mem.userSid !== params.callerSid) {
+          recipientSet.add(mem.userSid);
+        }
+        const guardianEmailLower = mem.parentGuardianEmail?.trim().toLowerCase();
+        if (guardianEmailLower) {
+          for (const candidate of doc.memberships) {
+            if (
+              candidate.status !== 'REVOKED' &&
+              candidate.status !== 'ALUMNI' &&
+              candidate.role === 'PARENT_FOLLOWER' &&
+              candidate.userSid &&
+              candidate.userSid !== params.callerSid &&
+              candidate.invitedEmail?.trim().toLowerCase() === guardianEmailLower
+            ) {
+              recipientSet.add(candidate.userSid);
+            }
+          }
+        }
+        if (recipientSet.size > 0) {
+          pushQueue.push({
+            recipientSids: Array.from(recipientSet),
+            teamId: doc.brand.teamId,
+            teamShortName: doc.brand.shortName || doc.brand.name || 'MeetReady',
+            eventLabel: targetSub.eventLabel,
+            meetTitle: targetSub.meetTitle,
+            isMinorTarget: Boolean(
+              mem.isMinorU18 ||
+                doc.brand.orgType === 'HIGH_SCHOOL' ||
+                doc.brand.defaultSafeSportShield
+            ),
+            quietHoursStart: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+            quietHoursEnd: doc.messagingPolicy?.quietHoursEndHour ?? 6,
+          });
+        }
       }
     }
 
@@ -1174,6 +1225,27 @@ export async function reviewDelegatedSplitSubmission(params: {
 
   for (const item of archiveQueue) {
     await archiveCoachActivitiesForMember(item.member, [item.activity]).catch(() => undefined);
+  }
+
+  for (const item of pushQueue) {
+    const body = item.isMinorTarget
+      ? 'New coach-approved hand-timed split ready — tap to open in MeetReady.'
+      : `${item.eventLabel} hand-timed split approved for ${item.meetTitle} — tap to view in MeetReady.`;
+    await dispatchPushPayloadToUsers({
+      recipientSids: item.recipientSids,
+      payload: {
+        title: `MeetReady · ${item.teamShortName}`,
+        body,
+        url: `/?tab=FITNESS&teamId=${encodeURIComponent(item.teamId)}`,
+        tag: `thresh-split-${item.teamId}`,
+        isEmergency: false,
+      },
+      isQuietHours: isWithinQuietHours(
+        params.clientLocalHour,
+        item.quietHoursStart,
+        item.quietHoursEnd
+      ),
+    }).catch(() => undefined);
   }
 
   return outcome;

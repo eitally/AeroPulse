@@ -133,3 +133,61 @@ export async function submitTeamEventRsvpApi(
     counts: payload.counts,
   };
 }
+
+export interface TeamCalendarFeedMeta {
+  feedUrl: string;
+  webcalUrl: string;
+  googleCalendarUrl: string;
+  canRotate: boolean;
+}
+
+export async function fetchTeamCalendarFeedMeta(
+  teamId: string
+): Promise<TeamCalendarFeedMeta> {
+  const res = await fetch(
+    `/api/teams/${encodeURIComponent(teamId)}/calendar-feed/meta`,
+    { credentials: 'include' }
+  );
+  const payload = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+  } & Partial<TeamCalendarFeedMeta>;
+  if (!res.ok || !payload.ok || !payload.feedUrl) {
+    throw new Error(payload.error || 'Unable to load calendar feed URL.');
+  }
+  return {
+    feedUrl: payload.feedUrl,
+    webcalUrl: payload.webcalUrl || payload.feedUrl.replace(/^https?:\/\//i, 'webcal://'),
+    googleCalendarUrl:
+      payload.googleCalendarUrl ||
+      `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(payload.feedUrl)}`,
+    canRotate: Boolean(payload.canRotate),
+  };
+}
+
+export async function rotateTeamCalendarFeedToken(
+  teamId: string
+): Promise<TeamCalendarFeedMeta> {
+  const res = await fetch(
+    `/api/teams/${encodeURIComponent(teamId)}/calendar-feed/rotate`,
+    {
+      method: 'POST',
+      credentials: 'include',
+    }
+  );
+  const payload = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    error?: string;
+  } & Partial<TeamCalendarFeedMeta>;
+  if (!res.ok || !payload.ok || !payload.feedUrl) {
+    throw new Error(payload.error || 'Unable to rotate calendar feed URL.');
+  }
+  return {
+    feedUrl: payload.feedUrl,
+    webcalUrl: payload.webcalUrl || payload.feedUrl.replace(/^https?:\/\//i, 'webcal://'),
+    googleCalendarUrl:
+      payload.googleCalendarUrl ||
+      `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(payload.feedUrl)}`,
+    canRotate: Boolean(payload.canRotate),
+  };
+}

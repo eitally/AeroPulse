@@ -20,6 +20,7 @@ test.describe('UX-03 Coach Clipboard Multi-Set Workout Builder & Event Groups', 
     await expect(toggleCoach).toBeVisible({ timeout: 15000 });
     await toggleCoach.click();
 
+    await page.getByTestId('quick-ops-workouts-btn').click();
     await expect(page.getByTestId('coach-clipboard-builder')).toBeVisible({ timeout: 15000 });
 
     // Select 800m / Mile event group

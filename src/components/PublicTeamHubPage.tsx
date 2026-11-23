@@ -6,6 +6,7 @@ import {
   Calendar,
   Check,
   CheckCircle2,
+  Clock,
   Copy,
   Download,
   ExternalLink,
@@ -13,6 +14,7 @@ import {
   Moon,
   ShieldCheck,
   Sun,
+  Timer,
   Trophy,
   UserPlus,
   Users,
@@ -723,15 +725,63 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                                 ? ` · ${formatPracticeTime12h(meet.scheduledTime)}`
                                 : ''}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded bg-white dark:bg-ap-turf text-ap-muted dark:text-ap-muted-dark">
-                              {isUpcoming ? 'Upcoming' : 'Completed'}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                              {typeof meet.meetDelayMinutes === 'number' && meet.meetDelayMinutes > 0 && (
+                                <span
+                                  data-testid="public-hub-meet-delay-badge"
+                                  className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 font-bold"
+                                >
+                                  +{meet.meetDelayMinutes}m Delay
+                                </span>
+                              )}
+                              <span className="px-1.5 py-0.5 rounded bg-white dark:bg-ap-turf text-ap-muted dark:text-ap-muted-dark">
+                                {isUpcoming ? 'Upcoming' : 'Completed'}
+                              </span>
+                            </div>
                           </div>
                           <div className="text-xs sm:text-sm font-bold">{meet.name}</div>
                           {meet.locationName && (
                             <div className="flex items-center gap-1 text-2xs text-ap-muted dark:text-ap-muted-dark">
                               <MapPin className="w-3.5 h-3.5 shrink-0" />
                               <span className="truncate">{meet.locationName}</span>
+                            </div>
+                          )}
+                          {(meet.busDepartureTime ||
+                            (meet.liveResultsUrl && /^https:\/\//i.test(meet.liveResultsUrl.trim())) ||
+                            (meet.curatedAlbumLinks && meet.curatedAlbumLinks.length > 0)) && (
+                            <div className="pt-1 flex flex-wrap items-center gap-2 text-2xs font-mono">
+                              {meet.busDepartureTime && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-ap-turf border border-ap-frame/20 dark:border-ap-edge text-ap-ink dark:text-ap-chalk">
+                                  <Clock className="w-3 h-3 text-ap-cobalt dark:text-ap-volt" />
+                                  Bus {formatPracticeTime12h(meet.busDepartureTime)}
+                                </span>
+                              )}
+                              {meet.liveResultsUrl && /^https:\/\//i.test(meet.liveResultsUrl.trim()) && (
+                                <a
+                                  href={meet.liveResultsUrl.trim()}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  data-testid="public-hub-live-results-link"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-ap-cobalt/10 dark:bg-ap-volt/15 text-ap-cobalt dark:text-ap-volt font-bold hover:underline"
+                                >
+                                  <span>{meet.liveResultsLabel || 'Live Results'}</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </a>
+                              )}
+                              {(meet.curatedAlbumLinks || [])
+                                .filter((alb) => alb.visibility === 'PUBLIC_HUB' && /^https:\/\//i.test(alb.url))
+                                .map((alb) => (
+                                  <a
+                                    key={alb.id}
+                                    href={alb.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-ap-frame/20 dark:border-ap-edge bg-white dark:bg-ap-turf text-ap-ink dark:text-ap-chalk font-semibold hover:underline"
+                                  >
+                                    <span>{alb.label}</span>
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                ))}
                             </div>
                           )}
                         </div>
@@ -893,6 +943,60 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                 )}
               </section>
             </div>
+
+            {(payload.unofficialStopwatchSplits || []).length > 0 && (
+              <section
+                data-testid="public-hub-unofficial-splits"
+                className="ap-card p-4 sm:p-5 space-y-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Timer className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+                    <div>
+                      <h2 className="text-sm sm:text-base font-bold">
+                        Coach-Approved Timed Splits
+                      </h2>
+                      <p className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                        Unofficial · Hand-Timed Practice &amp; Meet Splits · Coach Opt-In Feed
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-2xs font-mono font-bold bg-cyan-500/15 text-cyan-800 dark:text-cyan-300 border border-cyan-500/30">
+                    Unofficial · Hand-Timed
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {(payload.unofficialStopwatchSplits || []).map((split) => (
+                    <div
+                      key={split.id}
+                      data-testid="public-hub-unofficial-split-row"
+                      className="rounded-xl border border-ap-frame/20 dark:border-ap-edge bg-ap-chalk/70 dark:bg-ap-carbon p-3 flex items-start justify-between gap-3 text-xs"
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="font-bold truncate">{split.athleteDisplayName}</div>
+                        <div className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark truncate">
+                          {split.eventLabel} · {split.meetName} · {split.date}
+                        </div>
+                        {split.lapSplitsSecs.length > 0 && (
+                          <div className="font-mono text-2xs text-cyan-700 dark:text-cyan-300">
+                            {split.lapSplitDistanceMeters ? `${split.lapSplitDistanceMeters}m splits: ` : 'Splits: '}
+                            {split.lapSplitsSecs.map((s) => `${s.toFixed(1)}s`).join(', ')}
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-right font-mono shrink-0">
+                        <div className="font-extrabold text-cyan-700 dark:text-cyan-300 tabular-nums">
+                          {split.displayTime}
+                        </div>
+                        <div className="text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark">
+                          {split.timingLabel}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {(payload.fieldLeaderboard || []).length > 0 && (
               <section

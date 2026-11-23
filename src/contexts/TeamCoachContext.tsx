@@ -4,6 +4,7 @@ import type {
   CoachChatMessage,
   CoachWorkspaceSubTab,
   ConnectedAthleteRecord,
+  TeamMessageChannelScope,
   TeamSummaryWithRole,
   UnifiedWellnessDay,
 } from '../types';
@@ -52,6 +53,7 @@ export interface TeamCoachContextValue {
   ) => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
+  onOpenTeamMessages?: (scope?: TeamMessageChannelScope) => void;
   onOpenFullScreenStopwatch: () => void;
   onOpenCoachWorkspace: (subTab?: CoachWorkspaceSubTab) => void;
   handleSaveStopwatchActivities: (

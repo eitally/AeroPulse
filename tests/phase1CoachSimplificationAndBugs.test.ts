@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CockpitHeader } from '../src/components/CockpitHeader';
 import { CoachWorkspaceView } from '../src/components/CoachWorkspaceView';
+import { CoachPracticeHome } from '../src/components/coach/CoachPracticeHome';
 import { CoachDeskDrawer } from '../src/components/coach/CoachDeskDrawer';
 import {
   CoachClipboardWorkoutBuilder,
@@ -67,6 +68,31 @@ describe('Phase 1B & 1C: Coach Mode Simplification & Critical Trackside Field Fi
     expect(coachHtml).toContain('data-testid="coach-open-meet-packet-btn"');
     expect(coachHtml).toContain('data-testid="coach-open-injury-hub-btn"');
     expect(coachHtml).toContain('data-testid="coach-desk-menu-btn"');
+
+    const homeHtml = renderToStaticMarkup(
+      React.createElement(CoachPracticeHome, {
+        todayIso: '2026-11-23',
+        activeTeam: squad,
+        myTeams: [squad],
+        connectedAthletesOnly: [],
+        scopedConnectedAthletes: [],
+        complexityTier: 'ESSENTIALS',
+        flaggedTriageCount: 0,
+        effectivePendingTimingCount: 0,
+        onTeamsUpdated: () => {},
+        onOpenStopwatch: () => {},
+        onOpenWorkoutsTab: () => {},
+        onOpenMeetDayTab: () => {},
+        onOpenDelegateModal: () => {},
+        onOpenHealthAttention: () => {},
+        onOpenRosterTab: () => {},
+        onOpenSetupWizard: () => {},
+        onOpenCreateTeamStudio: () => {},
+      })
+    );
+    expect(homeHtml).toContain('data-testid="coach-home-alerts"');
+    expect(homeHtml).toContain('data-testid="coach-home-messaging"');
+    expect(homeHtml).not.toContain('data-testid="roll-call-save-btn"');
 
     // Admin/setup triggers are moved out of the persistent header into Desk drawer
     expect(coachHtml).not.toContain('data-testid="coach-open-wizard-btn"');
@@ -387,7 +413,9 @@ describe('Phase 1B & 1C: Coach Mode Simplification & Critical Trackside Field Fi
     );
 
     expect(headerHtml).toContain('data-testid="coach-subtab-clipboard"');
-    expect(headerHtml).toContain('>Practice<');
+    expect(headerHtml).toContain('data-testid="coach-subtab-workouts"');
+    expect(headerHtml).toContain('>Home<');
+    expect(headerHtml).toContain('>Workouts<');
     expect(headerHtml).toContain('>Meets &amp; Plan<');
     expect(headerHtml).toContain('>Timing<');
     expect(headerHtml).toContain('>Team<');

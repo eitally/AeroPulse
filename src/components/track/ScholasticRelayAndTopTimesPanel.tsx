@@ -1,5 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import type { ConnectedAthleteRecord, TrackSplitTimingContext } from '../../types';
+import type {
+  ConnectedAthleteRecord,
+  TeamEventRsvpRecord,
+  TrackSplitTimingContext,
+} from '../../types';
 import {
   buildSquadTopTimesBoard,
   optimizeTrackRelayLineup,
@@ -12,6 +16,7 @@ import { Timer, Trophy, Users } from '../icons/PhosphorIcons';
 export interface ScholasticRelayAndTopTimesPanelProps {
   candidates: RelayCandidateInput[];
   roster: ConnectedAthleteRecord[];
+  meetRsvpsByMemberId?: Record<string, TeamEventRsvpRecord>;
 }
 
 const SAMPLE_BOARD_MARKS: SquadLeaderboardMarkInput[] = [
@@ -67,14 +72,15 @@ const SAMPLE_BOARD_MARKS: SquadLeaderboardMarkInput[] = [
 
 export const ScholasticRelayAndTopTimesPanel: React.FC<
   ScholasticRelayAndTopTimesPanelProps
-> = ({ candidates, roster }) => {
+> = ({ candidates, roster, meetRsvpsByMemberId = {} }) => {
   const [relayEvent, setRelayEvent] = useState<TrackRelayEventType>('DMR');
   const [divisionFilter, setDivisionFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
   const [boardFilter, setBoardFilter] = useState<'OPEN_AND_LEADOFF' | 'FLYING_SPLITS'>(
     'OPEN_AND_LEADOFF'
   );
+  const [excludeRsvpOut, setExcludeRsvpOut] = useState<boolean>(true);
 
-  const enrichedCandidates = useMemo(() => {
+  const { enrichedCandidates, rsvpConflictedCount } = useMemo(() => {
     const rosterGenderById = new Map<string, 'M' | 'F' | 'NONBINARY' | undefined>();
     for (const ath of roster) {
       const g =
@@ -86,11 +92,26 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
             : undefined);
       rosterGenderById.set(ath.id, g);
     }
-    return candidates.map((c) => ({
+    const mapped = candidates.map((c) => ({
       ...c,
       genderDivision: c.genderDivision || rosterGenderById.get(c.id),
     }));
-  }, [candidates, roster]);
+    const lookupRsvp = (rawId: string) =>
+      meetRsvpsByMemberId[rawId] ||
+      meetRsvpsByMemberId[rawId.startsWith('team-mem-') ? rawId.slice('team-mem-'.length) : rawId];
+    const isConflicted = (rawId: string) => {
+      const st = lookupRsvp(rawId)?.status;
+      return st === 'OUT' || st === 'MEET_CONFLICT';
+    };
+    const conflictCount = mapped.filter((c) => isConflicted(c.id)).length;
+    const filtered = excludeRsvpOut
+      ? mapped.filter((c) => !isConflicted(c.id))
+      : mapped;
+    return {
+      enrichedCandidates: filtered,
+      rsvpConflictedCount: conflictCount,
+    };
+  }, [candidates, roster, meetRsvpsByMemberId, excludeRsvpOut]);
 
   const { relayPool, inferredCoedSplitLabel } = useMemo(() => {
     const men = enrichedCandidates.filter((c) => c.genderDivision === 'M');
@@ -259,6 +280,21 @@ export const ScholasticRelayAndTopTimesPanel: React.FC<
           <p className="text-2xs font-mono text-slate-600 dark:text-slate-300">
             {inferredCoedSplitLabel} (boys and girls are never mixed into one relay quartet).
           </p>
+        )}
+
+        {(rsvpConflictedCount > 0 || Object.keys(meetRsvpsByMemberId).length > 0) && (
+          <label className="inline-flex items-center gap-2 rounded-lg ap-card-inset px-2.5 py-1.5 text-2xs font-semibold cursor-pointer">
+            <input
+              type="checkbox"
+              data-testid="relay-exclude-rsvp-out-toggle"
+              checked={excludeRsvpOut}
+              onChange={(e) => setExcludeRsvpOut(e.target.checked)}
+              className="rounded border-stone-300"
+            />
+            <span>
+              Exclude RSVP Conflicts / Out ({rsvpConflictedCount} unavailable)
+            </span>
+          </label>
         )}
 
         <div className="rounded-xl ap-card-inset px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 font-mono tabular-nums">

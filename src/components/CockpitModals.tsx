@@ -6,6 +6,7 @@ import { useTelemetryWorkspace } from '../contexts/TelemetryWorkspaceContext';
 import { useTeamCoach } from '../contexts/TeamCoachContext';
 import type { RosterTab } from './AthleteRosterModal';
 import type { UserGuideChapterId } from './UserGuideModal';
+import type { TeamMessageChannelScope } from '../types';
 
 const AICoachDrawer = lazyWithRetry(
   () => import('./AICoachDrawer').then((m) => ({ default: m.AICoachDrawer })),
@@ -37,8 +38,8 @@ const TeamMessagingDrawer = lazyWithRetry(
 );
 
 export interface CockpitModalsProps {
-  // Team Messaging Drawer
-  isTeamMessagesOpen?: boolean;
+  // Team Messaging Drawer (non-null opens drawer to requested channel scope)
+  teamMessagesScope?: TeamMessageChannelScope | null;
   onCloseTeamMessages?: () => void;
 
   // AI Coach Drawer
@@ -69,7 +70,7 @@ export interface CockpitModalsProps {
 }
 
 export const CockpitModals: React.FC<CockpitModalsProps> = ({
-  isTeamMessagesOpen = false,
+  teamMessagesScope = null,
   onCloseTeamMessages,
   isCoachDrawerOpen,
   onCloseCoachDrawer,
@@ -177,10 +178,11 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
 
   return (
     <WorkspaceErrorBoundary resetKey="cockpit-modals" fallbackTitle="Modal Needs Recovery">
-      {isTeamMessagesOpen && onCloseTeamMessages && (
+      {teamMessagesScope !== null && onCloseTeamMessages && (
         <Suspense fallback={null}>
           <TeamMessagingDrawer
-            isOpen={isTeamMessagesOpen}
+            isOpen={true}
+            initialScope={teamMessagesScope}
             onClose={onCloseTeamMessages}
             activeTeam={activeModalTeam}
             myTeams={myTeams}

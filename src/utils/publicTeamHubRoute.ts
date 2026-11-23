@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { PublicTeamHubPayload, TeamSummaryWithRole } from '../types';
+import type {
+  PublicTeamHubPayload,
+  PublicTeamHubUnofficialSplitItem,
+  TeamSummaryWithRole,
+} from '../types';
 import {
   buildPublicFieldLeaderboardFromLogs,
   formatPublicSafeSportDisplayName,
 } from '../physiology/fieldEventsEngine';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
+import { isHandTimedRaceData } from './raceTimingBadge';
 
 /**
  * Matches `/team/<slugOrCode>`, `/team/<slugOrCode>/`, `#team/<slugOrCode>`, or `#team/<slugOrCode>/`.
@@ -92,16 +97,29 @@ export function buildCleanRoomPublicHubFromTeamSummary(
   const todayIso = getLocalDateIso();
   const meets = (team.broadcastWorkouts || [])
     .filter((bw) => bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name))
-    .map((bw) => ({
-      id: bw.broadcastId,
-      date: bw.date,
-      name: bw.name,
-      ...(bw.scheduledTime ? { scheduledTime: bw.scheduledTime } : {}),
-      ...(bw.locationName ? { locationName: bw.locationName } : {}),
-      ...(bw.locationCategory ? { locationCategory: bw.locationCategory } : {}),
-      ...(bw.description ? { description: bw.description } : {}),
-      ...(bw.externalSource ? { externalSource: bw.externalSource } : {}),
-    }))
+    .map((bw) => {
+      const safeLive =
+        bw.liveResultsUrl && /^https:\/\//i.test(bw.liveResultsUrl.trim())
+          ? bw.liveResultsUrl.trim()
+          : undefined;
+      const safeAlbums = (bw.curatedAlbumLinks || []).filter(
+        (a) => a.visibility === 'PUBLIC_HUB' && /^https:\/\//i.test(a.url.trim())
+      );
+      return {
+        id: bw.broadcastId,
+        date: bw.date,
+        name: bw.name,
+        eventType: 'MEET' as const,
+        ...(bw.scheduledTime ? { scheduledTime: bw.scheduledTime } : {}),
+        ...(bw.locationName ? { locationName: bw.locationName } : {}),
+        ...(bw.locationCategory ? { locationCategory: bw.locationCategory } : {}),
+        ...(bw.description ? { description: bw.description } : {}),
+        ...(bw.externalSource ? { externalSource: bw.externalSource } : {}),
+        ...(safeLive ? { liveResultsUrl: safeLive } : {}),
+        ...(bw.liveResultsLabel ? { liveResultsLabel: bw.liveResultsLabel } : {}),
+        ...(safeAlbums.length > 0 ? { curatedAlbumLinks: safeAlbums } : {}),
+      };
+    })
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const { fieldPrsByMembershipId, fieldLeaderboard } =
@@ -111,12 +129,23 @@ export function buildCleanRoomPublicHubFromTeamSummary(
       fieldLogs: team.fieldMarkLogs || [],
     });
 
+  const publishUnofficialSplits = Boolean(team.brand.externalSync?.publishUnofficialSplits);
+  const unofficialStopwatchSplits: PublicTeamHubUnofficialSplitItem[] = [];
+
   let officialResultCount = 0;
   const rosterLeaderboard = (team.memberships || [])
     .filter((m) => m.status !== 'REVOKED' && m.role === 'ATHLETE')
     .map((m) => {
-      const officialResults = (m.coachRecordedActivities || [])
-        .filter((a) => Boolean(a.officialRaceData))
+      const displayName = formatPublicSafeSportDisplayName({
+        invitedName: m.invitedName,
+        externalSource: m.externalSource,
+        isMinorU18: m.isMinorU18,
+        parentConsentStatus: m.parentConsentStatus,
+        orgType: team.brand.orgType,
+      });
+      const recorded = m.coachRecordedActivities || [];
+      const officialResults = recorded
+        .filter((a) => Boolean(a.officialRaceData) && !isHandTimedRaceData(a.officialRaceData, a))
         .map((a) => {
           const r = a.officialRaceData!;
           return {
@@ -134,14 +163,29 @@ export function buildCleanRoomPublicHubFromTeamSummary(
           };
         })
         .sort((a, b) => b.date.localeCompare(a.date));
+
+      if (publishUnofficialSplits) {
+        for (const a of recorded) {
+          if (!a.officialRaceData || !isHandTimedRaceData(a.officialRaceData, a)) continue;
+          const r = a.officialRaceData;
+          unofficialStopwatchSplits.push({
+            id: a.id,
+            date: a.startDateLocal.slice(0, 10),
+            meetName: r.meetName,
+            eventLabel: r.eventLabel,
+            athleteDisplayName: displayName,
+            displayTime: r.displayFatTime,
+            lapSplitsSecs: Array.isArray(r.lapSplitsSecs) ? r.lapSplitsSecs : [],
+            ...(r.lapSplitDistanceMeters
+              ? { lapSplitDistanceMeters: r.lapSplitDistanceMeters }
+              : {}),
+            timingLabel: 'Hand-Timed',
+            ...(r.capturedByName ? { capturedByName: r.capturedByName } : {}),
+          });
+        }
+      }
+
       officialResultCount += officialResults.length;
-      const displayName = formatPublicSafeSportDisplayName({
-        invitedName: m.invitedName,
-        externalSource: m.externalSource,
-        isMinorU18: m.isMinorU18,
-        parentConsentStatus: m.parentConsentStatus,
-        orgType: team.brand.orgType,
-      });
       const memberFieldPrs = fieldPrsByMembershipId.get(m.membershipId);
       return {
         membershipId: m.membershipId,
@@ -175,12 +219,20 @@ export function buildCleanRoomPublicHubFromTeamSummary(
       secondaryHex: team.brand.secondaryHex,
       defaultSafeSportShield: team.brand.defaultSafeSportShield,
       coachDisplayName: team.brand.coachDisplayName,
+      ...(team.brand.timezone ? { timezone: team.brand.timezone } : {}),
       ...(team.brand.externalSync ? { externalSync: team.brand.externalSync } : {}),
     },
     upcomingMeets: meets.filter((m) => m.date >= todayIso),
     recentSchedule: meets.filter((m) => m.date < todayIso).reverse(),
     rosterLeaderboard,
     fieldLeaderboard,
+    ...(publishUnofficialSplits && unofficialStopwatchSplits.length > 0
+      ? {
+          unofficialStopwatchSplits: unofficialStopwatchSplits
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .slice(0, 25),
+        }
+      : {}),
     stats: {
       athleteCount: rosterLeaderboard.length,
       meetCount: meets.length,

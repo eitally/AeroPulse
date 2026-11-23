@@ -117,6 +117,7 @@ test.describe('Athletic.net & TFRRS Team Sync + Safe-Sport Clean-Room Parent Hub
     const coachView = page.getByTestId('coach-workspace-view');
     await expect(coachView).toBeVisible({ timeout: 15000 });
     await expect(coachView).toContainText('WGHS XC · Coach');
+    await page.getByTestId('quick-ops-roll-call-btn').click();
     await expect(coachView).toContainText('Willow Glen High School XC Daily Ops');
 
     expect(pageErrors).toEqual([]);

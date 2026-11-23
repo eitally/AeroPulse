@@ -122,6 +122,12 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   });
 
   useEffect(() => {
+    if (isOpen) {
+      setActiveScope(initialScope);
+    }
+  }, [isOpen, initialScope]);
+
+  useEffect(() => {
     if (!isOpen || isSampleDemo) return;
     let cancelled = false;
     void fetchPushStatus().then((status) => {

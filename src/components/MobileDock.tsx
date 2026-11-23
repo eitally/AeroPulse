@@ -38,8 +38,9 @@ export const MobileDock: React.FC<MobileDockProps> = ({
       label: string;
       icon: typeof ClipboardText;
     }> = [
-      { id: 'CLIPBOARD', label: 'Practice', icon: ClipboardText },
-      { id: 'TEAM_PLAN', label: 'Meets & Plan', icon: Calendar },
+      { id: 'CLIPBOARD', label: 'Home', icon: ClipboardText },
+      { id: 'WORKOUTS', label: 'Workouts', icon: Target },
+      { id: 'TEAM_PLAN', label: 'Meets', icon: Calendar },
       { id: 'STOPWATCH', label: 'Timing', icon: Timer },
       { id: 'ROSTER', label: 'Team', icon: Users },
     ];
@@ -47,7 +48,7 @@ export const MobileDock: React.FC<MobileDockProps> = ({
     return (
       <nav
         aria-label="Mobile primary workspaces"
-        className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-4 items-center min-h-[58px] px-1.5 py-1 ap-mobile-dock"
+        className="md:hidden fixed bottom-2 left-3 right-3 z-40 rounded-2xl liquid-glass-header grid grid-cols-5 items-center min-h-[58px] px-1 py-1 ap-mobile-dock"
       >
         {coachTabs.map((tab) => {
           const Icon = tab.icon;

@@ -524,10 +524,12 @@ describe('Sprint 2C: Athletic Trainer Injury Hub, Parent Growth, Share PNG QR, S
     const icsText = await icsRes.text();
     expect(icsText).toContain('\r\n');
     expect(icsText).toContain('X-WR-CALNAME:Willow Glen Public Feed XC Meet Schedule');
+    expect(icsText).toContain('X-WR-TIMEZONE:America/Los_Angeles');
     expect(icsText).toContain('REFRESH-INTERVAL;VALUE=DURATION:PT6H');
     expect(icsText).toContain('DTSTAMP:');
-    expect(icsText).toContain('DTSTART;VALUE=DATE:20261205');
-    expect(icsText).toContain('DTEND;VALUE=DATE:20261206');
+    expect(icsText).toContain('SEQUENCE:0');
+    expect(icsText).toContain('DTSTART;TZID=America/Los_Angeles:20261205T093000');
+    expect(icsText).toContain('DTEND;TZID=America/Los_Angeles:20261205T110000');
     expect(icsText).toContain('Crystal Springs Invitational');
 
     // Graceful fallback when RESEND_API_KEY is unconfigured
@@ -1115,7 +1117,7 @@ describe('Sprint 2C: Athletic Trainer Injury Hub, Parent Growth, Share PNG QR, S
 
     const typesSrc = fs.readFileSync(path.join(ROOT, 'src/types.ts'), 'utf8');
     expect(typesSrc).toContain(
-      "export type CoachWorkspaceSubTab = 'CLIPBOARD' | 'TEAM_PLAN' | 'STOPWATCH' | 'ROSTER';"
+      "export type CoachWorkspaceSubTab = 'CLIPBOARD' | 'WORKOUTS' | 'TEAM_PLAN' | 'STOPWATCH' | 'ROSTER';"
     );
   });
 });

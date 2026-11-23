@@ -36,6 +36,7 @@ test.describe('Red-Team Sprint 2: Legal/Procurement, Coach Features, Goals & Off
     await page.getByTestId('explore-coach-sample-btn').click();
 
     await expect(page.getByTestId('coach-workspace-view')).toBeVisible({ timeout: 15000 });
+    await page.getByTestId('quick-ops-workouts-btn').click();
     await expect(page.getByTestId('coach-clipboard-builder')).toBeVisible({ timeout: 15000 });
 
     // Workout Library load & save

@@ -46,6 +46,7 @@ import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { useIsMobileViewport } from '../hooks/useIsMobileViewport';
 
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { formatRaceTimingBadgeLabel, isHandTimedRaceData } from '../utils/raceTimingBadge';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 
 import { ActivitiesRoutesFeedPanel } from './activities/ActivitiesRoutesFeedPanel';
@@ -1345,9 +1346,14 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                         <div className="font-semibold text-slate-900 dark:text-slate-100 flex flex-wrap items-center gap-2">
                           <span>{act.name}</span>
                           {act.officialRaceData && (
-                            <span className="text-xs font-mono font-bold text-amber-600 dark:text-amber-400">
-                              [{act.officialRaceData.platform} · {act.officialRaceData.displayFatTime} FAT ·{' '}
-                              {act.officialRaceData.placeFinish || 'Official'}]
+                            <span
+                              className={`text-xs font-mono font-bold ${
+                                isHandTimedRaceData(act.officialRaceData, act)
+                                  ? 'text-cyan-700 dark:text-cyan-400'
+                                  : 'text-amber-600 dark:text-amber-400'
+                              }`}
+                            >
+                              [{formatRaceTimingBadgeLabel(act.officialRaceData, act)}]
                             </span>
                           )}
                         </div>

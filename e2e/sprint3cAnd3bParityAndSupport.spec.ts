@@ -79,7 +79,9 @@ test.describe('Sprint 3C & 3B: Coach Parity, Direct Wahoo Push, Commercializatio
     await page.keyboard.press('Escape');
     await expect(districtModal).not.toBeVisible({ timeout: 5000 });
 
-    // Clipboard Export / Print watch push menu
+    // Clipboard Export / Print watch push menu lives inside dedicated Workouts tab
+    await page.getByTestId('quick-ops-workouts-btn').click();
+    await expect(page.getByTestId('coach-clipboard-builder')).toBeVisible({ timeout: 10000 });
     await page.getByRole('button', { name: /Export \/ Print/i }).click();
     await expect(page.getByTestId('clipboard-push-garmin')).toBeVisible();
     await expect(page.getByTestId('clipboard-push-wahoo')).toContainText('Wahoo ELEMNT');

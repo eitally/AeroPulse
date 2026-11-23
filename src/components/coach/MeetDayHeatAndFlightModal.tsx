@@ -60,6 +60,7 @@ import type {
   FieldEventLogRecord,
   MeetDayPacketRecord,
   MeetSeedingAuthority,
+  TeamEventRsvpRecord,
   TeamSummaryWithRole,
 } from '../../types';
 import { ExternalHeatSheetImportPanel, MeetDayEntryRow } from './ExternalHeatSheetImportPanel';
@@ -74,6 +75,7 @@ export interface MeetDayHeatAndFlightModalProps {
   activeTeam: TeamSummaryWithRole | null;
   connectedAthletes: ConnectedAthleteRecord[];
   myTeams?: TeamSummaryWithRole[];
+  meetRsvpsByMemberId?: Record<string, TeamEventRsvpRecord>;
   onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
   onLaunchEventStopwatch?: (preset: {
     meetTitle: string;
@@ -525,6 +527,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   activeTeam,
   connectedAthletes,
   myTeams,
+  meetRsvpsByMemberId = {},
   onTeamsUpdated,
   onLaunchEventStopwatch,
   onDelegateEventTimer,
@@ -735,6 +738,26 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   );
 
   const isFilterActive = genderFilter !== 'ALL' || divisionFilter !== 'ALL';
+  const rsvpConflictEntries = useMemo(
+    () =>
+      entries.filter((e) => {
+        if (e.scratched || !e.athleteId) return false;
+        const cleanId = e.athleteId.startsWith('team-mem-')
+          ? e.athleteId.slice('team-mem-'.length)
+          : e.athleteId;
+        const status = (meetRsvpsByMemberId[e.athleteId] || meetRsvpsByMemberId[cleanId])?.status;
+        return status === 'OUT' || status === 'MEET_CONFLICT';
+      }),
+    [entries, meetRsvpsByMemberId]
+  );
+  const handleScratchConflictedEntries = () => {
+    if (rsvpConflictEntries.length === 0) return;
+    const conflictIds = new Set(rsvpConflictEntries.map((e) => e.id));
+    setEntries((prev) =>
+      prev.map((e) => (conflictIds.has(e.id) ? { ...e, scratched: true } : e))
+    );
+    setHasUnsavedChanges(true);
+  };
   const activeAllEntries = useMemo(() => entries.filter((e) => !e.scratched), [entries]);
   const activeFilteredEntries = useMemo(
     () => filteredEntries.filter((e) => !e.scratched),
@@ -1581,6 +1604,25 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
 
           {subTab === 'ENTRIES' && (
             <>
+              {rsvpConflictEntries.length > 0 && (
+                <div
+                  data-testid="meet-rsvp-conflict-banner"
+                  className="rounded-xl ap-status-caution px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <span className="font-semibold">
+                    RSVP Conflict ({rsvpConflictEntries.length} entr{rsvpConflictEntries.length === 1 ? 'y' : 'ies'}):{' '}
+                    {Array.from(new Set(rsvpConflictEntries.map((e) => e.athleteName))).join(', ')} marked Out/Conflict.
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="meet-scratch-conflict-btn"
+                    onClick={handleScratchConflictedEntries}
+                    className="min-h-[34px] px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-mono text-2xs font-bold cursor-pointer"
+                  >
+                    Scratch Conflicted
+                  </button>
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl ap-card-inset px-3 py-2">
                 <span className="text-2xs text-ap-muted dark:text-ap-muted-dark">
                   {entries.length === 0

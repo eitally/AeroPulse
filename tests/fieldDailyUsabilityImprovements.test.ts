@@ -644,13 +644,12 @@ describe('Field Daily Usability Improvements', () => {
         myTeams: [squad],
         connectedAthletesOnly: [],
         scopedConnectedAthletes: [],
-        primaryAthleteDisplayName: 'Coach Morales',
-        selfProfile: buildCompleteAthleteProfile({}),
         complexityTier: 'ESSENTIALS',
         flaggedTriageCount: 0,
         effectivePendingTimingCount: 3,
         onTeamsUpdated: () => {},
-        onCreatePlannedEvent: async () => {},
+        onOpenWorkoutsTab: () => {},
+        onOpenMeetDayTab: () => {},
         onOpenStopwatch: () => {},
         onOpenDelegateModal: () => {},
         onOpenHealthAttention: () => {},
@@ -660,7 +659,8 @@ describe('Field Daily Usability Improvements', () => {
       })
     );
     expect(practiceHomeHtml).toContain('data-testid="coach-quick-ops-strip"');
-    expect(practiceHomeHtml).toContain('Take Roll Call');
+    expect(practiceHomeHtml).toContain('Workout Builder');
+    expect(practiceHomeHtml).toContain('Roll Call');
     expect(practiceHomeHtml).toContain('Track Stopwatch');
     expect(practiceHomeHtml).toContain('Delegate Timing');
     expect(practiceHomeHtml).toContain('Pending Splits (3)');

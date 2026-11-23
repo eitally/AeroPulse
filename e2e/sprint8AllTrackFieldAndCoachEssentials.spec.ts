@@ -45,8 +45,10 @@ test.describe('Sprint 8: All Track & Field First-Class + Coach Essentials & Trac
     await expect(simpleBtn).toHaveAttribute('aria-pressed', 'true');
     await page.getByRole('button', { name: 'Close Coach Desk' }).click();
 
-    // Coach Daily Ops panel is visible on Practice and launches Field & Multi Sheet cleanly via Quick Ops
+    // Open Roll Call pane via Quick Ops, then return to Home to launch Field & Multi Sheet cleanly
+    await page.getByTestId('quick-ops-roll-call-btn').click();
     await expect(page.getByTestId('coach-daily-ops-panel')).toBeVisible({ timeout: 10000 });
+    await page.getByTestId('coach-back-to-home-btn').click();
     await page.getByTestId('quick-ops-field-marks-btn').click();
 
     const fieldSheet = page.getByTestId('trackside-field-events-sheet');

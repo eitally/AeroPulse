@@ -474,7 +474,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             {activeTab === 'coach' && onSelectCoachSubTab ? (
               (
                 [
-                  { id: 'CLIPBOARD', label: 'Practice', icon: ClipboardText },
+                  { id: 'CLIPBOARD', label: 'Home', icon: ClipboardText },
+                  { id: 'WORKOUTS', label: 'Workouts', icon: Target },
                   { id: 'TEAM_PLAN', label: 'Meets & Plan', icon: Calendar },
                   { id: 'STOPWATCH', label: 'Timing', icon: Timer },
                   { id: 'ROSTER', label: 'Team', icon: Users },

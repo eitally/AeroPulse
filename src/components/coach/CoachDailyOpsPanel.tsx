@@ -32,6 +32,7 @@ import type {
   TeamAnnouncementRecord,
   TeamAttendanceRecord,
   TeamAttendanceStatus,
+  TeamEventRsvpRecord,
   TeamSummaryWithRole,
 } from '../../types';
 
@@ -40,6 +41,7 @@ export interface CoachDailyOpsPanelProps {
   myTeams: TeamSummaryWithRole[];
   complexityTier: CoachComplexityTier;
   allowedEventGroups?: CoachEventGroup[];
+  todayRsvpsByMemberId?: Record<string, TeamEventRsvpRecord>;
   hideDuplicateLaunchers?: boolean;
   onLaunchStopwatch: () => void;
   onLaunchFieldSheet: () => void;
@@ -224,6 +226,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   myTeams,
   complexityTier,
   allowedEventGroups,
+  todayRsvpsByMemberId = {},
   hideDuplicateLaunchers = false,
   onLaunchStopwatch,
   onLaunchFieldSheet,
@@ -438,6 +441,26 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
     setAttendanceMap(nextMap);
     setAttendanceBanner(null);
     scheduleAutoSaveAttendance(nextMap);
+  };
+
+  const hasTodayRsvps = Object.keys(todayRsvpsByMemberId).length > 0;
+
+  const handleApplyRsvps = async () => {
+    if (!hasTodayRsvps) return;
+    const nextMap: Record<string, TeamAttendanceStatus> = { ...attendanceMap };
+    for (const m of visibleMembers) {
+      const rsvp = todayRsvpsByMemberId[m.membershipId];
+      if (!rsvp) continue;
+      if (rsvp.status === 'GOING') {
+        nextMap[m.membershipId] = 'PRESENT';
+      } else if (rsvp.status === 'LATE') {
+        nextMap[m.membershipId] = 'LATE';
+      } else if (rsvp.status === 'OUT' || rsvp.status === 'MEET_CONFLICT') {
+        nextMap[m.membershipId] = 'EXCUSED';
+      }
+    }
+    setAttendanceMap(nextMap);
+    await persistAttendanceMap(nextMap, { isAutoSave: false });
   };
 
   const handleExportAttendanceCsv = () => {
@@ -805,6 +828,17 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                   <Download className="w-3.5 h-3.5" />
                   <span>Export CSV</span>
                 </button>
+                {hasTodayRsvps && (
+                  <button
+                    type="button"
+                    data-testid="roll-call-apply-rsvps-btn"
+                    disabled={savingAttendance}
+                    onClick={() => void handleApplyRsvps()}
+                    className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg ap-status-info text-2xs font-mono font-bold cursor-pointer disabled:opacity-50"
+                  >
+                    Apply RSVPs
+                  </button>
+                )}
                 <button
                   type="button"
                   data-testid="roll-call-mark-all-btn"

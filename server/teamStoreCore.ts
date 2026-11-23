@@ -18,6 +18,7 @@ import {
   sanitizeTargetEventGroups,
 } from '../src/physiology/teamOnboardingEngine.ts';
 import type { CoachLandingAttribution } from '../src/utils/attribution.ts';
+import { isHandTimedRaceData } from '../src/utils/raceTimingBadge.ts';
 import type {
   AthleteOwnMeetScheduleItem,
   DelegatedSplitSubmissionRecord,
@@ -118,6 +119,8 @@ export interface StoredTeamDocument {
   messagingPolicy?: TeamMessagingPolicy;
   coachAttribution?: CoachLandingAttribution;
   anonymousLinkOpens?: number;
+  calendarFeedTokenHash?: string;
+  calendarFeedTokenPlain?: string;
   updatedAt: string;
 }
 
@@ -189,6 +192,10 @@ export function sanitizeExternalSyncConfig(
     enablePublicParentHub:
       typeof merged.enablePublicParentHub === 'boolean'
         ? merged.enablePublicParentHub
+        : false,
+    publishUnofficialSplits:
+      typeof merged.publishUnofficialSplits === 'boolean'
+        ? merged.publishUnofficialSplits
         : false,
     ...(merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}),
   };
@@ -292,6 +299,9 @@ export function projectSafePublicExternalSync(
     ...(externalSync.tfrrsTeamCode ? { tfrrsTeamCode: externalSync.tfrrsTeamCode } : {}),
     ...(typeof externalSync.enablePublicParentHub === 'boolean'
       ? { enablePublicParentHub: externalSync.enablePublicParentHub }
+      : {}),
+    ...(typeof externalSync.publishUnofficialSplits === 'boolean'
+      ? { publishUnofficialSplits: externalSync.publishUnofficialSplits }
       : {}),
     ...(externalSync.lastSyncedAt ? { lastSyncedAt: externalSync.lastSyncedAt } : {}),
   };
@@ -617,9 +627,16 @@ export function projectTeamSummaryForCaller(
         : baseSnapshot;
     }
 
+    const isLinkedChild = Boolean(
+      linkedChildMembershipIds && linkedChildMembershipIds.has(m.membershipId)
+    );
     const officialPublicResults = Array.isArray(m.coachRecordedActivities)
       ? m.coachRecordedActivities
-          .filter((a) => Boolean(a?.officialRaceData))
+          .filter((a) => {
+            if (!a?.officialRaceData) return false;
+            if (isLinkedChild) return true;
+            return !isHandTimedRaceData(a.officialRaceData, a);
+          })
           .map((a) => {
             const sanitized = {
               ...a,
@@ -642,10 +659,6 @@ export function projectTeamSummaryForCaller(
             return sanitized as UnifiedActivity;
           })
       : undefined;
-
-    const isLinkedChild = Boolean(
-      linkedChildMembershipIds && linkedChildMembershipIds.has(m.membershipId)
-    );
     const shouldAbbreviateForParent = Boolean(
       isParentFollower &&
         !isLinkedChild &&

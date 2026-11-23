@@ -56,7 +56,16 @@ import {
 } from '../physiology/garminLoadFocus';
 
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { isHandTimedRaceData } from '../utils/raceTimingBadge';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
+
+const FamilyMeetHubCard = lazyWithRetry(
+  () =>
+    import('./today/FamilyMeetHubCard').then((m) => ({
+      default: m.FamilyMeetHubCard,
+    })),
+  { chunkKey: 'FamilyMeetHubCard', restoreTab: 'fitness' }
+);
 
 const UPlotPMCDashboard = lazyWithRetry(
   () => import('./charts/UPlotPMCDashboard').then((m) => ({ default: m.UPlotPMCDashboard })),
@@ -616,7 +625,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
 
           if (isOfficialRace || isNamedRaceOrTt || isWindowFastestRun) {
             const raceLabel = a.officialRaceData
-              ? `Official Race (${a.officialRaceData.eventLabel}: ${a.officialRaceData.displayFatTime})`
+              ? `${isHandTimedRaceData(a.officialRaceData, a) ? 'Hand-Timed Race' : 'Official Race'} (${a.officialRaceData.eventLabel}: ${a.officialRaceData.displayFatTime})`
               : isWindowFastestRun
                 ? `Running PR Pace: ${a.name}`
                 : `Race / TT Milestone: ${a.name}`;
@@ -999,19 +1008,32 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   );
 
   const promoteTeamCardAboveHero = useMemo(
-    () => hasUrgentAthleteTeamSignal(activeTeam, todayIso),
+    () =>
+      activeTeam?.myRole === 'PARENT_FOLLOWER' ||
+      hasUrgentAthleteTeamSignal(activeTeam, todayIso),
     [activeTeam, todayIso]
   );
 
   const teamStatusCard = activeTeam ? (
-    <AthleteTeamStatusAndNotesCard
-      activeTeam={activeTeam}
-      myTeams={myTeams}
-      todayIso={todayIso}
-      isSampleDemoMode={isSampleDemoMode}
-      onTeamsUpdated={onTeamsUpdated}
-      onLaunchDelegatedTiming={onLaunchDelegatedTiming}
-    />
+    activeTeam.myRole === 'PARENT_FOLLOWER' ? (
+      <Suspense fallback={null}>
+        <FamilyMeetHubCard
+          activeTeam={activeTeam}
+          todayIso={todayIso}
+          isSampleDemoMode={isSampleDemoMode}
+        />
+      </Suspense>
+    ) : (
+      <AthleteTeamStatusAndNotesCard
+        activeTeam={activeTeam}
+        myTeams={myTeams}
+        todayIso={todayIso}
+        isSampleDemoMode={isSampleDemoMode}
+        activities={activities}
+        onTeamsUpdated={onTeamsUpdated}
+        onLaunchDelegatedTiming={onLaunchDelegatedTiming}
+      />
+    )
   ) : null;
 
   return (

@@ -182,7 +182,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await expect(coachView).toBeVisible({ timeout: 15000 });
 
       const nav = page.locator('nav[aria-label="Primary workspaces"]');
-      for (const label of ['Practice', 'Meets & Plan', 'Timing', 'Team']) {
+      for (const label of ['Home', 'Workouts', 'Meets & Plan', 'Timing', 'Team']) {
         await expect(nav.getByRole('button', { name: label })).toBeVisible();
       }
 
@@ -411,7 +411,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
       await expect(mobileDock.getByRole('button', { name: 'Today' })).toHaveAttribute('aria-current', 'page');
 
       await page.getByTestId('toggle-coach-workspace').click();
-      for (const label of ['Practice', 'Meets & Plan', 'Timing', 'Team']) {
+      for (const label of ['Home', 'Workouts', 'Meets', 'Timing', 'Team']) {
         await expect(mobileDock.getByRole('button', { name: label })).toBeVisible();
       }
       await mobileDock.getByRole('button', { name: 'Timing' }).click();

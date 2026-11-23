@@ -231,7 +231,7 @@ teamSyncRouter.get(
         return;
       }
 
-      const icsBody = buildPublicTeamCalendarIcs(payload);
+      const icsBody = buildPublicTeamCalendarIcs(payload, resolveSyncOrigin(req));
       const safeSlug = payload.brand.slug.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || 'team';
       res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
       res.setHeader('Content-Disposition', `inline; filename="${safeSlug}-schedule.ics"`);

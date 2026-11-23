@@ -8918,7 +8918,7 @@ webhooksAndExportRouter.post("/api/physiology/race-passport", (req, res) => {
 import express3 from "express";
 
 // server/teamFieldAndDailyOpsService.ts
-import crypto14 from "crypto";
+import crypto15 from "crypto";
 
 // src/physiology/fieldEventsEngine.ts
 var FIELD_EVENT_CATALOG = [
@@ -10141,6 +10141,25 @@ function doesCoachOwnAthlete(params) {
   return false;
 }
 
+// src/utils/raceTimingBadge.ts
+function isHandTimedRaceData(meta, act) {
+  if (!meta) return false;
+  if (meta.timingMethod === "HAND") return true;
+  if (meta.platform === "MeetReady Stopwatch") return true;
+  if (meta.splitContext === "HAND_CONVERTED" && meta.timingMethod !== "FAT") {
+    return true;
+  }
+  if (act?.id?.startsWith("stopwatch-race-") && meta.timingMethod !== "FAT") {
+    return true;
+  }
+  if (meta.timingMethod !== "FAT" && Array.isArray(act?.sourceBadges) && act.sourceBadges.some(
+    (b) => b === "Hand-Timed" || b === "Delegated Hand-Timed" || b === "MeetReady Stopwatch"
+  )) {
+    return true;
+  }
+  return false;
+}
+
 // server/teamStoreCore.ts
 function canProgramWorkoutsRole(role) {
   return role === "HEAD_COACH" || role === "ASSISTANT_COACH";
@@ -10191,6 +10210,7 @@ function sanitizeExternalSyncConfig(raw, existing) {
     ...merged.teamFilterKeyword ? { teamFilterKeyword: String(merged.teamFilterKeyword).trim().slice(0, 64) } : {},
     ...cleanUrl(merged.icsCalendarUrl) ? { icsCalendarUrl: cleanUrl(merged.icsCalendarUrl) } : {},
     enablePublicParentHub: typeof merged.enablePublicParentHub === "boolean" ? merged.enablePublicParentHub : false,
+    publishUnofficialSplits: typeof merged.publishUnofficialSplits === "boolean" ? merged.publishUnofficialSplits : false,
     ...merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}
   };
 }
@@ -10255,6 +10275,7 @@ function projectSafePublicExternalSync(externalSync) {
     ...externalSync.tfrrsTeamUrl ? { tfrrsTeamUrl: externalSync.tfrrsTeamUrl } : {},
     ...externalSync.tfrrsTeamCode ? { tfrrsTeamCode: externalSync.tfrrsTeamCode } : {},
     ...typeof externalSync.enablePublicParentHub === "boolean" ? { enablePublicParentHub: externalSync.enablePublicParentHub } : {},
+    ...typeof externalSync.publishUnofficialSplits === "boolean" ? { publishUnofficialSplits: externalSync.publishUnofficialSplits } : {},
     ...externalSync.lastSyncedAt ? { lastSyncedAt: externalSync.lastSyncedAt } : {}
   };
 }
@@ -10491,7 +10512,14 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
         maskWellnessWeightKgZero: true
       }) : baseSnapshot;
     }
-    const officialPublicResults = Array.isArray(m.coachRecordedActivities) ? m.coachRecordedActivities.filter((a) => Boolean(a?.officialRaceData)).map((a) => {
+    const isLinkedChild = Boolean(
+      linkedChildMembershipIds && linkedChildMembershipIds.has(m.membershipId)
+    );
+    const officialPublicResults = Array.isArray(m.coachRecordedActivities) ? m.coachRecordedActivities.filter((a) => {
+      if (!a?.officialRaceData) return false;
+      if (isLinkedChild) return true;
+      return !isHandTimedRaceData(a.officialRaceData, a);
+    }).map((a) => {
       const sanitized = {
         ...a,
         athleteWeightKg: void 0,
@@ -10512,9 +10540,6 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       delete sanitized.description;
       return sanitized;
     }) : void 0;
-    const isLinkedChild = Boolean(
-      linkedChildMembershipIds && linkedChildMembershipIds.has(m.membershipId)
-    );
     const shouldAbbreviateForParent = Boolean(
       isParentFollower && !isLinkedChild && !m.externalSource && effectiveIsMinor && m.parentConsentStatus !== "ACKNOWLEDGED"
     );
@@ -11502,7 +11527,787 @@ async function dispatchTeamPushNotifications(params) {
 }
 
 // server/athleticSyncService.ts
-import crypto13 from "crypto";
+import crypto14 from "crypto";
+
+// server/teamCalendarIcs.ts
+function normalizeIcsTimezone(tz) {
+  const clean = String(tz || "").trim();
+  if (clean && /^[A-Za-z_+-]+(?:\/[A-Za-z0-9_+-]+)+$/.test(clean) && clean.length <= 64) {
+    return clean;
+  }
+  return "America/Los_Angeles";
+}
+function escapeIcsText(raw) {
+  return String(raw || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,").trim();
+}
+function foldIcsLine(line) {
+  if (line.length <= 75) return line;
+  const chunks = [line.slice(0, 75)];
+  let idx = 75;
+  while (idx < line.length) {
+    chunks.push(` ${line.slice(idx, idx + 74)}`);
+    idx += 74;
+  }
+  return chunks.join("\r\n");
+}
+function formatIcsUtcTimestamp(date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+function nextIcsDateYmd(isoDate) {
+  const parsed = /* @__PURE__ */ new Date(`${isoDate.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoDate.slice(0, 10).replace(/-/g, "");
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10).replace(/-/g, "");
+}
+function parseHmTime(raw) {
+  const clean = String(raw || "").trim();
+  if (!clean) return null;
+  const match24 = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const h = Number(match24[1]);
+    const m = Number(match24[2]);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return { hour: h, minute: m };
+  }
+  const match12 = clean.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (match12) {
+    let h = Number(match12[1]);
+    const m = Number(match12[2]);
+    const ap = match12[3].toLowerCase();
+    if (h < 1 || h > 12 || m < 0 || m > 59) return null;
+    if (ap === "pm" && h < 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+    return { hour: h, minute: m };
+  }
+  return null;
+}
+function formatIcsLocalDateTime(dateIso, hour, minute, addMinutes = 0) {
+  const [y, mo, d] = dateIso.slice(0, 10).split("-").map(Number);
+  const dt = new Date(Date.UTC(y || 2026, (mo || 1) - 1, d || 1, hour, minute + addMinutes, 0));
+  const yy = String(dt.getUTCFullYear()).padStart(4, "0");
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  const hh = String(dt.getUTCHours()).padStart(2, "0");
+  const mi = String(dt.getUTCMinutes()).padStart(2, "0");
+  return `${yy}${mm}${dd}T${hh}${mi}00`;
+}
+function resolveSequence(ev) {
+  if (typeof ev.sequence === "number" && Number.isFinite(ev.sequence) && ev.sequence >= 0) {
+    return Math.min(2e9, Math.round(ev.sequence));
+  }
+  if (ev.updatedAt) {
+    const ms = Date.parse(ev.updatedAt);
+    if (Number.isFinite(ms)) {
+      return Math.max(1, Math.min(2e9, Math.floor((ms - 17e11) / 1e3)));
+    }
+  }
+  return ev.meetDelayMinutes && ev.meetDelayMinutes > 0 ? 1 : 0;
+}
+function buildTimedTeamCalendarIcs(params) {
+  const tz = normalizeIcsTimezone(params.timezone);
+  const dtStamp = formatIcsUtcTimestamp(/* @__PURE__ */ new Date());
+  const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
+  const safeSlug = params.slug ? params.slug.replace(/[^a-zA-Z0-9_-]/g, "") : "";
+  const hubUrl = safeSlug ? `${cleanOrigin}/team/${safeSlug}` : "";
+  const calTitle = `${params.teamName} ${params.calNameSuffix || "Schedule"}`.trim();
+  const seenIds = /* @__PURE__ */ new Set();
+  const uniqueEvents = (params.events || []).filter((ev) => {
+    if (!ev?.uid || !/^\d{4}-\d{2}-\d{2}$/.test((ev.date || "").slice(0, 10))) return false;
+    if (seenIds.has(ev.uid)) return false;
+    seenIds.add(ev.uid);
+    return true;
+  }).sort((a, b) => a.date.localeCompare(b.date));
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    `PRODID:${params.prodId || "-//MeetReady//Team Calendar//EN"}`,
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escapeIcsText(calTitle)}`,
+    `X-WR-TIMEZONE:${tz}`,
+    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
+    "X-PUBLISHED-TTL:PT6H"
+  ];
+  for (const ev of uniqueEvents) {
+    const cleanDate = ev.date.slice(0, 10);
+    const uidSafe = String(ev.uid).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80);
+    const startHm = parseHmTime(ev.startTime);
+    const endHm = parseHmTime(ev.endTime);
+    const parsedUpdatedMs = ev.updatedAt ? Date.parse(ev.updatedAt) : Number.NaN;
+    const lastMod = Number.isFinite(parsedUpdatedMs) ? formatIcsUtcTimestamp(new Date(parsedUpdatedMs)) : dtStamp;
+    const sequence = resolveSequence(ev);
+    const safeLiveUrl = ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl.trim()) ? ev.liveResultsUrl.trim() : "";
+    const eventUrl = safeLiveUrl || hubUrl;
+    const delayLabel = typeof ev.meetDelayMinutes === "number" && ev.meetDelayMinutes > 0 ? `Delay: +${Math.round(ev.meetDelayMinutes)}m` : "";
+    const busLabel = ev.busDepartureTime ? `Bus departure: ${formatPracticeTime12h(ev.busDepartureTime)}` : "";
+    const descParts = [
+      ev.startTime ? `Start: ${formatPracticeTime12h(ev.startTime)}` : "",
+      delayLabel,
+      busLabel,
+      ev.description || "",
+      safeLiveUrl ? `Live Results: ${safeLiveUrl}` : "",
+      hubUrl ? `Team Hub: ${hubUrl}` : ""
+    ].filter(Boolean);
+    let dtStartLine;
+    let dtEndLine;
+    if (startHm) {
+      dtStartLine = `DTSTART;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, startHm.hour, startHm.minute)}`;
+      dtEndLine = endHm ? `DTEND;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, endHm.hour, endHm.minute)}` : `DTEND;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, startHm.hour, startHm.minute, 90)}`;
+    } else {
+      dtStartLine = `DTSTART;VALUE=DATE:${cleanDate.replace(/-/g, "")}`;
+      dtEndLine = `DTEND;VALUE=DATE:${nextIcsDateYmd(cleanDate)}`;
+    }
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:meetready-${uidSafe}@meetready.app`,
+      `DTSTAMP:${dtStamp}`,
+      `LAST-MODIFIED:${lastMod}`,
+      `SEQUENCE:${sequence}`,
+      dtStartLine,
+      dtEndLine,
+      `SUMMARY:${escapeIcsText(`${params.shortName} \xB7 ${ev.title}`)}`,
+      ...ev.locationName ? [`LOCATION:${escapeIcsText(ev.locationName)}`] : [],
+      ...eventUrl ? [`URL:${eventUrl}`] : [],
+      ...descParts.length > 0 ? [`DESCRIPTION:${escapeIcsText(descParts.join(" \xB7 "))}`] : [],
+      "END:VEVENT"
+    );
+  }
+  lines.push("END:VCALENDAR");
+  return `${lines.map(foldIcsLine).join("\r\n")}\r
+`;
+}
+
+// server/teamEventsService.ts
+import crypto10 from "crypto";
+var VALID_EVENT_TYPES = /* @__PURE__ */ new Set([
+  "PRACTICE",
+  "MEET",
+  "BUS_TRAVEL",
+  "TEAM_MEETING"
+]);
+var VALID_VISIBILITY_SCOPES = /* @__PURE__ */ new Set([
+  "TEAM_AND_FAMILIES_ONLY",
+  "PUBLIC_HUB",
+  "STAFF_ONLY"
+]);
+var VALID_RSVP_STATUSES = /* @__PURE__ */ new Set([
+  "GOING",
+  "OUT",
+  "LATE",
+  "MEET_CONFLICT",
+  "UNDECIDED"
+]);
+var VALID_TRAVEL_MODES = /* @__PURE__ */ new Set([
+  "TEAM_BUS",
+  "PARENT_PICKUP",
+  "SELF_TRAVEL"
+]);
+var VALID_ALBUM_PROVIDERS = /* @__PURE__ */ new Set([
+  "GOOGLE_PHOTOS",
+  "APPLE_ICLOUD",
+  "SMUGMUG",
+  "SHUTTERFLY",
+  "HUDL",
+  "OTHER"
+]);
+function teamEventsVaultKey(teamId) {
+  return `team_events_${sanitizeTenantId(teamId)}`;
+}
+function teamRsvpsVaultKey(teamId) {
+  return `team_rsvps_${sanitizeTenantId(teamId)}`;
+}
+function computeRsvpCounts(rsvps) {
+  const counts = {
+    going: 0,
+    out: 0,
+    late: 0,
+    conflict: 0,
+    undecided: 0
+  };
+  for (const r of rsvps) {
+    if (r.status === "GOING") counts.going += 1;
+    else if (r.status === "OUT") counts.out += 1;
+    else if (r.status === "LATE") counts.late += 1;
+    else if (r.status === "MEET_CONFLICT") counts.conflict += 1;
+    else counts.undecided += 1;
+  }
+  return counts;
+}
+function sanitizeCuratedAlbumLinks(raw, authorName, nowIso) {
+  if (!Array.isArray(raw)) return { links: [] };
+  const links = [];
+  for (const entry of raw.slice(0, 5)) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry;
+    const rawUrl = String(item.url || "").trim();
+    if (!rawUrl) continue;
+    if (!isSafeHttpsUrl(rawUrl)) {
+      return {
+        links: [],
+        error: "Album links must use https:// URLs."
+      };
+    }
+    const label = String(item.label || "Meet Photo Album").trim().slice(0, 80) || "Meet Photo Album";
+    const rawProvider = String(item.provider || "").trim().toUpperCase();
+    const visibility = item.visibility === "PUBLIC_HUB" ? "PUBLIC_HUB" : "TEAM_AND_FAMILIES_ONLY";
+    links.push({
+      id: String(item.id || `alb_${crypto10.randomBytes(4).toString("hex")}`).trim(),
+      label,
+      url: rawUrl,
+      ...VALID_ALBUM_PROVIDERS.has(rawProvider) ? { provider: rawProvider } : {},
+      visibility,
+      addedByName: String(item.addedByName || authorName).trim().slice(0, 60) || authorName,
+      addedAt: String(item.addedAt || nowIso)
+    });
+  }
+  return { links };
+}
+async function loadStoredEvents(teamId) {
+  const pgEvents = await listTeamEventsPostgresAsync(teamId);
+  if (pgEvents !== null) return pgEvents;
+  return loadTenantVaultAsync(teamEventsVaultKey(teamId), []);
+}
+async function loadStoredRsvps(teamId) {
+  const pgRows = await listTeamEventRsvpsPostgresAsync(teamId);
+  if (pgRows !== null) {
+    return pgRows.map((r) => ({
+      eventId: r.event_id,
+      membershipId: r.membership_id,
+      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
+      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
+      ...r.note ? { note: r.note } : {},
+      updatedByRole: r.updated_by_role,
+      updatedAt: r.updated_at
+    }));
+  }
+  return loadTenantVaultAsync(teamRsvpsVaultKey(teamId), []);
+}
+function projectSyntheticEventsFromTeamDoc(params) {
+  const byId = /* @__PURE__ */ new Map();
+  const matchedBroadcastIds = /* @__PURE__ */ new Set();
+  const matchedPacketIds = /* @__PURE__ */ new Set();
+  for (const ev of params.storedEvents) {
+    byId.set(ev.eventId, ev);
+    if (ev.broadcastId) matchedBroadcastIds.add(ev.broadcastId);
+    if (ev.packetId) matchedPacketIds.add(ev.packetId);
+  }
+  for (const pkt of params.meetDayPackets || []) {
+    if (matchedPacketIds.has(pkt.packetId)) continue;
+    const syntheticId = pkt.eventId || `pkt_${pkt.packetId}`;
+    if (byId.has(syntheticId)) continue;
+    const liveUrl = pkt.liveResultsUrl || pkt.athleticLiveUrl;
+    byId.set(syntheticId, {
+      eventId: syntheticId,
+      teamId: params.teamId,
+      eventType: "MEET",
+      title: pkt.meetTitle,
+      date: pkt.meetDate,
+      ...typeof pkt.meetDelayMinutes === "number" ? { meetDelayMinutes: pkt.meetDelayMinutes } : {},
+      ...liveUrl && isSafeHttpsUrl(liveUrl) ? { liveResultsUrl: liveUrl } : {},
+      ...pkt.liveResultsLabel ? { liveResultsLabel: pkt.liveResultsLabel } : {},
+      ...pkt.curatedAlbumLinks?.length ? { curatedAlbumLinks: pkt.curatedAlbumLinks } : {},
+      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
+      packetId: pkt.packetId,
+      createdAt: pkt.updatedAt,
+      updatedAt: pkt.updatedAt
+    });
+  }
+  for (const bc of params.broadcastWorkouts || []) {
+    if (matchedBroadcastIds.has(bc.broadcastId)) continue;
+    const syntheticId = bc.eventId || `bc_${bc.broadcastId}`;
+    if (byId.has(syntheticId)) continue;
+    if (!bc.isOfficialMeet && !bc.scheduledTime) continue;
+    byId.set(syntheticId, {
+      eventId: syntheticId,
+      teamId: params.teamId,
+      eventType: bc.isOfficialMeet ? "MEET" : "PRACTICE",
+      title: bc.name,
+      date: bc.date,
+      ...bc.scheduledTime ? { startTime: bc.scheduledTime } : {},
+      ...bc.locationName ? { locationName: bc.locationName } : {},
+      ...bc.liveResultsUrl && isSafeHttpsUrl(bc.liveResultsUrl) ? { liveResultsUrl: bc.liveResultsUrl } : {},
+      ...bc.liveResultsLabel ? { liveResultsLabel: bc.liveResultsLabel } : {},
+      ...bc.curatedAlbumLinks?.length ? { curatedAlbumLinks: bc.curatedAlbumLinks } : {},
+      ...bc.targetEventGroups?.length ? { targetEventGroups: bc.targetEventGroups } : {},
+      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
+      broadcastId: bc.broadcastId,
+      createdAt: bc.createdAt,
+      updatedAt: bc.createdAt
+    });
+  }
+  return Array.from(byId.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+async function listTeamEventsForCaller(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem) {
+    return { ok: false, status: 403, error: "Team membership required." };
+  }
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
+  const [storedEvents, storedRsvps] = await Promise.all([
+    loadStoredEvents(params.teamId),
+    loadStoredRsvps(params.teamId)
+  ]);
+  const allEvents = projectSyntheticEventsFromTeamDoc({
+    teamId: params.teamId,
+    storedEvents,
+    broadcastWorkouts: doc.broadcastWorkouts,
+    meetDayPackets: doc.meetDayPackets
+  }).filter((ev) => isStaff || ev.visibilityScope !== "STAFF_ONLY");
+  const rsvpsGrouped = /* @__PURE__ */ new Map();
+  for (const rsvp of storedRsvps) {
+    const arr = rsvpsGrouped.get(rsvp.eventId) || [];
+    arr.push(rsvp);
+    rsvpsGrouped.set(rsvp.eventId, arr);
+  }
+  const rsvpCountsByEventId = {};
+  const rsvpsByEventId = {};
+  const myRsvps = [];
+  for (const ev of allEvents) {
+    const list = rsvpsGrouped.get(ev.eventId) || [];
+    rsvpCountsByEventId[ev.eventId] = computeRsvpCounts(list);
+    if (isStaff) {
+      rsvpsByEventId[ev.eventId] = list;
+    }
+    for (const rsvp of list) {
+      const isOwn = rsvp.membershipId === callerMem.membershipId;
+      const isChild = Boolean(linkedChildIds && linkedChildIds.has(rsvp.membershipId));
+      if (isOwn || isChild) {
+        myRsvps.push(rsvp);
+      }
+    }
+  }
+  return {
+    ok: true,
+    payload: {
+      events: allEvents,
+      rsvpCountsByEventId,
+      myRsvps,
+      ...isStaff ? { rsvpsByEventId } : {}
+    }
+  };
+}
+async function upsertTeamEvent(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
+  }
+  const cleanDate = String(params.input.date || "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    return { ok: false, status: 400, error: "Valid YYYY-MM-DD event date required." };
+  }
+  const cleanTitle = String(params.input.title || "").trim().slice(0, 140);
+  if (!cleanTitle) {
+    return { ok: false, status: 400, error: "Event title is required." };
+  }
+  const rawType = String(params.input.eventType || "PRACTICE").trim().toUpperCase();
+  const eventType = VALID_EVENT_TYPES.has(rawType) ? rawType : "PRACTICE";
+  const rawVis = String(params.input.visibilityScope || "TEAM_AND_FAMILIES_ONLY").trim().toUpperCase();
+  const visibilityScope = VALID_VISIBILITY_SCOPES.has(rawVis) ? rawVis : "TEAM_AND_FAMILIES_ONLY";
+  const liveResultsUrl = String(params.input.liveResultsUrl || "").trim();
+  if (liveResultsUrl && !isSafeHttpsUrl(liveResultsUrl)) {
+    return { ok: false, status: 400, error: "Live timing link must use an https:// URL." };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const albumValidation = sanitizeCuratedAlbumLinks(
+    params.input.curatedAlbumLinks,
+    callerMem.invitedName,
+    nowIso
+  );
+  if (albumValidation.error) {
+    return { ok: false, status: 400, error: albumValidation.error };
+  }
+  const hasPublicAlbum = albumValidation.links.some((l) => l.visibility === "PUBLIC_HUB");
+  const photoReleaseOptOutNames = hasPublicAlbum ? doc.memberships.filter((m) => m.role === "ATHLETE" && m.status !== "REVOKED" && m.photoReleaseOptOut).map((m) => m.invitedName) : [];
+  const targetEventGroups = Array.isArray(params.input.targetEventGroups) ? sanitizeTargetEventGroups(
+    params.input.targetEventGroups.map((g) => String(g))
+  ) || [] : [];
+  const eventId = String(params.input.eventId || "").trim().slice(0, 80) || `ev_${crypto10.randomBytes(6).toString("hex")}`;
+  const safeDelay = typeof params.input.meetDelayMinutes === "number" && Number.isFinite(params.input.meetDelayMinutes) ? Math.max(0, Math.min(240, Math.round(params.input.meetDelayMinutes))) : void 0;
+  const existingPg = await listTeamEventsPostgresAsync(params.teamId);
+  let createdAt = nowIso;
+  if (existingPg) {
+    const prev = existingPg.find((e) => e.eventId === eventId);
+    if (prev?.createdAt) createdAt = prev.createdAt;
+  }
+  const nextEvent = {
+    eventId,
+    teamId: params.teamId,
+    eventType,
+    title: cleanTitle,
+    date: cleanDate,
+    ...typeof params.input.startTime === "string" && params.input.startTime.trim() ? { startTime: params.input.startTime.trim().slice(0, 16) } : {},
+    ...typeof params.input.endTime === "string" && params.input.endTime.trim() ? { endTime: params.input.endTime.trim().slice(0, 16) } : {},
+    ...typeof params.input.timezone === "string" && params.input.timezone.trim() ? { timezone: params.input.timezone.trim().slice(0, 64) } : {},
+    ...typeof params.input.locationName === "string" && params.input.locationName.trim() ? { locationName: params.input.locationName.trim().slice(0, 120) } : {},
+    ...typeof params.input.venueId === "string" && params.input.venueId.trim() ? { venueId: params.input.venueId.trim().slice(0, 64) } : {},
+    ...typeof params.input.busDepartureTime === "string" && params.input.busDepartureTime.trim() ? { busDepartureTime: params.input.busDepartureTime.trim().slice(0, 24) } : {},
+    ...typeof params.input.busReturnTime === "string" && params.input.busReturnTime.trim() ? { busReturnTime: params.input.busReturnTime.trim().slice(0, 24) } : {},
+    ...safeDelay !== void 0 ? { meetDelayMinutes: safeDelay } : {},
+    ...liveResultsUrl ? { liveResultsUrl } : {},
+    ...typeof params.input.liveResultsLabel === "string" && params.input.liveResultsLabel.trim() ? { liveResultsLabel: params.input.liveResultsLabel.trim().slice(0, 60) } : {},
+    ...albumValidation.links.length > 0 ? { curatedAlbumLinks: albumValidation.links } : {},
+    ...targetEventGroups.length > 0 ? { targetEventGroups } : {},
+    visibilityScope,
+    ...typeof params.input.broadcastId === "string" && params.input.broadcastId.trim() ? { broadcastId: params.input.broadcastId.trim().slice(0, 80) } : {},
+    ...typeof params.input.packetId === "string" && params.input.packetId.trim() ? { packetId: params.input.packetId.trim().slice(0, 80) } : {},
+    ...typeof params.input.notes === "string" && params.input.notes.trim() ? { notes: params.input.notes.trim().slice(0, 500) } : {},
+    createdAt,
+    updatedAt: nowIso
+  };
+  const savedToPg = await upsertTeamEventPostgresAsync({
+    teamId: params.teamId,
+    eventId,
+    dateIso: cleanDate,
+    eventType,
+    eventPayload: nextEvent
+  });
+  if (savedToPg === null) {
+    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
+      const existingList = await loadTenantVaultAsync(
+        teamEventsVaultKey(params.teamId),
+        []
+      );
+      const prev = existingList.find((e) => e.eventId === eventId);
+      if (prev?.createdAt) {
+        nextEvent.createdAt = prev.createdAt;
+      }
+      const nextList = [
+        ...existingList.filter((e) => e.eventId !== eventId),
+        nextEvent
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextList);
+    });
+  }
+  await appendAuditLogAsync({
+    teamId: params.teamId,
+    actorSid: params.callerSid,
+    action: "TEAM_EVENT_UPSERTED",
+    targetId: eventId,
+    metadata: { eventType, date: cleanDate, visibilityScope }
+  });
+  return {
+    ok: true,
+    event: nextEvent,
+    ...photoReleaseOptOutNames.length > 0 ? { photoReleaseOptOutNames } : {}
+  };
+}
+async function deleteTeamEvent(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
+  }
+  const cleanEventId = String(params.eventId || "").trim();
+  if (!cleanEventId) return { ok: false, status: 400, error: "Event ID required." };
+  const deletedPg = await deleteTeamEventPostgresAsync(params.teamId, cleanEventId);
+  let deleted = Boolean(deletedPg);
+  if (deletedPg === null) {
+    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
+      const events = await loadTenantVaultAsync(
+        teamEventsVaultKey(params.teamId),
+        []
+      );
+      const nextEvents = events.filter((e) => e.eventId !== cleanEventId);
+      deleted = nextEvents.length !== events.length;
+      if (deleted) {
+        await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextEvents);
+      }
+    });
+    if (deleted) {
+      await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
+        const rsvps = await loadTenantVaultAsync(
+          teamRsvpsVaultKey(params.teamId),
+          []
+        );
+        const filtered = rsvps.filter((r) => r.eventId !== cleanEventId);
+        if (filtered.length !== rsvps.length) {
+          await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), filtered);
+        }
+      });
+    }
+  }
+  return { ok: true, deleted };
+}
+async function submitTeamEventRsvp(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem) {
+    return { ok: false, status: 403, error: "Team membership required." };
+  }
+  const cleanEventId = String(params.eventId || "").trim();
+  if (!cleanEventId) {
+    return { ok: false, status: 400, error: "Event ID required." };
+  }
+  const cleanStatus = String(params.status || "").trim().toUpperCase();
+  if (!VALID_RSVP_STATUSES.has(cleanStatus)) {
+    return { ok: false, status: 400, error: "Invalid RSVP status." };
+  }
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
+  let targetMembershipId = String(params.membershipId || "").trim();
+  if (!targetMembershipId) {
+    if (callerMem.role === "PARENT_FOLLOWER") {
+      const firstChild = linkedChildIds ? Array.from(linkedChildIds)[0] : "";
+      if (!firstChild) {
+        return {
+          ok: false,
+          status: 403,
+          error: "No linked student-athlete found for this guardian account."
+        };
+      }
+      targetMembershipId = firstChild;
+    } else {
+      targetMembershipId = callerMem.membershipId;
+    }
+  }
+  const targetMem = doc.memberships.find(
+    (m) => m.membershipId === targetMembershipId && m.status !== "REVOKED"
+  );
+  if (!targetMem) {
+    return { ok: false, status: 404, error: "Target athlete membership not found." };
+  }
+  if (!isStaff) {
+    if (callerMem.role === "PARENT_FOLLOWER") {
+      if (!linkedChildIds || !linkedChildIds.has(targetMembershipId)) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Guardians may only submit RSVPs for their linked student-athletes."
+        };
+      }
+    } else if (targetMembershipId !== callerMem.membershipId) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Athletes may only submit RSVPs for themselves."
+      };
+    }
+  }
+  const rawTravel = typeof params.travelMode === "string" ? params.travelMode.trim().toUpperCase() : void 0;
+  const travelMode = rawTravel && VALID_TRAVEL_MODES.has(rawTravel) ? rawTravel : void 0;
+  const note = typeof params.note === "string" && params.note.trim() ? params.note.trim().slice(0, 140) : void 0;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const nextRsvp = {
+    eventId: cleanEventId,
+    membershipId: targetMembershipId,
+    status: cleanStatus,
+    ...travelMode ? { travelMode } : {},
+    ...note ? { note } : {},
+    updatedByRole: callerMem.role,
+    updatedAt: nowIso
+  };
+  const savedToPg = await upsertTeamEventRsvpPostgresAsync({
+    teamId: params.teamId,
+    eventId: cleanEventId,
+    membershipId: targetMembershipId,
+    status: cleanStatus,
+    travelMode,
+    note,
+    updatedByRole: callerMem.role,
+    updatedBySid: params.callerSid,
+    updatedAt: nowIso
+  });
+  let eventRsvps = [];
+  if (savedToPg !== null) {
+    const pgRows = await listTeamEventRsvpsPostgresAsync(params.teamId, cleanEventId);
+    eventRsvps = (pgRows || []).map((r) => ({
+      eventId: r.event_id,
+      membershipId: r.membership_id,
+      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
+      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
+      ...r.note ? { note: r.note } : {},
+      updatedByRole: r.updated_by_role,
+      updatedAt: r.updated_at
+    }));
+  } else {
+    await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
+      const existingList = await loadTenantVaultAsync(
+        teamRsvpsVaultKey(params.teamId),
+        []
+      );
+      const nextList = [
+        ...existingList.filter(
+          (r) => !(r.eventId === cleanEventId && r.membershipId === targetMembershipId)
+        ),
+        nextRsvp
+      ];
+      await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), nextList);
+      eventRsvps = nextList.filter((r) => r.eventId === cleanEventId);
+    });
+  }
+  return {
+    ok: true,
+    rsvp: nextRsvp,
+    counts: computeRsvpCounts(eventRsvps)
+  };
+}
+async function loadPublicHubTeamEventsForTeamDoc(doc) {
+  const storedEvents = await loadStoredEvents(doc.brand.teamId);
+  return storedEvents.filter((ev) => ev.visibilityScope === "PUBLIC_HUB").map((ev) => ({
+    ...ev,
+    ...ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl) ? { liveResultsUrl: ev.liveResultsUrl } : { liveResultsUrl: void 0 },
+    ...Array.isArray(ev.curatedAlbumLinks) ? {
+      curatedAlbumLinks: ev.curatedAlbumLinks.filter(
+        (a) => a.visibility === "PUBLIC_HUB" && isSafeHttpsUrl(a.url)
+      )
+    } : {}
+  }));
+}
+function buildCalendarFeedUrls(params) {
+  const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
+  const feedUrl = `${cleanOrigin}/api/teams/${encodeURIComponent(params.teamId)}/calendar-feed/${encodeURIComponent(params.token)}.ics`;
+  const webcalUrl = feedUrl.replace(/^https?:\/\//i, "webcal://");
+  const googleCalendarUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(feedUrl)}`;
+  return { feedUrl, webcalUrl, googleCalendarUrl };
+}
+async function getOrMintPrivateCalendarMeta(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: "Team membership required." };
+    }
+    let rawToken = doc.calendarFeedTokenPlain;
+    if (!rawToken || !doc.calendarFeedTokenHash) {
+      rawToken = crypto10.randomBytes(24).toString("hex");
+      doc.calendarFeedTokenPlain = rawToken;
+      doc.calendarFeedTokenHash = hashToken(rawToken);
+      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await saveTeamDocRaw(params.teamId, doc);
+    }
+    const urls = buildCalendarFeedUrls({
+      teamId: params.teamId,
+      token: rawToken,
+      originUrl: params.originUrl
+    });
+    return {
+      ok: true,
+      ...urls,
+      canRotate: canProgramWorkoutsRole(callerMem.role) || canManageTeamGovernanceRole(callerMem.role)
+    };
+  });
+}
+async function rotatePrivateCalendarToken(params) {
+  const outcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && !canManageTeamGovernanceRole(callerMem.role)) {
+      return { ok: false, status: 403, error: "Coach or team admin permissions required." };
+    }
+    const rawToken = crypto10.randomBytes(24).toString("hex");
+    doc.calendarFeedTokenPlain = rawToken;
+    doc.calendarFeedTokenHash = hashToken(rawToken);
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    const urls = buildCalendarFeedUrls({
+      teamId: params.teamId,
+      token: rawToken,
+      originUrl: params.originUrl
+    });
+    return {
+      ok: true,
+      ...urls,
+      canRotate: true
+    };
+  });
+  if (outcome.ok) {
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "CALENDAR_FEED_TOKEN_ROTATED",
+      targetId: params.teamId
+    });
+  }
+  return outcome;
+}
+async function getPrivateTeamCalendarIcsByToken(params) {
+  const cleanToken = String(params.token || "").trim().replace(/\.ics$/i, "");
+  if (!cleanToken || !/^[a-f0-9]{24,96}$/i.test(cleanToken)) {
+    return { ok: false, status: 404, error: "Calendar feed not found." };
+  }
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc || !doc.calendarFeedTokenHash) {
+    return { ok: false, status: 404, error: "Calendar feed not found." };
+  }
+  const incomingHash = hashToken(cleanToken);
+  if (!timingSafeStringEqual(incomingHash, doc.calendarFeedTokenHash)) {
+    return { ok: false, status: 404, error: "Calendar feed link invalidated or rotated." };
+  }
+  const storedEvents = await loadStoredEvents(params.teamId);
+  const visibleEvents = projectSyntheticEventsFromTeamDoc({
+    teamId: params.teamId,
+    storedEvents,
+    broadcastWorkouts: doc.broadcastWorkouts,
+    meetDayPackets: doc.meetDayPackets
+  }).filter((ev) => ev.visibilityScope !== "STAFF_ONLY");
+  const mappedEvents = visibleEvents.map((ev) => ({
+    uid: ev.eventId,
+    title: ev.title,
+    date: ev.date,
+    startTime: ev.startTime,
+    endTime: ev.endTime,
+    locationName: ev.locationName,
+    description: ev.notes,
+    busDepartureTime: ev.busDepartureTime,
+    meetDelayMinutes: ev.meetDelayMinutes,
+    liveResultsUrl: ev.liveResultsUrl,
+    updatedAt: ev.updatedAt
+  }));
+  const coveredBroadcastIds = new Set(
+    visibleEvents.map((ev) => ev.broadcastId).filter((id) => Boolean(id))
+  );
+  for (const bc of doc.broadcastWorkouts || []) {
+    if (coveredBroadcastIds.has(bc.broadcastId)) continue;
+    if (Array.isArray(bc.targetMembershipIds) && bc.targetMembershipIds.length > 0) continue;
+    mappedEvents.push({
+      uid: `bc-${bc.broadcastId}`,
+      title: bc.name,
+      date: bc.date,
+      startTime: bc.scheduledTime,
+      locationName: bc.locationName,
+      description: bc.description,
+      liveResultsUrl: bc.liveResultsUrl,
+      updatedAt: bc.createdAt
+    });
+  }
+  const icsBody = buildTimedTeamCalendarIcs({
+    teamName: doc.brand.name,
+    shortName: doc.brand.shortName,
+    slug: doc.brand.slug,
+    timezone: doc.brand.timezone,
+    originUrl: params.originUrl,
+    calNameSuffix: "Team Schedule",
+    prodId: "-//MeetReady//Private Team Calendar//EN",
+    events: mappedEvents
+  });
+  return {
+    ok: true,
+    icsBody,
+    slug: doc.brand.slug
+  };
+}
 
 // src/utils/officialRaceSynthesizer.ts
 var OFFICIAL_RACE_EVENTS = [
@@ -12383,7 +13188,7 @@ async function archiveCoachActivitiesForMember(member, activities) {
 }
 
 // server/athleticFieldSyncHelper.ts
-import crypto10 from "node:crypto";
+import crypto11 from "node:crypto";
 function applyParsedExternalFieldMarksToDoc(params) {
   const baseLogs = Array.isArray(params.existingLogs) ? [...params.existingLogs] : Array.isArray(params.doc.fieldMarkLogs) ? [...params.doc.fieldMarkLogs] : [];
   const mergedLogs = [...baseLogs];
@@ -12405,7 +13210,7 @@ function applyParsedExternalFieldMarksToDoc(params) {
       membershipId,
       athleteName,
       nowIso,
-      idSuffix: crypto10.randomBytes(4).toString("hex")
+      idSuffix: crypto11.randomBytes(4).toString("hex")
     });
     const isDup = mergedLogs.some(
       (existing) => isDuplicateExternalFieldLog(existing, candidate)
@@ -12427,10 +13232,10 @@ function applyParsedExternalFieldMarksToDoc(params) {
 }
 
 // server/teamService.ts
-import crypto12 from "crypto";
+import crypto13 from "crypto";
 
 // server/teamWorkoutAndGovernanceService.ts
-import crypto11 from "crypto";
+import crypto12 from "crypto";
 
 // src/physiology/safeSportPatternWatchEngine.ts
 var DAY_MS = 864e5;
@@ -12776,7 +13581,7 @@ async function broadcastWorkoutToTeamSquad(params) {
     const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
     const meetingNotes = params.meetingNotes ? String(params.meetingNotes).trim().slice(0, 240) : void 0;
     const workout = {
-      broadcastId: `bw_${crypto11.randomBytes(6).toString("hex")}`,
+      broadcastId: `bw_${crypto12.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup,
       ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -12847,7 +13652,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
       const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
       const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : void 0;
       return {
-        broadcastId: `bw_${crypto11.randomBytes(6).toString("hex")}`,
+        broadcastId: `bw_${crypto12.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         targetSquadGroup,
         ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -13265,7 +14070,7 @@ Team: ${doc.brand.name}`
             deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
           }
           const alertRecord = {
-            id: `gsa_${crypto11.randomBytes(6).toString("hex")}`,
+            id: `gsa_${crypto12.randomBytes(6).toString("hex")}`,
             teamId: doc.brand.teamId,
             targetMembershipId: mem.membershipId,
             athleteName: mem.invitedName,
@@ -13334,7 +14139,7 @@ Team: ${doc.brand.name}`
       deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
     }
     const alertRecord = {
-      id: `gsa_${crypto11.randomBytes(6).toString("hex")}`,
+      id: `gsa_${crypto12.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: target.membershipId,
       athleteName: target.invitedName,
@@ -13396,9 +14201,9 @@ async function saveTeamWorkoutLibraryTemplate(params) {
     }
     const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "SWIMMING" || params.template.category === "TRIATHLON" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto11.randomBytes(6).toString("hex")}`;
+    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto12.randomBytes(6).toString("hex")}`;
     const record = {
-      id: id || `wlib_${crypto11.randomBytes(6).toString("hex")}`,
+      id: id || `wlib_${crypto12.randomBytes(6).toString("hex")}`,
       name: cleanName,
       category: validCat,
       sportCategory: params.template.sportCategory || "Running",
@@ -13514,7 +14319,7 @@ async function postTeamWorkoutComment(params) {
       targetIsProtectedMinor || doc.brand.enableParentGuardianCc && targetMem.parentGuardianEmail
     );
     const comment = {
-      id: `cmt_${crypto11.randomBytes(6).toString("hex")}`,
+      id: `cmt_${crypto12.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: targetMem.membershipId,
       targetAthleteName: targetMem.invitedName,
@@ -13736,13 +14541,13 @@ async function createTeamForCoach(params) {
   const cleanShort = String(params.shortName || "").trim().slice(0, 22) || cleanName.split(/\s+/).slice(0, 2).join(" ").toUpperCase().slice(0, 14);
   let slug = slugifyTeamName(cleanName);
   if (dir.bySlug[slug]) {
-    slug = `${slug}-${crypto12.randomInt(10, 99)}`;
+    slug = `${slug}-${crypto13.randomInt(10, 99)}`;
   }
   let joinCode = generateTeamJoinCode(cleanShort);
   if (dir.byJoinCode[joinCode]) {
-    joinCode = generateTeamJoinCode(cleanShort, crypto12.randomInt(10, 99));
+    joinCode = generateTeamJoinCode(cleanShort, crypto13.randomInt(10, 99));
   }
-  const teamId = `tm_${crypto12.randomBytes(8).toString("hex")}`;
+  const teamId = `tm_${crypto13.randomBytes(8).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const defaultSafeSportShield = typeof params.defaultSafeSportShield === "boolean" ? params.defaultSafeSportShield : orgDefaults.defaultSafeSportShield;
   const enableParentGuardianCc = typeof params.enableParentGuardianCc === "boolean" ? params.enableParentGuardianCc : orgDefaults.enableParentGuardianCc;
@@ -13773,7 +14578,7 @@ async function createTeamForCoach(params) {
   const cleanCoachEventGroups = sanitizeTargetEventGroups(params.coachEventGroups);
   const coachAttribution = sanitizeCoachAttribution(params.attribution);
   const coachMembership = {
-    membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
     teamId,
     userSid: params.callerSid,
     role: "HEAD_COACH",
@@ -13927,8 +14732,8 @@ async function bulkCreateAndSendInvites(params) {
       )) {
         continue;
       }
-      const rawToken = crypto12.randomBytes(12).toString("base64url");
-      const membershipId = `mem_${crypto12.randomBytes(6).toString("hex")}`;
+      const rawToken = crypto13.randomBytes(12).toString("base64url");
+      const membershipId = `mem_${crypto13.randomBytes(6).toString("hex")}`;
       const emailParam = cleanEmail ? `&email=${encodeURIComponent(cleanEmail)}` : "";
       const magicJoinUrl = `${cleanOrigin}/join/${latestDoc.brand.slug}?t=${rawToken}${emailParam}`;
       const parentCc = latestDoc.brand.enableParentGuardianCc && row.parentGuardianEmail ? row.parentGuardianEmail.trim().toLowerCase() : void 0;
@@ -14053,7 +14858,7 @@ async function resendPendingTeamInvites(params) {
         continue;
       }
       if (!m.rawInviteToken) {
-        m.rawInviteToken = crypto12.randomBytes(12).toString("base64url");
+        m.rawInviteToken = crypto13.randomBytes(12).toString("base64url");
         m.inviteTokenHash = hashToken(m.rawInviteToken);
         tokensUpdated = true;
       }
@@ -14296,7 +15101,7 @@ async function claimTeamJoinInvite(params) {
     const resolvedSharingTier = isStaffInvite ? "FULL_STREAMS" : isDeferredMinorParentEmail ? "LOAD_ONLY" : params.sharingTier || "SUMMARY_ONLY";
     if (!mem) {
       mem = {
-        membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         stravaAthleteId: cleanStravaId,
@@ -14370,7 +15175,7 @@ async function claimTeamJoinInvite(params) {
     if (mem.isMinorU18 && mem.parentGuardianEmail) {
       let rawConsentToken = "";
       if (!mem.parentConsentTokenHash) {
-        rawConsentToken = crypto12.randomBytes(16).toString("base64url");
+        rawConsentToken = crypto13.randomBytes(16).toString("base64url");
         mem.parentConsentTokenHash = hashToken(rawConsentToken);
         mem.parentConsentToken = void 0;
       }
@@ -14546,7 +15351,7 @@ function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
     const estDist = meet.distanceMeters || 5e3;
     const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
     additions.push({
-      broadcastId: `meet_${crypto13.randomBytes(6).toString("hex")}`,
+      broadcastId: `meet_${crypto14.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup: "ALL",
       date: cleanDate,
@@ -14755,10 +15560,10 @@ function findOrCreateExternalMembership(doc, candidate) {
     candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
   );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-  const rawToken = crypto13.randomBytes(12).toString("base64url");
+  const rawToken = crypto14.randomBytes(12).toString("base64url");
   const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
   const createdMem = {
-    membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto14.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
     role: "ATHLETE",
     squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
@@ -14775,7 +15580,7 @@ function findOrCreateExternalMembership(doc, candidate) {
     status: "INVITED",
     emailDeliveryStatus: "READY_MANUAL_LINK",
     rawInviteToken: rawToken,
-    inviteTokenHash: crypto13.createHash("sha256").update(rawToken).digest("hex"),
+    inviteTokenHash: crypto14.createHash("sha256").update(rawToken).digest("hex"),
     invitedAt: nowIso,
     liveSnapshot: {
       updatedAt: nowIso,
@@ -14844,7 +15649,7 @@ async function applyExternalTeamSyncBatch(params) {
       }
       const existingActs = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
       const activity = synthesizeOfficialRaceActivity({
-        id: `ext-meet-${crypto13.randomBytes(5).toString("hex")}`,
+        id: `ext-meet-${crypto14.randomBytes(5).toString("hex")}`,
         date: row.date,
         meetName: row.meetName,
         eventLabel: row.eventLabel,
@@ -14998,21 +15803,82 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
     memberships: doc.memberships,
     fieldLogs: fullFieldLogs
   });
-  const meetItems = (doc.broadcastWorkouts || []).filter((bw) => bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name)).filter((bw) => !bw.targetMembershipIds || bw.targetMembershipIds.length === 0).map((bw) => ({
-    id: bw.broadcastId,
-    date: bw.date,
-    name: bw.name,
-    ...bw.scheduledTime ? { scheduledTime: bw.scheduledTime } : {},
-    ...bw.locationName ? { locationName: bw.locationName } : {},
-    ...bw.locationCategory ? { locationCategory: bw.locationCategory } : {},
-    ...bw.description ? { description: bw.description } : {},
-    ...bw.externalSource ? { externalSource: bw.externalSource } : {}
-  })).sort((a, b) => a.date.localeCompare(b.date));
+  const publicEvents = await loadPublicHubTeamEventsForTeamDoc(doc);
+  const publicEventsByBroadcastId = /* @__PURE__ */ new Map();
+  const addedEventIds = /* @__PURE__ */ new Set();
+  for (const ev of publicEvents) {
+    if (ev.broadcastId) publicEventsByBroadcastId.set(ev.broadcastId, ev);
+  }
+  const meetItemMap = /* @__PURE__ */ new Map();
+  for (const bw of doc.broadcastWorkouts || []) {
+    if (!(bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name))) continue;
+    if (bw.targetMembershipIds && bw.targetMembershipIds.length > 0) continue;
+    const evOverride = publicEventsByBroadcastId.get(bw.broadcastId);
+    if (evOverride) addedEventIds.add(evOverride.eventId);
+    const liveUrl = evOverride?.liveResultsUrl || bw.liveResultsUrl;
+    const safeLiveUrl = liveUrl && isSafeHttpsUrl(liveUrl.trim()) ? liveUrl.trim() : void 0;
+    const safeAlbums = (evOverride?.curatedAlbumLinks || bw.curatedAlbumLinks || []).filter(
+      (a) => a.visibility === "PUBLIC_HUB" && isSafeHttpsUrl(a.url)
+    );
+    const itemId = evOverride?.eventId || bw.broadcastId;
+    meetItemMap.set(itemId, {
+      id: itemId,
+      date: evOverride?.date || bw.date,
+      name: evOverride?.title || bw.name,
+      eventType: evOverride?.eventType || "MEET",
+      ...evOverride?.startTime || bw.scheduledTime ? { scheduledTime: evOverride?.startTime || bw.scheduledTime } : {},
+      ...evOverride?.endTime ? { endTime: evOverride.endTime } : {},
+      ...evOverride?.locationName || bw.locationName ? { locationName: evOverride?.locationName || bw.locationName } : {},
+      ...bw.locationCategory ? { locationCategory: bw.locationCategory } : {},
+      ...evOverride?.notes || bw.description ? { description: evOverride?.notes || bw.description } : {},
+      ...bw.externalSource ? { externalSource: bw.externalSource } : {},
+      ...safeLiveUrl ? { liveResultsUrl: safeLiveUrl } : {},
+      ...evOverride?.liveResultsLabel || bw.liveResultsLabel ? { liveResultsLabel: evOverride?.liveResultsLabel || bw.liveResultsLabel } : {},
+      ...typeof evOverride?.meetDelayMinutes === "number" && evOverride.meetDelayMinutes > 0 ? { meetDelayMinutes: evOverride.meetDelayMinutes } : {},
+      ...evOverride?.busDepartureTime ? { busDepartureTime: evOverride.busDepartureTime } : {},
+      ...safeAlbums.length > 0 ? { curatedAlbumLinks: safeAlbums } : {}
+    });
+  }
+  for (const ev of publicEvents) {
+    if (addedEventIds.has(ev.eventId) || meetItemMap.has(ev.eventId)) continue;
+    const safeLiveUrl = ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl.trim()) ? ev.liveResultsUrl.trim() : void 0;
+    const safeAlbums = (ev.curatedAlbumLinks || []).filter(
+      (a) => a.visibility === "PUBLIC_HUB" && isSafeHttpsUrl(a.url)
+    );
+    meetItemMap.set(ev.eventId, {
+      id: ev.eventId,
+      date: ev.date,
+      name: ev.title,
+      eventType: ev.eventType,
+      ...ev.startTime ? { scheduledTime: ev.startTime } : {},
+      ...ev.endTime ? { endTime: ev.endTime } : {},
+      ...ev.locationName ? { locationName: ev.locationName } : {},
+      ...ev.notes ? { description: ev.notes } : {},
+      ...safeLiveUrl ? { liveResultsUrl: safeLiveUrl } : {},
+      ...ev.liveResultsLabel ? { liveResultsLabel: ev.liveResultsLabel } : {},
+      ...typeof ev.meetDelayMinutes === "number" && ev.meetDelayMinutes > 0 ? { meetDelayMinutes: ev.meetDelayMinutes } : {},
+      ...ev.busDepartureTime ? { busDepartureTime: ev.busDepartureTime } : {},
+      ...safeAlbums.length > 0 ? { curatedAlbumLinks: safeAlbums } : {}
+    });
+  }
+  const meetItems = Array.from(meetItemMap.values()).sort(
+    (a, b) => a.date.localeCompare(b.date)
+  );
   const upcomingMeets = meetItems.filter((m) => m.date >= todayIso);
   const recentSchedule = meetItems.filter((m) => m.date < todayIso).reverse();
+  const publishUnofficialSplits = Boolean(doc.brand.externalSync?.publishUnofficialSplits);
+  const unofficialStopwatchSplits = [];
   let officialResultCount = 0;
   const rosterLeaderboard = doc.memberships.filter((m) => m.status !== "REVOKED" && m.role === "ATHLETE").map((m) => {
-    const officialResults = (m.coachRecordedActivities || []).filter((a) => Boolean(a.officialRaceData)).map((a) => {
+    const displayName = formatPublicSafeSportDisplayName({
+      invitedName: m.invitedName,
+      externalSource: m.externalSource,
+      isMinorU18: m.isMinorU18,
+      parentConsentStatus: m.parentConsentStatus,
+      orgType: doc.brand.orgType
+    });
+    const recorded = m.coachRecordedActivities || [];
+    const officialResults = recorded.filter((a) => Boolean(a.officialRaceData) && !isHandTimedRaceData(a.officialRaceData, a)).map((a) => {
       const r = a.officialRaceData;
       return {
         date: a.startDateLocal.slice(0, 10),
@@ -15028,14 +15894,25 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
         ...r.sourceUrl ? { sourceUrl: r.sourceUrl } : {}
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
+    if (publishUnofficialSplits) {
+      for (const a of recorded) {
+        if (!a.officialRaceData || !isHandTimedRaceData(a.officialRaceData, a)) continue;
+        const r = a.officialRaceData;
+        unofficialStopwatchSplits.push({
+          id: a.id,
+          date: a.startDateLocal.slice(0, 10),
+          meetName: r.meetName,
+          eventLabel: r.eventLabel,
+          athleteDisplayName: displayName,
+          displayTime: r.displayFatTime,
+          lapSplitsSecs: Array.isArray(r.lapSplitsSecs) ? r.lapSplitsSecs : [],
+          ...r.lapSplitDistanceMeters ? { lapSplitDistanceMeters: r.lapSplitDistanceMeters } : {},
+          timingLabel: "Hand-Timed",
+          ...r.capturedByName ? { capturedByName: r.capturedByName } : {}
+        });
+      }
+    }
     officialResultCount += officialResults.length;
-    const displayName = formatPublicSafeSportDisplayName({
-      invitedName: m.invitedName,
-      externalSource: m.externalSource,
-      isMinorU18: m.isMinorU18,
-      parentConsentStatus: m.parentConsentStatus,
-      orgType: doc.brand.orgType
-    });
     const memberFieldPrs = fieldPrsByMembershipId.get(m.membershipId);
     return {
       membershipId: m.membershipId,
@@ -15068,12 +15945,16 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
       secondaryHex: doc.brand.secondaryHex,
       defaultSafeSportShield: doc.brand.defaultSafeSportShield,
       coachDisplayName: doc.brand.coachDisplayName,
+      ...doc.brand.timezone ? { timezone: doc.brand.timezone } : {},
       ...safePublicExternalSync ? { externalSync: safePublicExternalSync } : {}
     },
     upcomingMeets,
     recentSchedule,
     rosterLeaderboard,
     fieldLeaderboard,
+    ...publishUnofficialSplits && unofficialStopwatchSplits.length > 0 ? {
+      unofficialStopwatchSplits: unofficialStopwatchSplits.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 25)
+    } : {},
     announcements: (doc.announcements || []).filter((a) => a.publishToParentHub).slice(0, 6).map((a) => ({
       id: a.id,
       title: a.title,
@@ -15106,7 +15987,7 @@ async function followTeamAsParentOrFan(params) {
     if (!mem) {
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       mem = {
-        membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto14.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         role: "PARENT_FOLLOWER",
@@ -15135,75 +16016,32 @@ async function followTeamAsParentOrFan(params) {
     };
   });
 }
-function escapeIcsText(raw) {
-  return String(raw || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,").trim();
-}
-function foldIcsLine(line) {
-  if (line.length <= 75) return line;
-  const chunks = [line.slice(0, 75)];
-  let idx = 75;
-  while (idx < line.length) {
-    chunks.push(` ${line.slice(idx, idx + 74)}`);
-    idx += 74;
-  }
-  return chunks.join("\r\n");
-}
-function formatIcsUtcTimestamp(date) {
-  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-}
-function nextIcsDateYmd(isoDate) {
-  const parsed = /* @__PURE__ */ new Date(`${isoDate.slice(0, 10)}T12:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) {
-    return isoDate.slice(0, 10).replace(/-/g, "");
-  }
-  parsed.setUTCDate(parsed.getUTCDate() + 1);
-  return parsed.toISOString().slice(0, 10).replace(/-/g, "");
-}
-function buildPublicTeamCalendarIcs(payload) {
+function buildPublicTeamCalendarIcs(payload, originUrl) {
   const teamName = payload.brand?.name || "MeetReady Team";
   const shortName = payload.brand?.shortName || teamName;
-  const dtStamp = formatIcsUtcTimestamp(/* @__PURE__ */ new Date());
-  const seenIds = /* @__PURE__ */ new Set();
-  const combinedMeets = [...payload.upcomingMeets || [], ...payload.recentSchedule || []].filter((m) => {
-    if (!m?.id || !/^\d{4}-\d{2}-\d{2}$/.test(m.date || "")) return false;
-    if (seenIds.has(m.id)) return false;
-    seenIds.add(m.id);
-    return true;
-  }).sort((a, b) => a.date.localeCompare(b.date));
-  const lines = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//MeetReady//Parent Hub Live Calendar//EN",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    `X-WR-CALNAME:${escapeIcsText(`${teamName} Meet Schedule`)}`,
-    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
-    "X-PUBLISHED-TTL:PT6H"
-  ];
-  for (const meet of combinedMeets) {
-    const startYmd = meet.date.replace(/-/g, "");
-    const endYmd = nextIcsDateYmd(meet.date);
-    const uidSafe = String(meet.id).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80);
-    const descParts = [
-      meet.scheduledTime ? `Scheduled time: ${formatPracticeTime12h(meet.scheduledTime)}` : "",
-      meet.description || "",
-      payload.brand?.slug ? `Public Team Hub: https://meetready.app/team/${payload.brand.slug}` : ""
-    ].filter(Boolean);
-    lines.push(
-      "BEGIN:VEVENT",
-      `UID:meetready-${uidSafe}@meetready.app`,
-      `DTSTAMP:${dtStamp}`,
-      `DTSTART;VALUE=DATE:${startYmd}`,
-      `DTEND;VALUE=DATE:${endYmd}`,
-      `SUMMARY:${escapeIcsText(`${shortName} \xB7 ${meet.name}`)}`,
-      ...meet.locationName ? [`LOCATION:${escapeIcsText(meet.locationName)}`] : [],
-      ...descParts.length > 0 ? [`DESCRIPTION:${escapeIcsText(descParts.join(" \xB7 "))}`] : [],
-      "END:VEVENT"
-    );
-  }
-  lines.push("END:VCALENDAR");
-  return `${lines.map(foldIcsLine).join("\r\n")}\r
-`;
+  const combinedMeets = [...payload.upcomingMeets || [], ...payload.recentSchedule || []];
+  const events = combinedMeets.map((meet) => ({
+    uid: meet.id,
+    title: meet.name,
+    date: meet.date,
+    startTime: meet.scheduledTime,
+    endTime: meet.endTime,
+    locationName: meet.locationName,
+    description: meet.description,
+    busDepartureTime: meet.busDepartureTime,
+    meetDelayMinutes: meet.meetDelayMinutes,
+    liveResultsUrl: meet.liveResultsUrl
+  }));
+  return buildTimedTeamCalendarIcs({
+    teamName,
+    shortName,
+    slug: payload.brand?.slug,
+    timezone: payload.brand?.timezone,
+    originUrl,
+    calNameSuffix: "Meet Schedule",
+    prodId: "-//MeetReady//Parent Hub Live Calendar//EN",
+    events
+  });
 }
 function parentEmailSubsVaultKey(teamId) {
   return `team_parent_email_subs_${sanitizeTenantId(teamId).slice(0, 40)}`;
@@ -15230,8 +16068,8 @@ async function subscribeParentEmailToPublicHub(params) {
       error: "Team Hub not found or public parent updates are disabled."
     };
   }
-  const rawConfirmToken = crypto13.randomBytes(24).toString("base64url");
-  const rawUnsubToken = crypto13.randomBytes(24).toString("base64url");
+  const rawConfirmToken = crypto14.randomBytes(24).toString("base64url");
+  const rawUnsubToken = crypto14.randomBytes(24).toString("base64url");
   const confirmHash = hashToken(rawConfirmToken);
   const unsubHash = hashToken(rawUnsubToken);
   const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
@@ -15246,7 +16084,7 @@ async function subscribeParentEmailToPublicHub(params) {
       return { alreadyConfirmed: true };
     }
     const updatedRecord = {
-      id: existing?.id || `psub_${crypto13.randomBytes(6).toString("hex")}`,
+      id: existing?.id || `psub_${crypto14.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       email: cleanEmail,
       status: "PENDING",
@@ -15453,7 +16291,7 @@ async function dispatchParentHubAnnouncementEmails(params) {
     const confirmed = records.filter((r) => r.status === "CONFIRMED").slice(0, 500);
     if (confirmed.length === 0) return;
     for (const rec of confirmed) {
-      const rawUnsubToken = crypto13.randomBytes(24).toString("base64url");
+      const rawUnsubToken = crypto14.randomBytes(24).toString("base64url");
       rec.unsubscribeTokenHashes = [
         hashToken(rawUnsubToken),
         ...rec.unsubscribeTokenHashes || []
@@ -15874,7 +16712,7 @@ async function postTeamAnnouncement(params) {
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const targetGroups = sanitizeTargetEventGroups(params.targetEventGroups);
     const announcement = {
-      id: `ann_${crypto14.randomBytes(6).toString("hex")}`,
+      id: `ann_${crypto15.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       title: cleanTitle,
       body: cleanBody,
@@ -16124,7 +16962,7 @@ async function recordTeamFieldMarks(params) {
       const flightName = typeof rawEntry.flightName === "string" && rawEntry.flightName.trim() ? rawEntry.flightName.trim().slice(0, 48) : void 0;
       const placeRank = typeof rawEntry.placeRank === "number" && Number.isFinite(rawEntry.placeRank) && rawEntry.placeRank >= 1 ? Math.round(rawEntry.placeRank) : void 0;
       const advancedToFinals = typeof rawEntry.advancedToFinals === "boolean" ? rawEntry.advancedToFinals : void 0;
-      const recordId = `fld_${crypto14.randomBytes(6).toString("hex")}`;
+      const recordId = `fld_${crypto15.randomBytes(6).toString("hex")}`;
       const record = {
         id: recordId,
         teamId: doc.brand.teamId,
@@ -16313,7 +17151,7 @@ async function inviteTeamCoachingStaff(params) {
       doc.memberships,
       params.assignedAthleteMembershipIds
     );
-    const rawInviteToken = crypto14.randomBytes(16).toString("base64url");
+    const rawInviteToken = crypto15.randomBytes(16).toString("base64url");
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
     const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
@@ -16329,7 +17167,7 @@ async function inviteTeamCoachingStaff(params) {
       emailStatus = sendRes.status;
     }
     const newMem = {
-      membershipId: `mem_coach_${crypto14.randomBytes(6).toString("hex")}`,
+      membershipId: `mem_coach_${crypto15.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       role,
       squadGroup: "Coaching Staff",
@@ -16376,7 +17214,7 @@ async function inviteTeamCoachingStaff(params) {
 }
 
 // server/teamMessagingService.ts
-import crypto15 from "crypto";
+import crypto16 from "crypto";
 function escapeHtml3(raw) {
   return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -16526,7 +17364,7 @@ async function postTeamMessage(params) {
       policy.quietHoursEndHour
     );
     const record = {
-      id: `msg_${crypto15.randomBytes(6).toString("hex")}`,
+      id: `msg_${crypto16.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       channelId,
       channelScope: params.channelScope,
@@ -16701,7 +17539,7 @@ async function updateTeamMessagingPolicy(params) {
 }
 
 // server/teamLifecycleService.ts
-import crypto16 from "crypto";
+import crypto17 from "crypto";
 function sanitizeMemberPublicNameForDeletion(m) {
   m.userSid = void 0;
   m.stravaAthleteId = void 0;
@@ -17377,7 +18215,7 @@ async function issueOrResendParentConsentLink(params) {
     if (cleanIncomingEmail) {
       mem.parentGuardianEmail = cleanIncomingEmail;
     }
-    const rawConsentToken = crypto16.randomBytes(16).toString("base64url");
+    const rawConsentToken = crypto17.randomBytes(16).toString("base64url");
     mem.parentConsentTokenHash = hashToken(rawConsentToken);
     mem.parentConsentToken = void 0;
     if (mem.parentConsentStatus !== "ACKNOWLEDGED") {
@@ -17427,7 +18265,7 @@ async function issueOrResendParentConsentLink(params) {
 }
 
 // server/teamTimingDelegationService.ts
-import crypto17 from "crypto";
+import crypto18 from "crypto";
 var TIMING_PASS_INDEX_KEY = "timing_pass_index_v1";
 var PASS_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 var VALID_STATIONS = /* @__PURE__ */ new Set([
@@ -17462,7 +18300,7 @@ function abbreviatePublicRunnerName(fullName) {
   return parts[0] || "Runner";
 }
 function generatePassCode() {
-  const bytes = crypto17.randomBytes(8);
+  const bytes = crypto18.randomBytes(8);
   let out = "";
   for (let i = 0; i < 8; i++) {
     out += PASS_CODE_ALPHABET[bytes[i] % PASS_CODE_ALPHABET.length];
@@ -17477,7 +18315,7 @@ function verifyTimingPassPin(sessionId, pinHash, candidatePin) {
   const a = Buffer.from(pinHash, "utf8");
   const b = Buffer.from(expected, "utf8");
   if (a.length !== b.length) return false;
-  return crypto17.timingSafeEqual(a, b);
+  return crypto18.timingSafeEqual(a, b);
 }
 function resolveEventDefaults(eventCode) {
   const clean = sanitizeText(eventCode, 32) || "1600m";
@@ -17672,7 +18510,7 @@ async function createDelegatedTimingSession(params) {
         ...isWalkOn ? { isWalkOn: true } : {}
       });
     }
-    const sessionId = `dts_${crypto17.randomBytes(6).toString("hex")}`;
+    const sessionId = `dts_${crypto18.randomBytes(6).toString("hex")}`;
     const existingCodes = new Set(
       (doc.delegatedTimingSessions || []).map((s) => s.passCode.toUpperCase())
     );
@@ -17947,7 +18785,7 @@ async function submitDelegatedSplits(params) {
         };
       }
     }
-    const cleanClientSubmissionId = sanitizeText(params.clientSubmissionId, 96).replace(/[^a-zA-Z0-9_.:-]/g, "") || `dsub_cli_${crypto17.randomBytes(8).toString("hex")}`;
+    const cleanClientSubmissionId = sanitizeText(params.clientSubmissionId, 96).replace(/[^a-zA-Z0-9_.:-]/g, "") || `dsub_cli_${crypto18.randomBytes(8).toString("hex")}`;
     const existingList = Array.isArray(doc.pendingTimingSubmissions) ? doc.pendingTimingSubmissions : [];
     const existingDuplicate = existingList.find(
       (sub) => sub.sessionId === session.sessionId && sub.clientSubmissionId === cleanClientSubmissionId
@@ -17974,7 +18812,7 @@ async function submitDelegatedSplits(params) {
     const gunStartEpochMs = Number.isFinite(rawGunMs) && rawGunMs > 0 ? Math.round(rawGunMs) : void 0;
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const submission = {
-      submissionId: `dsub_${crypto17.randomBytes(6).toString("hex")}`,
+      submissionId: `dsub_${crypto18.randomBytes(6).toString("hex")}`,
       sessionId: session.sessionId,
       teamId,
       clientSubmissionId: cleanClientSubmissionId,
@@ -18066,6 +18904,7 @@ async function reviewDelegatedSplitSubmission(params) {
     };
   }
   const archiveQueue = [];
+  const pushQueue = [];
   const outcome = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) {
@@ -18214,6 +19053,32 @@ async function reviewDelegatedSplitSubmission(params) {
           safeSportHideWeight: baseSnap.safeSportHideWeight || enforceHideWeight,
           activities: nextSnapActs.slice(0, 30)
         };
+        const recipientSet = /* @__PURE__ */ new Set();
+        if (mem.userSid && mem.userSid !== params.callerSid) {
+          recipientSet.add(mem.userSid);
+        }
+        const guardianEmailLower = mem.parentGuardianEmail?.trim().toLowerCase();
+        if (guardianEmailLower) {
+          for (const candidate of doc.memberships) {
+            if (candidate.status !== "REVOKED" && candidate.status !== "ALUMNI" && candidate.role === "PARENT_FOLLOWER" && candidate.userSid && candidate.userSid !== params.callerSid && candidate.invitedEmail?.trim().toLowerCase() === guardianEmailLower) {
+              recipientSet.add(candidate.userSid);
+            }
+          }
+        }
+        if (recipientSet.size > 0) {
+          pushQueue.push({
+            recipientSids: Array.from(recipientSet),
+            teamId: doc.brand.teamId,
+            teamShortName: doc.brand.shortName || doc.brand.name || "MeetReady",
+            eventLabel: targetSub.eventLabel,
+            meetTitle: targetSub.meetTitle,
+            isMinorTarget: Boolean(
+              mem.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield
+            ),
+            quietHoursStart: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+            quietHoursEnd: doc.messagingPolicy?.quietHoursEndHour ?? 6
+          });
+        }
       }
     }
     doc.updatedAt = nowIso;
@@ -18238,6 +19103,24 @@ async function reviewDelegatedSplitSubmission(params) {
   });
   for (const item of archiveQueue) {
     await archiveCoachActivitiesForMember(item.member, [item.activity]).catch(() => void 0);
+  }
+  for (const item of pushQueue) {
+    const body = item.isMinorTarget ? "New coach-approved hand-timed split ready \u2014 tap to open in MeetReady." : `${item.eventLabel} hand-timed split approved for ${item.meetTitle} \u2014 tap to view in MeetReady.`;
+    await dispatchPushPayloadToUsers({
+      recipientSids: item.recipientSids,
+      payload: {
+        title: `MeetReady \xB7 ${item.teamShortName}`,
+        body,
+        url: `/?tab=FITNESS&teamId=${encodeURIComponent(item.teamId)}`,
+        tag: `thresh-split-${item.teamId}`,
+        isEmergency: false
+      },
+      isQuietHours: isWithinQuietHours(
+        params.clientLocalHour,
+        item.quietHoursStart,
+        item.quietHoursEnd
+      )
+    }).catch(() => void 0);
   }
   return outcome;
 }
@@ -20353,488 +21236,6 @@ teamRouter.post("/api/push/test", async (req, res) => {
 
 // server/routers/teamEventsRouter.ts
 import express4 from "express";
-
-// server/teamEventsService.ts
-import crypto18 from "crypto";
-var VALID_EVENT_TYPES = /* @__PURE__ */ new Set([
-  "PRACTICE",
-  "MEET",
-  "BUS_TRAVEL",
-  "TEAM_MEETING"
-]);
-var VALID_VISIBILITY_SCOPES = /* @__PURE__ */ new Set([
-  "TEAM_AND_FAMILIES_ONLY",
-  "PUBLIC_HUB",
-  "STAFF_ONLY"
-]);
-var VALID_RSVP_STATUSES = /* @__PURE__ */ new Set([
-  "GOING",
-  "OUT",
-  "LATE",
-  "MEET_CONFLICT",
-  "UNDECIDED"
-]);
-var VALID_TRAVEL_MODES = /* @__PURE__ */ new Set([
-  "TEAM_BUS",
-  "PARENT_PICKUP",
-  "SELF_TRAVEL"
-]);
-var VALID_ALBUM_PROVIDERS = /* @__PURE__ */ new Set([
-  "GOOGLE_PHOTOS",
-  "APPLE_ICLOUD",
-  "SMUGMUG",
-  "SHUTTERFLY",
-  "HUDL",
-  "OTHER"
-]);
-function teamEventsVaultKey(teamId) {
-  return `team_events_${sanitizeTenantId(teamId)}`;
-}
-function teamRsvpsVaultKey(teamId) {
-  return `team_rsvps_${sanitizeTenantId(teamId)}`;
-}
-function computeRsvpCounts(rsvps) {
-  const counts = {
-    going: 0,
-    out: 0,
-    late: 0,
-    conflict: 0,
-    undecided: 0
-  };
-  for (const r of rsvps) {
-    if (r.status === "GOING") counts.going += 1;
-    else if (r.status === "OUT") counts.out += 1;
-    else if (r.status === "LATE") counts.late += 1;
-    else if (r.status === "MEET_CONFLICT") counts.conflict += 1;
-    else counts.undecided += 1;
-  }
-  return counts;
-}
-function sanitizeCuratedAlbumLinks(raw, authorName, nowIso) {
-  if (!Array.isArray(raw)) return { links: [] };
-  const links = [];
-  for (const entry of raw.slice(0, 5)) {
-    if (!entry || typeof entry !== "object") continue;
-    const item = entry;
-    const rawUrl = String(item.url || "").trim();
-    if (!rawUrl) continue;
-    if (!isSafeHttpsUrl(rawUrl)) {
-      return {
-        links: [],
-        error: "Album links must use https:// URLs."
-      };
-    }
-    const label = String(item.label || "Meet Photo Album").trim().slice(0, 80) || "Meet Photo Album";
-    const rawProvider = String(item.provider || "").trim().toUpperCase();
-    const visibility = item.visibility === "PUBLIC_HUB" ? "PUBLIC_HUB" : "TEAM_AND_FAMILIES_ONLY";
-    links.push({
-      id: String(item.id || `alb_${crypto18.randomBytes(4).toString("hex")}`).trim(),
-      label,
-      url: rawUrl,
-      ...VALID_ALBUM_PROVIDERS.has(rawProvider) ? { provider: rawProvider } : {},
-      visibility,
-      addedByName: String(item.addedByName || authorName).trim().slice(0, 60) || authorName,
-      addedAt: String(item.addedAt || nowIso)
-    });
-  }
-  return { links };
-}
-async function loadStoredEvents(teamId) {
-  const pgEvents = await listTeamEventsPostgresAsync(teamId);
-  if (pgEvents !== null) return pgEvents;
-  return loadTenantVaultAsync(teamEventsVaultKey(teamId), []);
-}
-async function loadStoredRsvps(teamId) {
-  const pgRows = await listTeamEventRsvpsPostgresAsync(teamId);
-  if (pgRows !== null) {
-    return pgRows.map((r) => ({
-      eventId: r.event_id,
-      membershipId: r.membership_id,
-      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
-      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
-      ...r.note ? { note: r.note } : {},
-      updatedByRole: r.updated_by_role,
-      updatedAt: r.updated_at
-    }));
-  }
-  return loadTenantVaultAsync(teamRsvpsVaultKey(teamId), []);
-}
-function projectSyntheticEventsFromTeamDoc(params) {
-  const byId = /* @__PURE__ */ new Map();
-  const matchedBroadcastIds = /* @__PURE__ */ new Set();
-  const matchedPacketIds = /* @__PURE__ */ new Set();
-  for (const ev of params.storedEvents) {
-    byId.set(ev.eventId, ev);
-    if (ev.broadcastId) matchedBroadcastIds.add(ev.broadcastId);
-    if (ev.packetId) matchedPacketIds.add(ev.packetId);
-  }
-  for (const pkt of params.meetDayPackets || []) {
-    if (matchedPacketIds.has(pkt.packetId)) continue;
-    const syntheticId = pkt.eventId || `pkt_${pkt.packetId}`;
-    if (byId.has(syntheticId)) continue;
-    const liveUrl = pkt.liveResultsUrl || pkt.athleticLiveUrl;
-    byId.set(syntheticId, {
-      eventId: syntheticId,
-      teamId: params.teamId,
-      eventType: "MEET",
-      title: pkt.meetTitle,
-      date: pkt.meetDate,
-      ...typeof pkt.meetDelayMinutes === "number" ? { meetDelayMinutes: pkt.meetDelayMinutes } : {},
-      ...liveUrl && isSafeHttpsUrl(liveUrl) ? { liveResultsUrl: liveUrl } : {},
-      ...pkt.liveResultsLabel ? { liveResultsLabel: pkt.liveResultsLabel } : {},
-      ...pkt.curatedAlbumLinks?.length ? { curatedAlbumLinks: pkt.curatedAlbumLinks } : {},
-      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
-      packetId: pkt.packetId,
-      createdAt: pkt.updatedAt,
-      updatedAt: pkt.updatedAt
-    });
-  }
-  for (const bc of params.broadcastWorkouts || []) {
-    if (matchedBroadcastIds.has(bc.broadcastId)) continue;
-    const syntheticId = bc.eventId || `bc_${bc.broadcastId}`;
-    if (byId.has(syntheticId)) continue;
-    if (!bc.isOfficialMeet && !bc.scheduledTime) continue;
-    byId.set(syntheticId, {
-      eventId: syntheticId,
-      teamId: params.teamId,
-      eventType: bc.isOfficialMeet ? "MEET" : "PRACTICE",
-      title: bc.name,
-      date: bc.date,
-      ...bc.scheduledTime ? { startTime: bc.scheduledTime } : {},
-      ...bc.locationName ? { locationName: bc.locationName } : {},
-      ...bc.liveResultsUrl && isSafeHttpsUrl(bc.liveResultsUrl) ? { liveResultsUrl: bc.liveResultsUrl } : {},
-      ...bc.liveResultsLabel ? { liveResultsLabel: bc.liveResultsLabel } : {},
-      ...bc.curatedAlbumLinks?.length ? { curatedAlbumLinks: bc.curatedAlbumLinks } : {},
-      ...bc.targetEventGroups?.length ? { targetEventGroups: bc.targetEventGroups } : {},
-      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
-      broadcastId: bc.broadcastId,
-      createdAt: bc.createdAt,
-      updatedAt: bc.createdAt
-    });
-  }
-  return Array.from(byId.values()).sort((a, b) => a.date.localeCompare(b.date));
-}
-async function listTeamEventsForCaller(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem) {
-    return { ok: false, status: 403, error: "Team membership required." };
-  }
-  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
-  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
-  const [storedEvents, storedRsvps] = await Promise.all([
-    loadStoredEvents(params.teamId),
-    loadStoredRsvps(params.teamId)
-  ]);
-  const allEvents = projectSyntheticEventsFromTeamDoc({
-    teamId: params.teamId,
-    storedEvents,
-    broadcastWorkouts: doc.broadcastWorkouts,
-    meetDayPackets: doc.meetDayPackets
-  }).filter((ev) => isStaff || ev.visibilityScope !== "STAFF_ONLY");
-  const rsvpsGrouped = /* @__PURE__ */ new Map();
-  for (const rsvp of storedRsvps) {
-    const arr = rsvpsGrouped.get(rsvp.eventId) || [];
-    arr.push(rsvp);
-    rsvpsGrouped.set(rsvp.eventId, arr);
-  }
-  const rsvpCountsByEventId = {};
-  const rsvpsByEventId = {};
-  const myRsvps = [];
-  for (const ev of allEvents) {
-    const list = rsvpsGrouped.get(ev.eventId) || [];
-    rsvpCountsByEventId[ev.eventId] = computeRsvpCounts(list);
-    if (isStaff) {
-      rsvpsByEventId[ev.eventId] = list;
-    }
-    for (const rsvp of list) {
-      const isOwn = rsvp.membershipId === callerMem.membershipId;
-      const isChild = Boolean(linkedChildIds && linkedChildIds.has(rsvp.membershipId));
-      if (isOwn || isChild) {
-        myRsvps.push(rsvp);
-      }
-    }
-  }
-  return {
-    ok: true,
-    payload: {
-      events: allEvents,
-      rsvpCountsByEventId,
-      myRsvps,
-      ...isStaff ? { rsvpsByEventId } : {}
-    }
-  };
-}
-async function upsertTeamEvent(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
-    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
-  }
-  const cleanDate = String(params.input.date || "").trim().slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
-    return { ok: false, status: 400, error: "Valid YYYY-MM-DD event date required." };
-  }
-  const cleanTitle = String(params.input.title || "").trim().slice(0, 140);
-  if (!cleanTitle) {
-    return { ok: false, status: 400, error: "Event title is required." };
-  }
-  const rawType = String(params.input.eventType || "PRACTICE").trim().toUpperCase();
-  const eventType = VALID_EVENT_TYPES.has(rawType) ? rawType : "PRACTICE";
-  const rawVis = String(params.input.visibilityScope || "TEAM_AND_FAMILIES_ONLY").trim().toUpperCase();
-  const visibilityScope = VALID_VISIBILITY_SCOPES.has(rawVis) ? rawVis : "TEAM_AND_FAMILIES_ONLY";
-  const liveResultsUrl = String(params.input.liveResultsUrl || "").trim();
-  if (liveResultsUrl && !isSafeHttpsUrl(liveResultsUrl)) {
-    return { ok: false, status: 400, error: "Live timing link must use an https:// URL." };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const albumValidation = sanitizeCuratedAlbumLinks(
-    params.input.curatedAlbumLinks,
-    callerMem.invitedName,
-    nowIso
-  );
-  if (albumValidation.error) {
-    return { ok: false, status: 400, error: albumValidation.error };
-  }
-  const hasPublicAlbum = albumValidation.links.some((l) => l.visibility === "PUBLIC_HUB");
-  const photoReleaseOptOutNames = hasPublicAlbum ? doc.memberships.filter((m) => m.role === "ATHLETE" && m.status !== "REVOKED" && m.photoReleaseOptOut).map((m) => m.invitedName) : [];
-  const targetEventGroups = Array.isArray(params.input.targetEventGroups) ? sanitizeTargetEventGroups(
-    params.input.targetEventGroups.map((g) => String(g))
-  ) || [] : [];
-  const eventId = String(params.input.eventId || "").trim().slice(0, 80) || `ev_${crypto18.randomBytes(6).toString("hex")}`;
-  const safeDelay = typeof params.input.meetDelayMinutes === "number" && Number.isFinite(params.input.meetDelayMinutes) ? Math.max(0, Math.min(240, Math.round(params.input.meetDelayMinutes))) : void 0;
-  const existingPg = await listTeamEventsPostgresAsync(params.teamId);
-  let createdAt = nowIso;
-  if (existingPg) {
-    const prev = existingPg.find((e) => e.eventId === eventId);
-    if (prev?.createdAt) createdAt = prev.createdAt;
-  }
-  const nextEvent = {
-    eventId,
-    teamId: params.teamId,
-    eventType,
-    title: cleanTitle,
-    date: cleanDate,
-    ...typeof params.input.startTime === "string" && params.input.startTime.trim() ? { startTime: params.input.startTime.trim().slice(0, 16) } : {},
-    ...typeof params.input.endTime === "string" && params.input.endTime.trim() ? { endTime: params.input.endTime.trim().slice(0, 16) } : {},
-    ...typeof params.input.timezone === "string" && params.input.timezone.trim() ? { timezone: params.input.timezone.trim().slice(0, 64) } : {},
-    ...typeof params.input.locationName === "string" && params.input.locationName.trim() ? { locationName: params.input.locationName.trim().slice(0, 120) } : {},
-    ...typeof params.input.venueId === "string" && params.input.venueId.trim() ? { venueId: params.input.venueId.trim().slice(0, 64) } : {},
-    ...typeof params.input.busDepartureTime === "string" && params.input.busDepartureTime.trim() ? { busDepartureTime: params.input.busDepartureTime.trim().slice(0, 24) } : {},
-    ...typeof params.input.busReturnTime === "string" && params.input.busReturnTime.trim() ? { busReturnTime: params.input.busReturnTime.trim().slice(0, 24) } : {},
-    ...safeDelay !== void 0 ? { meetDelayMinutes: safeDelay } : {},
-    ...liveResultsUrl ? { liveResultsUrl } : {},
-    ...typeof params.input.liveResultsLabel === "string" && params.input.liveResultsLabel.trim() ? { liveResultsLabel: params.input.liveResultsLabel.trim().slice(0, 60) } : {},
-    ...albumValidation.links.length > 0 ? { curatedAlbumLinks: albumValidation.links } : {},
-    ...targetEventGroups.length > 0 ? { targetEventGroups } : {},
-    visibilityScope,
-    ...typeof params.input.broadcastId === "string" && params.input.broadcastId.trim() ? { broadcastId: params.input.broadcastId.trim().slice(0, 80) } : {},
-    ...typeof params.input.packetId === "string" && params.input.packetId.trim() ? { packetId: params.input.packetId.trim().slice(0, 80) } : {},
-    ...typeof params.input.notes === "string" && params.input.notes.trim() ? { notes: params.input.notes.trim().slice(0, 500) } : {},
-    createdAt,
-    updatedAt: nowIso
-  };
-  const savedToPg = await upsertTeamEventPostgresAsync({
-    teamId: params.teamId,
-    eventId,
-    dateIso: cleanDate,
-    eventType,
-    eventPayload: nextEvent
-  });
-  if (savedToPg === null) {
-    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
-      const existingList = await loadTenantVaultAsync(
-        teamEventsVaultKey(params.teamId),
-        []
-      );
-      const prev = existingList.find((e) => e.eventId === eventId);
-      if (prev?.createdAt) {
-        nextEvent.createdAt = prev.createdAt;
-      }
-      const nextList = [
-        ...existingList.filter((e) => e.eventId !== eventId),
-        nextEvent
-      ].sort((a, b) => a.date.localeCompare(b.date));
-      await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextList);
-    });
-  }
-  await appendAuditLogAsync({
-    teamId: params.teamId,
-    actorSid: params.callerSid,
-    action: "TEAM_EVENT_UPSERTED",
-    targetId: eventId,
-    metadata: { eventType, date: cleanDate, visibilityScope }
-  });
-  return {
-    ok: true,
-    event: nextEvent,
-    ...photoReleaseOptOutNames.length > 0 ? { photoReleaseOptOutNames } : {}
-  };
-}
-async function deleteTeamEvent(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
-    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
-  }
-  const cleanEventId = String(params.eventId || "").trim();
-  if (!cleanEventId) return { ok: false, status: 400, error: "Event ID required." };
-  const deletedPg = await deleteTeamEventPostgresAsync(params.teamId, cleanEventId);
-  let deleted = Boolean(deletedPg);
-  if (deletedPg === null) {
-    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
-      const events = await loadTenantVaultAsync(
-        teamEventsVaultKey(params.teamId),
-        []
-      );
-      const nextEvents = events.filter((e) => e.eventId !== cleanEventId);
-      deleted = nextEvents.length !== events.length;
-      if (deleted) {
-        await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextEvents);
-      }
-    });
-    if (deleted) {
-      await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
-        const rsvps = await loadTenantVaultAsync(
-          teamRsvpsVaultKey(params.teamId),
-          []
-        );
-        const filtered = rsvps.filter((r) => r.eventId !== cleanEventId);
-        if (filtered.length !== rsvps.length) {
-          await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), filtered);
-        }
-      });
-    }
-  }
-  return { ok: true, deleted };
-}
-async function submitTeamEventRsvp(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem) {
-    return { ok: false, status: 403, error: "Team membership required." };
-  }
-  const cleanEventId = String(params.eventId || "").trim();
-  if (!cleanEventId) {
-    return { ok: false, status: 400, error: "Event ID required." };
-  }
-  const cleanStatus = String(params.status || "").trim().toUpperCase();
-  if (!VALID_RSVP_STATUSES.has(cleanStatus)) {
-    return { ok: false, status: 400, error: "Invalid RSVP status." };
-  }
-  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
-  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
-  let targetMembershipId = String(params.membershipId || "").trim();
-  if (!targetMembershipId) {
-    if (callerMem.role === "PARENT_FOLLOWER") {
-      const firstChild = linkedChildIds ? Array.from(linkedChildIds)[0] : "";
-      if (!firstChild) {
-        return {
-          ok: false,
-          status: 403,
-          error: "No linked student-athlete found for this guardian account."
-        };
-      }
-      targetMembershipId = firstChild;
-    } else {
-      targetMembershipId = callerMem.membershipId;
-    }
-  }
-  const targetMem = doc.memberships.find(
-    (m) => m.membershipId === targetMembershipId && m.status !== "REVOKED"
-  );
-  if (!targetMem) {
-    return { ok: false, status: 404, error: "Target athlete membership not found." };
-  }
-  if (!isStaff) {
-    if (callerMem.role === "PARENT_FOLLOWER") {
-      if (!linkedChildIds || !linkedChildIds.has(targetMembershipId)) {
-        return {
-          ok: false,
-          status: 403,
-          error: "Guardians may only submit RSVPs for their linked student-athletes."
-        };
-      }
-    } else if (targetMembershipId !== callerMem.membershipId) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Athletes may only submit RSVPs for themselves."
-      };
-    }
-  }
-  const rawTravel = typeof params.travelMode === "string" ? params.travelMode.trim().toUpperCase() : void 0;
-  const travelMode = rawTravel && VALID_TRAVEL_MODES.has(rawTravel) ? rawTravel : void 0;
-  const note = typeof params.note === "string" && params.note.trim() ? params.note.trim().slice(0, 140) : void 0;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const nextRsvp = {
-    eventId: cleanEventId,
-    membershipId: targetMembershipId,
-    status: cleanStatus,
-    ...travelMode ? { travelMode } : {},
-    ...note ? { note } : {},
-    updatedByRole: callerMem.role,
-    updatedAt: nowIso
-  };
-  const savedToPg = await upsertTeamEventRsvpPostgresAsync({
-    teamId: params.teamId,
-    eventId: cleanEventId,
-    membershipId: targetMembershipId,
-    status: cleanStatus,
-    travelMode,
-    note,
-    updatedByRole: callerMem.role,
-    updatedBySid: params.callerSid,
-    updatedAt: nowIso
-  });
-  let eventRsvps = [];
-  if (savedToPg !== null) {
-    const pgRows = await listTeamEventRsvpsPostgresAsync(params.teamId, cleanEventId);
-    eventRsvps = (pgRows || []).map((r) => ({
-      eventId: r.event_id,
-      membershipId: r.membership_id,
-      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
-      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
-      ...r.note ? { note: r.note } : {},
-      updatedByRole: r.updated_by_role,
-      updatedAt: r.updated_at
-    }));
-  } else {
-    await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
-      const existingList = await loadTenantVaultAsync(
-        teamRsvpsVaultKey(params.teamId),
-        []
-      );
-      const nextList = [
-        ...existingList.filter(
-          (r) => !(r.eventId === cleanEventId && r.membershipId === targetMembershipId)
-        ),
-        nextRsvp
-      ];
-      await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), nextList);
-      eventRsvps = nextList.filter((r) => r.eventId === cleanEventId);
-    });
-  }
-  return {
-    ok: true,
-    rsvp: nextRsvp,
-    counts: computeRsvpCounts(eventRsvps)
-  };
-}
-
-// server/routers/teamEventsRouter.ts
 var teamEventsRouter = express4.Router();
 teamEventsRouter.get("/api/teams/:teamId/events", async (req, res) => {
   try {
@@ -20962,6 +21363,101 @@ teamEventsRouter.put(
         ok: false,
         error: err instanceof Error ? err.message : "Failed submitting RSVP."
       });
+    }
+  }
+);
+teamEventsRouter.get(
+  "/api/teams/:teamId/calendar-feed/meta",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const result = await getOrMintPrivateCalendarMeta({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        originUrl: resolveTrustedRequestOrigin(req)
+      });
+      if (!result.ok || !result.feedUrl) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to load private calendar link."
+        });
+        return;
+      }
+      res.json({
+        ok: true,
+        feedUrl: result.feedUrl,
+        webcalUrl: result.webcalUrl,
+        googleCalendarUrl: result.googleCalendarUrl,
+        canRotate: Boolean(result.canRotate)
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed loading calendar metadata."
+      });
+    }
+  }
+);
+teamEventsRouter.post(
+  "/api/teams/:teamId/calendar-feed/rotate",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const result = await rotatePrivateCalendarToken({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        originUrl: resolveTrustedRequestOrigin(req)
+      });
+      if (!result.ok || !result.feedUrl) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to rotate calendar feed token."
+        });
+        return;
+      }
+      res.json({
+        ok: true,
+        feedUrl: result.feedUrl,
+        webcalUrl: result.webcalUrl,
+        googleCalendarUrl: result.googleCalendarUrl,
+        canRotate: Boolean(result.canRotate)
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed rotating calendar token."
+      });
+    }
+  }
+);
+teamEventsRouter.get(
+  "/api/teams/:teamId/calendar-feed/:tokenFile",
+  async (req, res) => {
+    try {
+      const result = await getPrivateTeamCalendarIcsByToken({
+        teamId: String(req.params.teamId || ""),
+        token: String(req.params.tokenFile || ""),
+        originUrl: resolveTrustedRequestOrigin(req)
+      });
+      if (!result.ok || !result.icsBody) {
+        res.status(result.status || 404).type("text/plain").send("Team calendar feed not found.");
+        return;
+      }
+      const safeSlug = String(result.slug || "team").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "team";
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader("Content-Disposition", `inline; filename="${safeSlug}-team-schedule.ics"`);
+      res.setHeader("Cache-Control", "private, max-age=900");
+      res.status(200).send(result.icsBody);
+    } catch {
+      res.status(500).type("text/plain").send("Unable to generate team calendar feed.");
     }
   }
 );
@@ -22907,7 +23403,7 @@ teamSyncRouter.get(
         res.status(404).type("text/plain").send("Public team schedule not found.");
         return;
       }
-      const icsBody = buildPublicTeamCalendarIcs(payload);
+      const icsBody = buildPublicTeamCalendarIcs(payload, resolveSyncOrigin(req));
       const safeSlug = payload.brand.slug.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "team";
       res.setHeader("Content-Type", "text/calendar; charset=utf-8");
       res.setHeader("Content-Disposition", `inline; filename="${safeSlug}-schedule.ics"`);
@@ -32868,7 +33364,7 @@ apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
   const env = process.env;
-  const buildTimestamp = "2026-11-23T15:23:01Z" ? "2026-11-23T15:23:01Z" : SERVER_BOOT_ISO;
+  const buildTimestamp = "2026-11-23T16:15:21Z" ? "2026-11-23T16:15:21Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",

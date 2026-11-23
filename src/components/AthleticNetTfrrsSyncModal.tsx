@@ -84,6 +84,9 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
   const [enablePublicHub, setEnablePublicHub] = useState<boolean>(
     activeTeam?.brand.externalSync?.enablePublicParentHub !== false
   );
+  const [publishUnofficialSplits, setPublishUnofficialSplits] = useState<boolean>(
+    Boolean(activeTeam?.brand.externalSync?.publishUnofficialSplits)
+  );
   const [teamFilterKeyword, setTeamFilterKeyword] = useState<string>(
     activeTeam?.brand.externalSync?.teamFilterKeyword ||
       (activeTeam?.brand.name
@@ -113,6 +116,9 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
     );
     setIcsUrlInput(activeTeam.brand.externalSync?.icsCalendarUrl || '');
     setEnablePublicHub(activeTeam.brand.externalSync?.enablePublicParentHub !== false);
+    setPublishUnofficialSplits(
+      Boolean(activeTeam.brand.externalSync?.publishUnofficialSplits)
+    );
     setTeamFilterKeyword(
       activeTeam.brand.externalSync?.teamFilterKeyword ||
         activeTeam.brand.name.replace(/\s+(high\s+school|xc|track|varsity).*$/i, '').trim()
@@ -403,6 +409,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
       teamFilterKeyword,
       ...(icsUrlInput.trim() ? { icsCalendarUrl: icsUrlInput.trim() } : {}),
       enablePublicParentHub: enablePublicHub,
+      publishUnofficialSplits,
     };
 
     try {
@@ -542,6 +549,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         : {}),
       teamFilterKeyword,
       enablePublicParentHub: enablePublicHub,
+      publishUnofficialSplits,
     };
 
     const hasFieldMarks = previewAnalysis.matchedSummary.matchedFieldItems.length > 0;
@@ -1158,6 +1166,23 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
               <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
                 Shares meet schedules and official marks publicly; athlete emails, GPS routes, HRV, RPE, and weight stay private.
               </p>
+              <label className="flex items-start gap-2 rounded-lg border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-turf/60 px-3 py-2 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  data-testid="sync-publish-unofficial-splits-toggle"
+                  checked={publishUnofficialSplits}
+                  onChange={(e) => setPublishUnofficialSplits(e.target.checked)}
+                  className="mt-0.5 rounded border-stone-300 shrink-0"
+                />
+                <span>
+                  <span className="font-semibold text-ap-ink dark:text-ap-chalk">
+                    Publish coach-approved unofficial hand-timed splits to Public Parent Hub
+                  </span>
+                  <span className="block text-2xs text-ap-muted dark:text-ap-muted-dark mt-0.5">
+                    Off by default. Clearly labeled Unofficial · Hand-Timed, with SafeSport initials enforced for minor athletes.
+                  </span>
+                </span>
+              </label>
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 {publicHubUrl ? (
                   <>

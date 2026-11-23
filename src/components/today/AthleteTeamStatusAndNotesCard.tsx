@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { Suspense, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Calendar,
@@ -13,21 +13,37 @@ import {
   INJURY_REGION_METADATA,
   RTP_STAGE_METADATA,
 } from '../../physiology/injuryHubEngine';
+import { useTeamEvents } from '../../hooks/useTeamEvents';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { formatRaceTimingBadgeLabel, isHandTimedRaceData } from '../../utils/raceTimingBadge';
+import { formatPracticeTime12h } from '../../utils/workoutScheduleUtils';
 import { postTeamWorkoutCommentApi } from '../../utils/teamLifecycleApi';
 import type {
   AthleteOwnMeetScheduleItem,
   DelegatedTimingSessionRecord,
+  TeamEventRsvpStatus,
+  TeamEventTravelMode,
   TeamInjuryCaseRecord,
   TeamInjuryRtpStage,
   TeamSummaryWithRole,
   TeamWorkoutComment,
+  UnifiedActivity,
 } from '../../types';
+
+const TeamCalendarSubscribeButton = lazyWithRetry(
+  () =>
+    import('../calendar/TeamCalendarSubscribeButton').then((m) => ({
+      default: m.TeamCalendarSubscribeButton,
+    })),
+  { chunkKey: 'TeamCalendarSubscribeButton', restoreTab: 'fitness' }
+);
 
 export interface AthleteTeamStatusAndNotesCardProps {
   activeTeam: TeamSummaryWithRole;
   myTeams: TeamSummaryWithRole[];
   todayIso: string;
   isSampleDemoMode?: boolean;
+  activities?: UnifiedActivity[];
   onTeamsUpdated?: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
   onLaunchDelegatedTiming?: (assignment: DelegatedTimingSessionRecord) => void;
 }
@@ -106,6 +122,7 @@ export const AthleteTeamStatusAndNotesCard: React.FC<
   myTeams,
   todayIso,
   isSampleDemoMode = false,
+  activities = [],
   onTeamsUpdated,
   onLaunchDelegatedTiming,
 }) => {
@@ -113,6 +130,52 @@ export const AthleteTeamStatusAndNotesCard: React.FC<
   const [isSending, setIsSending] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const isDemoTeamContext =
+    isSampleDemoMode ||
+    activeTeam.brand.teamId.startsWith('demo_team_') ||
+    activeTeam.brand.teamId.startsWith('demo-team-');
+
+  const {
+    events: teamEvents,
+    myRsvps,
+    rsvpsByEventId,
+    submitRsvp,
+    loading: savingRsvp,
+  } = useTeamEvents(activeTeam, isDemoTeamContext);
+
+  const rsvpByEventAndMember = useMemo(() => {
+    const map = new Map<string, (typeof myRsvps)[number]>();
+    for (const r of [...Object.values(rsvpsByEventId).flat(), ...myRsvps]) {
+      map.set(`${r.eventId}::${r.membershipId}`, r);
+    }
+    return map;
+  }, [rsvpsByEventId, myRsvps]);
+
+  const upcomingEvents = useMemo(
+    () =>
+      teamEvents
+        .filter((ev) => ev.date >= todayIso && ev.visibilityScope !== 'STAFF_ONLY')
+        .slice(0, 3),
+    [teamEvents, todayIso]
+  );
+
+  const latestTimedSplits = useMemo(() => {
+    const selfMember = (activeTeam.memberships || []).find(
+      (m) => m.membershipId === activeTeam.myMembershipId
+    );
+    const seen = new Set<string>();
+    const combined: UnifiedActivity[] = [];
+    for (const act of [...(selfMember?.coachRecordedActivities || []), ...activities]) {
+      if (!act?.id || seen.has(act.id)) continue;
+      if (!act.officialRaceData && !act.stopwatchFusionMeta?.lapSplitsSecs?.length) continue;
+      seen.add(act.id);
+      combined.push(act);
+    }
+    return combined
+      .sort((a, b) => String(b.startDateLocal).localeCompare(String(a.startDateLocal)))
+      .slice(0, 3);
+  }, [activeTeam.memberships, activeTeam.myMembershipId, activities]);
 
   const openRtpCase = useMemo<TeamInjuryCaseRecord | null>(() => {
     const cases = activeTeam.injuryCases || [];
@@ -163,7 +226,9 @@ export const AthleteTeamStatusAndNotesCard: React.FC<
     !openRtpCase &&
     visibleComments.length === 0 &&
     activeDelegatedAssignments.length === 0 &&
-    upcomingMeetSchedule.length === 0
+    upcomingMeetSchedule.length === 0 &&
+    upcomingEvents.length === 0 &&
+    latestTimedSplits.length === 0
   ) {
     return null;
   }
@@ -512,6 +577,184 @@ export const AthleteTeamStatusAndNotesCard: React.FC<
                       )}
                     </div>
                   )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {upcomingEvents.length > 0 && (
+        <section
+          data-testid="athlete-upcoming-rsvp-section"
+          className="rounded-2xl liquid-glass px-3.5 py-3 sm:px-4 space-y-2.5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 text-xs font-extrabold text-ap-ink dark:text-ap-chalk">
+              <Calendar className="w-4 h-4 ap-text-brand shrink-0" />
+              <span>Upcoming Schedule &amp; Availability RSVP</span>
+            </div>
+            <Suspense fallback={null}>
+              <TeamCalendarSubscribeButton
+                teamId={activeTeam.brand.teamId}
+                isDemoMode={isDemoTeamContext}
+                canRotate={false}
+                compact
+                label="Subscribe"
+                testId="athlete-calendar-subscribe-btn"
+              />
+            </Suspense>
+          </div>
+          <div className="space-y-2">
+            {upcomingEvents.map((ev) => {
+              const myRsvp = rsvpByEventAndMember.get(
+                `${ev.eventId}::${activeTeam.myMembershipId}`
+              );
+              const safeLiveUrl =
+                ev.liveResultsUrl && /^https:\/\//i.test(ev.liveResultsUrl.trim())
+                  ? ev.liveResultsUrl.trim()
+                  : null;
+              return (
+                <div
+                  key={ev.eventId}
+                  data-testid={`athlete-event-row-${ev.eventId}`}
+                  className="rounded-xl ap-card-inset px-3 py-2.5 space-y-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-ap-ink dark:text-ap-chalk truncate">
+                        {ev.title}
+                      </div>
+                      <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                        {ev.date}
+                        {ev.startTime ? ` · ${formatPracticeTime12h(ev.startTime)}` : ''}
+                        {ev.busDepartureTime
+                          ? ` · Bus ${formatPracticeTime12h(ev.busDepartureTime)}`
+                          : ''}
+                      </div>
+                    </div>
+                    {safeLiveUrl && (
+                      <a
+                        href={safeLiveUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-2xs font-mono font-bold text-ap-cobalt dark:text-ap-volt hover:underline"
+                      >
+                        <span>{ev.liveResultsLabel || 'Live Results'}</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(
+                      [
+                        { status: 'GOING', label: 'Going' },
+                        { status: 'LATE', label: 'Late' },
+                        { status: 'MEET_CONFLICT', label: 'Conflict' },
+                        { status: 'OUT', label: 'Out' },
+                      ] as const
+                    ).map((btn) => {
+                      const active = myRsvp?.status === btn.status;
+                      return (
+                        <button
+                          key={btn.status}
+                          type="button"
+                          disabled={savingRsvp}
+                          data-testid={`athlete-rsvp-${ev.eventId}-${btn.status.toLowerCase()}`}
+                          aria-pressed={active}
+                          onClick={() =>
+                            void submitRsvp({
+                              eventId: ev.eventId,
+                              membershipId: activeTeam.myMembershipId,
+                              status: btn.status as TeamEventRsvpStatus,
+                              travelMode: myRsvp?.travelMode,
+                            })
+                          }
+                          className={`min-h-[32px] px-2.5 py-1 rounded-lg font-mono text-2xs font-bold cursor-pointer ${
+                            active
+                              ? btn.status === 'GOING'
+                                ? 'bg-emerald-600 text-white'
+                                : btn.status === 'OUT' || btn.status === 'MEET_CONFLICT'
+                                  ? 'bg-rose-600 text-white'
+                                  : 'bg-amber-500 text-ap-obsidian'
+                              : 'bg-white dark:bg-ap-carbon border border-stone-200 dark:border-ap-edge text-ap-ink dark:text-ap-chalk'
+                          }`}
+                        >
+                          {btn.label}
+                        </button>
+                      );
+                    })}
+                    {(ev.eventType === 'MEET' || ev.eventType === 'BUS_TRAVEL') && (
+                      <select
+                        aria-label={`Travel mode for ${ev.title}`}
+                        value={myRsvp?.travelMode || 'TEAM_BUS'}
+                        onChange={(e) =>
+                          void submitRsvp({
+                            eventId: ev.eventId,
+                            membershipId: activeTeam.myMembershipId,
+                            status: myRsvp?.status || 'GOING',
+                            travelMode: e.target.value as TeamEventTravelMode,
+                          })
+                        }
+                        className="min-h-[32px] rounded-lg border border-stone-200 dark:border-ap-edge bg-white dark:bg-ap-carbon px-2 font-mono text-2xs"
+                      >
+                        <option value="TEAM_BUS">Team Bus</option>
+                        <option value="PARENT_PICKUP">Parent Pickup</option>
+                        <option value="SELF_TRAVEL">Self Travel</option>
+                      </select>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {latestTimedSplits.length > 0 && (
+        <section
+          data-testid="athlete-latest-splits-card"
+          className="rounded-2xl liquid-glass px-3.5 py-3 sm:px-4 space-y-2"
+        >
+          <div className="flex items-center gap-1.5 text-xs font-extrabold text-ap-ink dark:text-ap-chalk">
+            <Timer className="w-4 h-4 text-cyan-600 dark:text-cyan-400 shrink-0" />
+            <span>Latest Timed Splits &amp; Marks</span>
+          </div>
+          <div className="space-y-1.5">
+            {latestTimedSplits.map((act) => {
+              const meta = act.officialRaceData;
+              const lapSplits = meta?.lapSplitsSecs || act.stopwatchFusionMeta?.lapSplitsSecs || [];
+              const handTimed = meta
+                ? isHandTimedRaceData(meta, act)
+                : true;
+              return (
+                <div
+                  key={act.id}
+                  data-testid={`athlete-split-row-${act.id}`}
+                  className="rounded-xl ap-card-inset px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                >
+                  <div className="min-w-0">
+                    <div className="font-bold text-ap-ink dark:text-ap-chalk truncate">
+                      {meta ? `${meta.eventLabel} · ${meta.meetName}` : act.name}
+                    </div>
+                    <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                      {act.startDateLocal.slice(0, 10)}
+                      {lapSplits.length > 0
+                        ? ` · Splits: ${lapSplits.map((s) => `${s.toFixed(1)}s`).join(', ')}`
+                        : ''}
+                    </div>
+                  </div>
+                  <span
+                    className={`px-2 py-0.5 rounded font-mono text-2xs font-bold shrink-0 ${
+                      handTimed
+                        ? 'bg-cyan-500/15 text-cyan-800 dark:text-cyan-300'
+                        : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    {meta
+                      ? formatRaceTimingBadgeLabel(meta, act)
+                      : 'Hand-Timed Workout Splits'}
+                  </span>
                 </div>
               );
             })}

@@ -12,6 +12,7 @@ import type {
   SessionCheckInRecord,
   SportCategory,
   TargetGoal,
+  TeamMessageChannelScope,
   TeamSummaryWithRole,
   TrackWorkoutSpec,
   UnifiedActivity,
@@ -26,6 +27,7 @@ import { doesCoachOwnAthlete } from '../physiology/teamOnboardingEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
 import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
 import { useCoachTeamPlanActions } from '../hooks/useCoachTeamPlanActions';
+import { useTeamEvents } from '../hooks/useTeamEvents';
 import { hasSessionActiveHint } from '../utils/sessionHint';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
@@ -50,6 +52,13 @@ import {
 const CoachPracticeHome = lazyWithRetry(
   () => import('./coach/CoachPracticeHome').then((m) => ({ default: m.CoachPracticeHome })),
   { chunkKey: 'CoachPracticeHome', restoreTab: 'coach' }
+);
+const CoachClipboardWorkoutBuilder = lazyWithRetry(
+  () =>
+    import('./CoachClipboardWorkoutBuilder').then((m) => ({
+      default: m.CoachClipboardWorkoutBuilder,
+    })),
+  { chunkKey: 'CoachClipboardWorkoutBuilder', restoreTab: 'coach' }
 );
 const CoachMeetsAndPlanView = lazyWithRetry(
   () =>
@@ -192,6 +201,7 @@ export interface CoachWorkspaceViewProps {
   onOpenRosterModal: () => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
+  onOpenTeamMessages?: (scope?: TeamMessageChannelScope) => void;
   onOpenDelegateTimingModal?: (preset?: {
     meetTitle?: string;
     meetDate?: string;
@@ -252,6 +262,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onOpenAthleteToday,
   onOpenPublicTeamHub,
   onOpenCoachGuide,
+  onOpenTeamMessages,
   onOpenDelegateTimingModal,
   pendingTimingSubmissionsCount,
   isSampleDemoMode = false,
@@ -326,6 +337,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     onDeletePlanBlock,
     onBatchCreatePlannedEvents,
   });
+
+  const teamEventsState = useTeamEvents(activeTeam, isDemoTeam);
 
   const connectedAthletesOnly = useMemo(
     () =>
@@ -722,13 +735,13 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         </section>
       )}
 
-      {/* 1. PRACTICE HOME */}
+      {/* 1. COACH HOME (PANEL LINKS, ALERTS, MESSAGING) */}
       {subTab === 'CLIPBOARD' && (
-        <WorkspaceErrorBoundary fallbackTitle="Practice Home" restoreTab="coach">
+        <WorkspaceErrorBoundary fallbackTitle="Coach Home" restoreTab="coach">
           <Suspense
             fallback={
               <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                Loading Practice Ops…
+                Loading Coach Home…
               </div>
             }
           >
@@ -738,18 +751,21 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               myTeams={myTeams}
               connectedAthletesOnly={connectedAthletesOnly}
               scopedConnectedAthletes={scopedConnectedAthletes}
-              primaryAthleteDisplayName={primaryAthleteDisplayName}
-              selfProfile={selfProfile}
               complexityTier={complexityTier}
-              defaultCoachEventGroup={defaultCoachEventGroup}
               effectiveAllowedEventGroups={effectiveAllowedEventGroups}
               flaggedTriageCount={flaggedTriageCount}
               effectivePendingTimingCount={effectivePendingTimingCount}
+              upcomingConflictCount={teamEventsState.upcomingConflictCount}
+              todayRsvpsByMemberId={teamEventsState.todayRsvpsByMemberId}
               onTeamsUpdated={onTeamsUpdated}
-              onCreatePlannedEvent={onCreatePlannedEvent}
               onOpenStopwatch={(mode) => {
                 setTracksideMode(mode);
                 setSubTab('STOPWATCH');
+              }}
+              onOpenWorkoutsTab={() => setSubTab('WORKOUTS')}
+              onOpenMeetDayTab={() => {
+                setMeetsPlanSubView('MEET_DAY');
+                setSubTab('TEAM_PLAN');
               }}
               onOpenDelegateModal={(tab) => {
                 setDelegatePreset(null);
@@ -771,9 +787,41 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 setTeamHubSubView('ROSTER');
                 setSubTab('ROSTER');
               }}
+              onOpenTeamMessages={onOpenTeamMessages}
             />
           </Suspense>
         </WorkspaceErrorBoundary>
+      )}
+
+      {/* 2. DEDICATED WORKOUT BUILDER TAB */}
+      {subTab === 'WORKOUTS' && (
+        <div data-testid="coach-workouts-screen" className="space-y-3">
+          <WorkspaceErrorBoundary fallbackTitle="Workout Builder" restoreTab="coach">
+            <Suspense
+              fallback={
+                <div className="h-64 rounded-2xl liquid-glass-subtle flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
+                  Loading Workout Builder…
+                </div>
+              }
+            >
+              <CoachClipboardWorkoutBuilder
+                activeTeam={activeTeam}
+                myTeams={myTeams}
+                connectedAthletes={scopedConnectedAthletes}
+                primaryAthleteDisplayName={primaryAthleteDisplayName}
+                selfProfile={selfProfile}
+                complexityTier={complexityTier}
+                defaultEventGroup={defaultCoachEventGroup}
+                onTeamsUpdated={onTeamsUpdated}
+                onCreatePlannedEvent={onCreatePlannedEvent}
+                onOpenStopwatchSubTab={() => {
+                  setTracksideMode('STOPWATCH');
+                  setSubTab('STOPWATCH');
+                }}
+              />
+            </Suspense>
+          </WorkspaceErrorBoundary>
+        </div>
       )}
 
       {/* 2. MEETS & PLAN */}
@@ -830,6 +878,16 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 setDelegatePreset(preset);
                 setDelegateModalTab('CREATE');
                 setDelegateModalOpen(true);
+              }}
+              teamEvents={teamEventsState.events}
+              teamEventRsvpCounts={teamEventsState.rsvpCountsByEventId}
+              nextMeetRsvpsByMemberId={teamEventsState.nextMeetRsvpsByMemberId}
+              isSavingTeamEvent={teamEventsState.loading}
+              onSaveTeamEvent={async (input) => {
+                await teamEventsState.saveEvent(input);
+              }}
+              onDeleteScheduleEvent={async (eventId) => {
+                await teamEventsState.deleteEvent(eventId);
               }}
             />
           </Suspense>

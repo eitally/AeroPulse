@@ -86,7 +86,8 @@ test.describe('Socratic Field-Use: 3:15 PM Quick Ops, Delegated Pocket Timing & 
     await expect(page.getByTestId('quick-ops-delegate-timing-btn')).toBeVisible();
     await expect(page.getByTestId('quick-ops-pending-splits-btn')).toBeVisible();
 
-    // 2. Roll Call unmarked safety check + auto-save on mark tap
+    // 2. Open Roll Call sub-pane -> unmarked safety check + auto-save on mark tap
+    await page.getByTestId('quick-ops-roll-call-btn').click();
     const rollCounts = page.getByTestId('roll-call-counts');
     await expect(rollCounts).toBeVisible();
     await expect(rollCounts).toContainText(/unmarked/i);
@@ -97,6 +98,8 @@ test.describe('Socratic Field-Use: 3:15 PM Quick Ops, Delegated Pocket Timing & 
     await expect(page.getByTestId('roll-call-saved-banner')).toContainText(/Auto-saved/i, {
       timeout: 5000,
     });
+    await page.getByTestId('coach-back-to-home-btn').click();
+    await expect(page.getByTestId('coach-quick-ops-strip')).toBeVisible();
 
     // 3. Open Delegate Timing Modal cleanly from Quick Ops
     await page.getByTestId('quick-ops-delegate-timing-btn').click();

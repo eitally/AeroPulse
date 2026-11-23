@@ -174,7 +174,7 @@ export async function removeUserPushSubscription(params: {
   });
 }
 
-function isWithinQuietHours(hour: number | undefined, startHour: number, endHour: number): boolean {
+export function isWithinQuietHours(hour: number | undefined, startHour: number, endHour: number): boolean {
   if (typeof hour !== 'number' || !Number.isFinite(hour) || hour < 0 || hour > 23) return false;
   if (startHour === endHour) return false;
   if (startHour > endHour) {

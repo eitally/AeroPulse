@@ -127,6 +127,7 @@ export const WorkspaceRouter: React.FC = () => {
     onTeamsUpdated,
     onOpenPublicTeamHub,
     onOpenCoachGuide,
+    onOpenTeamMessages,
     handleSaveStopwatchActivities,
     handleFlushStopwatchOutbox,
   } = useTeamCoach();
@@ -224,6 +225,8 @@ export const WorkspaceRouter: React.FC = () => {
           distanceUnit={distanceUnit}
           athleteFtp={athleteFtp}
           athleteProfile={effectiveAthleteProfile}
+          activeTeam={activeTeam}
+          isSampleDemoMode={isSampleDemoMode}
           onSelectActivity={handleSelectActivityAndOpenTab}
           onCreatePlannedEvent={handleCalendarCreatePlannedEvent}
           onUpdatePlannedEvent={handleUpdatePlannedEvent}
@@ -448,6 +451,7 @@ export const WorkspaceRouter: React.FC = () => {
           onOpenRosterModal={handleOpenRosterModal}
           onOpenPublicTeamHub={onOpenPublicTeamHub}
           onOpenCoachGuide={onOpenCoachGuide}
+          onOpenTeamMessages={onOpenTeamMessages}
           isSampleDemoMode={isSampleDemoMode}
         />
       )}

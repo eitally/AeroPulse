@@ -343,7 +343,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
     segmentEfforts: [],
     intervals,
     streams,
-    sourceBadges: ['Official FAT'],
+    sourceBadges: ['Hand-Timed'],
   };
 }
 
