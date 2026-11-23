@@ -16,7 +16,6 @@ import type {
   PlannedWorkoutEvent,
   PracticeVenueCategory,
   SportCategory,
-  StravaSyncWindow,
   TargetGoal,
   TeamSummaryWithRole,
   ThreshUser,
@@ -26,11 +25,9 @@ import type {
   WorkoutSessionSlot,
 } from './types';
 import { sortPlannedEventsChronologically } from './utils/workoutScheduleUtils';
-import type { PlannedEventBatchItem } from './components/GoalsView';
 import {
   INITIAL_ANNUAL_MILEAGE_GOALS,
 } from './data/mockTelemetry';
-import { buildSampleDemoDataset } from './data/sampleDemoData';
 import {
   DEFAULT_SELF_PRIVACY_SETTINGS,
   applyAthletePrivacyShield,
@@ -39,32 +36,13 @@ import {
 import { OfflineIndicator } from './components/PWAInstallButton';
 import type { RosterTab } from './components/AthleteRosterModal';
 import type { UserGuideChapterId } from './components/UserGuideModal';
-import type { SavedStopwatchEntry } from './components/TracksideStopwatchView';
-import {
-  enqueueStopwatchOutboxBatch,
-  flushStopwatchOutbox,
-  overlayPendingStopwatchOutboxOnTeams,
-  partitionSavedStopwatchEntries,
-  persistWalkOnStopwatchEntriesLocal,
-  type StopwatchOutboxFlushResult,
-  type StopwatchSaveResult,
-} from './utils/stopwatchTeamSync';
-import {
-  flushFieldOutbox,
-  overlayPendingFieldOutboxOnTeams,
-} from './utils/fieldEventsOutbox';
 import {
   buildCompleteAthleteProfile,
   inferPrimarySportFromActivities,
   isGenericAthleteName,
-  isUncalibratedDefaultProfile,
-  loadPersistedTelemetrySnapshot,
   mergeActivitiesNonDestructive,
   reRankActivitiesSegments,
-  recomputeWellnessDaysWithActivityImport,
-  replaceGearItemsInStore,
   savePersistedTelemetrySnapshot,
-  getSavedIntervalsHeaders,
 } from './utils/telemetryStorage';
 
 import { CockpitHeader } from './components/CockpitHeader';
@@ -95,6 +73,9 @@ import { usePublicTeamHubRoute } from './utils/publicTeamHubRoute';
 import { useShareWorkoutRoute } from './utils/shareWorkoutRoute';
 import { useAthleteCloudSync } from './hooks/useAthleteCloudSync';
 import { useWorkspaceOnboarding } from './hooks/useWorkspaceOnboarding';
+import { useSampleDemoWorkspace } from './hooks/useSampleDemoWorkspace';
+import { useStopwatchSyncBridge } from './hooks/useStopwatchSyncBridge';
+import { useAthleteProfileAndGoals } from './hooks/useAthleteProfileAndGoals';
 import { WorkspaceErrorBoundary } from './components/WorkspaceErrorBoundary';
 import { getLocalDateIso } from './physiology/stravaLoadCalibration';
 import {
@@ -112,42 +93,11 @@ const StravaAuthGate = lazyWithRetry(
   { chunkKey: 'StravaAuthGate' }
 );
 
-const DEMO_STOPWATCH_BACKUP_KEY = 'thresh_trackside_stopwatch_backup_v1';
-
-function backupRealStopwatchForDemo(): void {
-  try {
-    if (typeof window === 'undefined') return;
-    if (!window.localStorage.getItem(DEMO_STOPWATCH_BACKUP_KEY)) {
-      const existingReal = window.localStorage.getItem('thresh_trackside_stopwatch_v1');
-      if (existingReal !== null) {
-        window.localStorage.setItem(DEMO_STOPWATCH_BACKUP_KEY, existingReal);
-      }
-    }
-  } catch {
-    // ignore storage errors
-  }
-}
-
-function restoreRealStopwatchAfterDemo(): void {
-  try {
-    if (typeof window === 'undefined') return;
-    const backup = window.localStorage.getItem(DEMO_STOPWATCH_BACKUP_KEY);
-    if (backup !== null) {
-      window.localStorage.setItem('thresh_trackside_stopwatch_v1', backup);
-      window.localStorage.removeItem(DEMO_STOPWATCH_BACKUP_KEY);
-    }
-    window.localStorage.removeItem('thresh_sample_demo_active');
-    window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
-  } catch {
-    // ignore storage errors
-  }
-}
-
-function parseWorkspaceHash(rawHash: string): {
+export function parseWorkspaceHash(rawHash: string): {
   tab?: ActiveTab;
   coachSubTab?: CoachWorkspaceSubTab;
 } {
-  const hash = rawHash.replace(/^#/, '').trim();
+  const hash = rawHash.replace(/^#/, '').split('?')[0].trim().replace(/^\/?#?/, '');
   if (!hash) return {};
   if (hash === 'today' || hash === 'fitness') return { tab: 'fitness' };
   if (hash === 'progress' || hash === 'curves') return { tab: 'curves' };
@@ -255,7 +205,7 @@ export default function App() {
   useEffect(() => {
     const handleHashChange = () => {
       try {
-        const hash = window.location.hash.replace(/^#/, '');
+        const hash = window.location.hash.replace(/^#/, '').split('?')[0].trim();
         if (hash === 'plan-builder') {
           setActiveTab('totals');
           return;
@@ -450,90 +400,46 @@ export default function App() {
     }
   });
   const [dismissedQuickConnectBanner, setDismissedQuickConnectBanner] = useState<boolean>(false);
-  const [isSampleDemoMode, setIsSampleDemoMode] = useState<boolean>(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const { isSampleQuery } = parseSampleDemoSearch(window.location.search);
-        if (isSampleQuery) {
-          backupRealStopwatchForDemo();
-          return true;
-        }
-        if (localStorage.getItem('thresh_sample_demo_active') === 'true') {
-          backupRealStopwatchForDemo();
-          return true;
-        }
-      }
-    } catch {
-      // ignore
-    }
-    return false;
+  const initialIsSampleQuery = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return parseSampleDemoSearch(window.location.search).isSampleQuery;
+  }, []);
+  const {
+    isSampleDemoMode,
+    setIsSampleDemoMode,
+    sampleDemoPlannedEvents,
+    setSampleDemoPlannedEvents,
+    sampleDemoProfile,
+    setSampleDemoProfile,
+    sampleDemoActivities,
+    setSampleDemoActivities,
+    sampleDemoWellnessDays,
+    setSampleDemoWellnessDays,
+    sampleDemoAnnualGoals,
+    setSampleDemoAnnualGoals,
+    sampleDemoTargetGoals,
+    setSampleDemoTargetGoals,
+    sampleDemoGearItems,
+    setSampleDemoGearItems,
+    sampleDemoPrivacySettings,
+    setSampleDemoPrivacySettings,
+    sampleDemoConnectedAthletes,
+    setSampleDemoConnectedAthletes,
+    sampleDemoTeams,
+    setSampleDemoTeams,
+    sampleDemoActiveTeamId,
+    setSampleDemoActiveTeamId,
+    sampleDemoExplicitPersonal,
+    setSampleDemoExplicitPersonal,
+    resetDemoCheckInsRef,
+    resetSampleDemoEphemeralState,
+    exitSampleDemoMode,
+  } = useSampleDemoWorkspace({
+    initialIsSampleQuery,
+    setSelectedActivity,
+    setActiveViewedAthleteId,
+    setInspectedFromCoach,
   });
-  const sampleDemoDataset = useMemo(() => buildSampleDemoDataset(), []);
-  const [sampleDemoPlannedEvents, setSampleDemoPlannedEvents] = useState<PlannedWorkoutEvent[]>(
-    () => sampleDemoDataset.plannedEvents
-  );
-  const [sampleDemoProfile, setSampleDemoProfile] = useState<AthleteProfile>(
-    () => sampleDemoDataset.athleteProfile
-  );
-  const [sampleDemoActivities, setSampleDemoActivities] = useState<UnifiedActivity[]>(
-    () => sampleDemoDataset.activities
-  );
-  const [sampleDemoWellnessDays, setSampleDemoWellnessDays] = useState<UnifiedWellnessDay[]>(
-    () => sampleDemoDataset.wellnessDays
-  );
-  const [sampleDemoAnnualGoals, setSampleDemoAnnualGoals] = useState<AnnualMileageGoal[]>(
-    () => INITIAL_ANNUAL_MILEAGE_GOALS
-  );
-  const [sampleDemoTargetGoals, setSampleDemoTargetGoals] = useState<TargetGoal[]>(
-    () => sampleDemoDataset.targetGoals
-  );
-  const [sampleDemoGearItems, setSampleDemoGearItems] = useState<AthleteGearItem[]>(
-    () => sampleDemoDataset.gearItems
-  );
-  const [sampleDemoPrivacySettings, setSampleDemoPrivacySettings] =
-    useState<AthletePrivacySettings>(() => DEFAULT_SELF_PRIVACY_SETTINGS);
-  const [sampleDemoConnectedAthletes, setSampleDemoConnectedAthletes] = useState<
-    ConnectedAthleteRecord[]
-  >(() => buildInitialConnectedAthletes());
-  const [sampleDemoTeams, setSampleDemoTeams] = useState<TeamSummaryWithRole[]>(
-    () => sampleDemoDataset.demoTeams || []
-  );
-  const [sampleDemoActiveTeamId, setSampleDemoActiveTeamId] = useState<string | null>(
-    () => sampleDemoDataset.demoTeams?.[0]?.brand.teamId || null
-  );
-  const [sampleDemoExplicitPersonal, setSampleDemoExplicitPersonal] = useState(false);
-
-  const resetSampleDemoEphemeralState = useCallback(
-    (options?: { clearDemoStopwatch?: boolean }) => {
-      const fresh = buildSampleDemoDataset();
-      setSampleDemoPlannedEvents(fresh.plannedEvents);
-      setSampleDemoProfile(fresh.athleteProfile);
-      setSampleDemoActivities(fresh.activities);
-      setSampleDemoWellnessDays(fresh.wellnessDays);
-      setSampleDemoAnnualGoals(INITIAL_ANNUAL_MILEAGE_GOALS);
-      setSampleDemoTargetGoals(fresh.targetGoals);
-      setSampleDemoGearItems(fresh.gearItems);
-      setSampleDemoPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
-      setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
-      setSampleDemoTeams(fresh.demoTeams || []);
-      setSampleDemoActiveTeamId(fresh.demoTeams?.[0]?.brand.teamId || null);
-      setSampleDemoExplicitPersonal(false);
-      setSelectedActivity(null);
-      setActiveViewedAthleteId('SELF');
-      setInspectedFromCoach(false);
-      resetDemoCheckInsRef.current?.();
-      if (options?.clearDemoStopwatch) {
-        backupRealStopwatchForDemo();
-        try {
-          window.localStorage.removeItem('thresh_trackside_stopwatch_v1');
-          window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
-        } catch {
-          // ignore storage errors
-        }
-      }
-    },
-    []
-  );
 
   // Global Workspace Keyboard Accelerators: Alt+1..4 switches Today / Plan / Activities / Progress
   useEffect(() => {
@@ -966,7 +872,6 @@ export default function App() {
     setSampleDemoConnectedAthletes,
   });
 
-  const resetDemoCheckInsRef = useRef<(() => void) | null>(null);
   const {
     handleApproveAthleteRequest,
     handleRemoveOrDeclineAthlete,
@@ -981,169 +886,70 @@ export default function App() {
     setSampleDemoConnectedAthletes,
     setActiveViewedAthleteId,
   });
-  const handleSyncProfileFromRemote = useCallback(async () => {
-    setIsSyncingProfile(true);
-    try {
-      const resp = await fetch('/api/intervals/profile/sync', {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getSavedIntervalsHeaders(),
-        },
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        if (data.athleteProfile) {
-          if (
-            data.athleteProfile.name &&
-            data.athleteProfile.name !== 'Athlete' &&
-            data.athleteProfile.name !== 'Strava Athlete' &&
-            data.athleteProfile.name !== 'Strava User'
-          ) {
-            try {
-              localStorage.setItem('aeropulse_strava_athlete_name', data.athleteProfile.name);
-            } catch {
-              // ignore storage errors
-            }
-          }
-          const latestW =
-            wellnessDaysRef.current.length > 0
-              ? wellnessDaysRef.current[wellnessDaysRef.current.length - 1]
-              : undefined;
-          const synced = buildCompleteAthleteProfile(
-            data.athleteProfile,
-            latestW,
-            activitiesRef.current
-          );
-          setAthleteProfile(synced);
-          athleteProfileRef.current = synced;
-          setConnectionStatus((prev) => ({
-            ...prev,
-            athleteFtp: synced.ftp,
-            athleteIndoorFtp: synced.indoorFtp,
-            athleteRunFtp: synced.runFtp,
-            athleteLthr: synced.lthr,
-            athleteMaxHr: synced.maxHr,
-            athleteProfile: synced,
-          }));
-          void savePersistedTelemetrySnapshot({
-            activities: activitiesRef.current,
-            wellnessDays: wellnessDaysRef.current,
-            plannedEvents: plannedEventsRef.current,
-            gearItems: gearItemsRef.current,
-            athleteProfile: synced,
-            redactedStravaCount: redactedStravaCountRef.current,
-          });
-        }
-      }
-    } finally {
-      setIsSyncingProfile(false);
-    }
-  }, []);
 
-  const handleSaveProfileOverride = useCallback(
-    async (updatedProfile: AthleteProfile) => {
-      if (activeConnectedAthlete) {
-        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
-          triggerReadOnlyAlert(activeConnectedAthlete.name, 'update physiological zones');
-          return;
-        }
-        const applyRosterProfile = (prev: ConnectedAthleteRecord[]) =>
-          prev.map((a) =>
-            a.id === activeConnectedAthlete.id ? { ...a, athleteProfile: updatedProfile } : a
-          );
-        if (isSampleDemoMode) {
-          setSampleDemoConnectedAthletes(applyRosterProfile);
-        } else {
-          setConnectedAthletes(applyRosterProfile);
-        }
-        return;
-      }
+  const {
+    handleSyncProfileFromRemote,
+    handleSaveProfileOverride,
+    handleImportOfficialRaces,
+    handleUpdateAnnualMileageGoal,
+    handleAddTargetGoal,
+    handleDeleteTargetGoal,
+    handleSaveGearItems,
+    applyImportedActivities,
+    handleImportSingleParsedActivity,
+    handleImportMultipleParsedActivities,
+  } = useAthleteProfileAndGoals({
+    isSampleDemoMode,
+    activeConnectedAthlete,
+    triggerReadOnlyAlert,
+    activitiesRef,
+    wellnessDaysRef,
+    plannedEventsRef,
+    gearItemsRef,
+    athleteProfileRef,
+    redactedStravaCountRef,
+    sampleDemoProfile,
+    setActivities,
+    setWellnessDays,
+    setGearItems,
+    setAthleteProfile,
+    setConnectionStatus,
+    setIsSyncingProfile,
+    setAnnualMileageGoals,
+    setTargetGoals,
+    setConnectedAthletes,
+    setSampleDemoProfile,
+    setSampleDemoActivities,
+    setSampleDemoWellnessDays,
+    setSampleDemoAnnualGoals,
+    setSampleDemoTargetGoals,
+    setSampleDemoGearItems,
+    setSampleDemoConnectedAthletes,
+  });
 
-      if (isSampleDemoMode) {
-        setSampleDemoProfile(updatedProfile);
-        return;
-      }
-
-      setAthleteProfile(updatedProfile);
-      athleteProfileRef.current = updatedProfile;
-      setConnectionStatus((prev) => ({
-        ...prev,
-        athleteFtp: updatedProfile.ftp,
-        athleteIndoorFtp: updatedProfile.indoorFtp,
-        athleteRunFtp: updatedProfile.runFtp,
-        athleteLthr: updatedProfile.lthr,
-        athleteMaxHr: updatedProfile.maxHr,
-        athleteProfile: updatedProfile,
-      }));
-      void savePersistedTelemetrySnapshot({
-        activities: activitiesRef.current,
-        wellnessDays: wellnessDaysRef.current,
-        plannedEvents: plannedEventsRef.current,
-        gearItems: gearItemsRef.current,
-        athleteProfile: updatedProfile,
-        redactedStravaCount: redactedStravaCountRef.current,
-      });
-      try {
-        await fetch('/api/athlete/profile', {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getSavedIntervalsHeaders(),
-          },
-          body: JSON.stringify({ athleteProfile: updatedProfile }),
-        });
-      } catch {
-        // ignore offline error
-      }
-    },
-    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
-  );
-
-  // Import watchless Official FAT Race Results into activities archive & IndexedDB
-  const handleImportOfficialRaces = useCallback(
-    (importedRaces: UnifiedActivity[]) => {
-      if (!importedRaces || importedRaces.length === 0) return;
-      if (activeConnectedAthlete) {
-        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
-          triggerReadOnlyAlert(activeConnectedAthlete.name, 'import official race results');
-          return;
-        }
-        const mergeRosterRaces = (prev: ConnectedAthleteRecord[]) =>
-          prev.map((a) =>
-            a.id === activeConnectedAthlete.id
-              ? { ...a, activities: mergeActivitiesNonDestructive(a.activities, importedRaces) }
-              : a
-          );
-        if (isSampleDemoMode) {
-          setSampleDemoConnectedAthletes(mergeRosterRaces);
-        } else {
-          setConnectedAthletes(mergeRosterRaces);
-        }
-        return;
-      }
-      if (isSampleDemoMode) {
-        setSampleDemoActivities((prev) => mergeActivitiesNonDestructive(prev, importedRaces));
-        return;
-      }
-      setActivities((prev) => {
-        const merged = mergeActivitiesNonDestructive(prev, importedRaces);
-        activitiesRef.current = merged;
-        void savePersistedTelemetrySnapshot({
-          activities: merged,
-          wellnessDays: wellnessDaysRef.current,
-          plannedEvents: plannedEventsRef.current,
-          gearItems: gearItemsRef.current,
-          athleteProfile: athleteProfileRef.current,
-          redactedStravaCount: redactedStravaCountRef.current,
-        });
-        return merged;
-      });
-    },
-    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
-  );
+  const {
+    handleFlushStopwatchOutbox,
+    handleSaveStopwatchActivities,
+  } = useStopwatchSyncBridge({
+    isSampleDemoMode,
+    isSessionLoggedOut,
+    hasEnteredWorkspace,
+    activeTeamId,
+    effectiveActiveTeam,
+    combinedRoster,
+    activitiesRef,
+    wellnessDaysRef,
+    plannedEventsRef,
+    gearItemsRef,
+    athleteProfileRef,
+    redactedStravaCountRef,
+    setActivities,
+    setWellnessDays,
+    setConnectedAthletes,
+    setSampleDemoConnectedAthletes,
+    setMyTeams,
+    applyImportedActivities,
+  });
 
   // Privacy Shield Enforcement & Ephemeral Sample Demo Resolution
   const shieldedConnectedTelemetry = useMemo(
@@ -1409,105 +1215,6 @@ export default function App() {
     effectivePlannedEvents,
     effectiveTargetGoals,
   });
-  const handleUpdateAnnualMileageGoal = useCallback(
-    (sport: 'Running' | 'Cycling' | 'Swimming', targetMeters: number) => {
-      const updater = (prev: AnnualMileageGoal[]) => {
-        const exists = prev.some((g) => g.sportCategory === sport);
-        if (!exists) {
-          const fallbackYear = prev[0]?.year || new Date().getFullYear();
-          return [
-            ...prev,
-            {
-              sportCategory: sport,
-              year: fallbackYear,
-              targetDistanceMeters: targetMeters,
-            },
-          ];
-        }
-        return prev.map((g) =>
-          g.sportCategory === sport ? { ...g, targetDistanceMeters: targetMeters } : g
-        );
-      };
-      if (isSampleDemoMode) {
-        setSampleDemoAnnualGoals(updater);
-        return;
-      }
-      setAnnualMileageGoals(updater);
-    },
-    [isSampleDemoMode]
-  );
-
-  const handleAddTargetGoal = useCallback(
-    (newGoal: Omit<TargetGoal, 'id'>) => {
-      if (activeConnectedAthlete) {
-        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
-          triggerReadOnlyAlert(activeConnectedAthlete.name, 'add target race or power goals');
-          return;
-        }
-        const created: TargetGoal = { ...newGoal, id: `goal-${Date.now()}` };
-        const applyAddRosterGoal = (prev: ConnectedAthleteRecord[]) =>
-          prev.map((a) =>
-            a.id === activeConnectedAthlete.id
-              ? { ...a, targetGoals: [created, ...a.targetGoals] }
-              : a
-          );
-        if (isSampleDemoMode) {
-          setSampleDemoConnectedAthletes(applyAddRosterGoal);
-        } else {
-          setConnectedAthletes(applyAddRosterGoal);
-        }
-        return;
-      }
-      if (isSampleDemoMode) {
-        setSampleDemoTargetGoals((prev) => [{ ...newGoal, id: `goal-${Date.now()}` }, ...prev]);
-        return;
-      }
-      setTargetGoals((prev) => [{ ...newGoal, id: `goal-${Date.now()}` }, ...prev]);
-    },
-    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
-  );
-
-  const handleDeleteTargetGoal = useCallback(
-    (id: string) => {
-      if (activeConnectedAthlete) {
-        if (activeConnectedAthlete.role === 'FRIEND_VIEW') {
-          triggerReadOnlyAlert(activeConnectedAthlete.name, 'delete target goals');
-          return;
-        }
-        const applyDeleteRosterGoal = (prev: ConnectedAthleteRecord[]) =>
-          prev.map((a) =>
-            a.id === activeConnectedAthlete.id
-              ? { ...a, targetGoals: a.targetGoals.filter((g) => g.id !== id) }
-              : a
-          );
-        if (isSampleDemoMode) {
-          setSampleDemoConnectedAthletes(applyDeleteRosterGoal);
-        } else {
-          setConnectedAthletes(applyDeleteRosterGoal);
-        }
-        return;
-      }
-      if (isSampleDemoMode) {
-        setSampleDemoTargetGoals((prev) => prev.filter((g) => g.id !== id));
-        return;
-      }
-      setTargetGoals((prev) => prev.filter((g) => g.id !== id));
-    },
-    [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
-  );
-
-  const handleSaveGearItems = useCallback(
-    async (nextItems: AthleteGearItem[]) => {
-      if (isSampleDemoMode) {
-        setSampleDemoGearItems(nextItems);
-        return;
-      }
-      gearItemsRef.current = nextItems;
-      setGearItems(nextItems);
-      await replaceGearItemsInStore(nextItems);
-    },
-    [isSampleDemoMode]
-  );
 
   const closeAllGlobalModals = useCallback(() => {
     setIsDataSourcesOpen(false);
@@ -1620,215 +1327,6 @@ export default function App() {
     setGuideInitialChapter('ch7-coaching');
     setShowMetricsGuide(true);
   }, [closeAllGlobalModals]);
-
-  const applyImportedActivities = useCallback(
-    (incomingActs: UnifiedActivity[]) => {
-      if (!incomingActs || incomingActs.length === 0) return;
-      const todayIso = getLocalDateIso();
-      if (isSampleDemoMode) {
-        setSampleDemoActivities((prev) => {
-          const merged = mergeActivitiesNonDestructive(prev, incomingActs);
-          setSampleDemoWellnessDays((prevW) =>
-            recomputeWellnessDaysWithActivityImport(prevW, merged, todayIso, sampleDemoProfile)
-          );
-          return merged;
-        });
-        return;
-      }
-      const merged = mergeActivitiesNonDestructive(activitiesRef.current, incomingActs);
-      activitiesRef.current = merged;
-      setActivities(merged);
-      const rebuiltWellness = recomputeWellnessDaysWithActivityImport(
-        wellnessDaysRef.current,
-        merged,
-        todayIso,
-        athleteProfileRef.current
-      );
-      wellnessDaysRef.current = rebuiltWellness;
-      setWellnessDays(rebuiltWellness);
-    },
-    [isSampleDemoMode, sampleDemoProfile]
-  );
-
-  const handleImportSingleParsedActivity = useCallback(
-    (newAct: UnifiedActivity) => {
-      applyImportedActivities([newAct]);
-    },
-    [applyImportedActivities]
-  );
-
-  const handleImportMultipleParsedActivities = useCallback(
-    (newActs: UnifiedActivity[]) => {
-      applyImportedActivities(newActs);
-    },
-    [applyImportedActivities]
-  );
-
-  const applyUpdatedTeamToState = useCallback(
-    (updatedTeam: TeamSummaryWithRole) => {
-      setMyTeams((prev) => {
-        const replaced = prev.map((t) =>
-          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
-        );
-        const withOutbox = overlayPendingFieldOutboxOnTeams(
-          overlayPendingStopwatchOutboxOnTeams(replaced)
-        );
-        try {
-          localStorage.setItem('thresh_my_teams_v1', JSON.stringify(withOutbox));
-        } catch {
-          // ignore
-        }
-        return withOutbox;
-      });
-    },
-    [setMyTeams]
-  );
-
-  const handleFlushStopwatchOutbox = useCallback(async (): Promise<StopwatchOutboxFlushResult> => {
-    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) {
-      return { syncedBatches: 0, syncedEntries: 0, remainingBatches: 0, remainingEntries: 0 };
-    }
-    const swRes = await flushStopwatchOutbox(applyUpdatedTeamToState);
-    void flushFieldOutbox(applyUpdatedTeamToState);
-    return swRes;
-  }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, applyUpdatedTeamToState]);
-
-  useEffect(() => {
-    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
-    void handleFlushStopwatchOutbox();
-    void flushFieldOutbox(applyUpdatedTeamToState);
-    const onOnline = () => {
-      void handleFlushStopwatchOutbox();
-      void flushFieldOutbox(applyUpdatedTeamToState);
-    };
-    window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
-  }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, handleFlushStopwatchOutbox, applyUpdatedTeamToState]);
-
-  const handleSaveStopwatchActivities = useCallback(
-    async (entries: SavedStopwatchEntry[]): Promise<StopwatchSaveResult> => {
-      if (!entries || entries.length === 0) {
-        return {
-          savedCount: 0,
-          selfCount: 0,
-          rosterCount: 0,
-          teamCount: 0,
-          walkOnCount: 0,
-          pendingTeamCount: 0,
-          skippedReadOnlyNames: [],
-          syncStatus: 'LOCAL_ONLY',
-        };
-      }
-
-      const activeTeamForCoach = !isSampleDemoMode ? effectiveActiveTeam : null;
-      const isTeamCoach = Boolean(
-        activeTeamForCoach &&
-          (activeTeamForCoach.myRole === 'HEAD_COACH' ||
-            activeTeamForCoach.myRole === 'ASSISTANT_COACH')
-      );
-      const activeTeamMembershipIds = activeTeamForCoach
-        ? new Set(activeTeamForCoach.memberships.map((m) => m.membershipId))
-        : undefined;
-
-      const {
-        selfActs,
-        rosterByRunnerId,
-        teamApiEntries,
-        walkOnEntries,
-        skippedReadOnlyNames,
-        savedCount,
-      } = partitionSavedStopwatchEntries(entries, combinedRoster, {
-        isTeamCoach,
-        activeTeamMembershipIds,
-      });
-
-      if (selfActs.length > 0) {
-        if (isSampleDemoMode) {
-          applyImportedActivities(selfActs);
-        } else {
-          const merged = mergeActivitiesNonDestructive(activitiesRef.current, selfActs);
-          activitiesRef.current = merged;
-          setActivities(merged);
-          const rebuiltWellness = recomputeWellnessDaysWithActivityImport(
-            wellnessDaysRef.current,
-            merged,
-            getLocalDateIso(),
-            athleteProfileRef.current
-          );
-          wellnessDaysRef.current = rebuiltWellness;
-          setWellnessDays(rebuiltWellness);
-          void savePersistedTelemetrySnapshot({
-            activities: merged,
-            wellnessDays: rebuiltWellness,
-            plannedEvents: plannedEventsRef.current,
-            gearItems: gearItemsRef.current,
-            athleteProfile: athleteProfileRef.current,
-            redactedStravaCount: redactedStravaCountRef.current,
-          });
-        }
-      }
-
-      if (walkOnEntries.length > 0 && !isSampleDemoMode) {
-        persistWalkOnStopwatchEntriesLocal(walkOnEntries);
-      }
-
-      if (rosterByRunnerId.size > 0) {
-        const mergeRosterActs = (prev: ConnectedAthleteRecord[]) =>
-          prev.map((a) => {
-            const added = rosterByRunnerId.get(a.id);
-            return added && added.length > 0
-              ? { ...a, activities: mergeActivitiesNonDestructive(a.activities, added) }
-              : a;
-          });
-        if (isSampleDemoMode) {
-          setSampleDemoConnectedAthletes(mergeRosterActs);
-        } else {
-          setConnectedAthletes(mergeRosterActs);
-        }
-      }
-
-      let syncStatus: StopwatchSaveResult['syncStatus'] = 'LOCAL_ONLY';
-      let pendingTeamCount = 0;
-
-      if (!isSampleDemoMode && activeTeamId && teamApiEntries.length > 0) {
-        enqueueStopwatchOutboxBatch(activeTeamId, teamApiEntries);
-        setMyTeams((prev) => {
-          const withOutbox = overlayPendingFieldOutboxOnTeams(
-            overlayPendingStopwatchOutboxOnTeams(prev)
-          );
-          try {
-            localStorage.setItem('thresh_my_teams_v1', JSON.stringify(withOutbox));
-          } catch {
-            // ignore
-          }
-          return withOutbox;
-        });
-        const flushRes = await flushStopwatchOutbox(applyUpdatedTeamToState);
-        pendingTeamCount = flushRes.remainingEntries;
-        syncStatus = flushRes.remainingEntries === 0 ? 'SYNCED' : 'PENDING_OFFLINE';
-      }
-
-      return {
-        savedCount,
-        selfCount: selfActs.length,
-        rosterCount: rosterByRunnerId.size,
-        teamCount: teamApiEntries.length,
-        walkOnCount: walkOnEntries.length,
-        pendingTeamCount,
-        skippedReadOnlyNames,
-        syncStatus,
-      };
-    },
-    [
-      combinedRoster,
-      isSampleDemoMode,
-      activeTeamId,
-      effectiveActiveTeam,
-      setMyTeams,
-      applyUpdatedTeamToState,
-      applyImportedActivities,
-    ]
-  );
 
   const isStopwatchFullscreen =
     activeTab === 'stopwatch' ||
@@ -2459,21 +1957,7 @@ export default function App() {
               }}
               isSampleDemoMode={isSampleDemoMode}
               onExitSampleDemo={(connectStrava) => {
-                restoreRealStopwatchAfterDemo();
-                try {
-                  const params = new URLSearchParams(window.location.search);
-                  if (params.has('demo') || params.has('sample')) {
-                    params.delete('demo');
-                    params.delete('sample');
-                    const nextSearch = params.toString();
-                    const cleanUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`;
-                    window.history.replaceState(null, '', cleanUrl);
-                  }
-                } catch {
-                  // ignore history errors
-                }
-                setIsSampleDemoMode(false);
-                resetSampleDemoEphemeralState();
+                exitSampleDemoMode();
                 if (connectStrava) {
                   void handleLaunchStravaOAuth('cloud');
                 }
