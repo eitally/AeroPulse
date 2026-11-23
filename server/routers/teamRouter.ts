@@ -2,6 +2,7 @@ import express, { type Request, type Response } from 'express';
 import {
   deleteTeamAnnouncement,
   inviteTeamCoachingStaff,
+  listTeamFieldMarks,
   postTeamAnnouncement,
   recordTeamAttendanceBatch,
   recordTeamFieldMarks,
@@ -1610,6 +1611,49 @@ teamRouter.delete('/api/teams/:teamId/announcements/:announcementId', async (req
   }
 });
 
+teamRouter.get('/api/teams/:teamId/field-marks', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const eventCode =
+      typeof req.query.eventCode === 'string' && req.query.eventCode.trim()
+        ? req.query.eventCode.trim().toUpperCase()
+        : undefined;
+    const rawLimit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const rawOffset = typeof req.query.offset === 'string' ? Number(req.query.offset) : undefined;
+    const result = await listTeamFieldMarks({
+      teamId: String(req.params.teamId || ''),
+      callerSid: claims.sid,
+      ...(eventCode ? { eventCode } : {}),
+      ...(typeof rawLimit === 'number' && Number.isFinite(rawLimit) ? { limit: rawLimit } : {}),
+      ...(typeof rawOffset === 'number' && Number.isFinite(rawOffset) ? { offset: rawOffset } : {}),
+    });
+    if (!result.ok) {
+      const status = result.error === 'Team not found.' ? 404 : 403;
+      res.status(status).json({
+        ok: false,
+        error: result.error || 'Unable to list field marks.',
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      logs: result.logs,
+      totalCount: result.totalCount,
+      limit: result.limit,
+      offset: result.offset,
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed loading field marks.',
+    });
+  }
+});
+
 teamRouter.post('/api/teams/:teamId/field-marks', async (req: Request, res: Response) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -1619,6 +1663,7 @@ teamRouter.post('/api/teams/:teamId/field-marks', async (req: Request, res: Resp
     }
     const originUrl = resolveRequestOrigin(req);
     const body = (req.body || {}) as {
+      clientBatchId?: unknown;
       entries?: Array<{
         membershipId?: unknown;
         athleteName?: unknown;
@@ -1626,14 +1671,27 @@ teamRouter.post('/api/teams/:teamId/field-marks', async (req: Request, res: Resp
         eventCode?: unknown;
         isCompetition?: unknown;
         meetOrPracticeTitle?: unknown;
+        flightName?: unknown;
         implementSpec?: unknown;
         poleSpec?: unknown;
         approachSteps?: unknown;
         attempts?: unknown;
+        bestMarkMeters?: unknown;
+        bestWindLegalMeters?: unknown;
+        bestMarkWindMps?: unknown;
+        isWindAidedBest?: unknown;
+        isNoHeight?: unknown;
+        missesAtClearingHeight?: unknown;
+        totalVerticalMisses?: unknown;
+        placeRank?: unknown;
+        advancedToFinals?: unknown;
         multiPoints?: unknown;
         rpe?: unknown;
+        clientBatchId?: unknown;
       }>;
     };
+    const topClientBatchId =
+      typeof body.clientBatchId === 'string' ? body.clientBatchId : undefined;
     const entries = Array.isArray(body.entries)
       ? body.entries.map((entry) => ({
           membershipId: typeof entry?.membershipId === 'string' ? entry.membershipId : undefined,
@@ -1641,20 +1699,43 @@ teamRouter.post('/api/teams/:teamId/field-marks', async (req: Request, res: Resp
           date: String(entry?.date || ''),
           eventCode: String(entry?.eventCode || 'LJ') as import('../../src/types.ts').FieldEventCode,
           isCompetition: entry?.isCompetition === true,
-          meetOrPracticeTitle: typeof entry?.meetOrPracticeTitle === 'string' ? entry.meetOrPracticeTitle : undefined,
+          meetOrPracticeTitle:
+            typeof entry?.meetOrPracticeTitle === 'string' ? entry.meetOrPracticeTitle : undefined,
+          flightName: typeof entry?.flightName === 'string' ? entry.flightName : undefined,
           implementSpec: typeof entry?.implementSpec === 'string' ? entry.implementSpec : undefined,
           poleSpec: typeof entry?.poleSpec === 'string' ? entry.poleSpec : undefined,
           approachSteps: typeof entry?.approachSteps === 'number' ? entry.approachSteps : undefined,
           attempts: Array.isArray(entry?.attempts)
             ? (entry.attempts as import('../../src/types.ts').FieldTrialEntry[])
             : [],
+          bestMarkMeters:
+            typeof entry?.bestMarkMeters === 'number' ? entry.bestMarkMeters : undefined,
+          bestWindLegalMeters:
+            typeof entry?.bestWindLegalMeters === 'number' ? entry.bestWindLegalMeters : undefined,
+          bestMarkWindMps:
+            typeof entry?.bestMarkWindMps === 'number' ? entry.bestMarkWindMps : undefined,
+          isWindAidedBest:
+            typeof entry?.isWindAidedBest === 'boolean' ? entry.isWindAidedBest : undefined,
+          isNoHeight: typeof entry?.isNoHeight === 'boolean' ? entry.isNoHeight : undefined,
+          missesAtClearingHeight:
+            typeof entry?.missesAtClearingHeight === 'number'
+              ? entry.missesAtClearingHeight
+              : undefined,
+          totalVerticalMisses:
+            typeof entry?.totalVerticalMisses === 'number' ? entry.totalVerticalMisses : undefined,
+          placeRank: typeof entry?.placeRank === 'number' ? entry.placeRank : undefined,
+          advancedToFinals:
+            typeof entry?.advancedToFinals === 'boolean' ? entry.advancedToFinals : undefined,
           multiPoints: typeof entry?.multiPoints === 'number' ? entry.multiPoints : undefined,
           rpe: typeof entry?.rpe === 'number' ? entry.rpe : undefined,
+          clientBatchId:
+            typeof entry?.clientBatchId === 'string' ? entry.clientBatchId : topClientBatchId,
         }))
       : [];
     const result = await recordTeamFieldMarks({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ''),
+      clientBatchId: topClientBatchId,
       entries,
       originUrl,
     });

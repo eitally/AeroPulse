@@ -27,10 +27,12 @@ import {
 } from './teamService.ts';
 import {
   appendAuditLogAsync,
+  deleteTenantVault,
   saveTenantVaultAsync,
   withTeamRowLock,
   withVaultLock,
 } from './tokenVault.ts';
+import { teamFieldLogsVaultKey } from './teamFieldAndDailyOpsService.ts';
 
 function sanitizeMemberPublicNameForDeletion(m: StoredMembershipInternal): void {
   m.userSid = undefined;
@@ -831,4 +833,5 @@ export async function removeTeamFromDirectoryAndVault(teamId: string): Promise<v
     dir.allTeamIds = dir.allTeamIds.filter((id) => id !== teamId);
     await saveTenantVaultAsync(TEAMS_DIRECTORY_KEY, dir);
   });
+  await deleteTenantVault(teamFieldLogsVaultKey(teamId)).catch(() => undefined);
 }

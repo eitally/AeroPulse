@@ -1,5 +1,6 @@
 import type {
   CoachDataSharingTier,
+  FieldEventLogRecord,
   GuardianSafetyAlertRecord,
   TeamAuditLogEntry,
   TeamMemberRole,
@@ -326,22 +327,36 @@ export async function deleteTeamAnnouncementApi(params: {
   );
 }
 
+export interface RecordTeamFieldMarkEntryInput {
+  membershipId?: string;
+  athleteName: string;
+  date: string;
+  eventCode: FieldEventCode;
+  isCompetition?: boolean;
+  meetOrPracticeTitle?: string;
+  flightName?: string;
+  implementSpec?: string;
+  poleSpec?: string;
+  approachSteps?: number;
+  attempts: FieldTrialEntry[];
+  bestMarkMeters?: number;
+  bestWindLegalMeters?: number;
+  bestMarkWindMps?: number;
+  isWindAidedBest?: boolean;
+  isNoHeight?: boolean;
+  missesAtClearingHeight?: number;
+  totalVerticalMisses?: number;
+  placeRank?: number;
+  advancedToFinals?: boolean;
+  multiPoints?: number;
+  rpe?: number;
+  clientBatchId?: string;
+}
+
 export async function recordTeamFieldMarksApi(params: {
   teamId: string;
-  entries: Array<{
-    membershipId?: string;
-    athleteName: string;
-    date: string;
-    eventCode: FieldEventCode;
-    isCompetition?: boolean;
-    meetOrPracticeTitle?: string;
-    implementSpec?: string;
-    poleSpec?: string;
-    approachSteps?: number;
-    attempts: FieldTrialEntry[];
-    multiPoints?: number;
-    rpe?: number;
-  }>;
+  clientBatchId?: string;
+  entries: RecordTeamFieldMarkEntryInput[];
 }) {
   return requestLifecycleJson<{
     recordedCount?: number;
@@ -349,7 +364,37 @@ export async function recordTeamFieldMarksApi(params: {
     teams?: TeamSummaryWithRole[];
   }>(`/api/teams/${encodeURIComponent(params.teamId)}/field-marks`, {
     method: 'POST',
-    body: JSON.stringify({ entries: params.entries }),
+    body: JSON.stringify({
+      ...(params.clientBatchId ? { clientBatchId: params.clientBatchId } : {}),
+      entries: params.entries,
+    }),
+  });
+}
+
+export async function fetchTeamFieldMarksApi(
+  teamId: string,
+  opts?: {
+    eventCode?: FieldEventCode;
+    limit?: number;
+    offset?: number;
+  }
+) {
+  const qs = new URLSearchParams();
+  if (opts?.eventCode) qs.set('eventCode', opts.eventCode);
+  if (typeof opts?.limit === 'number' && Number.isFinite(opts.limit)) {
+    qs.set('limit', String(Math.max(1, Math.min(200, Math.round(opts.limit)))));
+  }
+  if (typeof opts?.offset === 'number' && Number.isFinite(opts.offset)) {
+    qs.set('offset', String(Math.max(0, Math.round(opts.offset))));
+  }
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return requestLifecycleJson<{
+    logs: FieldEventLogRecord[];
+    totalCount: number;
+    limit: number;
+    offset: number;
+  }>(`/api/teams/${encodeURIComponent(teamId)}/field-marks${suffix}`, {
+    method: 'GET',
   });
 }
 

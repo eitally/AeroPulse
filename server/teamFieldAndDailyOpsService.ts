@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type {
   CoachEventGroup,
+  FieldAttemptOutcome,
   FieldEventCode,
   FieldEventLogRecord,
   FieldTrialEntry,
@@ -35,7 +36,13 @@ import {
 } from './teamEmailAndOtpService.ts';
 import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
 import { escapeHtml } from './securityUtils.ts';
-import { appendAuditLogAsync, withTeamRowLock } from './tokenVault.ts';
+import {
+  appendAuditLogAsync,
+  loadTenantVaultAsync,
+  sanitizeTenantId,
+  saveTenantVaultAsync,
+  withTeamRowLock,
+} from './tokenVault.ts';
 
 const VALID_ATTENDANCE_STATUSES = new Set<TeamAttendanceStatus>([
   'PRESENT',
@@ -282,23 +289,198 @@ export async function deleteTeamAnnouncement(params: {
   });
 }
 
+const VALID_FIELD_ATTEMPT_OUTCOMES = new Set<FieldAttemptOutcome>([
+  'MARK',
+  'FOUL',
+  'PASS',
+  'CLEAR',
+  'MISS',
+]);
+
+export function teamFieldLogsVaultKey(teamId: string): string {
+  return `team_field_logs_${sanitizeTenantId(teamId).slice(0, 48)}`;
+}
+
+function sanitizeClientBatchId(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const cleaned = raw.trim().replace(/[^a-zA-Z0-9_.:-]/g, '').slice(0, 72);
+  return cleaned || undefined;
+}
+
+function sanitizeFieldAttempts(rawAttempts: unknown): FieldTrialEntry[] {
+  if (!Array.isArray(rawAttempts)) return [];
+  const out: FieldTrialEntry[] = [];
+  for (let i = 0; i < Math.min(24, rawAttempts.length); i += 1) {
+    const raw = rawAttempts[i];
+    if (!raw || typeof raw !== 'object') continue;
+    const item = raw as Partial<FieldTrialEntry>;
+    const outcome = String(item.outcome || '').toUpperCase() as FieldAttemptOutcome;
+    if (!VALID_FIELD_ATTEMPT_OUTCOMES.has(outcome)) continue;
+
+    const attemptNumber =
+      typeof item.attemptNumber === 'number' && Number.isFinite(item.attemptNumber)
+        ? Math.max(1, Math.min(24, Math.round(item.attemptNumber)))
+        : i + 1;
+
+    const markMeters =
+      typeof item.markMeters === 'number' &&
+      Number.isFinite(item.markMeters) &&
+      item.markMeters >= 0.3 &&
+      item.markMeters <= 110
+        ? Number(item.markMeters.toFixed(3))
+        : undefined;
+
+    const barHeightMeters =
+      typeof item.barHeightMeters === 'number' &&
+      Number.isFinite(item.barHeightMeters) &&
+      item.barHeightMeters >= 0.3 &&
+      item.barHeightMeters <= 10
+        ? Number(item.barHeightMeters.toFixed(3))
+        : undefined;
+
+    const windMps =
+      typeof item.windMps === 'number' &&
+      Number.isFinite(item.windMps) &&
+      item.windMps >= -20 &&
+      item.windMps <= 20
+        ? Number(item.windMps.toFixed(2))
+        : undefined;
+
+    const round =
+      item.round === 'PRELIM' || item.round === 'FINAL' ? item.round : undefined;
+
+    const note =
+      typeof item.note === 'string' && item.note.trim()
+        ? item.note.trim().slice(0, 120)
+        : undefined;
+
+    out.push({
+      attemptNumber,
+      outcome,
+      ...(markMeters !== undefined ? { markMeters } : {}),
+      ...(barHeightMeters !== undefined ? { barHeightMeters } : {}),
+      ...(windMps !== undefined ? { windMps } : {}),
+      ...(round ? { round } : {}),
+      ...(note ? { note } : {}),
+    });
+  }
+  return out;
+}
+
+/**
+ * Loads the uncapped team field mark archive from encrypted vault storage,
+ * falling back/migrating cleanly from inline `doc.fieldMarkLogs` when needed.
+ */
+export async function loadFullTeamFieldMarksArchive(
+  teamId: string,
+  inlineFallback?: FieldEventLogRecord[]
+): Promise<FieldEventLogRecord[]> {
+  const vaulted = await loadTenantVaultAsync<FieldEventLogRecord[] | null>(
+    teamFieldLogsVaultKey(teamId),
+    null
+  );
+  const inline = Array.isArray(inlineFallback) ? inlineFallback : [];
+  if (!Array.isArray(vaulted)) {
+    return [...inline];
+  }
+  if (inline.length === 0) {
+    return [...vaulted];
+  }
+  const seenIds = new Set(vaulted.map((r) => r.id));
+  const extraInline = inline.filter((r) => r && r.id && !seenIds.has(r.id));
+  return extraInline.length > 0 ? [...extraInline, ...vaulted] : [...vaulted];
+}
+
+export async function listTeamFieldMarks(params: {
+  teamId: string;
+  callerSid: string;
+  eventCode?: FieldEventCode | string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  ok: boolean;
+  logs: FieldEventLogRecord[];
+  totalCount: number;
+  limit: number;
+  offset: number;
+  error?: string;
+}> {
+  const limit = Math.max(1, Math.min(200, Math.floor(params.limit ?? 100)));
+  const offset = Math.max(0, Math.floor(params.offset ?? 0));
+
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) {
+    return { ok: false, logs: [], totalCount: 0, limit, offset, error: 'Team not found.' };
+  }
+
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+  );
+  if (!callerMem || callerMem.role === 'PARENT_FOLLOWER') {
+    return {
+      ok: false,
+      logs: [],
+      totalCount: 0,
+      limit,
+      offset,
+      error: 'Coach or athlete team membership required.',
+    };
+  }
+
+  const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const requestedCode = params.eventCode
+    ? (String(params.eventCode).toUpperCase() as FieldEventCode)
+    : undefined;
+  const filterByCode =
+    requestedCode && VALID_FIELD_EVENT_CODES.has(requestedCode) ? requestedCode : undefined;
+
+  const visible = archive.filter((log) => {
+    if (!isStaff && log.membershipId !== callerMem.membershipId) return false;
+    if (filterByCode && log.eventCode !== filterByCode) return false;
+    return true;
+  });
+
+  return {
+    ok: true,
+    logs: visible.slice(offset, offset + limit),
+    totalCount: visible.length,
+    limit,
+    offset,
+  };
+}
+
+export interface RecordTeamFieldMarkInput {
+  membershipId?: string;
+  athleteName: string;
+  date: string;
+  eventCode: FieldEventCode;
+  isCompetition?: boolean;
+  meetOrPracticeTitle?: string;
+  flightName?: string;
+  implementSpec?: string;
+  poleSpec?: string;
+  approachSteps?: number;
+  attempts: FieldTrialEntry[];
+  bestMarkMeters?: number;
+  bestWindLegalMeters?: number;
+  bestMarkWindMps?: number;
+  isWindAidedBest?: boolean;
+  isNoHeight?: boolean;
+  missesAtClearingHeight?: number;
+  totalVerticalMisses?: number;
+  placeRank?: number;
+  advancedToFinals?: boolean;
+  multiPoints?: number;
+  rpe?: number;
+  clientBatchId?: string;
+}
+
 export async function recordTeamFieldMarks(params: {
   callerSid: string;
   teamId: string;
-  entries: Array<{
-    membershipId?: string;
-    athleteName: string;
-    date: string;
-    eventCode: FieldEventCode;
-    isCompetition?: boolean;
-    meetOrPracticeTitle?: string;
-    implementSpec?: string;
-    poleSpec?: string;
-    approachSteps?: number;
-    attempts: FieldTrialEntry[];
-    multiPoints?: number;
-    rpe?: number;
-  }>;
+  clientBatchId?: string;
+  entries: RecordTeamFieldMarkInput[];
   originUrl: string;
 }): Promise<{ ok: boolean; recordedCount: number; team?: TeamSummaryWithRole | null; error?: string }> {
   return withTeamRowLock(params.teamId, async () => {
@@ -313,19 +495,24 @@ export async function recordTeamFieldMarks(params: {
     }
 
     const nowIso = new Date().toISOString();
-    doc.fieldMarkLogs = doc.fieldMarkLogs || [];
+    const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
+    const existingBatchKeys = new Set<string>();
+    for (const existing of archive) {
+      if (!existing.clientBatchId) continue;
+      const who = existing.membershipId || `name:${existing.athleteName.toLowerCase()}`;
+      existingBatchKeys.add(`${existing.clientBatchId}|${existing.eventCode}|${who}`);
+    }
+    const topBatchId = sanitizeClientBatchId(params.clientBatchId);
     let recordedCount = 0;
 
-    for (const rawEntry of (params.entries || []).slice(0, 60)) {
+    for (const rawEntry of (params.entries || []).slice(0, 120)) {
       const code = String(rawEntry.eventCode || '').toUpperCase() as FieldEventCode;
       if (!VALID_FIELD_EVENT_CODES.has(code)) continue;
       const spec = getFieldEventSpec(code);
       const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(String(rawEntry.date || ''))
         ? String(rawEntry.date).slice(0, 10)
         : nowIso.slice(0, 10);
-      const cleanAttempts = Array.isArray(rawEntry.attempts)
-        ? rawEntry.attempts.slice(0, 24)
-        : [];
+      const cleanAttempts = sanitizeFieldAttempts(rawEntry.attempts);
       const summary = summarizeFieldSeries(code, cleanAttempts, rawEntry.rpe);
 
       const targetMem = rawEntry.membershipId
@@ -338,6 +525,79 @@ export async function recordTeamFieldMarks(params: {
       )
         .trim()
         .slice(0, 64);
+
+      const entryBatchId = sanitizeClientBatchId(rawEntry.clientBatchId) || topBatchId;
+      if (entryBatchId) {
+        const who = targetMem
+          ? targetMem.membershipId
+          : `name:${athleteName.toLowerCase()}`;
+        const batchKey = `${entryBatchId}|${code}|${who}`;
+        if (existingBatchKeys.has(batchKey)) {
+          continue;
+        }
+      }
+
+      const bestMarkMeters =
+        summary.bestMarkMeters !== null
+          ? summary.bestMarkMeters
+          : typeof rawEntry.bestMarkMeters === 'number' &&
+              Number.isFinite(rawEntry.bestMarkMeters) &&
+              rawEntry.bestMarkMeters > 0
+            ? Number(rawEntry.bestMarkMeters.toFixed(3))
+            : undefined;
+      const bestWindLegalMeters =
+        summary.bestWindLegalMeters !== null
+          ? summary.bestWindLegalMeters
+          : typeof rawEntry.bestWindLegalMeters === 'number' &&
+              Number.isFinite(rawEntry.bestWindLegalMeters) &&
+              rawEntry.bestWindLegalMeters > 0
+            ? Number(rawEntry.bestWindLegalMeters.toFixed(3))
+            : undefined;
+      const bestMarkWindMps =
+        summary.bestMarkWindMps !== undefined
+          ? summary.bestMarkWindMps
+          : typeof rawEntry.bestMarkWindMps === 'number' &&
+              Number.isFinite(rawEntry.bestMarkWindMps)
+            ? Number(rawEntry.bestMarkWindMps.toFixed(2))
+            : undefined;
+      const isWindAidedBest =
+        bestMarkMeters !== undefined
+          ? summary.bestMarkMeters !== null
+            ? summary.isWindAidedBest
+            : Boolean(rawEntry.isWindAidedBest)
+          : undefined;
+      const isNoHeight =
+        summary.isNoHeight !== undefined
+          ? summary.isNoHeight
+          : typeof rawEntry.isNoHeight === 'boolean'
+            ? rawEntry.isNoHeight
+            : undefined;
+      const missesAtClearingHeight =
+        summary.missesAtClearingHeight !== undefined
+          ? summary.missesAtClearingHeight
+          : typeof rawEntry.missesAtClearingHeight === 'number' &&
+              Number.isFinite(rawEntry.missesAtClearingHeight)
+            ? Math.max(0, Math.round(rawEntry.missesAtClearingHeight))
+            : undefined;
+      const totalVerticalMisses =
+        summary.totalVerticalMisses !== undefined
+          ? summary.totalVerticalMisses
+          : typeof rawEntry.totalVerticalMisses === 'number' &&
+              Number.isFinite(rawEntry.totalVerticalMisses)
+            ? Math.max(0, Math.round(rawEntry.totalVerticalMisses))
+            : undefined;
+      const flightName =
+        typeof rawEntry.flightName === 'string' && rawEntry.flightName.trim()
+          ? rawEntry.flightName.trim().slice(0, 48)
+          : undefined;
+      const placeRank =
+        typeof rawEntry.placeRank === 'number' &&
+        Number.isFinite(rawEntry.placeRank) &&
+        rawEntry.placeRank >= 1
+          ? Math.round(rawEntry.placeRank)
+          : undefined;
+      const advancedToFinals =
+        typeof rawEntry.advancedToFinals === 'boolean' ? rawEntry.advancedToFinals : undefined;
 
       const recordId = `fld_${crypto.randomBytes(6).toString('hex')}`;
       const record: FieldEventLogRecord = {
@@ -352,6 +612,7 @@ export async function recordTeamFieldMarks(params: {
         meetOrPracticeTitle:
           String(rawEntry.meetOrPracticeTitle || '').trim().slice(0, 100) ||
           `${spec.label} ${rawEntry.isCompetition ? 'Competition' : 'Practice Sheet'}`,
+        ...(flightName ? { flightName } : {}),
         ...(rawEntry.implementSpec
           ? { implementSpec: String(rawEntry.implementSpec).trim().slice(0, 64) }
           : {}),
@@ -360,22 +621,33 @@ export async function recordTeamFieldMarks(params: {
           ? { approachSteps: Math.max(1, Math.min(30, Math.round(rawEntry.approachSteps))) }
           : {}),
         attempts: cleanAttempts,
-        ...(summary.bestMarkMeters !== null ? { bestMarkMeters: summary.bestMarkMeters } : {}),
+        ...(bestMarkMeters !== undefined ? { bestMarkMeters } : {}),
+        ...(bestWindLegalMeters !== undefined ? { bestWindLegalMeters } : {}),
+        ...(bestMarkWindMps !== undefined ? { bestMarkWindMps } : {}),
+        ...(isWindAidedBest ? { isWindAidedBest: true } : {}),
+        ...(isNoHeight ? { isNoHeight: true } : {}),
+        ...(missesAtClearingHeight !== undefined ? { missesAtClearingHeight } : {}),
+        ...(totalVerticalMisses !== undefined ? { totalVerticalMisses } : {}),
+        ...(placeRank !== undefined ? { placeRank } : {}),
+        ...(advancedToFinals !== undefined ? { advancedToFinals } : {}),
         ...(typeof rawEntry.multiPoints === 'number' && Number.isFinite(rawEntry.multiPoints)
           ? { multiPoints: Math.round(rawEntry.multiPoints) }
           : {}),
         ...(typeof rawEntry.rpe === 'number' && Number.isFinite(rawEntry.rpe)
           ? { rpe: Math.max(1, Math.min(10, rawEntry.rpe)) }
           : {}),
+        ...(entryBatchId ? { clientBatchId: entryBatchId } : {}),
         createdAt: nowIso,
       };
 
-      doc.fieldMarkLogs.unshift(record);
+      archive.unshift(record);
       recordedCount += 1;
 
       if (targetMem) {
         const bestLabel =
-          summary.bestMarkMeters !== null ? `${summary.bestMarkMeters.toFixed(2)}m` : `${summary.totalContacts} attempts`;
+          bestMarkMeters !== undefined
+            ? `${bestMarkMeters.toFixed(2)}m`
+            : `${summary.totalContacts} attempts`;
         const mirroredAct: UnifiedActivity = {
           id: recordId,
           startDateLocal: `${cleanDate}T15:30:00`,
@@ -407,14 +679,20 @@ export async function recordTeamFieldMarks(params: {
       }
     }
 
-    doc.fieldMarkLogs = doc.fieldMarkLogs.slice(0, 200);
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), archive);
+    doc.fieldMarkLogs = archive.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = archive.length;
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
       action: 'FIELD_MARKS_RECORDED',
-      metadata: { recordedCount },
+      metadata: {
+        recordedCount,
+        totalArchiveCount: archive.length,
+        ...(topBatchId ? { clientBatchId: topBatchId } : {}),
+      },
     });
 
     return {

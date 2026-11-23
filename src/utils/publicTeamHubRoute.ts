@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { PublicTeamHubPayload, TeamSummaryWithRole } from '../types';
+import {
+  buildPublicFieldLeaderboardFromLogs,
+  formatPublicSafeSportDisplayName,
+} from '../physiology/fieldEventsEngine';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 
 /**
@@ -100,6 +104,13 @@ export function buildCleanRoomPublicHubFromTeamSummary(
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
+  const { fieldPrsByMembershipId, fieldLeaderboard } =
+    buildPublicFieldLeaderboardFromLogs({
+      orgType: team.brand.orgType,
+      memberships: team.memberships || [],
+      fieldLogs: team.fieldMarkLogs || [],
+    });
+
   let officialResultCount = 0;
   const rosterLeaderboard = (team.memberships || [])
     .filter((m) => m.status !== 'REVOKED' && m.role === 'ATHLETE')
@@ -124,9 +135,17 @@ export function buildCleanRoomPublicHubFromTeamSummary(
         })
         .sort((a, b) => b.date.localeCompare(a.date));
       officialResultCount += officialResults.length;
+      const displayName = formatPublicSafeSportDisplayName({
+        invitedName: m.invitedName,
+        externalSource: m.externalSource,
+        isMinorU18: m.isMinorU18,
+        parentConsentStatus: m.parentConsentStatus,
+        orgType: team.brand.orgType,
+      });
+      const memberFieldPrs = fieldPrsByMembershipId.get(m.membershipId);
       return {
         membershipId: m.membershipId,
-        name: m.invitedName,
+        name: displayName,
         squadGroup: m.squadGroup,
         ...(m.eventGroup ? { eventGroup: m.eventGroup } : {}),
         ...(m.graduationYear ? { graduationYear: m.graduationYear } : {}),
@@ -136,6 +155,7 @@ export function buildCleanRoomPublicHubFromTeamSummary(
         ...(m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {}),
         ...(m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {}),
         officialResults,
+        ...(memberFieldPrs && memberFieldPrs.length > 0 ? { fieldPrs: memberFieldPrs } : {}),
       };
     });
 
@@ -160,10 +180,12 @@ export function buildCleanRoomPublicHubFromTeamSummary(
     upcomingMeets: meets.filter((m) => m.date >= todayIso),
     recentSchedule: meets.filter((m) => m.date < todayIso).reverse(),
     rosterLeaderboard,
+    fieldLeaderboard,
     stats: {
       athleteCount: rosterLeaderboard.length,
       meetCount: meets.length,
       officialResultCount,
+      fieldPrCount: fieldLeaderboard.length,
     },
   };
 }

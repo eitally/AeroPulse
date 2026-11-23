@@ -31,9 +31,14 @@ import {
   getOrgTypeSafeguardingDefaults,
   inferEventGroupFromSeedMark,
 } from '../src/physiology/teamOnboardingEngine.ts';
+import {
+  buildPublicFieldLeaderboardFromLogs,
+  formatPublicSafeSportDisplayName,
+} from '../src/physiology/fieldEventsEngine.ts';
 import { getLocalDateIso } from '../src/physiology/stravaLoadCalibration.ts';
 import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import { assertSafeExternalFetch } from './securityUtils.ts';
+import { loadFullTeamFieldMarksArchive } from './teamFieldAndDailyOpsService.ts';
 import { withTeamRowLock } from './tokenVault.ts';
 import {
   addTeamToUserIndex,
@@ -549,11 +554,23 @@ export async function getPublicTeamHubBySlugOrCode(
       upcomingMeets: [],
       recentSchedule: [],
       rosterLeaderboard: [],
-      stats: { athleteCount: 0, meetCount: 0, officialResultCount: 0 },
+      fieldLeaderboard: [],
+      stats: { athleteCount: 0, meetCount: 0, officialResultCount: 0, fieldPrCount: 0 },
     };
   }
 
   const todayIso = getLocalDateIso();
+  const fullFieldLogs = await loadFullTeamFieldMarksArchive(
+    doc.brand.teamId,
+    doc.fieldMarkLogs
+  );
+  const { fieldPrsByMembershipId, fieldLeaderboard } =
+    buildPublicFieldLeaderboardFromLogs({
+      orgType: doc.brand.orgType,
+      memberships: doc.memberships,
+      fieldLogs: fullFieldLogs,
+    });
+
   const meetItems: PublicTeamHubMeetItem[] = (doc.broadcastWorkouts || [])
     .filter((bw) => bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name))
     .filter((bw) => !bw.targetMembershipIds || bw.targetMembershipIds.length === 0)
@@ -600,18 +617,14 @@ export async function getPublicTeamHubBySlugOrCode(
 
       officialResultCount += officialResults.length;
 
-      const isProtectedMinor = Boolean(
-        m.isMinorU18 || doc.brand.orgType === 'HIGH_SCHOOL'
-      );
-      const abbreviateUnconsentedMinor = Boolean(
-        !m.externalSource && isProtectedMinor && m.parentConsentStatus !== 'ACKNOWLEDGED'
-      );
-      let displayName = m.invitedName;
-      if (abbreviateUnconsentedMinor) {
-        const parts = m.invitedName.trim().split(/\s+/).filter(Boolean);
-        displayName =
-          parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || 'Athlete';
-      }
+      const displayName = formatPublicSafeSportDisplayName({
+        invitedName: m.invitedName,
+        externalSource: m.externalSource,
+        isMinorU18: m.isMinorU18,
+        parentConsentStatus: m.parentConsentStatus,
+        orgType: doc.brand.orgType,
+      });
+      const memberFieldPrs = fieldPrsByMembershipId.get(m.membershipId);
 
       return {
         membershipId: m.membershipId,
@@ -627,6 +640,7 @@ export async function getPublicTeamHubBySlugOrCode(
           ? { externalProfileUrl: m.externalProfileUrl.trim() }
           : {}),
         officialResults,
+        ...(memberFieldPrs && memberFieldPrs.length > 0 ? { fieldPrs: memberFieldPrs } : {}),
       };
     });
 
@@ -652,6 +666,7 @@ export async function getPublicTeamHubBySlugOrCode(
     upcomingMeets,
     recentSchedule,
     rosterLeaderboard,
+    fieldLeaderboard,
     announcements: (doc.announcements || [])
       .filter((a) => a.publishToParentHub)
       .slice(0, 6)
@@ -666,6 +681,7 @@ export async function getPublicTeamHubBySlugOrCode(
       athleteCount: rosterLeaderboard.length,
       meetCount: meetItems.length,
       officialResultCount,
+      fieldPrCount: fieldLeaderboard.length,
     },
   };
 }

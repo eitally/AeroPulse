@@ -1,8 +1,13 @@
 import type {
   CoachEventGroup,
   DistanceUnit,
+  ExternalTeamPlatform,
   FieldEventCode,
+  FieldEventLogRecord,
   FieldTrialEntry,
+  ParentConsentStatus,
+  PublicTeamHubFieldPrItem,
+  TeamOrgType,
   TeamWorkoutLibraryTemplate,
 } from '../types';
 
@@ -175,13 +180,309 @@ export function formatFieldMarkDual(meters: number): string {
   return `${formatFieldMarkImperial(meters)} (${meters.toFixed(2)}m)`;
 }
 
+export interface RaiseBarHeightResult {
+  nextMeters: number;
+  displayValue: string;
+  totalInches?: number;
+}
+
+/**
+ * Steps High Jump or Pole Vault bar height cleanly with zero cumulative floating-point drift.
+ * Imperial uses exact integer inches (+2" HJ, +6" PV); Metric uses exact centimeters (+0.05m HJ, +0.15m PV).
+ */
+export function raiseBarHeight(params: {
+  currentMeters?: number;
+  eventCode: 'HJ' | 'PV';
+  unit: 'mi' | 'km';
+}): RaiseBarHeightResult {
+  const isPv = params.eventCode === 'PV';
+  const hasCurrent =
+    typeof params.currentMeters === 'number' &&
+    Number.isFinite(params.currentMeters) &&
+    params.currentMeters > 0;
+
+  if (params.unit === 'mi') {
+    const stepInches = isPv ? 6 : 2;
+    const baseInches = hasCurrent
+      ? Math.round(params.currentMeters! / 0.0254)
+      : isPv
+        ? 144
+        : 70;
+    const nextInches = baseInches + stepInches;
+    const nextMeters = Number((nextInches * 0.0254).toFixed(4));
+    const feet = Math.floor(nextInches / 12);
+    const inches = nextInches % 12;
+    return {
+      nextMeters,
+      displayValue: `${feet}' ${inches}"`,
+      totalInches: nextInches,
+    };
+  }
+
+  const stepCm = isPv ? 15 : 5;
+  const baseCm = hasCurrent
+    ? Math.round(params.currentMeters! * 100)
+    : isPv
+      ? 365
+      : 175;
+  const nextCm = baseCm + stepCm;
+  const nextMeters = Number((nextCm / 100).toFixed(2));
+  return {
+    nextMeters,
+    displayValue: `${nextMeters.toFixed(2)}m`,
+  };
+}
+
+export function formatBarHeightForUnit(meters: number, unit: DistanceUnit = 'mi'): string {
+  if (!Number.isFinite(meters) || meters <= 0) return '';
+  if (unit === 'km') return `${meters.toFixed(2)}m`;
+  const nearestInch = Math.round(meters / 0.0254);
+  if (Math.abs(nearestInch * 0.0254 - meters) <= 0.004) {
+    const feet = Math.floor(nearestInch / 12);
+    const inches = nearestInch % 12;
+    return `${feet}' ${inches}"`;
+  }
+  return formatFieldMarkImperial(meters);
+}
+
+export interface VerticalHeightGroupSummary {
+  heightMeters: number;
+  tokens: Array<'O' | 'X' | '-'>;
+  summary: string;
+}
+
+export interface VerticalFlightEvaluation {
+  bestClearedHeightMeters: number | null;
+  missesAtClearingHeight: number | null;
+  totalMisses: number;
+  totalMissesAll: number;
+  consecutiveMisses: number;
+  isEliminated: boolean;
+  isNoHeight: boolean;
+  heightMarks: VerticalHeightGroupSummary[];
+  verticalSeriesSummary: string;
+}
+
+/**
+ * Evaluates a single athlete's vertical jump series under World Athletics / NFHS rules:
+ * 3 consecutive MISSes eliminates the athlete (even across passed heights).
+ * Countback misses exclude attempts at heights above the last cleared height.
+ */
+export function evaluateVerticalFlightAthlete(
+  attempts: FieldTrialEntry[]
+): VerticalFlightEvaluation {
+  let bestClearedHeightMeters: number | null = null;
+  let consecutiveMisses = 0;
+  let isEliminated = false;
+  const heightOrder: string[] = [];
+  const heightBuckets = new Map<
+    string,
+    { heightMeters: number; tokens: Array<'O' | 'X' | '-'>; misses: number }
+  >();
+  const summaryTokens: string[] = [];
+  let totalMissesAll = 0;
+
+  for (const a of attempts || []) {
+    const symbol: 'O' | 'X' | '-' =
+      a.outcome === 'CLEAR' ? 'O' : a.outcome === 'MISS' ? 'X' : '-';
+    const h = a.barHeightMeters ?? a.markMeters;
+    summaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
+
+    if (typeof h === 'number' && Number.isFinite(h) && h > 0) {
+      const hKey = h.toFixed(3);
+      let bucket = heightBuckets.get(hKey);
+      if (!bucket) {
+        bucket = { heightMeters: Number(h.toFixed(3)), tokens: [], misses: 0 };
+        heightBuckets.set(hKey, bucket);
+        heightOrder.push(hKey);
+      }
+      bucket.tokens.push(symbol);
+      if (symbol === 'X') {
+        bucket.misses += 1;
+      }
+    }
+
+    if (symbol === 'X') {
+      totalMissesAll += 1;
+    }
+
+    if (isEliminated) {
+      continue;
+    }
+
+    if (a.outcome === 'CLEAR') {
+      consecutiveMisses = 0;
+      if (typeof h === 'number' && Number.isFinite(h) && h > 0) {
+        const rounded = Number(h.toFixed(3));
+        if (bestClearedHeightMeters === null || rounded > bestClearedHeightMeters) {
+          bestClearedHeightMeters = rounded;
+        }
+      }
+    } else if (a.outcome === 'MISS') {
+      consecutiveMisses += 1;
+      if (consecutiveMisses >= 3) {
+        isEliminated = true;
+      }
+    }
+    // PASS ('-') neither clears nor resets the consecutive miss streak.
+  }
+
+  let missesAtClearingHeight: number | null = null;
+  let totalMisses = 0;
+  if (bestClearedHeightMeters !== null) {
+    const clearKey = bestClearedHeightMeters.toFixed(3);
+    missesAtClearingHeight = heightBuckets.get(clearKey)?.misses ?? 0;
+    for (const bucket of heightBuckets.values()) {
+      if (bucket.heightMeters <= bestClearedHeightMeters + 0.0005) {
+        totalMisses += bucket.misses;
+      }
+    }
+  } else {
+    totalMisses = totalMissesAll;
+  }
+
+  const heightMarks: VerticalHeightGroupSummary[] = heightOrder.map((key) => {
+    const b = heightBuckets.get(key)!;
+    return {
+      heightMeters: b.heightMeters,
+      tokens: b.tokens,
+      summary: b.tokens.join(''),
+    };
+  });
+
+  return {
+    bestClearedHeightMeters,
+    missesAtClearingHeight,
+    totalMisses,
+    totalMissesAll,
+    consecutiveMisses,
+    isEliminated,
+    isNoHeight: isEliminated && bestClearedHeightMeters === null,
+    heightMarks,
+    verticalSeriesSummary: summaryTokens.join(' '),
+  };
+}
+
+export interface VerticalFlightAthleteInput {
+  athleteId: string;
+  membershipId?: string;
+  athleteName: string;
+  attempts: FieldTrialEntry[];
+}
+
+export interface VerticalFlightStanding extends VerticalFlightEvaluation {
+  athleteId: string;
+  membershipId?: string;
+  athleteName: string;
+  placeRank: number | null;
+  isTied: boolean;
+  needsJumpOff: boolean;
+}
+
+/**
+ * Ranks a vertical flight using World Athletics / NFHS countback rules:
+ * 1) Highest cleared bar -> 2) Fewest misses at clearing height -> 3) Fewest total misses up to clearing height.
+ */
+export function rankVerticalFlight(
+  athletes: VerticalFlightAthleteInput[]
+): VerticalFlightStanding[] {
+  const evaluated = (athletes || []).map((ath) => {
+    const ev = evaluateVerticalFlightAthlete(ath.attempts);
+    return {
+      athleteId: ath.athleteId,
+      membershipId: ath.membershipId,
+      athleteName: ath.athleteName,
+      ...ev,
+      isNoHeight: ev.isNoHeight || (ev.bestClearedHeightMeters === null && ev.totalMissesAll > 0),
+    };
+  });
+
+  evaluated.sort((a, b) => {
+    const aHas = a.bestClearedHeightMeters !== null;
+    const bHas = b.bestClearedHeightMeters !== null;
+    if (aHas !== bHas) return aHas ? -1 : 1;
+    if (!aHas && !bHas) return a.athleteName.localeCompare(b.athleteName);
+
+    const hDiff = b.bestClearedHeightMeters! - a.bestClearedHeightMeters!;
+    if (Math.abs(hDiff) > 0.0005) return hDiff;
+
+    const mDiff = (a.missesAtClearingHeight ?? 0) - (b.missesAtClearingHeight ?? 0);
+    if (mDiff !== 0) return mDiff;
+
+    const tDiff = a.totalMisses - b.totalMisses;
+    if (tDiff !== 0) return tDiff;
+
+    return a.athleteName.localeCompare(b.athleteName);
+  });
+
+  const ranked = evaluated.map((item) => ({
+    ...item,
+    placeRank: null as number | null,
+    isTied: false,
+    needsJumpOff: false,
+  }));
+
+  let nextRank = 1;
+  for (let i = 0; i < ranked.length; i += 1) {
+    const cur = ranked[i];
+    if (cur.bestClearedHeightMeters === null) {
+      cur.placeRank = null;
+      continue;
+    }
+    if (i > 0) {
+      const prev = ranked[i - 1];
+      const sameHeight =
+        prev.bestClearedHeightMeters !== null &&
+        Math.abs(prev.bestClearedHeightMeters - cur.bestClearedHeightMeters) <= 0.0005;
+      const sameAtBar =
+        (prev.missesAtClearingHeight ?? 0) === (cur.missesAtClearingHeight ?? 0);
+      const sameTotal = prev.totalMisses === cur.totalMisses;
+      if (sameHeight && sameAtBar && sameTotal) {
+        cur.placeRank = prev.placeRank;
+      } else {
+        cur.placeRank = nextRank;
+      }
+    } else {
+      cur.placeRank = nextRank;
+    }
+    nextRank += 1;
+  }
+
+  const rankCounts = new Map<number, number>();
+  for (const r of ranked) {
+    if (r.placeRank !== null) {
+      rankCounts.set(r.placeRank, (rankCounts.get(r.placeRank) ?? 0) + 1);
+    }
+  }
+  for (const r of ranked) {
+    if (r.placeRank !== null) {
+      const count = rankCounts.get(r.placeRank) ?? 1;
+      r.isTied = count > 1;
+      r.needsJumpOff = r.placeRank === 1 && count > 1;
+    }
+  }
+
+  return ranked;
+}
+
 export interface FieldSeriesSummary {
   bestMarkMeters: number | null;
+  bestWindLegalMeters: number | null;
+  bestMarkWindMps?: number;
+  isWindAidedBest: boolean;
   legalCount: number;
   foulOrMissCount: number;
   totalContacts: number;
   verticalSeriesSummary: string;
   estimatedLoadTss: number;
+  isNoHeight?: boolean;
+  missesAtClearingHeight?: number;
+  totalVerticalMisses?: number;
+  isEliminated?: boolean;
+}
+
+export function isWindReadingLegal(windMps?: number): boolean {
+  return windMps === undefined || !Number.isFinite(windMps) || windMps <= 2.0;
 }
 
 export function summarizeFieldSeries(
@@ -191,6 +492,9 @@ export function summarizeFieldSeries(
 ): FieldSeriesSummary {
   const spec = getFieldEventSpec(eventCode);
   let bestMarkMeters: number | null = null;
+  let bestWindLegalMeters: number | null = null;
+  let bestMarkWindMps: number | undefined;
+  let isWindAidedBest = false;
   let legalCount = 0;
   let foulOrMissCount = 0;
   const barSummaryTokens: string[] = [];
@@ -200,12 +504,29 @@ export function summarizeFieldSeries(
       foulOrMissCount += 1;
     } else if (a.outcome === 'MARK' || a.outcome === 'CLEAR') {
       legalCount += 1;
-      const candidate =
+      const candidateRaw =
         spec.mode === 'VERTICAL'
           ? (a.barHeightMeters ?? a.markMeters ?? 0)
           : (a.markMeters ?? a.barHeightMeters ?? 0);
-      if (candidate > 0 && (bestMarkMeters === null || candidate > bestMarkMeters)) {
-        bestMarkMeters = Number(candidate.toFixed(3));
+      if (candidateRaw > 0) {
+        const candidate = Number(candidateRaw.toFixed(3));
+        const hasWind = typeof a.windMps === 'number' && Number.isFinite(a.windMps);
+        const attemptWind = hasWind ? Number(a.windMps!.toFixed(2)) : undefined;
+        const attemptWindAided = hasWind && a.windMps! > 2.0;
+
+        if (bestMarkMeters === null || candidate > bestMarkMeters) {
+          bestMarkMeters = candidate;
+          bestMarkWindMps = attemptWind;
+          isWindAidedBest = attemptWindAided;
+        } else if (candidate === bestMarkMeters && isWindAidedBest && !attemptWindAided) {
+          // Prefer a wind-legal tie over a wind-aided tie
+          bestMarkWindMps = attemptWind;
+          isWindAidedBest = false;
+        }
+
+        if (!attemptWindAided && (bestWindLegalMeters === null || candidate > bestWindLegalMeters)) {
+          bestWindLegalMeters = candidate;
+        }
       }
     }
     if (spec.mode === 'VERTICAL') {
@@ -213,6 +534,13 @@ export function summarizeFieldSeries(
       const h = a.barHeightMeters ?? a.markMeters;
       barSummaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
     }
+  }
+
+  let verticalEval: VerticalFlightEvaluation | null = null;
+  if (spec.mode === 'VERTICAL') {
+    verticalEval = evaluateVerticalFlightAthlete(attempts);
+    bestMarkMeters = verticalEval.bestClearedHeightMeters;
+    bestWindLegalMeters = verticalEval.bestClearedHeightMeters;
   }
 
   const totalContacts = attempts.filter((a) => a.outcome !== 'PASS').length;
@@ -232,12 +560,406 @@ export function summarizeFieldSeries(
 
   return {
     bestMarkMeters,
+    bestWindLegalMeters,
+    ...(bestMarkWindMps !== undefined ? { bestMarkWindMps } : {}),
+    isWindAidedBest,
     legalCount,
     foulOrMissCount,
     totalContacts,
     verticalSeriesSummary: barSummaryTokens.join(' '),
     estimatedLoadTss,
+    ...(verticalEval
+      ? {
+          isNoHeight: verticalEval.isNoHeight,
+          ...(verticalEval.missesAtClearingHeight !== null
+            ? { missesAtClearingHeight: verticalEval.missesAtClearingHeight }
+            : {}),
+          totalVerticalMisses: verticalEval.totalMisses,
+          isEliminated: verticalEval.isEliminated,
+        }
+      : {}),
   };
+}
+
+export interface HorizontalFlightAthleteInput {
+  athleteId: string;
+  membershipId?: string;
+  athleteName: string;
+  eventCode: FieldEventCode;
+  attempts: FieldTrialEntry[];
+}
+
+export interface HorizontalFlightStanding {
+  athleteId: string;
+  membershipId?: string;
+  athleteName: string;
+  bestMarkMeters: number | null;
+  bestWindLegalMeters: number | null;
+  bestMarkWindMps?: number;
+  isWindAidedBest: boolean;
+  sortedMarksDesc: number[];
+  placeRank: number | null;
+  isNoMark: boolean;
+  advancedToFinals: boolean;
+}
+
+function compareSortedMarksDesc(a: number[], b: number[]): number {
+  const maxLen = Math.max(a.length, b.length);
+  for (let i = 0; i < maxLen; i += 1) {
+    const va = a[i] ?? -1;
+    const vb = b[i] ?? -1;
+    if (Math.abs(va - vb) > 0.0005) {
+      return vb - va;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Ranks horizontal jump and throw flights using World Athletics / NFHS tiebreaking:
+ * best mark -> 2nd best -> 3rd best -> ...
+ */
+export function computeHorizontalFlightStandings(
+  athletes: HorizontalFlightAthleteInput[]
+): HorizontalFlightStanding[] {
+  const prepared = (athletes || []).map((ath) => {
+    const summary = summarizeFieldSeries(ath.eventCode, ath.attempts);
+    const sortedMarksDesc = (ath.attempts || [])
+      .filter((a) => a.outcome === 'MARK' && typeof a.markMeters === 'number' && a.markMeters > 0)
+      .map((a) => Number(a.markMeters!.toFixed(3)))
+      .sort((x, y) => y - x);
+
+    return {
+      athleteId: ath.athleteId,
+      membershipId: ath.membershipId,
+      athleteName: ath.athleteName,
+      bestMarkMeters: summary.bestMarkMeters,
+      bestWindLegalMeters: summary.bestWindLegalMeters,
+      ...(summary.bestMarkWindMps !== undefined ? { bestMarkWindMps: summary.bestMarkWindMps } : {}),
+      isWindAidedBest: summary.isWindAidedBest,
+      sortedMarksDesc,
+      placeRank: null as number | null,
+      isNoMark: sortedMarksDesc.length === 0,
+      advancedToFinals: false,
+    };
+  });
+
+  prepared.sort((a, b) => {
+    if (a.isNoMark !== b.isNoMark) return a.isNoMark ? 1 : -1;
+    if (a.isNoMark && b.isNoMark) return a.athleteName.localeCompare(b.athleteName);
+    const cmp = compareSortedMarksDesc(a.sortedMarksDesc, b.sortedMarksDesc);
+    if (cmp !== 0) return cmp;
+    return a.athleteName.localeCompare(b.athleteName);
+  });
+
+  let nextRank = 1;
+  for (let i = 0; i < prepared.length; i += 1) {
+    const cur = prepared[i];
+    if (cur.isNoMark) {
+      cur.placeRank = null;
+      continue;
+    }
+    if (i > 0 && !prepared[i - 1].isNoMark) {
+      const tied = compareSortedMarksDesc(prepared[i - 1].sortedMarksDesc, cur.sortedMarksDesc) === 0;
+      cur.placeRank = tied ? prepared[i - 1].placeRank : nextRank;
+    } else {
+      cur.placeRank = nextRank;
+    }
+    nextRank += 1;
+  }
+
+  return prepared;
+}
+
+export interface HorizontalFinalsCutResult {
+  standings: HorizontalFlightStanding[];
+  finalsOrder: HorizontalFlightStanding[];
+}
+
+/**
+ * Cuts prelim horizontal standings to the top 8 or 9 qualifiers, marks `advancedToFinals: true`,
+ * and returns `finalsOrder` in reverse prelim order for Rounds 4-6.
+ */
+export function advanceFlightToFinals(
+  standings: HorizontalFlightStanding[],
+  count: 8 | 9 | number = 8
+): HorizontalFinalsCutResult {
+  const cutoff = Math.max(1, Math.round(count));
+  const updated = (standings || []).map((s) => ({
+    ...s,
+    advancedToFinals: s.placeRank !== null && s.placeRank <= cutoff,
+  }));
+  const finalsOrder = updated.filter((s) => s.advancedToFinals).slice().reverse();
+  return {
+    standings: updated,
+    finalsOrder,
+  };
+}
+
+export interface PublicSafeSportAthleteRef {
+  membershipId: string;
+  role: string;
+  status: string;
+  invitedName: string;
+  squadGroup: string;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
+  graduationYear?: number;
+  externalSource?: ExternalTeamPlatform;
+  isMinorU18?: boolean;
+  parentConsentStatus?: ParentConsentStatus;
+}
+
+export function formatPublicSafeSportDisplayName(params: {
+  invitedName: string;
+  externalSource?: ExternalTeamPlatform;
+  isMinorU18?: boolean;
+  parentConsentStatus?: ParentConsentStatus;
+  orgType?: TeamOrgType;
+}): string {
+  const isProtectedMinor = Boolean(
+    params.isMinorU18 || params.orgType === 'HIGH_SCHOOL'
+  );
+  const abbreviateUnconsentedMinor = Boolean(
+    !params.externalSource &&
+      isProtectedMinor &&
+      params.parentConsentStatus !== 'ACKNOWLEDGED'
+  );
+  if (!abbreviateUnconsentedMinor) {
+    return params.invitedName;
+  }
+  const parts = String(params.invitedName || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  }
+  return parts[0] || 'Athlete';
+}
+
+interface BestFieldPrCandidate {
+  log: FieldEventLogRecord;
+  bestMarkMeters?: number;
+  windMps?: number;
+  isWindAided: boolean;
+  multiPoints?: number;
+}
+
+function extractFieldLogPrEvaluation(log: FieldEventLogRecord): {
+  windLegalMeters?: number;
+  windLegalWindMps?: number;
+  overallMeters?: number;
+  overallWindMps?: number;
+  isWindAidedOverall: boolean;
+  multiPoints?: number;
+} {
+  const spec = getFieldEventSpec(log.eventCode);
+  if (spec.mode === 'MULTI') {
+    const pts =
+      typeof log.multiPoints === 'number' && Number.isFinite(log.multiPoints) && log.multiPoints > 0
+        ? Math.round(log.multiPoints)
+        : undefined;
+    return { isWindAidedOverall: false, multiPoints: pts };
+  }
+
+  let windLegalMeters: number | undefined;
+  let windLegalWindMps: number | undefined;
+  let overallMeters: number | undefined;
+  let overallWindMps: number | undefined;
+  let isWindAidedOverall = false;
+
+  if (Array.isArray(log.attempts) && log.attempts.length > 0) {
+    for (const a of log.attempts) {
+      if (a.outcome !== 'MARK' && a.outcome !== 'CLEAR') continue;
+      const rawMark =
+        spec.mode === 'VERTICAL'
+          ? (a.barHeightMeters ?? a.markMeters ?? 0)
+          : (a.markMeters ?? a.barHeightMeters ?? 0);
+      if (!Number.isFinite(rawMark) || rawMark <= 0) continue;
+      const roundedMark = Number(rawMark.toFixed(3));
+      const hasWind = typeof a.windMps === 'number' && Number.isFinite(a.windMps);
+      const windVal = hasWind ? Number(a.windMps!.toFixed(2)) : undefined;
+      const windAided = hasWind && a.windMps! > 2.0;
+
+      if (overallMeters === undefined || roundedMark > overallMeters) {
+        overallMeters = roundedMark;
+        overallWindMps = windVal;
+        isWindAidedOverall = windAided;
+      } else if (roundedMark === overallMeters && isWindAidedOverall && !windAided) {
+        overallWindMps = windVal;
+        isWindAidedOverall = false;
+      }
+
+      if (!windAided && (windLegalMeters === undefined || roundedMark > windLegalMeters)) {
+        windLegalMeters = roundedMark;
+        windLegalWindMps = windVal;
+      }
+    }
+  }
+
+  if (windLegalMeters === undefined && typeof log.bestWindLegalMeters === 'number' && log.bestWindLegalMeters > 0) {
+    windLegalMeters = Number(log.bestWindLegalMeters.toFixed(3));
+    if (!log.isWindAidedBest && typeof log.bestMarkWindMps === 'number') {
+      windLegalWindMps = Number(log.bestMarkWindMps.toFixed(2));
+    }
+  }
+  if (overallMeters === undefined && typeof log.bestMarkMeters === 'number' && log.bestMarkMeters > 0) {
+    overallMeters = Number(log.bestMarkMeters.toFixed(3));
+    overallWindMps =
+      typeof log.bestMarkWindMps === 'number' ? Number(log.bestMarkWindMps.toFixed(2)) : undefined;
+    isWindAidedOverall = Boolean(
+      log.isWindAidedBest || (typeof log.bestMarkWindMps === 'number' && log.bestMarkWindMps > 2.0)
+    );
+    if (!isWindAidedOverall && windLegalMeters === undefined) {
+      windLegalMeters = overallMeters;
+      windLegalWindMps = overallWindMps;
+    }
+  }
+
+  return {
+    windLegalMeters,
+    windLegalWindMps,
+    overallMeters,
+    overallWindMps,
+    isWindAidedOverall,
+  };
+}
+
+/**
+ * Builds SafeSport-clean public Field Event PRs and team leaderboard from competition-only logs.
+ * Excludes practice sessions, unlinked walk-on strings, RPE, pole specs, notes, and PII.
+ */
+export function buildPublicFieldLeaderboardFromLogs(params: {
+  orgType?: TeamOrgType;
+  memberships: PublicSafeSportAthleteRef[];
+  fieldLogs: FieldEventLogRecord[];
+}): {
+  fieldPrsByMembershipId: Map<string, PublicTeamHubFieldPrItem[]>;
+  fieldLeaderboard: PublicTeamHubFieldPrItem[];
+} {
+  const athleteByMemId = new Map<
+    string,
+    { mem: PublicSafeSportAthleteRef; displayName: string }
+  >();
+  for (const m of params.memberships || []) {
+    if (m.status === 'REVOKED' || m.role !== 'ATHLETE') continue;
+    athleteByMemId.set(m.membershipId, {
+      mem: m,
+      displayName: formatPublicSafeSportDisplayName({
+        invitedName: m.invitedName,
+        externalSource: m.externalSource,
+        isMinorU18: m.isMinorU18,
+        parentConsentStatus: m.parentConsentStatus,
+        orgType: params.orgType,
+      }),
+    });
+  }
+
+  const bestLegalByKey = new Map<string, BestFieldPrCandidate>();
+  const bestAidedByKey = new Map<string, BestFieldPrCandidate>();
+
+  for (const log of params.fieldLogs || []) {
+    if (!log || log.isCompetition !== true) continue;
+    if (!log.membershipId || !athleteByMemId.has(log.membershipId)) continue;
+
+    const evalRes = extractFieldLogPrEvaluation(log);
+    const key = `${log.membershipId}|${log.eventCode}`;
+    const spec = getFieldEventSpec(log.eventCode);
+
+    if (spec.mode === 'MULTI') {
+      if (!evalRes.multiPoints) continue;
+      const existing = bestLegalByKey.get(key);
+      if (!existing || (existing.multiPoints ?? 0) < evalRes.multiPoints) {
+        bestLegalByKey.set(key, {
+          log,
+          multiPoints: evalRes.multiPoints,
+          isWindAided: false,
+        });
+      }
+      continue;
+    }
+
+    if (evalRes.windLegalMeters !== undefined && evalRes.windLegalMeters > 0) {
+      const existing = bestLegalByKey.get(key);
+      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.windLegalMeters) {
+        bestLegalByKey.set(key, {
+          log,
+          bestMarkMeters: evalRes.windLegalMeters,
+          windMps: evalRes.windLegalWindMps,
+          isWindAided: false,
+        });
+      }
+    } else if (evalRes.overallMeters !== undefined && evalRes.overallMeters > 0) {
+      const existing = bestAidedByKey.get(key);
+      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.overallMeters) {
+        bestAidedByKey.set(key, {
+          log,
+          bestMarkMeters: evalRes.overallMeters,
+          windMps: evalRes.overallWindMps,
+          isWindAided: evalRes.isWindAidedOverall,
+        });
+      }
+    }
+  }
+
+  const allKeys = new Set<string>([...bestLegalByKey.keys(), ...bestAidedByKey.keys()]);
+  const eventOrder = new Map<FieldEventCode, number>(
+    FIELD_EVENT_CATALOG.map((spec, idx) => [spec.code, idx])
+  );
+  const fieldPrsByMembershipId = new Map<string, PublicTeamHubFieldPrItem[]>();
+  const fieldLeaderboard: PublicTeamHubFieldPrItem[] = [];
+
+  for (const key of allKeys) {
+    const chosen = bestLegalByKey.get(key) || bestAidedByKey.get(key);
+    if (!chosen || !chosen.log.membershipId) continue;
+    const athRef = athleteByMemId.get(chosen.log.membershipId);
+    if (!athRef) continue;
+
+    const spec = getFieldEventSpec(chosen.log.eventCode);
+    const displayMark =
+      spec.mode === 'MULTI' && typeof chosen.multiPoints === 'number'
+        ? `${chosen.multiPoints.toLocaleString()} pts`
+        : typeof chosen.bestMarkMeters === 'number'
+          ? formatFieldMarkDual(chosen.bestMarkMeters)
+          : '';
+    if (!displayMark) continue;
+
+    const item: PublicTeamHubFieldPrItem = {
+      id: chosen.log.id,
+      membershipId: athRef.mem.membershipId,
+      displayName: athRef.displayName,
+      ...(athRef.mem.genderDivision ? { genderDivision: athRef.mem.genderDivision } : {}),
+      ...(athRef.mem.graduationYear ? { graduationYear: athRef.mem.graduationYear } : {}),
+      ...(athRef.mem.squadGroup ? { squadGroup: athRef.mem.squadGroup } : {}),
+      eventCode: chosen.log.eventCode,
+      eventLabel: spec.label,
+      ...(typeof chosen.bestMarkMeters === 'number' ? { bestMarkMeters: chosen.bestMarkMeters } : {}),
+      displayMark,
+      ...(typeof chosen.windMps === 'number' ? { windMps: chosen.windMps } : {}),
+      ...(chosen.isWindAided ? { isWindAided: true } : {}),
+      ...(typeof chosen.multiPoints === 'number' ? { multiPoints: chosen.multiPoints } : {}),
+      ...(chosen.log.meetOrPracticeTitle ? { meetName: chosen.log.meetOrPracticeTitle } : {}),
+      date: chosen.log.date,
+    };
+
+    fieldLeaderboard.push(item);
+    const list = fieldPrsByMembershipId.get(athRef.mem.membershipId) || [];
+    list.push(item);
+    fieldPrsByMembershipId.set(athRef.mem.membershipId, list);
+  }
+
+  const sortPrs = (a: PublicTeamHubFieldPrItem, b: PublicTeamHubFieldPrItem): number => {
+    const orderDiff = (eventOrder.get(a.eventCode) ?? 99) - (eventOrder.get(b.eventCode) ?? 99);
+    if (orderDiff !== 0) return orderDiff;
+    const scoreA = a.multiPoints ?? a.bestMarkMeters ?? 0;
+    const scoreB = b.multiPoints ?? b.bestMarkMeters ?? 0;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return a.displayName.localeCompare(b.displayName);
+  };
+
+  fieldLeaderboard.sort(sortPrs);
+  for (const list of fieldPrsByMembershipId.values()) {
+    list.sort(sortPrs);
+  }
+
+  return { fieldPrsByMembershipId, fieldLeaderboard };
 }
 
 interface ScoringCoeff {

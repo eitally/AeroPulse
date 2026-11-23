@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
+  Award,
   Bell,
   Calendar,
   CheckCircle2,
@@ -13,7 +14,12 @@ import {
   UserPlus,
   Users,
 } from './icons/PhosphorIcons';
-import type { PublicTeamHubPayload, TeamSummaryWithRole } from '../types';
+import type {
+  PublicTeamHubFieldPrItem,
+  PublicTeamHubPayload,
+  TeamSummaryWithRole,
+} from '../types';
+import { getFieldEventSpec } from '../physiology/fieldEventsEngine';
 import { buildPresetExternalTeamSummary } from '../utils/athleticNetAndTfrrsEngine';
 import { buildCleanRoomPublicHubFromTeamSummary } from '../utils/publicTeamHubRoute';
 import { formatPracticeTime12h } from '../utils/workoutScheduleUtils';
@@ -37,6 +43,24 @@ export function formatPublicPlaceFinish(placeFinish?: string | null): string {
   return /^\d+$/.test(trimmed) ? `#${trimmed}` : trimmed;
 }
 
+type FieldHubFilter = 'ALL' | 'JUMPS' | 'THROWS' | 'POLE_VAULT' | 'MULTI';
+
+const FIELD_HUB_FILTER_OPTIONS: ReadonlyArray<{ id: FieldHubFilter; label: string }> = [
+  { id: 'ALL', label: 'All Field' },
+  { id: 'JUMPS', label: 'Jumps' },
+  { id: 'THROWS', label: 'Throws' },
+  { id: 'POLE_VAULT', label: 'Vault' },
+  { id: 'MULTI', label: 'Multi' },
+];
+
+function formatPublicFieldWindBadge(item: PublicTeamHubFieldPrItem): string | null {
+  if (typeof item.windMps === 'number' && Number.isFinite(item.windMps)) {
+    const signed = `${item.windMps > 0 ? '+' : ''}${item.windMps.toFixed(1)}`;
+    return item.isWindAided ? `${signed}w` : `${signed} m/s`;
+  }
+  return item.isWindAided ? 'w' : null;
+}
+
 export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
   slugOrCode,
   isDark,
@@ -49,6 +73,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
   const [payload, setPayload] = useState<PublicTeamHubPayload | null>(initialPayloadForTest);
   const [loading, setLoading] = useState<boolean>(!initialPayloadForTest);
   const [selectedSquad, setSelectedSquad] = useState<string>('ALL');
+  const [selectedFieldFilter, setSelectedFieldFilter] = useState<FieldHubFilter>('ALL');
   const [followNotice, setFollowNotice] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
 
@@ -183,6 +208,33 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
       }))
       .sort((a, b) => a.distanceMeters - b.distanceMeters);
   }, [visibleRoster]);
+
+  const fieldPrGroups = useMemo(() => {
+    const items = payload?.fieldLeaderboard || [];
+    const filtered = items.filter((item) => {
+      if (selectedSquad !== 'ALL' && item.squadGroup !== selectedSquad) return false;
+      if (selectedFieldFilter === 'ALL') return true;
+      return getFieldEventSpec(item.eventCode).eventGroup === selectedFieldFilter;
+    });
+
+    const grouped = new Map<
+      string,
+      { eventCode: string; eventLabel: string; rows: PublicTeamHubFieldPrItem[] }
+    >();
+    for (const item of filtered) {
+      const existing = grouped.get(item.eventCode);
+      if (existing) {
+        existing.rows.push(item);
+      } else {
+        grouped.set(item.eventCode, {
+          eventCode: item.eventCode,
+          eventLabel: item.eventLabel,
+          rows: [item],
+        });
+      }
+    }
+    return Array.from(grouped.values());
+  }, [payload?.fieldLeaderboard, selectedFieldFilter, selectedSquad]);
 
   const handleFollowAsSupporter = async () => {
     if (!payload?.brand) return;
@@ -361,6 +413,12 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                     <span className="text-ap-muted dark:text-ap-muted-dark">Results:</span>{' '}
                     <strong>{payload.stats.officialResultCount}</strong>
                   </div>
+                  {(payload.stats.fieldPrCount ?? 0) > 0 && (
+                    <div className="rounded-lg border border-ap-frame/20 dark:border-ap-edge bg-ap-chalk/70 dark:bg-ap-carbon px-3 py-1.5">
+                      <span className="text-ap-muted dark:text-ap-muted-dark">Field PRs:</span>{' '}
+                      <strong>{payload.stats.fieldPrCount}</strong>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -602,6 +660,122 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                 )}
               </section>
             </div>
+
+            {(payload.fieldLeaderboard || []).length > 0 && (
+              <section
+                data-testid="public-hub-field-prs"
+                className="ap-card p-4 sm:p-5 space-y-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <Award className="w-4 h-4 text-ap-cobalt dark:text-ap-volt shrink-0" />
+                    <div>
+                      <h2 className="text-sm sm:text-base font-bold">
+                        Field Event PRs &amp; Leaderboard
+                      </h2>
+                      <p className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                        Verified Competition Marks · Wind-Legal Preferred · Dual Imperial &amp; Metric
+                      </p>
+                    </div>
+                  </div>
+                  <div
+                    role="group"
+                    aria-label="Filter field event category"
+                    className="flex flex-wrap items-center gap-1.5"
+                  >
+                    {FIELD_HUB_FILTER_OPTIONS.map((opt) => {
+                      const active = selectedFieldFilter === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          data-testid={`public-hub-field-filter-${opt.id}`}
+                          aria-pressed={active}
+                          onClick={() => setSelectedFieldFilter(opt.id)}
+                          className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-mono font-bold cursor-pointer transition-colors ${
+                            active
+                              ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
+                              : 'ap-card-inset text-ap-ink dark:text-ap-chalk hover:border-ap-cobalt/60 dark:hover:border-ap-volt/60'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {fieldPrGroups.length === 0 ? (
+                  <p className="text-xs font-mono text-ap-muted dark:text-ap-muted-dark py-2">
+                    No competition field PRs match this filter yet.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {fieldPrGroups.map((group) => (
+                      <div
+                        key={group.eventCode}
+                        className="rounded-xl border border-ap-frame/20 dark:border-ap-edge bg-ap-chalk/70 dark:bg-ap-carbon p-3 space-y-2"
+                      >
+                        <div className="flex items-center justify-between gap-2 border-b border-ap-frame/15 dark:border-ap-edge pb-1.5">
+                          <span className="text-xs font-mono font-extrabold uppercase tracking-wider text-ap-cobalt dark:text-ap-volt">
+                            {group.eventLabel}
+                          </span>
+                          <span className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                            {group.rows.length} PR{group.rows.length === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                        <div className="divide-y divide-ap-frame/15 dark:divide-ap-edge">
+                          {group.rows.map((pr, idx) => {
+                            const windBadge = formatPublicFieldWindBadge(pr);
+                            return (
+                              <div
+                                key={`${pr.id}-${pr.membershipId || pr.displayName}`}
+                                data-testid="public-hub-field-row"
+                                className="py-2 flex flex-wrap items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0">
+                                  <div className="font-bold flex items-center gap-1.5">
+                                    <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark tabular-nums">
+                                      #{idx + 1}
+                                    </span>
+                                    <span className="truncate">{pr.displayName}</span>
+                                    {windBadge && (
+                                      <span
+                                        title={
+                                          pr.isWindAided
+                                            ? 'Wind-aided mark (> +2.0 m/s)'
+                                            : 'Wind-legal reading'
+                                        }
+                                        className={`px-1.5 py-0.5 rounded font-mono text-2xs font-bold tabular-nums ${
+                                          pr.isWindAided
+                                            ? 'bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30'
+                                            : 'bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30'
+                                        }`}
+                                      >
+                                        {windBadge}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark truncate">
+                                    {pr.squadGroup || 'Team'}
+                                    {pr.graduationYear ? ` · '${String(pr.graduationYear).slice(-2)}` : ''}
+                                    {pr.meetName ? ` · ${pr.meetName}` : ''}
+                                    {pr.date ? ` (${pr.date})` : ''}
+                                  </div>
+                                </div>
+                                <div className="text-right font-mono font-extrabold text-ap-cobalt dark:text-ap-volt shrink-0 tabular-nums">
+                                  {pr.displayMark}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
           </>
         )}
         </div>
