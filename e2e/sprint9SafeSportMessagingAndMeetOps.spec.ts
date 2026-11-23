@@ -71,6 +71,8 @@ test.describe('Sprint 9: SafeSport MAAPP Messaging & Meet-Day Heats/Flights/NFHS
     await expect(page.getByTestId('nfhs-over-limit-alert')).toContainText('NFHS Rule 4-2 Violation');
 
     await page.getByTestId('meet-tab-heats').click();
+    await expect(meetModal).toContainText('TBD (Official Program)');
+    await page.getByTestId('meet-authority-host').click();
     await expect(meetModal).toContainText(/Heat 1 · Lane \d/);
 
     await page.getByTestId('meet-tab-flights').click();

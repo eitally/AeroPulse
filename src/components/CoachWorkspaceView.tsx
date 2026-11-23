@@ -37,7 +37,11 @@ import { emitFunnelEvent, resolveFunnelTierFromOrgType } from '../utils/funnelTe
 import { hasSessionActiveHint } from '../utils/sessionHint';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
-import type { SavedStopwatchEntry } from './TracksideStopwatchView';
+import type {
+  SavedStopwatchEntry,
+  TracksideStopwatchLaunchPreset,
+} from './TracksideStopwatchView';
+import type { CoachDelegateTimingPreset } from './stopwatch/CoachDelegateTimingModal';
 import type {
   StopwatchOutboxFlushResult,
   StopwatchSaveResult,
@@ -138,6 +142,13 @@ const DistrictAdOverviewModal = lazyWithRetry(
       default: m.DistrictAdOverviewModal,
     })),
   { chunkKey: 'DistrictAdOverviewModal', restoreTab: 'coach' }
+);
+const CoachDelegateTimingModal = lazyWithRetry(
+  () =>
+    import('./stopwatch/CoachDelegateTimingModal').then((m) => ({
+      default: m.CoachDelegateTimingModal,
+    })),
+  { chunkKey: 'CoachDelegateTimingModal', restoreTab: 'coach' }
 );
 
 export interface CoachWorkspaceViewProps {
@@ -933,6 +944,11 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   const [showMeetDayModal, setShowMeetDayModal] = useState<boolean>(false);
   const [showInjuryHubModal, setShowInjuryHubModal] = useState<boolean>(false);
   const [showDistrictAdModal, setShowDistrictAdModal] = useState<boolean>(false);
+  const [delegateModalOpen, setDelegateModalOpen] = useState<boolean>(false);
+  const [delegateModalTab, setDelegateModalTab] = useState<'CREATE' | 'REVIEW'>('CREATE');
+  const [delegatePreset, setDelegatePreset] = useState<CoachDelegateTimingPreset | null>(null);
+  const [stopwatchLaunchPreset, setStopwatchLaunchPreset] =
+    useState<TracksideStopwatchLaunchPreset | null>(null);
   const [drawerAthleteId, setDrawerAthleteId] = useState<string | null>(null);
   const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
   const [caraStrengthHours, setCaraStrengthHours] = useState<number>(0);
@@ -1280,7 +1296,12 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               <button
                 type="button"
                 data-testid="quick-ops-delegate-timing-btn"
-                onClick={() => onOpenDelegateTimingModal?.()}
+                onClick={() => {
+                  setDelegatePreset(null);
+                  setDelegateModalTab('CREATE');
+                  setDelegateModalOpen(true);
+                  onOpenDelegateTimingModal?.();
+                }}
                 className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
               >
                 <Users className="w-3.5 h-3.5 ap-text-brand" />
@@ -1289,7 +1310,12 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               <button
                 type="button"
                 data-testid="quick-ops-pending-splits-btn"
-                onClick={() => onOpenDelegateTimingModal?.()}
+                onClick={() => {
+                  setDelegatePreset(null);
+                  setDelegateModalTab('REVIEW');
+                  setDelegateModalOpen(true);
+                  onOpenDelegateTimingModal?.();
+                }}
                 className={`min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
                   effectivePendingTimingCount > 0 ? 'ap-status-caution font-bold' : 'ap-btn-secondary'
                 }`}
@@ -1573,6 +1599,13 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   onOpenActivitiesTab={() => setSubTab('TEAM_PLAN')}
                   postSaveActionLabel="View Team Plan"
                   onOpenRosterModal={() => setSubTab('ROSTER')}
+                  onOpenDelegateTiming={() => {
+                    setDelegatePreset(null);
+                    setDelegateModalTab(effectivePendingTimingCount > 0 ? 'REVIEW' : 'CREATE');
+                    setDelegateModalOpen(true);
+                  }}
+                  pendingTimingCount={effectivePendingTimingCount}
+                  launchPreset={stopwatchLaunchPreset}
                 />
               </Suspense>
             </WorkspaceErrorBoundary>
@@ -1951,6 +1984,44 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               myTeams={myTeams}
               connectedAthletes={connectedAthletesOnly}
               onTeamsUpdated={onTeamsUpdated}
+              onLaunchEventStopwatch={(preset) => {
+                setShowMeetDayModal(false);
+                setStopwatchLaunchPreset({
+                  meetTitle: preset.meetTitle,
+                  meetDate: preset.meetDate,
+                  eventCode: preset.eventCode,
+                  sessionType: 'RACE',
+                  runners: preset.runners.map((r) => ({
+                    membershipId: r.membershipId,
+                    athleteName: r.athleteName,
+                    hipOrLane: r.laneOrHip,
+                  })),
+                });
+                setTracksideMode('STOPWATCH');
+                setSubTab('STOPWATCH');
+              }}
+              onDelegateEventTimer={(preset) => {
+                setShowMeetDayModal(false);
+                setDelegatePreset(preset);
+                setDelegateModalTab('CREATE');
+                setDelegateModalOpen(true);
+              }}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
+
+      {delegateModalOpen && (
+        <WorkspaceErrorBoundary fallbackTitle="Delegated Race Timing" restoreTab="coach">
+          <Suspense fallback={null}>
+            <CoachDelegateTimingModal
+              isOpen={delegateModalOpen}
+              onClose={() => setDelegateModalOpen(false)}
+              activeTeam={activeTeam}
+              onTeamsUpdated={onTeamsUpdated}
+              isSampleDemoMode={isSampleDemoMode}
+              initialPreset={delegatePreset}
+              initialTab={delegateModalTab}
             />
           </Suspense>
         </WorkspaceErrorBoundary>

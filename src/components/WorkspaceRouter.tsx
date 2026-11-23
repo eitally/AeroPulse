@@ -1,6 +1,8 @@
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { Activity, Calendar, Timer } from './icons/PhosphorIcons';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { buildWatchlessSelfLoggedActivity } from '../utils/delegatedTimingRoute';
+import type { DelegatedTimingSessionRecord } from '../types';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import { useSessionAuth } from '../contexts/SessionAuthContext';
 import { useTelemetryWorkspace } from '../contexts/TelemetryWorkspaceContext';
@@ -34,6 +36,13 @@ const CoachWorkspaceView = lazyWithRetry(
   () => import('./CoachWorkspaceView').then((m) => ({ default: m.CoachWorkspaceView })),
   { chunkKey: 'CoachWorkspaceView', restoreTab: 'coach' }
 );
+const DelegatedTimingPadPage = lazyWithRetry(
+  () =>
+    import('./stopwatch/DelegatedTimingPadPage').then((m) => ({
+      default: m.DelegatedTimingPadPage,
+    })),
+  { chunkKey: 'DelegatedTimingPadPage', restoreTab: 'fitness' }
+);
 
 export const ViewLoadingSkeleton: React.FC = () => (
   <div className="rounded-2xl liquid-glass p-8 text-center text-xs font-mono text-slate-500 dark:text-slate-400 animate-pulse">
@@ -42,6 +51,8 @@ export const ViewLoadingSkeleton: React.FC = () => (
 );
 
 export const WorkspaceRouter: React.FC = () => {
+  const [activeDelegatedAssignment, setActiveDelegatedAssignment] =
+    useState<DelegatedTimingSessionRecord | null>(null);
   const {
     distanceUnit,
     resendConfigured,
@@ -245,6 +256,10 @@ export const WorkspaceRouter: React.FC = () => {
             onOpenCoachWithPrompt={handleOpenCoachWithPrompt}
             onQuickLogRun={handleImportSingleParsedActivity}
             onOpenTracksideStopwatch={() => setActiveTab('stopwatch')}
+            onLaunchDelegatedTiming={(assignment) => setActiveDelegatedAssignment(assignment)}
+            onLogWatchlessCompletion={(input) => {
+              handleImportSingleParsedActivity(buildWatchlessSelfLoggedActivity(input));
+            }}
           />
 
           <TodayPhysiologyDeepDive
@@ -456,6 +471,16 @@ export const WorkspaceRouter: React.FC = () => {
           athleteWeightKg={latestWeightKg}
           athleteProfile={effectiveAthleteProfile}
         />
+      )}
+      {activeDelegatedAssignment && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-ap-chalk dark:bg-ap-obsidian">
+          <DelegatedTimingPadPage
+            assignmentSession={activeDelegatedAssignment}
+            defaultTimerName={primaryAthleteDisplayName}
+            isSampleDemoMode={isSampleDemoMode}
+            onExit={() => setActiveDelegatedAssignment(null)}
+          />
+        </div>
       )}
       </Suspense>
     </WorkspaceErrorBoundary>

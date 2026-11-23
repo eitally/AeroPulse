@@ -384,7 +384,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               </button>
             )}
 
-            {myTeams.length > 1 && activeTab !== 'coach' && (
+            {myTeams.length > 0 && activeTab !== 'coach' && (
               <div className="hidden xl:inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2 py-1 shrink-0">
                 <span
                   className="w-2 h-2 rounded-full shrink-0"

@@ -141,19 +141,20 @@ test.describe('Athlete Team Lifecycle, Age Compliance & Account Deletion (Deskto
     await expect(skipBtn).toBeVisible({ timeout: 15000 });
     await skipBtn.click();
 
-    await expect(page.getByTestId('toggle-coach-workspace')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId('toggle-coach-workspace')).toHaveCount(0);
 
-    // 3. Switch to Personal Mode cleanly via Team Panel
-    await page.getByTestId('toggle-coach-workspace').click();
-    await expect(page.getByTestId('coach-workspace-view')).toBeVisible({ timeout: 10000 });
-    await openRosterOrPersonalModeTab(page);
+    // 3. Switch to Personal Mode cleanly via Header Team Switcher
+    const teamSelect = page.locator('select[aria-label^="Switch Active Team Workspace"]:visible').first();
+    await expect(teamSelect).toBeVisible({ timeout: 10000 });
+    const joinedTeamValue = await teamSelect.inputValue();
+    expect(joinedTeamValue).not.toBe('');
 
-    const personalModeBtn = page.getByTestId('team-personal-mode-btn');
-    await expect(personalModeBtn).toBeVisible({ timeout: 10000 });
-    await personalModeBtn.click();
+    await teamSelect.selectOption('');
+    await expect(teamSelect).toHaveValue('');
 
-    // Return to athlete Training view
-    await page.getByTestId('toggle-coach-workspace').click();
+    // Return to joined team athlete view
+    await teamSelect.selectOption(joinedTeamValue);
+    await expect(teamSelect).toHaveValue(joinedTeamValue);
 
     // 4. Open Account Menu -> Connections & Privacy -> Privacy Shield
     await page.getByRole('button', { name: /Account and preferences menu/i }).click();

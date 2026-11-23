@@ -142,6 +142,11 @@ const ShareWorkoutPage = lazyWithRetry(() => import('./components/ShareWorkoutPa
 const PublicTeamHubPage = lazyWithRetry(() => import('./components/PublicTeamHubPage'), {
   chunkKey: 'PublicTeamHubPage',
 });
+const DelegatedTimingPadPage = lazyWithRetry(
+  () => import('./components/stopwatch/DelegatedTimingPadPage').then((m) => ({ default: m.DelegatedTimingPadPage })),
+  { chunkKey: 'DelegatedTimingPadPage' }
+);
+import { useDelegatedTimingRoute } from './utils/delegatedTimingRoute';
 
 const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
@@ -171,6 +176,7 @@ export default function App() {
   const { isBrandRoute, openBrand, closeBrand } = useBrandStudioRoute();
   const { isShareRoute, sharedWorkout, closeShareWorkout } = useShareWorkoutRoute();
   const { publicTeamSlug, openPublicTeamHub, closePublicTeamHub } = usePublicTeamHubRoute();
+  const { delegatedPassCode, closeDelegatedPass } = useDelegatedTimingRoute();
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
     const restoredTab = consumeRestoredTabAfterChunkReload();
     if (restoredTab) return restoredTab;
@@ -1751,25 +1757,21 @@ export default function App() {
   if (publicTeamSlug) {
     return (
       <IconContext.Provider value={{ weight: 'duotone' }}>
-        <WorkspaceErrorBoundary
-          resetKey={`public-team-hub-${publicTeamSlug}`}
-          fallbackTitle="Team Hub Needs Recovery"
-        >
-          <React.Suspense
-            fallback={
-              <div className="min-h-screen flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">
-                Loading MeetReady Team Hub…
-              </div>
-            }
-          >
-            <PublicTeamHubPage
-              slugOrCode={publicTeamSlug}
-              isDark={isDark}
-              onToggleDark={toggleQuickLightDark}
-              localTeamsFallback={effectiveTeams}
-              onFollowedTeam={effectiveOnTeamsUpdated}
-              onExitHub={() => closePublicTeamHub(activeTab)}
-            />
+        <WorkspaceErrorBoundary resetKey={`public-team-hub-${publicTeamSlug}`} fallbackTitle="Team Hub Needs Recovery">
+          <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono text-slate-600 dark:text-slate-300">Loading MeetReady Team Hub…</div>}>
+            <PublicTeamHubPage slugOrCode={publicTeamSlug} isDark={isDark} onToggleDark={toggleQuickLightDark} localTeamsFallback={effectiveTeams} onFollowedTeam={effectiveOnTeamsUpdated} onExitHub={() => closePublicTeamHub(activeTab)} />
+          </React.Suspense>
+        </WorkspaceErrorBoundary>
+      </IconContext.Provider>
+    );
+  }
+
+  if (delegatedPassCode) {
+    return (
+      <IconContext.Provider value={{ weight: 'duotone' }}>
+        <WorkspaceErrorBoundary resetKey={`delegated-pass-${delegatedPassCode}`} fallbackTitle="Pocket Timing Pad Needs Recovery">
+          <React.Suspense fallback={<div className="min-h-screen flex items-center justify-center text-xs font-mono">Loading Pocket Timing Pad…</div>}>
+            <DelegatedTimingPadPage passCode={delegatedPassCode} isSampleDemoMode={isSampleDemoMode} onExit={() => closeDelegatedPass()} />
           </React.Suspense>
         </WorkspaceErrorBoundary>
       </IconContext.Provider>

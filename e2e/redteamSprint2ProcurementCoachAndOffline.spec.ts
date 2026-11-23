@@ -41,6 +41,13 @@ test.describe('Red-Team Sprint 2: Legal/Procurement, Coach Features, Goals & Off
     // Workout Library load & save
     const library = page.getByTestId('coach-workout-library');
     await expect(library).toBeVisible();
+    const libraryToggle = library.getByTestId('toggle-workout-library-btn');
+    if (
+      (await libraryToggle.count()) > 0 &&
+      (await libraryToggle.getAttribute('aria-expanded')) === 'false'
+    ) {
+      await libraryToggle.click();
+    }
     await library.getByTestId('library-load-template-btn').first().click();
     await page.getByTestId('clipboard-save-library-btn').click();
     await expect(page.getByTestId('coach-clipboard-builder')).toContainText(/Saved .* Library/i);

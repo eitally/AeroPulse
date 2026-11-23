@@ -138,10 +138,9 @@ export function hasUrgentAthleteTeamSignal(
 
   const recentCutoffIso = shiftIsoDate(todayIso, -7);
   const allComments = activeTeam.workoutComments || [];
-  const scopedComments =
-    activeTeam.myRole === 'ATHLETE'
-      ? allComments.filter((c) => c.targetMembershipId === activeTeam.myMembershipId)
-      : allComments;
+  const scopedComments = activeTeam.myMembershipId
+    ? allComments.filter((c) => c.targetMembershipId === activeTeam.myMembershipId)
+    : allComments;
   const hasRecentCoachNote = scopedComments.some((c) => {
     const noteDate = (c.workoutDate || String(c.createdAt || '').slice(0, 10)).slice(0, 10);
     return !noteDate || noteDate >= recentCutoffIso;
@@ -261,14 +260,12 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   );
   const isEveningHours = resolveCircadianHeroMode({ hasCompletedToday }) === 'TONIGHT';
   const [circadianMode, setCircadianMode] = useState<CircadianHeroMode>(() =>
-    resolveCircadianHeroMode({ hasCompletedToday })
+    hasCompletedToday ? 'POST_SESSION' : 'MORNING'
   );
   useEffect(() => {
     setCircadianMode((prev) => {
       if (hasCompletedToday) return prev === 'MORNING' ? 'POST_SESSION' : prev;
-      return prev === 'POST_SESSION'
-        ? resolveCircadianHeroMode({ hasCompletedToday: false })
-        : prev;
+      return prev === 'POST_SESSION' ? 'MORNING' : prev;
     });
   }, [hasCompletedToday]);
   const [isDuskMode, setIsDuskMode] = useState<boolean>(() => {

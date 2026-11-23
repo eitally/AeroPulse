@@ -65,6 +65,9 @@ teamMeetDayRouter.post(
           laneCount: body.laneCount,
           flightSize: body.flightSize,
           partitionByDivision: body.partitionByDivision,
+          seedingAuthority: body.seedingAuthority,
+          athleticLiveUrl: body.athleticLiveUrl,
+          meetDelayMinutes: body.meetDelayMinutes,
           entries: body.entries,
         },
       });

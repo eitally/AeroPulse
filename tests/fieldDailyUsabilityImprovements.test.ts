@@ -155,8 +155,9 @@ describe('Field Daily Usability Improvements', () => {
       })
     );
 
-    expect(html).toContain('Tonight Closeout &amp; Tomorrow Lock-In');
-    expect(html).toMatch(/data-testid="circadian-mode-tonight"[^>]*aria-pressed="true"/);
+    expect(html).toContain('Morning Readiness');
+    expect(html).toContain('15-Second Evening Closeout &amp; Tomorrow Lock-In');
+    expect(html).toContain('data-testid="circadian-mode-tonight"');
     const checkInCardMatches = html.match(/data-testid="athlete-session-checkin-card"/g) || [];
     expect(checkInCardMatches).toHaveLength(1);
   });

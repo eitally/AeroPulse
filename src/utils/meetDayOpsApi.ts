@@ -1,6 +1,7 @@
 import type {
   MeetDayPacketEntryRecord,
   MeetDayPacketRecord,
+  MeetSeedingAuthority,
   TeamSummaryWithRole,
 } from '../types.ts';
 import type { MeetEntryRecord } from '../physiology/meetDayOpsEngine.ts';
@@ -39,6 +40,9 @@ export function saveMeetDayPacketApi(
     laneCount: number;
     flightSize: number;
     partitionByDivision: boolean;
+    seedingAuthority?: MeetSeedingAuthority;
+    athleticLiveUrl?: string;
+    meetDelayMinutes?: number;
     entries: MeetDayPacketEntryRecord[];
   }
 ) {
@@ -78,6 +82,16 @@ export function meetEntriesToPacketEntries(
     seedMarkRaw: e.seedMark || 'NT',
     ...(e.relayTeamCode ? { relayTeamCode: e.relayTeamCode } : {}),
     ...(e.relayLegOrder ? { relayLegOrder: e.relayLegOrder } : {}),
+    ...(e.isAlternate ? { isAlternate: true } : {}),
+    ...(e.scratched ? { scratched: true } : {}),
+    ...(typeof e.officialHeat === 'number' ? { officialHeat: e.officialHeat } : {}),
+    ...(e.officialLaneOrHip ? { officialLaneOrHip: e.officialLaneOrHip } : {}),
+    ...(typeof e.officialFlight === 'number' ? { officialFlight: e.officialFlight } : {}),
+    ...(typeof e.officialOrder === 'number' ? { officialOrder: e.officialOrder } : {}),
+    ...(e.eventStartTime ? { eventStartTime: e.eventStartTime } : {}),
+    ...(e.checkInCallTime ? { checkInCallTime: e.checkInCallTime } : {}),
+    ...(e.bibNumber ? { bibNumber: e.bibNumber } : {}),
+    ...(e.assignmentSource ? { assignmentSource: e.assignmentSource } : {}),
   }));
 }
 
@@ -95,6 +109,16 @@ export function packetEntriesToMeetEntries(
     seedMark: p.seedMarkRaw || 'NT',
     ...(p.relayTeamCode ? { relayTeamCode: p.relayTeamCode } : {}),
     ...(p.relayLegOrder ? { relayLegOrder: p.relayLegOrder } : {}),
+    ...(p.isAlternate ? { isAlternate: true } : {}),
+    ...(p.scratched ? { scratched: true } : {}),
+    ...(typeof p.officialHeat === 'number' ? { officialHeat: p.officialHeat } : {}),
+    ...(p.officialLaneOrHip ? { officialLaneOrHip: p.officialLaneOrHip } : {}),
+    ...(typeof p.officialFlight === 'number' ? { officialFlight: p.officialFlight } : {}),
+    ...(typeof p.officialOrder === 'number' ? { officialOrder: p.officialOrder } : {}),
+    ...(p.eventStartTime ? { eventStartTime: p.eventStartTime } : {}),
+    ...(p.checkInCallTime ? { checkInCallTime: p.checkInCallTime } : {}),
+    ...(p.bibNumber ? { bibNumber: p.bibNumber } : {}),
+    ...(p.assignmentSource ? { assignmentSource: p.assignmentSource } : {}),
   }));
 }
 
