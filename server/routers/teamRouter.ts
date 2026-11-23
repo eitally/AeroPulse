@@ -25,7 +25,7 @@ import {
   getVerifiedSessionClaims,
   isCanonicalAuthenticatedClaims,
   isProductionDeployment,
-  resolveSafeOrigin,
+  resolveTrustedRequestOrigin,
   setSessionCookie,
 } from '../securityUtils.ts';
 import { getUserById, getUserByProvider } from '../authService.ts';
@@ -85,29 +85,62 @@ import type {
 
 export const teamRouter = express.Router();
 
-function resolveRequestOrigin(req: Request): string {
-  const explicit = resolveSafeOrigin(
-    String(req.body?.origin || req.query?.origin || '')
-  );
-  if (explicit) return explicit;
+const emailOtpRateStore = new Map<string, { count: number; resetAt: number }>();
 
-  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
-    .split(',')[0]
-    .trim();
-  const proto =
-    forwardedProto === 'https' || req.secure ? 'https' : 'http';
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
-  if (host) {
-    const candidate = resolveSafeOrigin(`${proto}://${host}`);
-    if (candidate) return candidate;
+function checkEmailOtpRateLimit(
+  key: string,
+  limit: number,
+  windowMs = 10 * 60 * 1000
+): boolean {
+  const now = Date.now();
+  if (emailOtpRateStore.size > 2000) {
+    for (const [k, v] of emailOtpRateStore.entries()) {
+      if (now > v.resetAt) emailOtpRateStore.delete(k);
+    }
   }
-  return 'https://meetready.app';
+  const existing = emailOtpRateStore.get(key);
+  if (!existing || now > existing.resetAt) {
+    emailOtpRateStore.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (existing.count >= limit) {
+    return false;
+  }
+  existing.count += 1;
+  return true;
+}
+
+export function resetEmailOtpRateLimitsForTesting(): void {
+  emailOtpRateStore.clear();
+}
+
+function getClientRateLimitIp(req: Request): string {
+  return (
+    String(req.headers['x-vercel-forwarded-for'] || req.ip || 'local')
+      .split(',')[0]
+      .trim() || 'local'
+  );
+}
+
+function resolveRequestOrigin(req: Request): string {
+  return resolveTrustedRequestOrigin(req);
 }
 
 // 1. Send 6-Digit Cross-Device Email OTP via Resend
 teamRouter.post('/api/auth/email/send-otp', async (req: Request, res: Response) => {
   try {
-    const email = String(req.body?.email || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const clientIp = getClientRateLimitIp(req);
+    if (
+      !checkEmailOtpRateLimit(`otp_send_ip:${clientIp}`, 10) ||
+      (email && !checkEmailOtpRateLimit(`otp_send_em:${email}`, 5))
+    ) {
+      res.status(429).json({
+        ok: false,
+        error: 'Too many verification code requests. Please wait a few minutes and try again.',
+      });
+      return;
+    }
     const result = await requestEmailOtpCode(email);
     if (!result.ok) {
       res.status(400).json({ ok: false, error: result.error || 'Unable to send OTP.' });
@@ -132,10 +165,25 @@ teamRouter.post('/api/auth/email/send-otp', async (req: Request, res: Response) 
 // 2. Verify 6-Digit Email OTP & Bind Persistent Cross-Device Session
 teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response) => {
   try {
-    const email = String(req.body?.email || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
     const code = String(req.body?.code || '').trim();
+    const clientIp = getClientRateLimitIp(req);
+    if (
+      !checkEmailOtpRateLimit(`otp_verify_ip:${clientIp}`, 20) ||
+      (email && !checkEmailOtpRateLimit(`otp_verify_em:${email}`, 10))
+    ) {
+      res.status(429).json({
+        ok: false,
+        error: 'Too many verification attempts. Please wait a few minutes and try again.',
+      });
+      return;
+    }
     const currentClaims = getVerifiedSessionClaims(req);
-    const result = await verifyEmailOtpCode(email, code, currentClaims?.sid);
+    const verifiedPreferredSid =
+      currentClaims && isCanonicalAuthenticatedClaims(currentClaims)
+        ? currentClaims.sid
+        : undefined;
+    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid);
     if (!result.ok || !result.sid) {
       res.status(400).json({ ok: false, error: result.error || 'Invalid code.' });
       return;
@@ -144,7 +192,7 @@ teamRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Response
     const sessionToken = setSessionCookie(
       req,
       res,
-      result.displayName || result.email || 'thresh-athlete',
+      result.userId || `usr_${result.sid}`,
       result.sid,
       'verified'
     );
@@ -231,6 +279,8 @@ teamRouter.post('/api/teams', async (req: Request, res: Response) => {
       coachDisplayName: req.body?.coachDisplayName,
       coachEmail: req.body?.coachEmail,
       externalSync: req.body?.externalSync,
+      attribution: req.body?.attribution,
+      coachEventGroups: sanitizeTargetEventGroups(req.body?.eventGroups),
     });
     res.json({
       ok: true,
@@ -874,7 +924,7 @@ teamRouter.patch(
   async (req: Request, res: Response) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: 'Authentication required.' });
         return;
       }
@@ -999,7 +1049,7 @@ teamRouter.patch(
   async (req: Request, res: Response) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: 'Authentication required.' });
         return;
       }

@@ -28,7 +28,11 @@ import {
   saveTeamDocRaw,
   type StoredMembershipInternal,
 } from './teamStoreCore.ts';
-import { isResendConfigured, sendEmailViaResend } from './teamEmailAndOtpService.ts';
+import {
+  isResendConfigured,
+  sendEmailViaResend,
+  withBoundedTimeout,
+} from './teamEmailAndOtpService.ts';
 import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
 import { escapeHtml } from './securityUtils.ts';
 import { appendAuditLogAsync, withTeamRowLock } from './tokenVault.ts';
@@ -168,15 +172,17 @@ export async function postTeamAnnouncement(params: {
     ? catRaw
     : 'GENERAL';
 
-  return withTeamRowLock(params.teamId, async () => {
+  let pendingPushPayload: Parameters<typeof dispatchTeamPushNotifications>[0] | null = null;
+
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, error: 'Team not found.' };
+    if (!doc) return { ok: false as const, error: 'Team not found.' };
 
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
     );
     if (!callerMem || (!canProgramWorkoutsRole(callerMem.role) && callerMem.role !== 'ORG_ADMIN')) {
-      return { ok: false, error: 'Coach or admin permissions required.' };
+      return { ok: false as const, error: 'Coach or admin permissions required.' };
     }
 
     const nowIso = new Date().toISOString();
@@ -197,7 +203,7 @@ export async function postTeamAnnouncement(params: {
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
 
-    void dispatchTeamPushNotifications({
+    pendingPushPayload = {
       teamId: params.teamId,
       senderSid: params.callerSid,
       senderName: announcement.authorName,
@@ -206,7 +212,8 @@ export async function postTeamAnnouncement(params: {
       eventGroup: targetGroups && targetGroups.length === 1 ? targetGroups[0] : undefined,
       bodyText: `${cleanTitle} — ${cleanBody}`,
       isEmergency: category === 'WEATHER',
-    }).catch(() => {});
+    };
+
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
@@ -219,11 +226,20 @@ export async function postTeamAnnouncement(params: {
     });
 
     return {
-      ok: true,
+      ok: true as const,
       announcement,
       team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
     };
   });
+
+  if (lockedResult.ok && pendingPushPayload) {
+    const pushToSend = pendingPushPayload as Parameters<typeof dispatchTeamPushNotifications>[0];
+    await Promise.allSettled([
+      withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8000, 'announcement-push'),
+    ]);
+  }
+
+  return lockedResult;
 }
 
 export async function deleteTeamAnnouncement(params: {

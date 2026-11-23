@@ -1,17 +1,21 @@
 import crypto from 'crypto';
 import { stripSafeSportWeightAndBodyCompFields } from './cleanRoomFirewall.ts';
 import {
+  findTeamIdsByInvitedEmailPostgresAsync,
   loadTenantVaultAsync,
   saveTenantVaultAsync,
   syncNormalizedTeamPostgresAsync,
+  withTeamRowLock,
   withVaultLock,
 } from './tokenVault.ts';
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
 import {
+  calibrateThresholdsFromSeedMark,
   inferEventGroupFromSeedMark,
   normalizeCoachEventGroup,
   sanitizeTargetEventGroups,
 } from '../src/physiology/teamOnboardingEngine.ts';
+import type { CoachLandingAttribution } from '../src/utils/attribution.ts';
 import type {
   FieldEventLogRecord,
   GuardianSafetyAlertRecord,
@@ -29,6 +33,7 @@ import type {
   TeamSummaryWithRole,
   TeamWorkoutComment,
   TeamWorkoutLibraryTemplate,
+  UnifiedActivity,
 } from '../src/types.ts';
 
 export {
@@ -91,6 +96,7 @@ export interface StoredTeamDocument {
   fieldMarkLogs?: FieldEventLogRecord[];
   teamMessages?: TeamMessageRecord[];
   messagingPolicy?: TeamMessagingPolicy;
+  coachAttribution?: CoachLandingAttribution;
   anonymousLinkOpens?: number;
   updatedAt: string;
 }
@@ -165,6 +171,28 @@ export function sanitizeExternalSyncConfig(
         ? merged.enablePublicParentHub
         : false,
     ...(merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}),
+  };
+}
+
+export function projectSafePublicExternalSync(
+  externalSync?: TeamExternalSyncConfig
+): TeamExternalSyncConfig | undefined {
+  if (!externalSync) return undefined;
+  return {
+    ...(externalSync.platform ? { platform: externalSync.platform } : {}),
+    ...(externalSync.athleticNetSchoolId
+      ? { athleticNetSchoolId: externalSync.athleticNetSchoolId }
+      : {}),
+    ...(externalSync.athleticNetSportSlug
+      ? { athleticNetSportSlug: externalSync.athleticNetSportSlug }
+      : {}),
+    ...(externalSync.athleticNetUrl ? { athleticNetUrl: externalSync.athleticNetUrl } : {}),
+    ...(externalSync.tfrrsTeamUrl ? { tfrrsTeamUrl: externalSync.tfrrsTeamUrl } : {}),
+    ...(externalSync.tfrrsTeamCode ? { tfrrsTeamCode: externalSync.tfrrsTeamCode } : {}),
+    ...(typeof externalSync.enablePublicParentHub === 'boolean'
+      ? { enablePublicParentHub: externalSync.enablePublicParentHub }
+      : {}),
+    ...(externalSync.lastSyncedAt ? { lastSyncedAt: externalSync.lastSyncedAt } : {}),
   };
 }
 
@@ -393,14 +421,47 @@ export function projectTeamSummaryForCaller(
     const officialPublicResults = Array.isArray(m.coachRecordedActivities)
       ? m.coachRecordedActivities
           .filter((a) => Boolean(a?.officialRaceData))
-          .map((a) => ({
-            ...a,
-            athleteWeightKg: undefined,
-            avgHr: 0,
-            maxHr: 0,
-            streams: undefined,
-          }))
+          .map((a) => {
+            const sanitized = {
+              ...a,
+              athleteWeightKg: undefined,
+              avgHr: 0,
+              maxHr: 0,
+              streams: undefined,
+              summaryPolyline: undefined,
+              routeLatLngs: undefined,
+              startLatLng: undefined,
+              endLatLng: undefined,
+            } as UnifiedActivity & { map?: unknown; description?: unknown };
+            delete sanitized.summaryPolyline;
+            delete sanitized.streams;
+            delete sanitized.routeLatLngs;
+            delete sanitized.startLatLng;
+            delete sanitized.endLatLng;
+            delete sanitized.map;
+            delete sanitized.description;
+            return sanitized as UnifiedActivity;
+          })
       : undefined;
+
+    const isLinkedChild = Boolean(
+      linkedChildMembershipIds && linkedChildMembershipIds.has(m.membershipId)
+    );
+    const shouldAbbreviateForParent = Boolean(
+      isParentFollower &&
+        !isLinkedChild &&
+        !m.externalSource &&
+        effectiveIsMinor &&
+        m.parentConsentStatus !== 'ACKNOWLEDGED'
+    );
+    let projectedInvitedName = m.invitedName;
+    if (shouldAbbreviateForParent) {
+      const nameParts = String(m.invitedName || '').trim().split(/\s+/).filter(Boolean);
+      projectedInvitedName =
+        nameParts.length >= 2
+          ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.`
+          : nameParts[0] || 'Athlete';
+    }
 
     const base: TeamMembershipRecord = {
       membershipId: m.membershipId,
@@ -422,7 +483,7 @@ export function projectTeamSummaryForCaller(
       m.assignedAthleteMembershipIds.length > 0
         ? { assignedAthleteMembershipIds: m.assignedAthleteMembershipIds }
         : {}),
-      invitedName: m.invitedName,
+      invitedName: projectedInvitedName,
       graduationYear: m.graduationYear,
       birthYear: isCoach || isSelf ? m.birthYear : undefined,
       birthMonthYear: isCoach || isSelf ? m.birthMonthYear : undefined,
@@ -538,10 +599,15 @@ export function projectTeamSummaryForCaller(
   const visibleTeamMessages: TeamMessageRecord[] = (doc.teamMessages || []).filter((msg) => {
     if (isStaffViewer) return true;
     if (msg.channelScope === 'COACHES_STAFF') return false;
-    if (msg.channelScope === 'ALL_TEAM') return true;
+    if (msg.channelScope === 'ALL_TEAM') {
+      if (isParentFollower) {
+        return canViewSafeguardingMedicalRole(msg.senderRole);
+      }
+      return true;
+    }
     if (msg.channelScope === 'EVENT_GROUP') {
       if (isParentFollower) {
-        if (!msg.eventGroup) return true;
+        if (!msg.eventGroup) return Boolean(linkedChildMembershipIds && linkedChildMembershipIds.size > 0);
         return doc.memberships.some(
           (child) =>
             linkedChildMembershipIds?.has(child.membershipId) &&
@@ -574,9 +640,19 @@ export function projectTeamSummaryForCaller(
     ),
   };
 
+  const projectedExternalSync = isParentFollower
+    ? projectSafePublicExternalSync(doc.brand.externalSync)
+    : doc.brand.externalSync;
+
   return {
     brand: {
       ...doc.brand,
+      ...(isParentFollower ? { joinCode: '' } : {}),
+      ...(doc.brand.externalSync
+        ? projectedExternalSync
+          ? { externalSync: projectedExternalSync }
+          : { externalSync: undefined }
+        : {}),
       planTier: resolveTeamPlanTier(doc.memberships),
     },
     myRole: myMembership.role,
@@ -632,4 +708,119 @@ export async function listTeamsForUser(
     if (summary) out.push(summary);
   }
   return out;
+}
+
+/**
+ * Scans team rosters and automatically links pending invites (status INVITED or OPENED)
+ * to a verified user session when their email matches the invited email address.
+ */
+export async function autoLinkPendingTeamInvitesByEmail(params: {
+  email: string;
+  userSid: string;
+  athleteName?: string;
+  stravaAthleteId?: string;
+}): Promise<string[]> {
+  const cleanEmail = params.email?.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes('@') || !params.userSid) return [];
+
+  const pgTeamIds = await findTeamIdsByInvitedEmailPostgresAsync(cleanEmail);
+  const candidateTeamIds =
+    pgTeamIds !== null ? pgTeamIds : (await loadDirectory()).allTeamIds;
+  const linkedTeamIds: string[] = [];
+
+  for (const teamId of candidateTeamIds) {
+    const linkedResult = await withTeamRowLock(teamId, async () => {
+      const doc = await loadTeamDocRaw(teamId);
+      if (!doc) return null;
+
+      const nowIso = new Date().toISOString();
+      let modified = false;
+      let linkedDisplayName: string | undefined;
+      let hasMatchedInvite = false;
+
+      for (const m of doc.memberships) {
+        if (m.status === 'REVOKED') continue;
+        if (!m.invitedEmail || m.invitedEmail.trim().toLowerCase() !== cleanEmail) continue;
+
+        const isPendingInvite = m.status === 'INVITED' || m.status === 'OPENED';
+        if (!isPendingInvite) continue;
+        if (m.userSid && m.userSid !== params.userSid) continue;
+
+        hasMatchedInvite = true;
+        linkedDisplayName = m.invitedName;
+
+        if (m.userSid !== params.userSid) {
+          m.userSid = params.userSid;
+          modified = true;
+        }
+        m.status = 'ACTIVE';
+        if (!m.openedAt) m.openedAt = nowIso;
+        if (!m.joinedAt) m.joinedAt = nowIso;
+        modified = true;
+
+        if (params.stravaAthleteId && !m.stravaAthleteId) {
+          m.stravaAthleteId = params.stravaAthleteId;
+        }
+        if (
+          params.athleteName &&
+          (!m.invitedName || m.invitedName === 'Team Athlete' || m.invitedName.trim().length === 0)
+        ) {
+          m.invitedName = params.athleteName.trim().slice(0, 64);
+          linkedDisplayName = m.invitedName;
+        }
+        if (!m.sharingTier) {
+          m.sharingTier = 'SUMMARY_ONLY';
+        }
+        if (!m.liveSnapshot) {
+          const safeSportShieldEnforced = Boolean(
+            doc.brand.defaultSafeSportShield || m.isMinorU18
+          );
+          const calibrated = calibrateThresholdsFromSeedMark(
+            m.seedMarkOrFtp || '',
+            doc.brand.primarySport,
+            'mi'
+          );
+          m.liveSnapshot = {
+            updatedAt: nowIso,
+            hasConnectedWatch: Boolean(m.stravaAthleteId),
+            verdictLabel: 'Auto-Matched · Email Verified',
+            readinessScore: 0,
+            ctl: 0,
+            atl: 0,
+            tsb: 0,
+            acuteLoad7d: 0,
+            lowAerobicPct: 0,
+            highAerobicPct: 0,
+            neuromuscularPct: 0,
+            caraHours7d: 0,
+            ftpWatts: calibrated.cyclingFtpWatts,
+            thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
+            safeSportHideWeight: safeSportShieldEnforced,
+            sharingTier: m.sharingTier,
+          };
+        }
+      }
+
+      if (modified) {
+        doc.updatedAt = nowIso;
+        await saveTeamDocRaw(teamId, doc);
+      }
+
+      return hasMatchedInvite ? { displayName: linkedDisplayName } : null;
+    });
+
+    if (linkedResult) {
+      await addTeamToUserIndex(
+        params.userSid,
+        teamId,
+        linkedResult.displayName,
+        cleanEmail
+      );
+      if (!linkedTeamIds.includes(teamId)) {
+        linkedTeamIds.push(teamId);
+      }
+    }
+  }
+
+  return linkedTeamIds;
 }

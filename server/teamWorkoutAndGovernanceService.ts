@@ -19,7 +19,11 @@ import {
   sanitizeScheduledTime,
   sanitizeSessionSlot,
 } from '../src/utils/workoutScheduleUtils.ts';
-import { isResendConfigured, sendEmailViaResend } from './teamEmailAndOtpService.ts';
+import {
+  isResendConfigured,
+  sendEmailViaResend,
+  withBoundedTimeout,
+} from './teamEmailAndOtpService.ts';
 import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
 import {
   canProgramWorkoutsRole,
@@ -1196,29 +1200,32 @@ export async function postTeamWorkoutComment(params: {
   summary?: TeamSummaryWithRole | null;
   error?: string;
 }> {
-  return withTeamRowLock(params.teamId, async () => {
+  let pendingCommentEmail: { to: string; subject: string; html: string; text: string } | null = null;
+  let pendingPushPayload: Parameters<typeof dispatchTeamPushNotifications>[0] | null = null;
+
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: 'Team not found.' };
+    if (!doc) return { ok: false as const, status: 404, error: 'Team not found.' };
 
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
     );
     if (!callerMem) {
-      return { ok: false, status: 403, error: 'Membership required to post workout comments.' };
+      return { ok: false as const, status: 403, error: 'Membership required to post workout comments.' };
     }
 
     const targetMem = doc.memberships.find(
       (m) => m.membershipId === params.targetMembershipId && m.status !== 'REVOKED'
     );
     if (!targetMem) {
-      return { ok: false, status: 404, error: 'Target athlete not found.' };
+      return { ok: false as const, status: 404, error: 'Target athlete not found.' };
     }
 
     const isSelf = targetMem.userSid === params.callerSid;
     const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
     if (!isSelf && !isStaff) {
       return {
-        ok: false,
+        ok: false as const,
         status: 403,
         error: 'Only coaching/medical staff or the athlete may post workout comments.',
       };
@@ -1232,7 +1239,7 @@ export async function postTeamWorkoutComment(params: {
       (params.privateDirectToMinor === true || params.guardianCc === false)
     ) {
       return {
-        ok: false,
+        ok: false as const,
         status: 403,
         error:
           'SafeSport policy requires parent/guardian visibility on all youth athlete workout comments.',
@@ -1241,7 +1248,7 @@ export async function postTeamWorkoutComment(params: {
 
     const cleanBody = String(params.body || '').trim().slice(0, 600);
     if (!cleanBody) {
-      return { ok: false, status: 400, error: 'Comment text is required.' };
+      return { ok: false as const, status: 400, error: 'Comment text is required.' };
     }
 
     const nowIso = new Date().toISOString();
@@ -1270,26 +1277,27 @@ export async function postTeamWorkoutComment(params: {
       callerMem.userSid !== targetMem.userSid &&
       isResendConfigured()
     ) {
-      void sendEmailViaResend({
+      pendingCommentEmail = {
         to: targetMem.parentGuardianEmail,
         subject: `[MeetReady Guardian CC] Coach note for ${targetMem.invitedName}`,
         html: `<p><strong>${escapeHtml(comment.authorName)}</strong> commented on ${escapeHtml(targetMem.invitedName)}&apos;s ${escapeHtml(comment.workoutDate)} workout:</p><blockquote>${escapeHtml(cleanBody)}</blockquote>`,
         text: `${comment.authorName} commented on ${targetMem.invitedName}'s ${comment.workoutDate} workout: ${cleanBody}`,
-      });
+      };
     }
 
     doc.workoutComments = [comment, ...(doc.workoutComments || [])].slice(0, 300);
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
 
-    void dispatchTeamPushNotifications({
+    pendingPushPayload = {
       teamId: params.teamId,
       senderSid: params.callerSid,
       senderName: comment.authorName,
       kind: 'WORKOUT_COMMENT',
       targetMembershipId: targetMem.membershipId,
       bodyText: cleanBody,
-    }).catch(() => {});
+    };
+
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
@@ -1302,11 +1310,32 @@ export async function postTeamWorkoutComment(params: {
     });
 
     return {
-      ok: true,
+      ok: true as const,
       comment,
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
     };
   });
+
+  if (lockedResult.ok) {
+    const emailToSend = pendingCommentEmail as {
+      to: string;
+      subject: string;
+      html: string;
+      text: string;
+    } | null;
+    const pushToSend = pendingPushPayload as Parameters<typeof dispatchTeamPushNotifications>[0] | null;
+
+    await Promise.allSettled([
+      emailToSend
+        ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8000, 'workout-comment-email')
+        : Promise.resolve(null),
+      pushToSend
+        ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8000, 'workout-comment-push')
+        : Promise.resolve(null),
+    ]);
+  }
+
+  return lockedResult;
 }
 
 export async function getTeamGovernanceAuditLog(params: {

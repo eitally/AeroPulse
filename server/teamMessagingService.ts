@@ -8,7 +8,11 @@ import type {
 } from '../src/types.ts';
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
 import { normalizeCoachEventGroup } from '../src/physiology/teamOnboardingEngine.ts';
-import { isResendConfigured, sendEmailViaResend } from './teamEmailAndOtpService.ts';
+import {
+  isResendConfigured,
+  sendEmailViaResend,
+  withBoundedTimeout,
+} from './teamEmailAndOtpService.ts';
 import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
 import {
   canManageTeamGovernanceRole,
@@ -53,6 +57,13 @@ function isWithinQuietHours(hour: number | undefined, startHour: number, endHour
   return hour >= startHour && hour < endHour;
 }
 
+const ALLOWED_CHANNEL_SCOPES = new Set<TeamMessageChannelScope>([
+  'ALL_TEAM',
+  'EVENT_GROUP',
+  'DIRECT_TRANSPARENT',
+  'COACHES_STAFF',
+]);
+
 export async function postTeamMessage(params: {
   callerSid: string;
   teamId: string;
@@ -72,40 +83,53 @@ export async function postTeamMessage(params: {
   team?: TeamSummaryWithRole | null;
   error?: string;
 }> {
-  return withTeamRowLock(params.teamId, async () => {
+  if (!ALLOWED_CHANNEL_SCOPES.has(params.channelScope)) {
+    return { ok: false, status: 400, error: 'Invalid team message channel scope.' };
+  }
+
+  let pendingGuardianEmail: { to: string; subject: string; html: string; text: string } | null = null;
+  let pendingPushPayload: Parameters<typeof dispatchTeamPushNotifications>[0] | null = null;
+
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: 'Team not found.' };
+    if (!doc) return { ok: false as const, status: 404, error: 'Team not found.' };
 
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
     );
     if (!callerMem) {
-      return { ok: false, status: 403, error: 'Active team membership is required to send messages.' };
+      return { ok: false as const, status: 403, error: 'Active team membership is required to send messages.' };
     }
 
     const cleanBody = String(params.body || '').trim().slice(0, 800);
     if (!cleanBody) {
-      return { ok: false, status: 400, error: 'Message body is required.' };
+      return { ok: false as const, status: 400, error: 'Message body is required.' };
     }
 
     const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
     const isParentFollower = callerMem.role === 'PARENT_FOLLOWER';
+    const effectiveEmergencyOverride = isStaff && params.isEmergencyOverride === true;
     const policy = defaultPolicyForDoc(doc);
     const nowIso = new Date().toISOString();
 
     if (params.channelScope === 'COACHES_STAFF' && !isStaff) {
       return {
-        ok: false,
+        ok: false as const,
         status: 403,
         error: 'Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff.',
       };
     }
 
-    if (isParentFollower && params.channelScope === 'EVENT_GROUP') {
+    if (
+      isParentFollower &&
+      (params.channelScope === 'ALL_TEAM' ||
+        params.channelScope === 'EVENT_GROUP' ||
+        params.channelScope === 'COACHES_STAFF')
+    ) {
       return {
-        ok: false,
+        ok: false as const,
         status: 403,
-        error: 'Parents may view announcements or message coaching staff transparently.',
+        error: 'Parents may view announcements or message coaching staff transparently regarding their linked athlete.',
       };
     }
 
@@ -115,7 +139,7 @@ export async function postTeamMessage(params: {
       !policy.athleteRepliesEnabled
     ) {
       return {
-        ok: false,
+        ok: false as const,
         status: 403,
         error:
           'This team channel is currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach.',
@@ -127,7 +151,6 @@ export async function postTeamMessage(params: {
     let targetMembershipId: string | undefined;
     let targetAthleteName: string | undefined;
     let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
-    let guardianEmailNotified = false;
 
     if (params.channelScope === 'COACHES_STAFF') {
       channelId = 'staff:only';
@@ -139,6 +162,14 @@ export async function postTeamMessage(params: {
           'DISTANCE') as CoachEventGroup;
       channelId = `group:${resolvedEventGroup}`;
     } else if (params.channelScope === 'DIRECT_TRANSPARENT') {
+      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
+      if (isParentFollower && !callerParentEmail) {
+        return {
+          ok: false as const,
+          status: 403,
+          error: 'Parents may only message coaches in the transparent thread of their linked child athlete.',
+        };
+      }
       const targetMem =
         callerMem.role === 'ATHLETE'
           ? callerMem
@@ -150,10 +181,20 @@ export async function postTeamMessage(params: {
             );
       if (!targetMem) {
         return {
-          ok: false,
+          ok: false as const,
           status: 404,
           error: 'Select a valid athlete on the roster for a transparent SafeSport message.',
         };
+      }
+      if (isParentFollower) {
+        const targetParentEmail = targetMem.parentGuardianEmail?.trim().toLowerCase();
+        if (!callerParentEmail || !targetParentEmail || callerParentEmail !== targetParentEmail) {
+          return {
+            ok: false as const,
+            status: 403,
+            error: 'Parents may only message coaches in the transparent thread of their linked child athlete.',
+          };
+        }
       }
 
       const ageResolved = resolveAthleteAgeTier({
@@ -172,7 +213,7 @@ export async function postTeamMessage(params: {
         (params.privateDirectToMinor === true || params.guardianCc === false)
       ) {
         return {
-          ok: false,
+          ok: false as const,
           status: 403,
           error:
             'SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian CC and coaching staff oversight are mandatory.',
@@ -192,13 +233,12 @@ export async function postTeamMessage(params: {
         callerMem.userSid !== targetMem.userSid &&
         isResendConfigured()
       ) {
-        guardianEmailNotified = true;
-        void sendEmailViaResend({
+        pendingGuardianEmail = {
           to: targetMem.parentGuardianEmail,
           subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
           html: `<p><strong>${escapeHtml(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml(callerMem.role)}) sent a team message to ${escapeHtml(targetMem.invitedName)}:</p><blockquote>${escapeHtml(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
           text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`,
-        });
+        };
       }
     }
 
@@ -223,10 +263,10 @@ export async function postTeamMessage(params: {
       body: cleanBody,
       createdAt: nowIso,
       guardianCcApplied,
-      ...(guardianEmailNotified ? { guardianEmailNotified: true } : {}),
+      ...(pendingGuardianEmail ? { guardianEmailNotified: false } : {}),
       secondAdultVisible: true,
-      ...(quietHoursActive && !params.isEmergencyOverride ? { sentDuringQuietHours: true } : {}),
-      ...(params.isEmergencyOverride ? { isEmergencyOverride: true } : {}),
+      ...(quietHoursActive && !effectiveEmergencyOverride ? { sentDuringQuietHours: true } : {}),
+      ...(effectiveEmergencyOverride ? { isEmergencyOverride: true } : {}),
       acknowledgedByMembershipIds: [callerMem.membershipId],
     };
 
@@ -234,7 +274,7 @@ export async function postTeamMessage(params: {
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
 
-    void dispatchTeamPushNotifications({
+    pendingPushPayload = {
       teamId: params.teamId,
       senderSid: params.callerSid,
       senderName: record.senderName,
@@ -244,8 +284,8 @@ export async function postTeamMessage(params: {
       targetMembershipId,
       bodyText: cleanBody,
       clientLocalHour: params.clientLocalHour,
-      isEmergency: params.isEmergencyOverride === true,
-    }).catch(() => {});
+      isEmergency: effectiveEmergencyOverride,
+    };
 
     await appendAuditLogAsync({
       teamId: params.teamId,
@@ -262,11 +302,58 @@ export async function postTeamMessage(params: {
     });
 
     return {
-      ok: true,
+      ok: true as const,
       message: record,
       team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
     };
   });
+
+  if (!lockedResult.ok) {
+    return lockedResult;
+  }
+
+  const emailToSend = pendingGuardianEmail as {
+    to: string;
+    subject: string;
+    html: string;
+    text: string;
+  } | null;
+  const pushToSend = pendingPushPayload as Parameters<typeof dispatchTeamPushNotifications>[0] | null;
+
+  const [emailOutcome] = await Promise.allSettled([
+    emailToSend
+      ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8000, 'guardian-dm-email')
+      : Promise.resolve(null),
+    pushToSend
+      ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8000, 'team-message-push')
+      : Promise.resolve(null),
+  ]);
+
+  const emailDelivered =
+    Boolean(emailToSend) &&
+    emailOutcome.status === 'fulfilled' &&
+    emailOutcome.value !== null &&
+    emailOutcome.value.delivered === true;
+
+  if (emailDelivered) {
+    const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
+      const freshDoc = await loadTeamDocRaw(params.teamId);
+      if (!freshDoc) return null;
+      const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
+      if (targetMsg) {
+        targetMsg.guardianEmailNotified = true;
+        freshDoc.updatedAt = new Date().toISOString();
+        await saveTeamDocRaw(params.teamId, freshDoc);
+      }
+      return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
+    });
+    lockedResult.message.guardianEmailNotified = true;
+    if (refreshedTeam) {
+      lockedResult.team = refreshedTeam;
+    }
+  }
+
+  return lockedResult;
 }
 
 export async function acknowledgeTeamMessage(params: {

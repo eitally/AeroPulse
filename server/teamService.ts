@@ -17,8 +17,10 @@ import {
   inferEventGroupFromSeedMark,
   normalizeHexColor,
   parseBulkRosterCsvOrText,
+  sanitizeTargetEventGroups,
   slugifyTeamName,
 } from '../src/physiology/teamOnboardingEngine.ts';
+import type { CoachLandingAttribution } from '../src/utils/attribution.ts';
 import {
   EMAIL_DIRECTORY_KEY,
   TEAMS_DIRECTORY_KEY,
@@ -40,9 +42,11 @@ import {
   buildTeamInviteEmailContent,
   isResendConfigured,
   sendEmailViaResend,
+  withBoundedTimeout,
 } from './teamEmailAndOtpService.ts';
 import type {
   CoachDataSharingTier,
+  CoachEventGroup,
   DistanceUnit,
   TeamBrandConfig,
   TeamExternalSyncConfig,
@@ -184,109 +188,28 @@ export async function migrateAnonymousTeamsToStravaSid(params: {
   });
 }
 
-/**
- * Scans team rosters and automatically links pending invites (status INVITED or OPENED)
- * to a verified user session when their email matches the invited email address.
- */
-export async function autoLinkPendingTeamInvitesByEmail(params: {
-  email: string;
-  userSid: string;
-  athleteName?: string;
-  stravaAthleteId?: string;
-}): Promise<string[]> {
-  const cleanEmail = params.email?.trim().toLowerCase();
-  if (!cleanEmail || !cleanEmail.includes('@') || !params.userSid) return [];
-
-  const dir = await loadDirectory();
-  const linkedTeamIds: string[] = [];
-  const nowIso = new Date().toISOString();
-
-  for (const teamId of dir.allTeamIds) {
-    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-
-    let modified = false;
-    for (const m of doc.memberships) {
-      if (m.status === 'REVOKED') continue;
-      if (m.invitedEmail && m.invitedEmail.trim().toLowerCase() === cleanEmail) {
-        if (m.userSid !== params.userSid) {
-          m.userSid = params.userSid;
-          modified = true;
-        }
-        if (m.status === 'INVITED' || m.status === 'OPENED') {
-          m.status = 'ACTIVE';
-          if (!m.openedAt) m.openedAt = nowIso;
-          if (!m.joinedAt) m.joinedAt = nowIso;
-          modified = true;
-        }
-        if (params.stravaAthleteId && !m.stravaAthleteId) {
-          m.stravaAthleteId = params.stravaAthleteId;
-          modified = true;
-        }
-        if (
-          params.athleteName &&
-          (!m.invitedName || m.invitedName === 'Team Athlete' || m.invitedName.trim().length === 0)
-        ) {
-          m.invitedName = params.athleteName.trim().slice(0, 64);
-          modified = true;
-        }
-        if (!m.sharingTier) {
-          m.sharingTier = 'SUMMARY_ONLY';
-          modified = true;
-        }
-        if (!m.liveSnapshot) {
-          const safeSportShieldEnforced = Boolean(
-            doc.brand.defaultSafeSportShield || m.isMinorU18
-          );
-          const calibrated = calibrateThresholdsFromSeedMark(
-            m.seedMarkOrFtp || '',
-            doc.brand.primarySport,
-            'mi'
-          );
-          m.liveSnapshot = {
-            updatedAt: nowIso,
-            hasConnectedWatch: Boolean(m.stravaAthleteId),
-            verdictLabel: 'Auto-Matched · Email Verified',
-            readinessScore: 0,
-            ctl: 0,
-            atl: 0,
-            tsb: 0,
-            acuteLoad7d: 0,
-            lowAerobicPct: 0,
-            highAerobicPct: 0,
-            neuromuscularPct: 0,
-            caraHours7d: 0,
-            ftpWatts: calibrated.cyclingFtpWatts,
-            thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
-            safeSportHideWeight: safeSportShieldEnforced,
-            sharingTier: m.sharingTier,
-          };
-          modified = true;
-        }
-
-        await addTeamToUserIndex(
-          params.userSid,
-          teamId,
-          m.invitedName,
-          cleanEmail
-        );
-
-        if (!linkedTeamIds.includes(teamId)) {
-          linkedTeamIds.push(teamId);
-        }
-      }
-    }
-
-    if (modified) {
-      doc.updatedAt = nowIso;
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-    }
-  }
-
-  return linkedTeamIds;
+function sanitizeCoachAttribution(raw?: unknown): CoachLandingAttribution | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const input = raw as Record<string, unknown>;
+  const cleanField = (key: string, maxLen: number): string | undefined => {
+    const val = input[key];
+    if (typeof val !== 'string') return undefined;
+    const trimmed = val.trim().slice(0, maxLen);
+    return trimmed || undefined;
+  };
+  const out: CoachLandingAttribution = {
+    ...(cleanField('utm_source', 80) ? { utm_source: cleanField('utm_source', 80) } : {}),
+    ...(cleanField('utm_medium', 80) ? { utm_medium: cleanField('utm_medium', 80) } : {}),
+    ...(cleanField('utm_campaign', 80) ? { utm_campaign: cleanField('utm_campaign', 80) } : {}),
+    ...(cleanField('utm_content', 80) ? { utm_content: cleanField('utm_content', 80) } : {}),
+    ...(cleanField('src', 80) ? { src: cleanField('src', 80) } : {}),
+    ...(cleanField('landing_path', 120) ? { landing_path: cleanField('landing_path', 120) } : {}),
+    ...(cleanField('selfReportedChannel', 60)
+      ? { selfReportedChannel: cleanField('selfReportedChannel', 60) }
+      : {}),
+    ...(cleanField('capturedAt', 40) ? { capturedAt: cleanField('capturedAt', 40) } : {}),
+  };
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export async function createTeamForCoach(params: {
@@ -305,6 +228,8 @@ export async function createTeamForCoach(params: {
   coachDisplayName?: string;
   coachEmail?: string;
   externalSync?: TeamExternalSyncConfig;
+  attribution?: CoachLandingAttribution;
+  coachEventGroups?: CoachEventGroup[];
 }): Promise<TeamSummaryWithRole> {
   const dir = await loadDirectory();
   const orgType: TeamOrgType = params.orgType || 'HIGH_SCHOOL';
@@ -375,12 +300,18 @@ export async function createTeamForCoach(params: {
     createdAt: nowIso,
   };
 
+  const cleanCoachEventGroups = sanitizeTargetEventGroups(params.coachEventGroups);
+  const coachAttribution = sanitizeCoachAttribution(params.attribution);
+
   const coachMembership: StoredMembershipInternal = {
     membershipId: `mem_${crypto.randomBytes(6).toString('hex')}`,
     teamId,
     userSid: params.callerSid,
     role: 'HEAD_COACH',
     squadGroup: orgDefaults.defaultSquads[0] || 'Varsity',
+    ...(cleanCoachEventGroups && cleanCoachEventGroups.length > 0
+      ? { coachEventGroups: cleanCoachEventGroups }
+      : {}),
     invitedName: brand.coachDisplayName,
     invitedEmail: params.coachEmail ? params.coachEmail.trim().toLowerCase() : undefined,
     isMinorU18: false,
@@ -394,6 +325,7 @@ export async function createTeamForCoach(params: {
     brand,
     memberships: [coachMembership],
     broadcastWorkouts: [],
+    ...(coachAttribution ? { coachAttribution } : {}),
     updatedAt: nowIso,
   };
 
@@ -893,7 +825,9 @@ export async function claimTeamJoinInvite(params: {
     };
   }
 
-  return withTeamRowLock(initialDoc.brand.teamId, async () => {
+  let pendingConsentEmail: { to: string; subject: string; html: string; text: string } | null = null;
+
+  const lockedResult = await withTeamRowLock(initialDoc.brand.teamId, async () => {
     const doc =
       (await loadTenantVaultAsync<StoredTeamDocument | null>(
         teamDocVaultKey(initialDoc.brand.teamId),
@@ -943,12 +877,13 @@ export async function claimTeamJoinInvite(params: {
           (!m.userSid || m.userSid === params.callerSid)
       );
     }
-    // 4. Tertiary fallback: normalized athlete full name (strips diacritics & handles "Last, First")
+    // 4. Tertiary fallback: normalized athlete full name (only rows with no invitedEmail, strips diacritics & handles "Last, First")
     if (!mem && cleanNameLower && cleanNameLower !== 'team athlete' && cleanNameLower !== 'athlete') {
       const unclaimed = doc.memberships.filter(
         (m) =>
           (m.status === 'INVITED' || m.status === 'OPENED') &&
           !m.userSid &&
+          !m.invitedEmail &&
           m.role === 'ATHLETE'
       );
       const exactMatches = unclaimed.filter(
@@ -1133,12 +1068,12 @@ export async function claimTeamJoinInvite(params: {
           parentConsentUrl: consentUrl,
         });
 
-        void sendEmailViaResend({
+        pendingConsentEmail = {
           to: mem.parentGuardianEmail,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text,
-        });
+        };
       }
     } else if (!mem.parentConsentStatus) {
       mem.parentConsentStatus = mem.isMinorU18 ? 'PENDING' : 'NOT_REQUIRED';
@@ -1207,6 +1142,20 @@ export async function claimTeamJoinInvite(params: {
       safeSportShieldEnforced,
     };
   });
+
+  if (lockedResult.ok && pendingConsentEmail) {
+    const emailToSend = pendingConsentEmail as {
+      to: string;
+      subject: string;
+      html: string;
+      text: string;
+    };
+    await Promise.allSettled([
+      withBoundedTimeout(sendEmailViaResend(emailToSend), 8000, 'parent-consent-email'),
+    ]);
+  }
+
+  return lockedResult;
 }
 
 export async function acknowledgeParentConsent(token: string): Promise<{

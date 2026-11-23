@@ -1,14 +1,17 @@
+import { AsyncLocalStorage } from 'async_hooks';
 import crypto from 'crypto';
 import fs from 'fs';
 import os from 'os';
 import pg from 'pg';
+import { isProductionDeployment } from './securityUtils.ts';
 
 const { Pool } = pg;
 
 const VAULT_FILE_PREFIX = '/tmp/thresh-vault-';
 const VAULT_ENVELOPE_PREFIX = 'v1.';
 
-let derivedKeyCache: Buffer | null = null;
+let derivedEnvKeyCache: { raw: string; key: Buffer } | null = null;
+let derivedFallbackKeyCache: Buffer | null = null;
 let warnedMissingVaultKey = false;
 
 /**
@@ -24,8 +27,6 @@ export function warnServerFallback(scope: string, err: unknown): void {
 }
 
 function getVaultEncryptionKey(): Buffer {
-  if (derivedKeyCache) return derivedKeyCache;
-
   const rawSecret = (
     process.env.TOKEN_VAULT_KEY ||
     process.env.OAUTH_ENCRYPTION_KEY ||
@@ -36,13 +37,23 @@ function getVaultEncryptionKey(): Buffer {
   ).trim();
 
   if (rawSecret.length >= 16) {
-    if (/^[0-9a-fA-F]{64}$/.test(rawSecret)) {
-      derivedKeyCache = Buffer.from(rawSecret, 'hex');
-      return derivedKeyCache;
+    if (derivedEnvKeyCache && derivedEnvKeyCache.raw === rawSecret) {
+      return derivedEnvKeyCache.key;
     }
-    derivedKeyCache = crypto.scryptSync(rawSecret, 'thresh-vault-v1-salt', 32);
-    return derivedKeyCache;
+    const key = /^[0-9a-fA-F]{64}$/.test(rawSecret)
+      ? Buffer.from(rawSecret, 'hex')
+      : crypto.scryptSync(rawSecret, 'thresh-vault-v1-salt', 32);
+    derivedEnvKeyCache = { raw: rawSecret, key };
+    return key;
   }
+
+  if (isProductionDeployment() && !process.env.VITEST) {
+    throw new Error(
+      '[MeetReady Security] TOKEN_VAULT_KEY or SESSION_SECRET must be configured in production.'
+    );
+  }
+
+  if (derivedFallbackKeyCache) return derivedFallbackKeyCache;
 
   if (process.env.NODE_ENV === 'production' && !warnedMissingVaultKey) {
     warnedMissingVaultKey = true;
@@ -52,8 +63,8 @@ function getVaultEncryptionKey(): Buffer {
   }
 
   const fallbackSeed = `thresh-local-vault:${os.hostname()}:${os.userInfo().username}`;
-  derivedKeyCache = crypto.scryptSync(fallbackSeed, 'thresh-dev-vault-salt', 32);
-  return derivedKeyCache;
+  derivedFallbackKeyCache = crypto.scryptSync(fallbackSeed, 'thresh-dev-vault-salt', 32);
+  return derivedFallbackKeyCache;
 }
 
 export function sanitizeTenantId(rawTenantId: string): string {
@@ -111,11 +122,20 @@ export function decryptJsonFromVault<T>(envelope: string): T | null {
 // Optional Cloud Postgres Pool (Neon / Supabase / Vercel Postgres)
 // ----------------------------------------------------------------------------
 let pgPool: pg.Pool | null = null;
+let pgPoolUrl: string | null = null;
+let testPgPoolOverride: pg.Pool | null = null;
 let pgSchemaInitialized = false;
 let pgSchemaPromise: Promise<void> | null = null;
+const pgTxContext = new AsyncLocalStorage<pg.PoolClient>();
+
+export function setPostgresPoolForTesting(pool: pg.Pool | null): void {
+  testPgPoolOverride = pool;
+  pgSchemaInitialized = false;
+  pgSchemaPromise = null;
+}
 
 export function getVaultStorageBackend(): 'POSTGRES' | 'ENCRYPTED_FILE' {
-  return process.env.DATABASE_URL?.trim() ? 'POSTGRES' : 'ENCRYPTED_FILE';
+  return process.env.DATABASE_URL?.trim() || testPgPoolOverride ? 'POSTGRES' : 'ENCRYPTED_FILE';
 }
 
 export function buildPostgresSslConfig(
@@ -132,15 +152,28 @@ export function buildPostgresSslConfig(
 }
 
 function getPostgresPool(): pg.Pool | null {
+  if (testPgPoolOverride) return testPgPoolOverride;
   const dbUrl = process.env.DATABASE_URL?.trim();
   if (!dbUrl) return null;
+  if (pgPool && pgPoolUrl !== dbUrl) {
+    const oldPool = pgPool;
+    pgPool = null;
+    pgPoolUrl = null;
+    pgSchemaInitialized = false;
+    pgSchemaPromise = null;
+    void oldPool.end().catch(() => undefined);
+  }
   if (!pgPool) {
+    pgPoolUrl = dbUrl;
     pgPool = new Pool({
       connectionString: dbUrl,
       max: 5,
       idleTimeoutMillis: 15_000,
       connectionTimeoutMillis: 5_000,
       ssl: buildPostgresSslConfig(dbUrl),
+    });
+    pgPool.on('error', (err: Error) => {
+      warnServerFallback('vault:pg-pool-error', err);
     });
   }
   return pgPool;
@@ -164,6 +197,10 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
           encrypted_doc TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE INDEX IF NOT EXISTS idx_thresh_teams_slug
+          ON thresh_teams (slug);
+        CREATE INDEX IF NOT EXISTS idx_thresh_teams_join_code
+          ON thresh_teams (join_code);
         CREATE TABLE IF NOT EXISTS thresh_team_members (
           team_id TEXT NOT NULL,
           membership_id TEXT NOT NULL,
@@ -198,6 +235,58 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
     });
   }
   await pgSchemaPromise;
+}
+
+export async function findTeamIdsByInvitedEmailPostgresAsync(
+  email: string
+): Promise<string[] | null> {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail) return [];
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    const res = await runner.query<{ team_id: string }>(
+      `SELECT DISTINCT team_id
+       FROM thresh_team_members
+       WHERE invited_email = $1
+         AND status IN ('INVITED', 'OPENED')`,
+      [cleanEmail]
+    );
+    return res.rows.map((r) => r.team_id);
+  } catch (err: unknown) {
+    warnServerFallback('vault:find-teams-by-email', err);
+    return null;
+  }
+}
+
+export async function checkPostgresHealthAsync(
+  timeoutMs = 2000
+): Promise<{ configured: boolean; healthy: boolean | null }> {
+  const pool = getPostgresPool();
+  if (!pool) {
+    return { configured: false, healthy: null };
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      pool.query('SELECT 1'),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Postgres health check timed out')), timeoutMs);
+        if (typeof timer.unref === 'function') timer.unref();
+      }),
+    ]);
+    return { configured: true, healthy: true };
+  } catch (err: unknown) {
+    warnServerFallback('vault:health-check', err);
+    return { configured: true, healthy: false };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // In-memory decrypted hot cache per tenant (keeps sync reads fast while persisting encrypted to disk + Postgres)
@@ -302,11 +391,15 @@ export function saveTenantVaultSync<T>(tenantId: string, data: T): void {
  */
 export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Promise<T> {
   const safeId = sanitizeTenantId(tenantId);
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      const result = await pool.query<{ encrypted_envelope: string }>(
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool!;
+      const result = await queryRunner.query<{ encrypted_envelope: string }>(
         'SELECT encrypted_envelope FROM thresh_tenant_vault WHERE tenant_id = $1 LIMIT 1',
         [safeId]
       );
@@ -325,7 +418,20 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
           return structuredClone(decrypted);
         }
       }
+      // Confirmed Postgres miss (rows.length === 0) or undecryptable row:
+      // purge memory cache + /tmp file so deleted rows are never resurrected.
+      memoryVaultCache.delete(safeId);
+      try {
+        const encPath = getEncryptedVaultFilePath(safeId);
+        if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
+      } catch {
+        // ignore ephemeral FS unlink failure
+      }
+      return structuredClone(fallback);
     } catch (err: unknown) {
+      if (txClient) {
+        throw err;
+      }
       warnServerFallback('vault:postgres-read-fallback', err);
     }
   }
@@ -339,21 +445,17 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
  */
 export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promise<void> {
   const safeId = sanitizeTenantId(tenantId);
-  setBoundedMemoryVaultEntry(safeId, structuredClone(data));
   const envelope = encryptJsonForVault(data);
 
-  try {
-    const encPath = getEncryptedVaultFilePath(safeId);
-    fs.writeFileSync(encPath, envelope, { encoding: 'utf8', mode: 0o600 });
-  } catch {
-    // ignore ephemeral FS write errors
-  }
-
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      await pool.query(
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool!;
+      await queryRunner.query(
         `INSERT INTO thresh_tenant_vault (tenant_id, encrypted_envelope, updated_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (tenant_id)
@@ -362,7 +464,16 @@ export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promis
       );
     } catch (err: unknown) {
       warnServerFallback('vault:postgres-upsert', err);
+      throw err;
     }
+  }
+
+  setBoundedMemoryVaultEntry(safeId, structuredClone(data));
+  try {
+    const encPath = getEncryptedVaultFilePath(safeId);
+    fs.writeFileSync(encPath, envelope, { encoding: 'utf8', mode: 0o600 });
+  } catch {
+    // ignore ephemeral FS write errors
   }
 }
 
@@ -474,18 +585,24 @@ export async function deleteTenantVault(tenantId: string): Promise<void> {
   } catch (err: unknown) {
     warnServerFallback('vault:local-unlink', err);
   }
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      await pool.query('DELETE FROM thresh_tenant_vault WHERE tenant_id = $1', [safeId]);
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool!;
+      await queryRunner.query('DELETE FROM thresh_tenant_vault WHERE tenant_id = $1', [safeId]);
     } catch (err: unknown) {
       warnServerFallback('vault:postgres-delete', err);
+      throw err;
     }
   }
 }
 
 const vaultOperationQueues = new Map<string, Promise<unknown>>();
+const activeVaultLocks = new AsyncLocalStorage<Set<string>>();
 
 /**
  * Serializes concurrent read-modify-write mutations per tenant vault key inside
@@ -497,8 +614,16 @@ export async function withVaultLock<T>(
   fn: () => Promise<T>
 ): Promise<T> {
   const safeId = sanitizeTenantId(tenantId);
+  const held = activeVaultLocks.getStore();
+  if (held && held.has(safeId)) {
+    return fn();
+  }
   const prev = vaultOperationQueues.get(safeId) || Promise.resolve();
-  const next = prev.catch(() => undefined).then(() => fn());
+  const next = prev.catch(() => undefined).then(() => {
+    const nextHeld = new Set(held || []);
+    nextHeld.add(safeId);
+    return activeVaultLocks.run(nextHeld, fn);
+  });
   vaultOperationQueues.set(safeId, next);
   try {
     return await next;
@@ -517,6 +642,68 @@ export interface NormalizedTeamMemberSyncInput {
   status: string;
 }
 
+async function runNormalizedTeamSyncStatements(
+  runner: pg.PoolClient,
+  safeTeamId: string,
+  metadata: { slug?: string; joinCode?: string; orgType?: string },
+  envelope: string,
+  members: NormalizedTeamMemberSyncInput[]
+): Promise<void> {
+  await runner.query(
+    `INSERT INTO thresh_teams (team_id, slug, join_code, org_type, encrypted_doc, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (team_id)
+     DO UPDATE SET
+       slug = EXCLUDED.slug,
+       join_code = EXCLUDED.join_code,
+       org_type = EXCLUDED.org_type,
+       encrypted_doc = EXCLUDED.encrypted_doc,
+       updated_at = NOW();`,
+    [
+      safeTeamId,
+      metadata.slug ? String(metadata.slug).slice(0, 80) : null,
+      metadata.joinCode ? String(metadata.joinCode).slice(0, 32) : null,
+      metadata.orgType ? String(metadata.orgType).slice(0, 32) : null,
+      envelope,
+    ]
+  );
+  await runner.query('DELETE FROM thresh_team_members WHERE team_id = $1', [safeTeamId]);
+  if (members.length > 0) {
+    const teamIds: string[] = [];
+    const membershipIds: string[] = [];
+    const userSids: Array<string | null> = [];
+    const invitedEmails: Array<string | null> = [];
+    const roles: string[] = [];
+    const statuses: string[] = [];
+
+    for (const m of members) {
+      teamIds.push(safeTeamId);
+      membershipIds.push(String(m.membershipId).slice(0, 64));
+      userSids.push(m.userSid ? String(m.userSid).slice(0, 96) : null);
+      invitedEmails.push(
+        m.invitedEmail ? String(m.invitedEmail).trim().toLowerCase().slice(0, 160) : null
+      );
+      roles.push(String(m.role || 'ATHLETE').slice(0, 32));
+      statuses.push(String(m.status || 'INVITED').slice(0, 32));
+    }
+
+    await runner.query(
+      `INSERT INTO thresh_team_members (team_id, membership_id, user_sid, invited_email, role, status, updated_at)
+       SELECT u.team_id, u.membership_id, u.user_sid, u.invited_email, u.role, u.status, NOW()
+       FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+         AS u(team_id, membership_id, user_sid, invited_email, role, status)
+       ON CONFLICT (team_id, membership_id)
+       DO UPDATE SET
+         user_sid = EXCLUDED.user_sid,
+         invited_email = EXCLUDED.invited_email,
+         role = EXCLUDED.role,
+         status = EXCLUDED.status,
+         updated_at = NOW();`,
+      [teamIds, membershipIds, userSids, invitedEmails, roles, statuses]
+    );
+  }
+}
+
 /**
  * Mirrors encrypted team metadata & membership rows into normalized Postgres tables when
  * `DATABASE_URL` is configured, enabling indexed lookups and database-level row locking.
@@ -527,51 +714,35 @@ export async function syncNormalizedTeamPostgresAsync(
   docPayload: unknown,
   members: NormalizedTeamMemberSyncInput[]
 ): Promise<void> {
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (!pool) return;
+  if (!txClient && !pool) return;
   const safeTeamId = sanitizeTenantId(teamId);
   const envelope = encryptJsonForVault(docPayload);
-  const client = await pool.connect().catch(() => null);
-  if (!client) return;
-  try {
-    await ensurePostgresVaultSchema(pool);
-    await client.query('BEGIN');
-    await client.query(
-      `INSERT INTO thresh_teams (team_id, slug, join_code, org_type, encrypted_doc, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (team_id)
-       DO UPDATE SET
-         slug = EXCLUDED.slug,
-         join_code = EXCLUDED.join_code,
-         org_type = EXCLUDED.org_type,
-         encrypted_doc = EXCLUDED.encrypted_doc,
-         updated_at = NOW();`,
-      [
-        safeTeamId,
-        metadata.slug ? String(metadata.slug).slice(0, 80) : null,
-        metadata.joinCode ? String(metadata.joinCode).slice(0, 32) : null,
-        metadata.orgType ? String(metadata.orgType).slice(0, 32) : null,
-        envelope,
-      ]
-    );
-    await client.query('DELETE FROM thresh_team_members WHERE team_id = $1', [safeTeamId]);
-    for (const m of members) {
-      await client.query(
-        `INSERT INTO thresh_team_members (team_id, membership_id, user_sid, invited_email, role, status, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [
-          safeTeamId,
-          String(m.membershipId).slice(0, 64),
-          m.userSid ? String(m.userSid).slice(0, 96) : null,
-          m.invitedEmail ? String(m.invitedEmail).trim().toLowerCase().slice(0, 160) : null,
-          String(m.role || 'ATHLETE').slice(0, 32),
-          String(m.status || 'INVITED').slice(0, 32),
-        ]
-      );
+
+  if (txClient) {
+    await txClient.query('SAVEPOINT sync_norm_team');
+    try {
+      await runNormalizedTeamSyncStatements(txClient, safeTeamId, metadata, envelope, members);
+      await txClient.query('RELEASE SAVEPOINT sync_norm_team');
+    } catch (err: unknown) {
+      await txClient.query('ROLLBACK TO SAVEPOINT sync_norm_team').catch(() => undefined);
+      warnServerFallback('vault:sync-normalized-team', err);
+      throw err;
     }
+    return;
+  }
+
+  await ensurePostgresVaultSchema(pool!);
+  const client = await pool!.connect();
+  try {
+    await client.query('BEGIN');
+    await runNormalizedTeamSyncStatements(client, safeTeamId, metadata, envelope, members);
     await client.query('COMMIT');
-  } catch {
+  } catch (err: unknown) {
     await client.query('ROLLBACK').catch(() => undefined);
+    warnServerFallback('vault:sync-normalized-team', err);
+    throw err;
   } finally {
     client.release();
   }
@@ -588,15 +759,20 @@ export async function withTeamRowLock<T>(
   const safeTeamId = sanitizeTenantId(teamId);
   const lockKey = `team_doc_${safeTeamId.slice(0, 40)}`;
   return withVaultLock(lockKey, async () => {
+    const existingClient = pgTxContext.getStore();
+    if (existingClient) {
+      await existingClient.query('SELECT pg_advisory_xact_lock(hashtext($1))', [safeTeamId]);
+      return fn();
+    }
     const pool = getPostgresPool();
     if (!pool) return fn();
-    const client = await pool.connect().catch(() => null);
-    if (!client) return fn();
+    await ensurePostgresVaultSchema(pool);
+    const client = await pool.connect();
     try {
-      await ensurePostgresVaultSchema(pool);
       await client.query('BEGIN');
+      await client.query("SET LOCAL lock_timeout = '4000ms'");
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [safeTeamId]);
-      const result = await fn();
+      const result = await pgTxContext.run(client, fn);
       await client.query('COMMIT');
       return result;
     } catch (err) {
@@ -652,11 +828,15 @@ export async function appendAuditLogAsync(params: {
     await saveTenantVaultAsync(key, next);
   });
 
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      await pool.query(
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool!;
+      await queryRunner.query(
         `INSERT INTO thresh_audit_log (event_id, created_at, team_id, actor_sid, action, target_id, metadata_json)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (event_id) DO NOTHING`,
@@ -672,6 +852,7 @@ export async function appendAuditLogAsync(params: {
       );
     } catch (err: unknown) {
       warnServerFallback('audit:postgres-insert', err);
+      throw err;
     }
   }
 
@@ -684,11 +865,15 @@ export async function listTeamAuditLogAsync(
 ): Promise<PersistedAuditLogEntry[]> {
   const safeTeamId = sanitizeTenantId(teamId);
   const clampedLimit = Math.max(1, Math.min(250, Math.round(limit)));
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      const res = await pool.query<{
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool!;
+      const res = await queryRunner.query<{
         event_id: string;
         created_at: Date | string;
         team_id: string;
@@ -723,6 +908,7 @@ export async function listTeamAuditLogAsync(
         }));
       }
     } catch (err: unknown) {
+      if (txClient) throw err;
       warnServerFallback('audit:postgres-list-fallback', err);
     }
   }

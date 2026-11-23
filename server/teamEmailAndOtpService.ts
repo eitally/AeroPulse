@@ -5,20 +5,40 @@ import {
   isProductionDeployment,
 } from './securityUtils.ts';
 import { findOrCreateUser } from './authService.ts';
-import { loadTenantVaultAsync, saveTenantVaultAsync } from './tokenVault.ts';
-import { computeAccessibleTeamPalette } from '../src/physiology/teamOnboardingEngine.ts';
+import { loadTenantVaultAsync, saveTenantVaultAsync, withVaultLock } from './tokenVault.ts';
+import {
+  computeAccessibleTeamPalette,
+  normalizeHexColor,
+} from '../src/physiology/teamOnboardingEngine.ts';
 import {
   EMAIL_DIRECTORY_KEY,
-  TEAMS_DIRECTORY_KEY,
+  autoLinkPendingTeamInvitesByEmail,
   hashToken,
-  teamDocVaultKey,
-  userTeamsVaultKey,
   type EmailAccountDirectory,
-  type StoredTeamDocument,
-  type TeamsDirectoryIndex,
-  type UserTeamsIndex,
 } from './teamStoreCore.ts';
 import type { TeamBrandConfig } from '../src/types.ts';
+
+export async function withBoundedTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs = 8000,
+  label = 'notification'
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        );
+        if (typeof timer.unref === 'function') timer.unref();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 interface StoredEmailOtpRecord {
   email: string;
@@ -61,7 +81,9 @@ export async function sendEmailViaResend(params: {
   }
 
   const fromAddress = (
-    process.env.RESEND_FROM_EMAIL || 'MeetReady Coaching <auth@meetready.app>'
+    process.env.RESEND_FROM_EMAIL ||
+    process.env.AUTH_EMAIL_FROM ||
+    'MeetReady Coaching <auth@meetready.app>'
   ).trim();
 
   try {
@@ -83,6 +105,7 @@ export async function sendEmailViaResend(params: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!resp.ok) {
@@ -194,6 +217,8 @@ export function buildParentConsentEmailContent(params: {
   parentConsentUrl: string;
 }): { subject: string; html: string; text: string } {
   const { brand, athleteName, parentConsentUrl } = params;
+  const safePrimaryHex = normalizeHexColor(brand.primaryHex, '#14532D');
+  const safeConsentUrl = escapeHtml(parentConsentUrl);
   const subject = `Notice: ${athleteName} joined ${brand.name} on MeetReady (Scholastic Safeguards Active)`;
 
   const html = `<!DOCTYPE html>
@@ -205,7 +230,7 @@ export function buildParentConsentEmailContent(params: {
 </head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111318;background:#F4F6F3;margin:0;padding:24px 12px;">
   <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
-    <div style="background:${brand.primaryHex};padding:24px;color:#FFFFFF;">
+    <div style="background:${safePrimaryHex};padding:24px;color:#FFFFFF;">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">MeetReady SCHOLASTIC SAFEGUARDING</div>
       <h1 style="margin:8px 0 4px;font-size:20px;font-weight:800;color:#FFFFFF;">Parent / Guardian Notice</h1>
       <div style="font-size:14px;opacity:0.9;">${escapeHtml(brand.name)} · Coach ${escapeHtml(brand.coachDisplayName)}</div>
@@ -226,13 +251,13 @@ export function buildParentConsentEmailContent(params: {
       </div>
 
       <div style="text-align:center;margin:24px 0 16px;">
-        <a href="${parentConsentUrl}" style="display:inline-block;background:${brand.primaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
+        <a href="${safeConsentUrl}" style="display:inline-block;background:${safePrimaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
           Acknowledge & Confirm Roster Enrollment
         </a>
       </div>
 
       <p style="font-size:12px;color:#64748B;text-align:center;margin:0;">
-        Or review via browser: <a href="${parentConsentUrl}" style="color:${brand.primaryHex};word-break:break-all;">${parentConsentUrl}</a>
+        Or review via browser: <a href="${safeConsentUrl}" style="color:${safePrimaryHex};word-break:break-all;">${safeConsentUrl}</a>
       </p>
     </div>
   </div>
@@ -274,7 +299,10 @@ export async function requestEmailOtpCode(rawEmail: string): Promise<{
     expiresAt: Date.now() + 10 * 60 * 1000,
     attempts: 0,
   };
-  await saveTenantVaultAsync(emailOtpVaultKey(email), record);
+  const otpKey = emailOtpVaultKey(email);
+  await withVaultLock(otpKey, async () => {
+    await saveTenantVaultAsync(otpKey, record);
+  });
 
   const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:0 auto;padding:24px;border:1px solid #E5E7EB;border-radius:16px;background:#FFFFFF;">
     <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#14532D;text-transform:uppercase;">MeetReady CROSS-DEVICE SIGN-IN</div>
@@ -315,6 +343,7 @@ export async function verifyEmailOtpCode(
 ): Promise<{
   ok: boolean;
   sid?: string;
+  userId?: string;
   email?: string;
   displayName?: string;
   error?: string;
@@ -326,25 +355,32 @@ export async function verifyEmailOtpCode(
   }
 
   const key = emailOtpVaultKey(email);
-  const stored = await loadTenantVaultAsync<StoredEmailOtpRecord | null>(key, null);
-  if (!stored || Date.now() > stored.expiresAt) {
-    return { ok: false, error: 'Verification code expired. Request a fresh code.' };
-  }
-  if (stored.attempts >= 5) {
-    return { ok: false, error: 'Too many attempts. Request a fresh code.' };
-  }
+  const otpCheck = await withVaultLock(key, async () => {
+    const stored = await loadTenantVaultAsync<StoredEmailOtpRecord | null>(key, null);
+    if (!stored || Date.now() > stored.expiresAt) {
+      return { ok: false as const, error: 'Verification code expired. Request a fresh code.' };
+    }
+    if (stored.attempts >= 5) {
+      return { ok: false as const, error: 'Too many attempts. Request a fresh code.' };
+    }
 
-  const candidateHash = hashToken(`${email}:${code}`);
-  const a = Buffer.from(candidateHash);
-  const b = Buffer.from(stored.codeHash);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    stored.attempts += 1;
-    await saveTenantVaultAsync(key, stored);
-    return { ok: false, error: 'Incorrect 6-digit code.' };
-  }
+    const candidateHash = hashToken(`${email}:${code}`);
+    const a = Buffer.from(candidateHash);
+    const b = Buffer.from(stored.codeHash);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      stored.attempts += 1;
+      await saveTenantVaultAsync(key, stored);
+      return { ok: false as const, error: 'Incorrect 6-digit code.' };
+    }
 
-  // Consume OTP
-  await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
+    // Consume OTP atomically inside lock
+    await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
+    return { ok: true as const };
+  });
+
+  if (!otpCheck.ok) {
+    return { ok: false, error: otpCheck.error };
+  }
 
   // Bind or retrieve persistent deterministic sid via unified ThreshUser
   const otpUser = await findOrCreateUser('magic_link', email, {
@@ -352,81 +388,43 @@ export async function verifyEmailOtpCode(
     name: email.split('@')[0],
   });
   const canonicalOtpSid = deriveUserSessionSid(otpUser.id);
-  const emailDir = await loadTenantVaultAsync<EmailAccountDirectory>(EMAIL_DIRECTORY_KEY, {
-    byEmail: {},
+  const account = await withVaultLock(EMAIL_DIRECTORY_KEY, async () => {
+    const emailDir = await loadTenantVaultAsync<EmailAccountDirectory>(EMAIL_DIRECTORY_KEY, {
+      byEmail: {},
+    });
+    let acct = emailDir.byEmail[email];
+    if (!acct) {
+      const newSid =
+        preferredSid && /^[a-f0-9]{24,64}$/i.test(preferredSid)
+          ? preferredSid
+          : canonicalOtpSid;
+      acct = {
+        sid: newSid,
+        displayName: otpUser.name,
+        updatedAt: new Date().toISOString(),
+      };
+      emailDir.byEmail[email] = acct;
+      await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
+    } else if (!acct.displayName && otpUser.name) {
+      acct.displayName = otpUser.name;
+      acct.updatedAt = new Date().toISOString();
+      emailDir.byEmail[email] = acct;
+      await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
+    }
+    return acct;
   });
-  let account = emailDir.byEmail[email];
-  if (!account) {
-    const newSid =
-      preferredSid && /^[a-f0-9]{24,64}$/i.test(preferredSid)
-        ? preferredSid
-        : canonicalOtpSid;
-    account = {
-      sid: newSid,
-      displayName: otpUser.name,
-      updatedAt: new Date().toISOString(),
-    };
-    emailDir.byEmail[email] = account;
-    await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
-  }
 
-  // Auto-link any pending team invites addressed to this email!
-  const dir = await loadTenantVaultAsync<TeamsDirectoryIndex>(TEAMS_DIRECTORY_KEY, {
-    bySlug: {},
-    byJoinCode: {},
-    allTeamIds: [],
+  // Auto-link any pending team invites addressed to this email safely under team row lock
+  await autoLinkPendingTeamInvitesByEmail({
+    email,
+    userSid: account.sid,
+    athleteName: account.displayName,
   });
-  const userTeams = await loadTenantVaultAsync<UserTeamsIndex>(
-    userTeamsVaultKey(account.sid),
-    {
-      teamIds: [],
-      email,
-      updatedAt: new Date().toISOString(),
-    }
-  );
-  userTeams.email = email;
-
-  for (const teamId of dir.allTeamIds) {
-    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-    let mutated = false;
-    for (const m of doc.memberships) {
-      if (
-        m.invitedEmail &&
-        m.invitedEmail.toLowerCase() === email &&
-        m.status !== 'REVOKED'
-      ) {
-        m.userSid = account.sid;
-        if (m.status !== 'ACTIVE') {
-          m.status = 'ACTIVE';
-          m.joinedAt = new Date().toISOString();
-        }
-        if (!account.displayName && m.invitedName) {
-          account.displayName = m.invitedName;
-        }
-        if (!userTeams.teamIds.includes(teamId)) {
-          userTeams.teamIds.push(teamId);
-        }
-        mutated = true;
-      }
-    }
-    if (mutated) {
-      doc.updatedAt = new Date().toISOString();
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-    }
-  }
-
-  userTeams.updatedAt = new Date().toISOString();
-  await saveTenantVaultAsync(userTeamsVaultKey(account.sid), userTeams);
-  emailDir.byEmail[email] = account;
-  await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
 
   return {
     ok: true,
     sid: account.sid,
+    userId: otpUser.id,
     email,
     displayName: account.displayName,
   };

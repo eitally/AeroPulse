@@ -6,6 +6,7 @@ import {
   resolveSessionScopeKey,
   loadTenantVaultAsync,
 } from './sessionContext.ts';
+import { checkPostgresHealthAsync, getVaultStorageBackend } from './tokenVault.ts';
 
 // Domain routers
 import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts';
@@ -43,6 +44,20 @@ apiRouter.use((req: Request, res: Response, next: NextFunction) => {
       return;
     }
     next();
+  });
+});
+
+// Health probe (bounded Postgres check when configured)
+apiRouter.get('/api/health', async (_req: Request, res: Response) => {
+  const pgHealth = await checkPostgresHealthAsync(2000);
+  const ok = pgHealth.configured ? pgHealth.healthy === true : true;
+  res.status(ok ? 200 : 503).json({
+    ok,
+    status: ok ? 'ok' : 'degraded',
+    storageBackend: getVaultStorageBackend(),
+    databaseConfigured: pgHealth.configured,
+    databaseHealthy: pgHealth.healthy,
+    timestamp: new Date().toISOString(),
   });
 });
 

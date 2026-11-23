@@ -480,7 +480,11 @@ export async function sendMagicLinkEmail(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || 'MeetReady <auth@meetready.app>',
+          from: (
+            process.env.AUTH_EMAIL_FROM ||
+            process.env.RESEND_FROM_EMAIL ||
+            'MeetReady <auth@meetready.app>'
+          ).trim(),
           to: [email],
           subject: 'Sign in to MeetReady',
           html: `
@@ -494,6 +498,7 @@ export async function sendMagicLinkEmail(
             </div>
           `,
         }),
+        signal: AbortSignal.timeout(8000),
       });
 
       if (res.ok) {
@@ -570,7 +575,11 @@ export async function createPendingEmailChange(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || 'MeetReady <auth@meetready.app>',
+          from: (
+            process.env.AUTH_EMAIL_FROM ||
+            process.env.RESEND_FROM_EMAIL ||
+            'MeetReady <auth@meetready.app>'
+          ).trim(),
           to: [cleanNewEmail],
           subject: 'Verify your new MeetReady email address',
           html: `
@@ -582,6 +591,7 @@ export async function createPendingEmailChange(
             </div>
           `,
         }),
+        signal: AbortSignal.timeout(8000),
       });
       if (res.ok) {
         return { ok: true };

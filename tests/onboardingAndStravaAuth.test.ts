@@ -451,7 +451,7 @@ describe('End-to-End Strava Identity, Sync Window Policy, Optional Add-Ons & Tea
     const createdTeam = (await createRes.json()).team;
     expect(createdTeam.brand.joinCode).toBeTruthy();
 
-    // Coach imports Maya via CSV
+    // Coach imports Maya via name-only CSV (no invitedEmail so Strava OAuth name-claim is permitted under P0-3)
     await jarFetch(
       coachJar,
       `/api/teams/${encodeURIComponent(createdTeam.brand.teamId)}/invites/bulk`,
@@ -462,7 +462,7 @@ describe('End-to-End Strava Identity, Sync Window Policy, Optional Add-Ons & Tea
           origin: baseUrl,
           rawCsvOrText: [
             'Name, Email, Squad, GradYear, SeedMark',
-            'Maya Lin, maya.lin@stanford.edu, Varsity, 2028, 16:45 5K',
+            'Maya Lin, , Varsity, 2028, 16:45 5K',
           ].join('\n'),
           sendEmailsNow: false,
         }),

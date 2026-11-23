@@ -39,6 +39,7 @@ import {
   addTeamToUserIndex,
   findTeamDocumentByCodeOrSlug,
   loadTeamDocRaw,
+  projectSafePublicExternalSync,
   projectTeamSummaryForCaller,
   saveTeamDocRaw,
   sanitizeExternalSyncConfig,
@@ -599,8 +600,11 @@ export async function getPublicTeamHubBySlugOrCode(
 
       officialResultCount += officialResults.length;
 
+      const isProtectedMinor = Boolean(
+        m.isMinorU18 || doc.brand.orgType === 'HIGH_SCHOOL'
+      );
       const abbreviateUnconsentedMinor = Boolean(
-        !m.externalSource && m.isMinorU18 && m.parentConsentStatus === 'PENDING'
+        !m.externalSource && isProtectedMinor && m.parentConsentStatus !== 'ACKNOWLEDGED'
       );
       let displayName = m.invitedName;
       if (abbreviateUnconsentedMinor) {
@@ -626,12 +630,13 @@ export async function getPublicTeamHubBySlugOrCode(
       };
     });
 
+  const safePublicExternalSync = projectSafePublicExternalSync(doc.brand.externalSync);
+
   return {
     found: true,
     brand: {
       teamId: doc.brand.teamId,
       slug: doc.brand.slug,
-      joinCode: doc.brand.joinCode,
       name: doc.brand.name,
       shortName: doc.brand.shortName,
       ...(doc.brand.mascotOrMotto ? { mascotOrMotto: doc.brand.mascotOrMotto } : {}),
@@ -642,7 +647,7 @@ export async function getPublicTeamHubBySlugOrCode(
       secondaryHex: doc.brand.secondaryHex,
       defaultSafeSportShield: doc.brand.defaultSafeSportShield,
       coachDisplayName: doc.brand.coachDisplayName,
-      ...(doc.brand.externalSync ? { externalSync: doc.brand.externalSync } : {}),
+      ...(safePublicExternalSync ? { externalSync: safePublicExternalSync } : {}),
     },
     upcomingMeets,
     recentSchedule,

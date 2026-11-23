@@ -31,11 +31,20 @@ export function timingSafeStringEqual(a?: string | null, b?: string | null): boo
   return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
 }
 
+export function isAnonSessionSubject(subject?: string | null): boolean {
+  const sub = String(subject || '').trim();
+  return (
+    !sub ||
+    sub.startsWith('anon_') ||
+    sub === 'thresh-athlete' ||
+    sub === 'thresh-supporter'
+  );
+}
+
 export function isCanonicalAuthenticatedClaims(claims?: VerifiedSessionClaims | null): boolean {
   if (!claims || !claims.sub || !claims.sid) return false;
   if (claims.authLevel === 'anon') return false;
-  const sub = String(claims.sub).trim();
-  if (!sub || sub.startsWith('anon_') || sub === 'thresh-athlete') return false;
+  if (isAnonSessionSubject(claims.sub)) return false;
   return true;
 }
 
@@ -53,10 +62,10 @@ export interface OAuthStateClaims {
   exp: number;
 }
 
-let cachedSecret: string | null = null;
+let cachedEnvSecret: { raw: string; derived: string } | null = null;
+let cachedDevSecret: string | null = null;
 
 function getSessionSecret(): string {
-  if (cachedSecret) return cachedSecret;
   const envSecret = (
     process.env.SESSION_SECRET ||
     process.env.TOKEN_VAULT_KEY ||
@@ -66,24 +75,34 @@ function getSessionSecret(): string {
     ''
   ).trim();
   if (envSecret && envSecret.length >= 16) {
-    cachedSecret = crypto.createHash('sha256').update(`thresh:${envSecret}`).digest('hex');
-    return cachedSecret;
+    if (cachedEnvSecret && cachedEnvSecret.raw === envSecret) {
+      return cachedEnvSecret.derived;
+    }
+    const derived = crypto.createHash('sha256').update(`thresh:${envSecret}`).digest('hex');
+    cachedEnvSecret = { raw: envSecret, derived };
+    return derived;
   }
+  if (isProductionDeployment() && !process.env.VITEST) {
+    throw new Error(
+      '[MeetReady Security] SESSION_SECRET or TOKEN_VAULT_KEY must be configured in production.'
+    );
+  }
+  if (cachedDevSecret) return cachedDevSecret;
   try {
     if (fs.existsSync(SESSION_SECRET_FILE)) {
       const existing = fs.readFileSync(SESSION_SECRET_FILE, 'utf8').trim();
       if (existing.length >= 32) {
-        cachedSecret = existing;
-        return cachedSecret;
+        cachedDevSecret = existing;
+        return cachedDevSecret;
       }
     }
     const generated = crypto.randomBytes(32).toString('hex');
     fs.writeFileSync(SESSION_SECRET_FILE, generated, { encoding: 'utf8', mode: 0o600 });
-    cachedSecret = generated;
-    return cachedSecret;
+    cachedDevSecret = generated;
+    return cachedDevSecret;
   } catch {
-    cachedSecret = crypto.randomBytes(32).toString('hex');
-    return cachedSecret;
+    cachedDevSecret = crypto.randomBytes(32).toString('hex');
+    return cachedDevSecret;
   }
 }
 
@@ -267,8 +286,9 @@ export function issueSessionToken(
       ? existingSid
       : crypto.randomBytes(16).toString('hex');
   const resolvedAuthLevel: SessionAuthLevel =
-    authLevel ||
-    (subject.startsWith('anon_') || subject === 'thresh-athlete' ? 'anon' : 'verified');
+    authLevel === 'anon' || isAnonSessionSubject(subject)
+      ? 'anon'
+      : authLevel || 'verified';
   const exp = Date.now() + SESSION_TTL_MS;
   const payload = Buffer.from(
     JSON.stringify({ sid, sub: subject, exp, authLevel: resolvedAuthLevel }),
@@ -309,11 +329,9 @@ export function decodeAndVerifyToken(token?: string | null): VerifiedSessionClai
     if (!decoded.exp || Date.now() > decoded.exp) return null;
     const sub = String(decoded.sub || 'authenticated');
     const authLevel: SessionAuthLevel =
-      decoded.authLevel === 'anon' || decoded.authLevel === 'verified'
-        ? decoded.authLevel
-        : sub.startsWith('anon_') || sub === 'thresh-athlete'
-          ? 'anon'
-          : 'verified';
+      decoded.authLevel === 'anon' || isAnonSessionSubject(sub)
+        ? 'anon'
+        : 'verified';
     // Derive deterministic fallback sid only for legacy pre-sid tokens signed with our secret
     const sid =
       decoded.sid && /^[a-f0-9]{16,64}$/i.test(decoded.sid)
@@ -373,17 +391,27 @@ export function setSessionCookie(
 ): string {
   const existing = getVerifiedSessionClaims(req);
   const targetSid = explicitSid || existing?.sid;
+  const existingIsAnon = Boolean(
+    existing && (existing.authLevel === 'anon' || isAnonSessionSubject(existing.sub))
+  );
   const preserveCanonicalUserSub =
+    Boolean(existing && isCanonicalAuthenticatedClaims(existing)) &&
     Boolean(existing?.sub?.startsWith('usr_')) &&
     !subject.startsWith('usr_') &&
     Boolean(targetSid && existing?.sid && targetSid === existing.sid);
   const resolvedSubject = preserveCanonicalUserSub ? existing!.sub : subject;
-  const resolvedAuthLevel: SessionAuthLevel = preserveCanonicalUserSub
-    ? 'verified'
-    : authLevel ||
-      (resolvedSubject.startsWith('anon_') || resolvedSubject === 'thresh-athlete'
-        ? 'anon'
-        : 'verified');
+  let resolvedAuthLevel: SessionAuthLevel;
+  if (authLevel === 'anon' || isAnonSessionSubject(resolvedSubject)) {
+    resolvedAuthLevel = 'anon';
+  } else if (authLevel === 'verified') {
+    resolvedAuthLevel = 'verified';
+  } else if (preserveCanonicalUserSub) {
+    resolvedAuthLevel = 'verified';
+  } else if (existingIsAnon) {
+    resolvedAuthLevel = 'anon';
+  } else {
+    resolvedAuthLevel = 'verified';
+  }
   const token = issueSessionToken(resolvedSubject, targetSid, resolvedAuthLevel);
   const isSecure =
     req.secure ||
@@ -536,6 +564,51 @@ export function resolveTrustedCorsOrigin(rawOrigin?: string): string | null {
   return null;
 }
 
+export const CANONICAL_PROD_ORIGIN = 'https://meetready.app';
+
+/**
+ * Resolves the effective request origin for generating invite / callback URLs.
+ * In production deployments, explicit origin params and forwarded host headers must
+ * match `resolveTrustedCorsOrigin(...)`; otherwise falls back to `APP_URL` / `CANONICAL_PROD_ORIGIN`.
+ */
+export function resolveTrustedRequestOrigin(req: Request): string {
+  const explicitRaw = String(req.body?.origin || req.query?.origin || '').trim();
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || req.protocol || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const proto = forwardedProto === 'https' || req.secure ? 'https' : 'http';
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '')
+    .split(',')[0]
+    .trim()
+    .replace(/[^a-zA-Z0-9.:-]/g, '');
+  const hostOrigin = host ? `${proto}://${host}` : '';
+
+  if (isProductionDeployment()) {
+    if (explicitRaw) {
+      const trustedExplicit = resolveTrustedCorsOrigin(explicitRaw);
+      if (trustedExplicit) return trustedExplicit;
+    }
+    if (hostOrigin) {
+      const trustedHost = resolveTrustedCorsOrigin(hostOrigin);
+      if (trustedHost) return trustedHost;
+    }
+    for (const envCandidate of [process.env.APP_URL, process.env.APP_BASE_URL]) {
+      const resolved = resolveSafeOrigin(envCandidate);
+      if (resolved && !resolved.includes('MY_APP_URL')) {
+        return resolved;
+      }
+    }
+    return CANONICAL_PROD_ORIGIN;
+  }
+
+  const safeExplicit = resolveSafeOrigin(explicitRaw);
+  if (safeExplicit) return safeExplicit;
+  const safeHost = resolveSafeOrigin(hostOrigin);
+  if (safeHost) return safeHost;
+  return CANONICAL_PROD_ORIGIN;
+}
+
 function isPrivateIpv4Octets(octets: number[]): boolean {
   if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
     return true;
@@ -670,6 +743,30 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const isHttps = req.secure || forwardedProto === 'https';
+  if (isHttps || isProductionDeployment()) {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  }
+
+  const rawPath = (req.path || req.url || '').split('?')[0];
+  const isAuthOrConsentHtmlPath =
+    /^\/auth\/[^/]+\/callback\/?$/i.test(rawPath) ||
+    rawPath === '/api/auth/magic-link/verify' ||
+    rawPath === '/api/teams/parent-consent';
+
+  if (isAuthOrConsentHtmlPath) {
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'"
+    );
+  } else if (rawPath.startsWith('/api/')) {
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  }
 
   const allowedOrigin = resolveTrustedCorsOrigin(req.headers.origin as string | undefined);
   if (allowedOrigin) {

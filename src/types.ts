@@ -1625,7 +1625,7 @@ export interface PublicTeamHubPayload {
   brand?: {
     teamId: string;
     slug: string;
-    joinCode: string;
+    joinCode?: string;
     name: string;
     shortName: string;
     mascotOrMotto?: string;

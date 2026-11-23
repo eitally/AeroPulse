@@ -3,7 +3,9 @@ import crypto from 'crypto';
 import {
   escapeHtml,
   getVerifiedSessionClaims,
+  isProductionDeployment,
   resolveSafeOrigin,
+  resolveTrustedCorsOrigin,
   setSessionCookie,
 } from './securityUtils.ts';
 import { bindRequestScopeKey } from './sessionContext.ts';
@@ -111,7 +113,10 @@ function resolveStandardOAuthCallbackUrl(
       // fall through
     }
   }
-  const safeOrigin = resolveSafeOrigin(req.query.origin as string | undefined);
+  const rawQueryOrigin = req.query.origin as string | undefined;
+  const safeOrigin = isProductionDeployment()
+    ? resolveTrustedCorsOrigin(rawQueryOrigin)
+    : resolveSafeOrigin(rawQueryOrigin);
   if (safeOrigin) {
     return `${canonicalizeOrigin(safeOrigin)}${callbackPath}`;
   }
@@ -123,13 +128,26 @@ function resolveStandardOAuthCallbackUrl(
     .split(',')[0]
     .trim()
     .toLowerCase();
-  const proto = rawProto === 'https' ? 'https' : 'http';
+  const proto = rawProto === 'https' || req.secure ? 'https' : 'http';
   const rawHost = String(
     (req.headers['x-forwarded-host'] as string) || req.headers.host || 'localhost:3000'
   )
     .split(',')[0]
     .trim()
     .replace(/[^a-zA-Z0-9.:-]/g, '');
+  if (isProductionDeployment()) {
+    const trustedHostOrigin = rawHost
+      ? resolveTrustedCorsOrigin(`${proto}://${rawHost}`)
+      : null;
+    if (trustedHostOrigin) {
+      return `${canonicalizeOrigin(trustedHostOrigin)}${callbackPath}`;
+    }
+    const appBaseUrl = resolveSafeOrigin(process.env.APP_BASE_URL || '');
+    if (appBaseUrl && !appBaseUrl.includes('MY_APP_URL')) {
+      return `${canonicalizeOrigin(appBaseUrl)}${callbackPath}`;
+    }
+    return `${CANONICAL_PROD_ORIGIN}${callbackPath}`;
+  }
   const canonicalHost =
     rawHost.toLowerCase() === 'aeropulse-eta.vercel.app' ? 'meetready.app' : rawHost;
   return `${proto}://${canonicalHost || 'localhost:3000'}${callbackPath}`;

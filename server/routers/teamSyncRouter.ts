@@ -1,8 +1,9 @@
+import crypto from 'crypto';
 import express, { type Request, type Response } from 'express';
 import {
-  decodeAndVerifyToken,
   getVerifiedSessionClaims,
-  resolveSafeOrigin,
+  isCanonicalAuthenticatedClaims,
+  resolveTrustedRequestOrigin,
   setSessionCookie,
 } from '../securityUtils.ts';
 import {
@@ -18,20 +19,7 @@ import { listTeamsForUser } from '../teamService.ts';
 export const teamSyncRouter = express.Router();
 
 function resolveSyncOrigin(req: Request): string {
-  const explicit = resolveSafeOrigin(
-    String(req.body?.origin || req.query?.origin || '')
-  );
-  if (explicit) return explicit;
-  const proto =
-    String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' || req.secure
-      ? 'https'
-      : 'http';
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').trim();
-  if (host) {
-    const candidate = resolveSafeOrigin(`${proto}://${host}`);
-    if (candidate) return candidate;
-  }
-  return 'https://meetready.app';
+  return resolveTrustedRequestOrigin(req);
 }
 
 teamSyncRouter.post(
@@ -39,7 +27,7 @@ teamSyncRouter.post(
   async (req: Request, res: Response) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: 'Authentication required.' });
         return;
       }
@@ -74,7 +62,7 @@ teamSyncRouter.post(
   async (req: Request, res: Response) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: 'Authentication required.' });
         return;
       }
@@ -109,7 +97,7 @@ teamSyncRouter.post(
   async (req: Request, res: Response) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: 'Authentication required.' });
         return;
       }
@@ -180,15 +168,21 @@ teamSyncRouter.post('/api/teams/follow', async (req: Request, res: Response) => 
     let sid = existing?.sid;
     let sessionToken: string | undefined;
     if (!sid) {
+      const anonSid = crypto.randomBytes(16).toString('hex');
       sessionToken = setSessionCookie(
         req,
         res,
-        String(req.body?.followerName || 'thresh-supporter')
+        `anon_supporter_${anonSid.slice(0, 8)}`,
+        anonSid,
+        'anon'
       );
-      sid = decodeAndVerifyToken(sessionToken)?.sid || '000000000000000000000000';
+      sid = anonSid;
     }
     const originUrl = resolveSyncOrigin(req);
-    const verifiedUser = sid ? await getUserById(sid).catch(() => null) : null;
+    const verifiedUser =
+      existing && isCanonicalAuthenticatedClaims(existing) && existing.sub.startsWith('usr_')
+        ? await getUserById(existing.sub).catch(() => null)
+        : null;
     const result = await followTeamAsParentOrFan({
       callerSid: sid,
       codeOrSlug: String(req.body?.codeOrSlug || ''),
