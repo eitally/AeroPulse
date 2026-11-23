@@ -1149,12 +1149,15 @@ describe('Sprint 0: Track A Security, SafeSport & Serverless Reliability P0s', (
         "default-src 'none'; frame-ancestors 'none'"
       );
       const healthBody = await apiRes.json();
+      const hasPostgres = Boolean(
+        (process.env.DATABASE_URL || process.env.POSTGRES_URL || '').trim()
+      );
       expect(healthBody).toMatchObject({
         ok: true,
         status: 'ok',
-        storageBackend: 'ENCRYPTED_FILE',
-        databaseConfigured: false,
-        databaseHealthy: null,
+        storageBackend: hasPostgres ? 'POSTGRES' : 'ENCRYPTED_FILE',
+        databaseConfigured: hasPostgres,
+        databaseHealthy: hasPostgres ? true : null,
       });
       expect(typeof healthBody.timestamp).toBe('string');
 

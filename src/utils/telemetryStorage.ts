@@ -1119,6 +1119,22 @@ export async function replaceGearItemsInStore(items: AthleteGearItem[]): Promise
   }
 }
 
+export async function replacePlannedEventsInStore(
+  events: PlannedWorkoutEvent[]
+): Promise<void> {
+  try {
+    if (isBrowserSessionLoggedOut()) return;
+    await db.transaction('rw', db.plannedEvents, async () => {
+      await db.plannedEvents.clear();
+      if (Array.isArray(events) && events.length > 0) {
+        await db.plannedEvents.bulkPut(events);
+      }
+    });
+  } catch {
+    // Non-fatal IndexedDB persistence fallback
+  }
+}
+
 export async function clearPersistedTelemetrySnapshot(): Promise<void> {
   try {
     await db.transaction(

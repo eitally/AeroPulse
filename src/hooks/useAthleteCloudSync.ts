@@ -25,6 +25,15 @@ import { STORAGE_KEYS } from '../utils/storageKeys.ts';
 const CLOUD_UPDATED_AT_KEY = 'thresh_cloud_state_updated_at';
 const CHECKINS_STORAGE_KEY = 'thresh_session_checkins_v1';
 
+type TrackedCloudField =
+  | 'plannedEvents'
+  | 'targetGoals'
+  | 'annualMileageGoals'
+  | 'athleteProfile'
+  | 'distanceUnit'
+  | 'gearItems'
+  | 'sessionCheckIns';
+
 function isCloudStateDirty(): boolean {
   if (typeof localStorage === 'undefined') return false;
   try {
@@ -129,6 +138,7 @@ export function useAthleteCloudSync({
   const applyingCloudHydrationRef = useRef<boolean>(false);
   const localMutationRevRef = useRef<number>(0);
   const syncedRevRef = useRef<number>(0);
+  const sessionEditedFieldsRef = useRef<Set<TrackedCloudField>>(new Set());
   const prevTeamsCountRef = useRef<number>(myTeamsCount);
   const inFlightSaveRef = useRef<Promise<void> | null>(null);
   const pendingSaveNeededRef = useRef<boolean>(false);
@@ -203,14 +213,15 @@ export function useAthleteCloudSync({
   // Track monotonic local mutation revisions whenever user state changes in live mode
   useEffect(() => {
     const prev = prevLiveTrackedRef.current;
-    const changed =
-      prev.plannedEvents !== plannedEvents ||
-      prev.targetGoals !== targetGoals ||
-      prev.annualMileageGoals !== annualMileageGoals ||
-      prev.athleteProfile !== athleteProfile ||
-      prev.distanceUnit !== distanceUnit ||
-      prev.gearItems !== gearItems ||
-      prev.sessionCheckIns !== sessionCheckIns;
+    const editedFields: TrackedCloudField[] = [];
+    if (prev.plannedEvents !== plannedEvents) editedFields.push('plannedEvents');
+    if (prev.targetGoals !== targetGoals) editedFields.push('targetGoals');
+    if (prev.annualMileageGoals !== annualMileageGoals) editedFields.push('annualMileageGoals');
+    if (prev.athleteProfile !== athleteProfile) editedFields.push('athleteProfile');
+    if (prev.distanceUnit !== distanceUnit) editedFields.push('distanceUnit');
+    if (prev.gearItems !== gearItems) editedFields.push('gearItems');
+    if (prev.sessionCheckIns !== sessionCheckIns) editedFields.push('sessionCheckIns');
+    const changed = editedFields.length > 0;
 
     prevLiveTrackedRef.current = {
       hasLive: hasLiveWorkspace,
@@ -229,6 +240,9 @@ export function useAthleteCloudSync({
     }
 
     if (prev.hasLive && hasLiveWorkspace && changed) {
+      for (const field of editedFields) {
+        sessionEditedFieldsRef.current.add(field);
+      }
       localMutationRevRef.current += 1;
       setCloudStateDirty(true);
     }
@@ -332,6 +346,7 @@ export function useAthleteCloudSync({
     applyingCloudHydrationRef.current = false;
     localMutationRevRef.current = 0;
     syncedRevRef.current = 0;
+    sessionEditedFieldsRef.current.clear();
     pendingSaveNeededRef.current = false;
     setSessionCheckIns([]);
     setArchivedCoachActivities([]);
@@ -394,6 +409,7 @@ export function useAthleteCloudSync({
   useEffect(() => {
     if (!hasLiveWorkspace && !isSampleDemoMode) {
       hydratedIdentityRef.current = null;
+      sessionEditedFieldsRef.current.clear();
     }
   }, [hasLiveWorkspace, isSampleDemoMode]);
 
@@ -467,123 +483,146 @@ export function useAthleteCloudSync({
             dirtyAtStart ||
             isCloudStateDirty() ||
             localMutationRevRef.current > revAtStart;
-          const noLocalEditThisSession = localMutationRevRef.current === revAtStart;
 
-          if (!hasUnsavedLocalMutations || noLocalEditThisSession) {
-            const latest = latestSyncStateRef.current;
-            let localUpdatedAt = '';
+          const latest = latestSyncStateRef.current;
+          let localUpdatedAt = '';
+          try {
+            localUpdatedAt = localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '';
+          } catch {
+            // ignore storage errors
+          }
+          const serverIsNewer =
+            Boolean(cloudState.updatedAt) &&
+            (!localUpdatedAt || cloudState.updatedAt >= localUpdatedAt);
+
+          let didUpdateState = false;
+          const hydratedSnapshot = { ...latest };
+
+          const canReplaceList = <T,>(
+            field: TrackedCloudField,
+            cloudArr: T[],
+            localArr: T[]
+          ): boolean => {
+            if (sessionEditedFieldsRef.current.has(field)) return false;
+            if (!hasUnsavedLocalMutations) {
+              return serverIsNewer || (cloudArr.length > 0 && localArr.length === 0);
+            }
+            return cloudArr.length > 0 && localArr.length === 0;
+          };
+
+          if (
+            Array.isArray(cloudState.plannedEvents) &&
+            canReplaceList('plannedEvents', cloudState.plannedEvents, latest.plannedEvents)
+          ) {
+            setPlannedEvents(cloudState.plannedEvents);
+            hydratedSnapshot.plannedEvents = cloudState.plannedEvents;
+            didUpdateState = true;
+          }
+
+          if (
+            Array.isArray(cloudState.targetGoals) &&
+            canReplaceList('targetGoals', cloudState.targetGoals, latest.targetGoals)
+          ) {
+            setTargetGoals(cloudState.targetGoals);
+            hydratedSnapshot.targetGoals = cloudState.targetGoals;
+            didUpdateState = true;
+          }
+
+          if (
+            Array.isArray(cloudState.annualMileageGoals) &&
+            canReplaceList(
+              'annualMileageGoals',
+              cloudState.annualMileageGoals,
+              latest.annualMileageGoals
+            )
+          ) {
+            setAnnualMileageGoals(cloudState.annualMileageGoals);
+            hydratedSnapshot.annualMileageGoals = cloudState.annualMileageGoals;
+            didUpdateState = true;
+          }
+
+          if (
+            setGearItems &&
+            Array.isArray(cloudState.gearItems) &&
+            canReplaceList('gearItems', cloudState.gearItems, latest.gearItems || [])
+          ) {
+            setGearItems(cloudState.gearItems);
+            hydratedSnapshot.gearItems = cloudState.gearItems;
+            didUpdateState = true;
+          }
+
+          if (
+            !hasUnsavedLocalMutations &&
+            !sessionEditedFieldsRef.current.has('distanceUnit') &&
+            cloudState.distanceUnit &&
+            serverIsNewer
+          ) {
+            setDistanceUnit(cloudState.distanceUnit);
+            hydratedSnapshot.distanceUnit = cloudState.distanceUnit;
+            didUpdateState = true;
+          }
+
+          if (
+            !hasUnsavedLocalMutations &&
+            !sessionEditedFieldsRef.current.has('athleteProfile') &&
+            cloudState.athleteProfile &&
+            serverIsNewer
+          ) {
+            setAthleteProfile((prev) => ({
+              ...prev,
+              ...cloudState.athleteProfile,
+            }));
+            hydratedSnapshot.athleteProfile = {
+              ...latest.athleteProfile,
+              ...cloudState.athleteProfile,
+            };
+            didUpdateState = true;
+          }
+
+          if (
+            Array.isArray(cloudState.sessionCheckIns) &&
+            canReplaceList(
+              'sessionCheckIns',
+              cloudState.sessionCheckIns,
+              latest.sessionCheckIns
+            )
+          ) {
+            setSessionCheckIns(cloudState.sessionCheckIns);
+            hydratedSnapshot.sessionCheckIns = cloudState.sessionCheckIns;
+            didUpdateState = true;
             try {
-              localUpdatedAt = localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '';
+              localStorage.setItem(
+                CHECKINS_STORAGE_KEY,
+                JSON.stringify(cloudState.sessionCheckIns)
+              );
             } catch {
               // ignore storage errors
             }
-            const serverIsNewer =
-              Boolean(cloudState.updatedAt) &&
-              (!localUpdatedAt || cloudState.updatedAt >= localUpdatedAt);
+          }
 
-            let didUpdateState = false;
-            const hydratedSnapshot = { ...latest };
-
-            const canReplaceList = <T,>(cloudArr: T[], localArr: T[]): boolean =>
-              !hasUnsavedLocalMutations
-                ? serverIsNewer || (cloudArr.length > 0 && localArr.length === 0)
-                : cloudArr.length > 0 && localArr.length === 0;
-
+          if (didUpdateState) {
+            latestSyncStateRef.current = hydratedSnapshot;
+            skipNextSaveRef.current = true;
+            applyingCloudHydrationRef.current = true;
             if (
-              Array.isArray(cloudState.plannedEvents) &&
-              canReplaceList(cloudState.plannedEvents, latest.plannedEvents)
+              hasUnsavedLocalMutations &&
+              sessionEditedFieldsRef.current.size === 0 &&
+              serverIsNewer &&
+              latest.plannedEvents.length === 0 &&
+              latest.targetGoals.length === 0 &&
+              latest.annualMileageGoals.length === 0 &&
+              (latest.gearItems?.length ?? 0) === 0 &&
+              latest.sessionCheckIns.length === 0
             ) {
-              setPlannedEvents(cloudState.plannedEvents);
-              hydratedSnapshot.plannedEvents = cloudState.plannedEvents;
-              didUpdateState = true;
+              setCloudStateDirty(false);
             }
+          }
 
-            if (
-              Array.isArray(cloudState.targetGoals) &&
-              canReplaceList(cloudState.targetGoals, latest.targetGoals)
-            ) {
-              setTargetGoals(cloudState.targetGoals);
-              hydratedSnapshot.targetGoals = cloudState.targetGoals;
-              didUpdateState = true;
-            }
-
-            if (
-              Array.isArray(cloudState.annualMileageGoals) &&
-              canReplaceList(cloudState.annualMileageGoals, latest.annualMileageGoals)
-            ) {
-              setAnnualMileageGoals(cloudState.annualMileageGoals);
-              hydratedSnapshot.annualMileageGoals = cloudState.annualMileageGoals;
-              didUpdateState = true;
-            }
-
-            if (
-              setGearItems &&
-              Array.isArray(cloudState.gearItems) &&
-              canReplaceList(cloudState.gearItems, latest.gearItems || [])
-            ) {
-              setGearItems(cloudState.gearItems);
-              hydratedSnapshot.gearItems = cloudState.gearItems;
-              didUpdateState = true;
-            }
-
-            if (!hasUnsavedLocalMutations && cloudState.distanceUnit && serverIsNewer) {
-              setDistanceUnit(cloudState.distanceUnit);
-              hydratedSnapshot.distanceUnit = cloudState.distanceUnit;
-              didUpdateState = true;
-            }
-
-            if (!hasUnsavedLocalMutations && cloudState.athleteProfile && serverIsNewer) {
-              setAthleteProfile((prev) => ({
-                ...prev,
-                ...cloudState.athleteProfile,
-              }));
-              hydratedSnapshot.athleteProfile = {
-                ...latest.athleteProfile,
-                ...cloudState.athleteProfile,
-              };
-              didUpdateState = true;
-            }
-
-            if (
-              Array.isArray(cloudState.sessionCheckIns) &&
-              canReplaceList(cloudState.sessionCheckIns, latest.sessionCheckIns)
-            ) {
-              setSessionCheckIns(cloudState.sessionCheckIns);
-              hydratedSnapshot.sessionCheckIns = cloudState.sessionCheckIns;
-              didUpdateState = true;
-              try {
-                localStorage.setItem(
-                  CHECKINS_STORAGE_KEY,
-                  JSON.stringify(cloudState.sessionCheckIns)
-                );
-              } catch {
-                // ignore storage errors
-              }
-            }
-
-            if (didUpdateState) {
-              latestSyncStateRef.current = hydratedSnapshot;
-              skipNextSaveRef.current = true;
-              applyingCloudHydrationRef.current = true;
-              if (
-                hasUnsavedLocalMutations &&
-                serverIsNewer &&
-                latest.plannedEvents.length === 0 &&
-                latest.targetGoals.length === 0 &&
-                latest.annualMileageGoals.length === 0 &&
-                (latest.gearItems?.length ?? 0) === 0 &&
-                latest.sessionCheckIns.length === 0
-              ) {
-                setCloudStateDirty(false);
-              }
-            }
-
-            if (cloudState.updatedAt && (serverIsNewer || didUpdateState)) {
-              try {
-                localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudState.updatedAt);
-              } catch {
-                // ignore
-              }
+          if (cloudState.updatedAt && (serverIsNewer || didUpdateState)) {
+            try {
+              localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudState.updatedAt);
+            } catch {
+              // ignore
             }
           }
         }

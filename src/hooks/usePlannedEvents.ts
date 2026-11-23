@@ -11,6 +11,7 @@ import type {
 import { sortPlannedEventsChronologically } from '../utils/workoutScheduleUtils';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
 import { STORAGE_KEYS } from '../utils/storageKeys';
+import { replacePlannedEventsInStore } from '../utils/telemetryStorage';
 
 interface EventLogisticsFields {
   scheduledTime?: string;
@@ -73,6 +74,26 @@ export function usePlannedEvents({
   setConnectedAthletes,
   setSampleDemoConnectedAthletes,
 }: UsePlannedEventsParams) {
+  const commitSelfPlannedEvents = useCallback(
+    (computeNext: (prev: PlannedWorkoutEvent[]) => PlannedWorkoutEvent[]) => {
+      if (plannedEventsRef) {
+        const next = computeNext(plannedEventsRef.current);
+        plannedEventsRef.current = next;
+        setPlannedEvents(next);
+        void replacePlannedEventsInStore(next);
+        return next;
+      }
+      let nextEvents: PlannedWorkoutEvent[] = [];
+      setPlannedEvents((prev) => {
+        nextEvents = computeNext(prev);
+        void replacePlannedEventsInStore(nextEvents);
+        return nextEvents;
+      });
+      return nextEvents;
+    },
+    [plannedEventsRef, setPlannedEvents]
+  );
+
   const handleCreatePlannedEvent = useCallback(
     async (eventInput: {
       date: string;
@@ -227,7 +248,7 @@ export function usePlannedEvents({
         if (resp.ok) {
           const data = await resp.json();
           if (data.event) {
-            setPlannedEvents((prev) => {
+            commitSelfPlannedEvents((prev) => {
               const base = filterEventsForSlotReplace(
                 prev,
                 eventInput,
@@ -241,7 +262,7 @@ export function usePlannedEvents({
       } catch {
         // Fallback to local state
       }
-      setPlannedEvents((prev) => {
+      commitSelfPlannedEvents((prev) => {
         const base = filterEventsForSlotReplace(
           prev,
           eventInput,
@@ -274,11 +295,11 @@ export function usePlannedEvents({
     [
       activeConnectedAthlete,
       activeTeam,
+      commitSelfPlannedEvents,
       handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,
-      setPlannedEvents,
       setSampleDemoConnectedAthletes,
       setSampleDemoPlannedEvents,
     ]
@@ -426,18 +447,7 @@ export function usePlannedEvents({
         return;
       }
 
-      let mergedEvents: PlannedWorkoutEvent[] | null = null;
-      if (plannedEventsRef) {
-        mergedEvents = mergeBatch(plannedEventsRef.current);
-        plannedEventsRef.current = mergedEvents;
-        setPlannedEvents(mergedEvents);
-      } else {
-        setPlannedEvents((prev) => {
-          const next = mergeBatch(prev);
-          mergedEvents = next;
-          return next;
-        });
-      }
+      const mergedEvents = commitSelfPlannedEvents(mergeBatch);
 
       if (mergedEvents) {
         try {
@@ -472,12 +482,11 @@ export function usePlannedEvents({
     [
       activeConnectedAthlete,
       activeTeam,
+      commitSelfPlannedEvents,
       handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
-      plannedEventsRef,
       setConnectedAthletes,
-      setPlannedEvents,
       setSampleDemoConnectedAthletes,
       setSampleDemoPlannedEvents,
     ]
@@ -593,7 +602,7 @@ export function usePlannedEvents({
         return;
       }
 
-      setPlannedEvents((prev) =>
+      commitSelfPlannedEvents((prev) =>
         prev.map(mergeEvent).sort((a, b) => a.date.localeCompare(b.date))
       );
       if (isTeamCoach && activeTeam && id.startsWith('bw_')) {
@@ -635,11 +644,11 @@ export function usePlannedEvents({
     [
       activeConnectedAthlete,
       activeTeam,
+      commitSelfPlannedEvents,
       handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,
-      setPlannedEvents,
       setSampleDemoConnectedAthletes,
       setSampleDemoPlannedEvents,
     ]
@@ -704,7 +713,7 @@ export function usePlannedEvents({
         return;
       }
 
-      setPlannedEvents((prev) => prev.filter((e) => e.id !== id));
+      commitSelfPlannedEvents((prev) => prev.filter((e) => e.id !== id));
       if (isTeamCoach && activeTeam && id.startsWith('bw_')) {
         try {
           const resp = await fetch(
@@ -739,11 +748,11 @@ export function usePlannedEvents({
     [
       activeConnectedAthlete,
       activeTeam,
+      commitSelfPlannedEvents,
       handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,
-      setPlannedEvents,
       setSampleDemoConnectedAthletes,
       setSampleDemoPlannedEvents,
     ]
@@ -809,7 +818,7 @@ export function usePlannedEvents({
         return;
       }
 
-      setPlannedEvents((prev) => prev.filter((e) => e.planBlockId !== planBlockId));
+      commitSelfPlannedEvents((prev) => prev.filter((e) => e.planBlockId !== planBlockId));
       const hasTeamBlock = Boolean(
         isTeamCoach &&
           activeTeam?.broadcastWorkouts?.some((bw) => bw.planBlockId === planBlockId)
@@ -848,11 +857,11 @@ export function usePlannedEvents({
     [
       activeConnectedAthlete,
       activeTeam,
+      commitSelfPlannedEvents,
       handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
       setConnectedAthletes,
-      setPlannedEvents,
       setSampleDemoConnectedAthletes,
       setSampleDemoPlannedEvents,
     ]
