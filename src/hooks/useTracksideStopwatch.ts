@@ -239,6 +239,7 @@ export interface TracksideSplitTapEntry {
   timestampSecs: number;
   kind?: 'RUNNER_SPLIT' | 'CHUTE_QUEUE' | 'CHUTE_ASSIGN' | 'RELAY_HANDOFF';
   previousLastTapEpochMs?: number;
+  recordedAtEpochMs?: number;
   quartetId?: string;
   legIndex?: number;
 }
@@ -284,6 +285,7 @@ export interface PersistedTracksideStopwatchState {
   dismissedAutoRegSignatures?: string[];
   relayQuartets?: RelayQuartetConfig[];
   relayBatonTimestampsSecs?: Record<string, number[]>;
+  repStartTimestampsSecs?: Record<string, number[]>;
 }
 
 const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
@@ -321,7 +323,21 @@ const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
   dismissedAutoRegSignatures: [],
   relayQuartets: DEFAULT_RELAY_QUARTETS,
   relayBatonTimestampsSecs: {},
+  repStartTimestampsSecs: {},
 };
+
+function sanitizeNumberArrayRecord(raw: unknown): Record<string, number[]> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, number[]> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(v)) continue;
+    const nums = v.filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0);
+    if (nums.length > 0) {
+      out[k] = nums;
+    }
+  }
+  return out;
+}
 
 function sanitizeNumberRecord(raw: unknown): Record<string, number> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -542,6 +558,7 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
         !Array.isArray(parsed.relayBatonTimestampsSecs)
           ? parsed.relayBatonTimestampsSecs
           : {},
+      repStartTimestampsSecs: sanitizeNumberArrayRecord(parsed.repStartTimestampsSecs),
     };
   } catch {
     return DEFAULT_STOPWATCH_STATE;
@@ -610,6 +627,9 @@ export function applyResetStopwatch(
       : {}),
     ...(current.relayBatonTimestampsSecs !== undefined
       ? { relayBatonTimestampsSecs: {} }
+      : {}),
+    ...(current.repStartTimestampsSecs !== undefined
+      ? { repStartTimestampsSecs: {} }
       : {}),
   };
 }
@@ -801,6 +821,7 @@ export function applyTapRunnerSplit(
         runnerName,
         timestampSecs: currentElapsedSecs,
         kind: 'RUNNER_SPLIT',
+        recordedAtEpochMs: nowEpochMs,
         ...(typeof prevTapEpoch === 'number' ? { previousLastTapEpochMs: prevTapEpoch } : {}),
       },
     ],
@@ -881,6 +902,7 @@ export function applyAssignChuteToRunner(
         runnerName,
         timestampSecs: assignedSecs,
         kind: 'CHUTE_ASSIGN',
+        recordedAtEpochMs: nowEpochMs,
         ...(typeof prevTapEpoch === 'number' ? { previousLastTapEpochMs: prevTapEpoch } : {}),
       },
     ],
@@ -985,19 +1007,293 @@ export function applyUndoLastSplit(
   };
 }
 
+function isRunnerSplitTapEntry(entry: TracksideSplitTapEntry): boolean {
+  return entry.kind !== 'CHUTE_QUEUE' && entry.kind !== 'RELAY_HANDOFF';
+}
+
+export function applyUndoRunnerLastSplit(
+  current: PersistedTracksideStopwatchState,
+  runnerId: string
+): { next: PersistedTracksideStopwatchState; undone: TracksideSplitTapEntry | null } {
+  const prevMarks = current.athleteLapTimestampsSecs[runnerId] || [];
+  if (prevMarks.length === 0) {
+    return { next: current, undone: null };
+  }
+
+  const nextMarks = prevMarks.slice(0, -1);
+  const nextMap = { ...current.athleteLapTimestampsSecs };
+  if (nextMarks.length > 0) {
+    nextMap[runnerId] = nextMarks;
+  } else {
+    delete nextMap[runnerId];
+  }
+
+  let matchIdx = -1;
+  for (let i = current.tapHistory.length - 1; i >= 0; i--) {
+    const item = current.tapHistory[i];
+    if (item.runnerId === runnerId && isRunnerSplitTapEntry(item)) {
+      matchIdx = i;
+      break;
+    }
+  }
+
+  const matchedEntry = matchIdx >= 0 ? current.tapHistory[matchIdx] : null;
+  const nextHistory =
+    matchIdx >= 0
+      ? [
+          ...current.tapHistory.slice(0, matchIdx),
+          ...current.tapHistory.slice(matchIdx + 1),
+        ]
+      : current.tapHistory;
+
+  let nextLastTapMap = current.runnerLastTapEpochMs;
+  if (current.runnerLastTapEpochMs) {
+    nextLastTapMap = { ...current.runnerLastTapEpochMs };
+    if (matchedEntry && typeof matchedEntry.previousLastTapEpochMs === 'number') {
+      nextLastTapMap[runnerId] = matchedEntry.previousLastTapEpochMs;
+    } else {
+      delete nextLastTapMap[runnerId];
+    }
+  }
+
+  const nextQueue =
+    matchedEntry?.kind === 'CHUTE_ASSIGN'
+      ? [matchedEntry.timestampSecs, ...(current.chuteQueueSecs || [])]
+      : current.chuteQueueSecs;
+
+  const undone: TracksideSplitTapEntry = matchedEntry || {
+    runnerId,
+    runnerName: runnerId,
+    timestampSecs: prevMarks[prevMarks.length - 1],
+    kind: 'RUNNER_SPLIT',
+  };
+
+  return {
+    next: {
+      ...current,
+      athleteLapTimestampsSecs: nextMap,
+      tapHistory: nextHistory,
+      ...(nextLastTapMap !== undefined ? { runnerLastTapEpochMs: nextLastTapMap } : {}),
+      ...(nextQueue !== undefined ? { chuteQueueSecs: nextQueue } : {}),
+    },
+    undone,
+  };
+}
+
+export function getRecentSwappableSplitPair(
+  tapHistory: TracksideSplitTapEntry[],
+  nowEpochMs: number = Date.now(),
+  maxTapGapSecs: number = 4,
+  visibilityWindowMs: number = 8000
+): {
+  prev: TracksideSplitTapEntry;
+  last: TracksideSplitTapEntry;
+  prevIdx: number;
+  lastIdx: number;
+  tapGapSecs: number;
+} | null {
+  let lastIdx = -1;
+  let prevIdx = -1;
+  for (let i = tapHistory.length - 1; i >= 0; i--) {
+    if (!isRunnerSplitTapEntry(tapHistory[i])) continue;
+    if (lastIdx === -1) {
+      lastIdx = i;
+    } else {
+      prevIdx = i;
+      break;
+    }
+  }
+  if (lastIdx < 0 || prevIdx < 0) return null;
+  const prev = tapHistory[prevIdx];
+  const last = tapHistory[lastIdx];
+  if (!prev || !last || prev.runnerId === last.runnerId) return null;
+  const tapGapSecs = Number(Math.abs(last.timestampSecs - prev.timestampSecs).toFixed(2));
+  if (tapGapSecs > maxTapGapSecs) return null;
+  if (
+    typeof last.recordedAtEpochMs === 'number' &&
+    nowEpochMs - last.recordedAtEpochMs > visibilityWindowMs
+  ) {
+    return null;
+  }
+  return { prev, last, prevIdx, lastIdx, tapGapSecs };
+}
+
+export function applySwapLastTwoSplits(current: PersistedTracksideStopwatchState): {
+  next: PersistedTracksideStopwatchState;
+  swapped: boolean;
+  pair?: {
+    firstRunnerId: string;
+    firstRunnerName: string;
+    secondRunnerId: string;
+    secondRunnerName: string;
+  };
+} {
+  const pairInfo = getRecentSwappableSplitPair(current.tapHistory, Date.now(), Infinity, Infinity);
+  if (!pairInfo) {
+    return { next: current, swapped: false };
+  }
+  const { prev, last, prevIdx, lastIdx } = pairInfo;
+  const marksA = [...(current.athleteLapTimestampsSecs[prev.runnerId] || [])];
+  const marksB = [...(current.athleteLapTimestampsSecs[last.runnerId] || [])];
+  if (marksA.length === 0 || marksB.length === 0) {
+    return { next: current, swapped: false };
+  }
+
+  const priorA = marksA.length >= 2 ? marksA[marksA.length - 2] : 0;
+  const priorB = marksB.length >= 2 ? marksB[marksB.length - 2] : 0;
+  const valA = marksA[marksA.length - 1];
+  const valB = marksB[marksB.length - 1];
+
+  if (valB <= priorA || valA <= priorB) {
+    return { next: current, swapped: false };
+  }
+
+  marksA[marksA.length - 1] = valB;
+  marksB[marksB.length - 1] = valA;
+
+  const nextHistory = [...current.tapHistory];
+  nextHistory[prevIdx] = {
+    ...prev,
+    runnerId: last.runnerId,
+    runnerName: last.runnerName,
+    timestampSecs: prev.timestampSecs,
+    previousLastTapEpochMs: last.previousLastTapEpochMs,
+  };
+  nextHistory[lastIdx] = {
+    ...last,
+    runnerId: prev.runnerId,
+    runnerName: prev.runnerName,
+    timestampSecs: last.timestampSecs,
+    previousLastTapEpochMs: prev.previousLastTapEpochMs,
+  };
+
+  let nextLastTapMap = current.runnerLastTapEpochMs;
+  if (current.runnerLastTapEpochMs) {
+    nextLastTapMap = { ...current.runnerLastTapEpochMs };
+    const epochA = nextLastTapMap[prev.runnerId];
+    const epochB = nextLastTapMap[last.runnerId];
+    if (typeof epochB === 'number') nextLastTapMap[prev.runnerId] = epochB;
+    if (typeof epochA === 'number') nextLastTapMap[last.runnerId] = epochA;
+  }
+
+  return {
+    next: {
+      ...current,
+      athleteLapTimestampsSecs: {
+        ...current.athleteLapTimestampsSecs,
+        [prev.runnerId]: marksA,
+        [last.runnerId]: marksB,
+      },
+      tapHistory: nextHistory,
+      ...(nextLastTapMap !== undefined ? { runnerLastTapEpochMs: nextLastTapMap } : {}),
+    },
+    swapped: true,
+    pair: {
+      firstRunnerId: prev.runnerId,
+      firstRunnerName: prev.runnerName,
+      secondRunnerId: last.runnerId,
+      secondRunnerName: last.runnerName,
+    },
+  };
+}
+
+export function applyStartNextRepForPod(
+  current: PersistedTracksideStopwatchState,
+  podKey: string,
+  runnerIds: string[] = [],
+  nowEpochMs: number = Date.now()
+): { next: PersistedTracksideStopwatchState; startTimestampSecs: number } {
+  const activeState = autoStartIfIdle(current, nowEpochMs);
+  const startTimestampSecs = Number(
+    Math.max(0, computeElapsedMs(activeState, nowEpochMs) / 1000).toFixed(2)
+  );
+  const nextStarts = { ...(activeState.repStartTimestampsSecs || {}) };
+  const keysToStamp = Array.from(new Set([podKey, ...runnerIds].filter(Boolean)));
+  for (const key of keysToStamp) {
+    const existing = nextStarts[key] || [];
+    if (existing[existing.length - 1] !== startTimestampSecs) {
+      nextStarts[key] = [...existing, startTimestampSecs];
+    }
+  }
+  return {
+    next: {
+      ...activeState,
+      repStartTimestampsSecs: nextStarts,
+    },
+    startTimestampSecs,
+  };
+}
+
+export function applyStartNextRepAll(
+  current: PersistedTracksideStopwatchState,
+  targets: string[] = [],
+  nowEpochMs: number = Date.now()
+): { next: PersistedTracksideStopwatchState; startTimestampSecs: number } {
+  const activeState = autoStartIfIdle(current, nowEpochMs);
+  const startTimestampSecs = Number(
+    Math.max(0, computeElapsedMs(activeState, nowEpochMs) / 1000).toFixed(2)
+  );
+  const nextStarts = { ...(activeState.repStartTimestampsSecs || {}) };
+  const keysToStamp = Array.from(
+    new Set([
+      '__ALL__',
+      ...Object.keys(activeState.podWaveOffsetsSecs || DEFAULT_POD_WAVE_OFFSETS),
+      ...Object.keys(activeState.athleteLapTimestampsSecs || {}),
+      ...targets,
+    ].filter(Boolean))
+  );
+  for (const key of keysToStamp) {
+    const existing = nextStarts[key] || [];
+    if (existing[existing.length - 1] !== startTimestampSecs) {
+      nextStarts[key] = [...existing, startTimestampSecs];
+    }
+  }
+  return {
+    next: {
+      ...activeState,
+      repStartTimestampsSecs: nextStarts,
+    },
+    startTimestampSecs,
+  };
+}
+
+export function resolveRunnerRepStartTimestamps(
+  state: Pick<PersistedTracksideStopwatchState, 'repStartTimestampsSecs'>,
+  runnerId: string,
+  podKey: string
+): number[] {
+  const map = state.repStartTimestampsSecs || {};
+  const merged = [
+    ...(map[runnerId] || []),
+    ...(map[podKey] || []),
+    ...(map.__ALL__ || []),
+  ].filter((n) => Number.isFinite(n) && n >= 0);
+  return Array.from(new Set(merged)).sort((a, b) => a - b);
+}
+
 export interface RunnerRestTimerState {
   status: 'RESTING' | 'GO_NOW' | 'IDLE';
   remainingRestSecs: number;
   overdueSecs: number;
 }
 
+export type IntervalSplitSource =
+  | 'GUN'
+  | 'EXPLICIT_REP_START'
+  | 'ESTIMATED_REST'
+  | 'CONTINUOUS';
+
 export interface RunnerSplitTelemetry {
   runnerId: string;
   runnerName: string;
   podKey: string;
+  hipOrLane?: string;
   effectiveOffsetSecs: number;
   netCumulativeSecs: number[];
   lapSplitsSecs: number[];
+  splitSources?: IntervalSplitSource[];
+  hasEstimatedSplits?: boolean;
+  isAwaitingNextRepStart?: boolean;
   lapCount: number;
   lastLapSecs: number | null;
   bestLapSecs: number | null;
@@ -1030,7 +1326,9 @@ export function computeRunnerSplitTelemetry(params: {
   runnerId: string;
   runnerName: string;
   podKey: string;
+  hipOrLane?: string;
   rawTimestampsSecs: number[];
+  repStartTimestampsSecs?: number[];
   waveMode?: TracksideWaveMode;
   waveOffsetSecs?: number;
   targetLapSecs: number | null;
@@ -1044,7 +1342,9 @@ export function computeRunnerSplitTelemetry(params: {
     runnerId,
     runnerName,
     podKey,
+    hipOrLane,
     rawTimestampsSecs,
+    repStartTimestampsSecs = [],
     waveMode = 'MASS',
     waveOffsetSecs = 0,
     targetLapSecs,
@@ -1063,19 +1363,76 @@ export function computeRunnerSplitTelemetry(params: {
   const netCumulativeSecs = rawTimestampsSecs.map((raw) =>
     Number(Math.max(0.01, raw - effectiveOffsetSecs).toFixed(2))
   );
-  const lapSplitsSecs = netCumulativeSecs.map((cum, idx) =>
-    idx === 0
-      ? cum
-      : Number(Math.max(0.01, cum - netCumulativeSecs[idx - 1]).toFixed(2))
-  );
+  const sortedRepStarts = [...repStartTimestampsSecs]
+    .filter((n) => typeof n === 'number' && Number.isFinite(n) && n >= 0)
+    .sort((a, b) => a - b);
 
+  const lapSplitsSecs: number[] = [];
+  const splitSources: IntervalSplitSource[] = [];
+
+  for (let idx = 0; idx < netCumulativeSecs.length; idx++) {
+    if (idx === 0) {
+      lapSplitsSecs.push(netCumulativeSecs[0]);
+      splitSources.push('GUN');
+      continue;
+    }
+    const prevRaw = rawTimestampsSecs[idx - 1];
+    const curRaw = rawTimestampsSecs[idx];
+    let explicitRepStart: number | undefined;
+    for (let j = sortedRepStarts.length - 1; j >= 0; j--) {
+      const candidate = sortedRepStarts[j];
+      if (candidate >= prevRaw && candidate < curRaw) {
+        explicitRepStart = candidate;
+        break;
+      }
+    }
+    if (explicitRepStart !== undefined) {
+      lapSplitsSecs.push(Number(Math.max(0.01, curRaw - explicitRepStart).toFixed(2)));
+      splitSources.push('EXPLICIT_REP_START');
+      continue;
+    }
+
+    const rawDelta = Number(
+      Math.max(0.01, netCumulativeSecs[idx] - netCumulativeSecs[idx - 1]).toFixed(2)
+    );
+    if (sessionType === 'WORKOUT' && restDurationSecs > 0) {
+      const refRepSecs =
+        targetLapSecs && targetLapSecs > 0
+          ? targetLapSecs
+          : lapSplitsSecs[lapSplitsSecs.length - 1] ?? rawDelta;
+      const candidateWork = Number((rawDelta - restDurationSecs).toFixed(2));
+      const minPlausibleWork = Math.max(2.0, refRepSecs * 0.45);
+      const looksInflatedByRest = rawDelta >= refRepSecs + restDurationSecs * 0.5;
+      if (candidateWork >= minPlausibleWork && looksInflatedByRest) {
+        lapSplitsSecs.push(candidateWork);
+        splitSources.push('ESTIMATED_REST');
+        continue;
+      }
+    }
+
+    lapSplitsSecs.push(rawDelta);
+    splitSources.push('CONTINUOUS');
+  }
+
+  const hasEstimatedSplits = splitSources.includes('ESTIMATED_REST');
+  const hasRestAdjustedSplits =
+    hasEstimatedSplits || splitSources.includes('EXPLICIT_REP_START');
   const lapCount = lapSplitsSecs.length;
   const lastLapSecs = lapCount > 0 ? lapSplitsSecs[lapCount - 1] : null;
   const bestLapSecs = lapCount > 0 ? Math.min(...lapSplitsSecs) : null;
-  const netTotalSecs = lapCount > 0 ? netCumulativeSecs[lapCount - 1] : null;
+  const totalWorkSecs =
+    lapCount > 0
+      ? Number(lapSplitsSecs.reduce((sum, s) => sum + s, 0).toFixed(2))
+      : null;
+  const netTotalSecs =
+    lapCount > 0
+      ? sessionType === 'WORKOUT' && hasRestAdjustedSplits
+        ? totalWorkSecs
+        : netCumulativeSecs[lapCount - 1]
+      : null;
   const avgLapSecs =
-    lapCount > 0 && netTotalSecs !== null
-      ? Number((netTotalSecs / lapCount).toFixed(2))
+    lapCount > 0 && totalWorkSecs !== null
+      ? Number((totalWorkSecs / lapCount).toFixed(2))
       : null;
 
   const lastDeltaVsTargetSecs =
@@ -1095,6 +1452,16 @@ export function computeRunnerSplitTelemetry(params: {
     targetRaceLaps >= 1 &&
     lapCount >= targetRaceLaps;
 
+  const lastFinishRaw = lapCount > 0 ? rawTimestampsSecs[lapCount - 1] : null;
+  const hasStartedNextRepAfterLastFinish =
+    lastFinishRaw !== null && sortedRepStarts.some((s) => s > lastFinishRaw);
+  const isAwaitingNextRepStart = Boolean(
+    sessionType === 'WORKOUT' &&
+      restDurationSecs > 0 &&
+      lapCount > 0 &&
+      !hasStartedNextRepAfterLastFinish
+  );
+
   let restState: RunnerRestTimerState = {
     status: 'IDLE',
     remainingRestSecs: 0,
@@ -1104,6 +1471,7 @@ export function computeRunnerSplitTelemetry(params: {
     sessionType === 'WORKOUT' &&
     restDurationSecs > 0 &&
     lapCount > 0 &&
+    !hasStartedNextRepAfterLastFinish &&
     typeof lastTapEpochMs === 'number'
   ) {
     const sinceTapSecs = Math.max(0, (nowEpochMs - lastTapEpochMs) / 1000);
@@ -1127,9 +1495,13 @@ export function computeRunnerSplitTelemetry(params: {
     runnerId,
     runnerName,
     podKey,
+    ...(hipOrLane ? { hipOrLane } : {}),
     effectiveOffsetSecs,
     netCumulativeSecs,
     lapSplitsSecs,
+    splitSources,
+    hasEstimatedSplits,
+    isAwaitingNextRepStart,
     lapCount,
     lastLapSecs,
     bestLapSecs,
@@ -1391,6 +1763,8 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
   }, []);
 
   const hasActiveRestCountdown = useMemo(() => {
+    const recentSwap = getRecentSwappableSplitPair(persisted.tapHistory, Date.now(), 4, 8000);
+    if (recentSwap) return true;
     if ((persisted.sessionType || 'WORKOUT') !== 'WORKOUT') return false;
     const restSecs = persisted.restDurationSecs ?? 60;
     if (restSecs <= 0) return false;
@@ -1399,7 +1773,7 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     if (values.length === 0) return false;
     const newestTap = Math.max(...values);
     return Date.now() - newestTap < (restSecs + 25) * 1000;
-  }, [persisted.sessionType, persisted.restDurationSecs, persisted.runnerLastTapEpochMs]);
+  }, [persisted.tapHistory, persisted.sessionType, persisted.restDurationSecs, persisted.runnerLastTapEpochMs]);
 
   useEffect(() => {
     if (!persisted.isRunning && !hasActiveRestCountdown) return;
@@ -1511,6 +1885,52 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     commitState(next);
     return undone;
   }, [commitState]);
+
+  const undoRunnerLastSplit = useCallback(
+    (runnerId: string): TracksideSplitTapEntry | null => {
+      const current = readPersistedTracksideStopwatch();
+      const { next, undone } = applyUndoRunnerLastSplit(current, runnerId);
+      if (!undone) return null;
+      commitState(next);
+      return undone;
+    },
+    [commitState]
+  );
+
+  const swapLastTwoSplits = useCallback(() => {
+    const current = readPersistedTracksideStopwatch();
+    const res = applySwapLastTwoSplits(current);
+    if (!res.swapped) return res;
+    commitState(res.next);
+    return res;
+  }, [commitState]);
+
+  const startNextRepForPod = useCallback(
+    (podKey: string, runnerIds: string[] = []): number => {
+      const current = readPersistedTracksideStopwatch();
+      const now = Date.now();
+      const { next, startTimestampSecs } = applyStartNextRepForPod(
+        current,
+        podKey,
+        runnerIds,
+        now
+      );
+      commitState(next, now);
+      return startTimestampSecs;
+    },
+    [commitState]
+  );
+
+  const startNextRepAll = useCallback(
+    (targets: string[] = []): number => {
+      const current = readPersistedTracksideStopwatch();
+      const now = Date.now();
+      const { next, startTimestampSecs } = applyStartNextRepAll(current, targets, now);
+      commitState(next, now);
+      return startTimestampSecs;
+    },
+    [commitState]
+  );
 
   const setExtraPodAthletes = useCallback(
     (
@@ -1850,6 +2270,7 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     dismissedAutoRegSignatures: persisted.dismissedAutoRegSignatures || [],
     relayQuartets: persisted.relayQuartets || DEFAULT_RELAY_QUARTETS,
     relayBatonTimestampsSecs: persisted.relayBatonTimestampsSecs || {},
+    repStartTimestampsSecs: persisted.repStartTimestampsSecs || {},
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -1857,6 +2278,10 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     assignChuteToRunner,
     clearChuteQueue,
     undoLastSplit,
+    undoRunnerLastSplit,
+    swapLastTwoSplits,
+    startNextRepForPod,
+    startNextRepAll,
     setExtraPodAthletes,
     setSessionType,
     setViewMode,

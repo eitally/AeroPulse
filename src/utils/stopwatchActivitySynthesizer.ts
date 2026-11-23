@@ -1,6 +1,8 @@
 import type {
   ActivityInterval,
   ActivityStreamSet,
+  DelegatedHandSplitCaptureSummary,
+  DelegatedTimingStation,
   NcaaTrackFacilityType,
   TrackFootwearClass,
   TrackLaneNumber,
@@ -362,6 +364,11 @@ export function synthesizeTracksideRaceActivity(params: {
   startDateLocalIso?: string;
   startDateUtcMs?: number;
   lane?: TrackLaneNumber;
+  timingStation?: DelegatedTimingStation;
+  capturedByName?: string;
+  isDelegated?: boolean;
+  splitsEstimated?: boolean;
+  handSplitCaptures?: DelegatedHandSplitCaptureSummary[];
 }): UnifiedActivity {
   const {
     runnerId,
@@ -375,11 +382,16 @@ export function synthesizeTracksideRaceActivity(params: {
     lapSplitsSecs,
     netTotalSecs,
     placeFinish,
-    includeWarmupCooldown = true,
+    includeWarmupCooldown = false,
     dateIso,
     startDateLocalIso,
     startDateUtcMs,
     lane = 1,
+    timingStation,
+    capturedByName,
+    isDelegated = false,
+    splitsEstimated,
+    handSplitCaptures,
   } = params;
 
   const inferredDistMeters =
@@ -389,6 +401,7 @@ export function synthesizeTracksideRaceActivity(params: {
 
   const trackType = eventLabel === 'XC 5K' ? 'XC_COURSE' : 'OUTDOOR_400M';
   const meetName = sessionTitle?.trim() || `Trackside Timed Meet (${runnerName})`;
+  const resolvedEventLabel = eventLabel === 'Open Race' ? `${inferredDistMeters}m` : eventLabel;
   const resolvedStartIso =
     startDateLocalIso || (dateIso ? `${dateIso.slice(0, 10)}T10:30:00` : formatLocalWallClockIso(Date.now()));
   const resolvedDateIso = dateIso || resolvedStartIso.slice(0, 10);
@@ -400,11 +413,11 @@ export function synthesizeTracksideRaceActivity(params: {
       date: resolvedDateIso,
       startDateLocalIso: resolvedStartIso,
       meetName,
-      eventLabel: eventLabel === 'Open Race' ? `${inferredDistMeters}m` : eventLabel,
+      eventLabel: resolvedEventLabel,
       eventDistanceMeters: inferredDistMeters,
       fatTimeSecs: netTotalSecs,
       displayFatTime: formatFatTime(netTotalSecs),
-      platform: 'Official FAT',
+      platform: 'MeetReady Stopwatch',
       trackType,
       placeFinish: placeFinish || undefined,
       lapSplitDistanceMeters,
@@ -415,8 +428,24 @@ export function synthesizeTracksideRaceActivity(params: {
     maxHr
   );
 
+  const displayTime = synthesized.officialRaceData?.displayFatTime || formatFatTime(netTotalSecs);
+
   return {
     ...synthesized,
+    name: `${resolvedEventLabel} Hand-Timed (${displayTime}) — ${meetName}`,
+    deviceName: `MeetReady Trackside Stopwatch${timingStation ? ` (${timingStation})` : ''}`,
+    sourceBadges: isDelegated ? ['Delegated Hand-Timed'] : ['Hand-Timed'],
+    officialRaceData: {
+      ...synthesized.officialRaceData!,
+      platform: 'MeetReady Stopwatch',
+      timingMethod: 'HAND',
+      splitContext: 'HAND_CONVERTED',
+      handTimedTotalSecs: Number(netTotalSecs.toFixed(2)),
+      ...(capturedByName ? { capturedByName } : {}),
+      ...(timingStation ? { timingStation } : {}),
+      ...(splitsEstimated !== undefined ? { splitsEstimated } : {}),
+      ...(handSplitCaptures ? { handSplitCaptures } : {}),
+    },
     ...(typeof startDateUtcMs === 'number' && Number.isFinite(startDateUtcMs) && startDateUtcMs > 0
       ? { startDateUtcMs }
       : {}),

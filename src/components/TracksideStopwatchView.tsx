@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AthleteProfile,
+  CoachEventGroup,
   ConnectedAthleteRecord,
   NcaaTrackFacilityType,
   TeamSummaryWithRole,
@@ -15,7 +16,9 @@ import {
   computeRelayQuartetTelemetry,
   computeRunnerSplitTelemetry,
   DEFAULT_POD_WAVE_OFFSETS,
+  getRecentSwappableSplitPair,
   RACE_STOPWATCH_PRESETS,
+  resolveRunnerRepStartTimestamps,
   WORKOUT_STOPWATCH_PRESETS,
   useTracksideStopwatch,
   type RunnerSplitTelemetry,
@@ -49,6 +52,13 @@ import {
   buildRelaySavedEntries,
 } from './stopwatch/TracksideRelayBatonPanel';
 import { TracksideWalkOnAndSaveBar } from './stopwatch/TracksideWalkOnAndSaveBar';
+import {
+  TracksideEnvPhysicsPanel,
+  TracksideMultiSetStrip,
+  TracksidePinHeatStrip,
+  TracksideToolsPanel,
+  TracksideWaveOffsetsPanel,
+} from './stopwatch/TracksideEnvAndWavePanels';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { STORAGE_KEYS } from '../utils/storageKeys';
 import {
@@ -58,6 +68,7 @@ import {
 } from '../utils/stopwatchTeamSync';
 import {
   ArrowCounterClockwise,
+  ArrowsLeftRight,
   BellRinging,
   Check,
   CheckCircle2,
@@ -69,6 +80,7 @@ import {
   Pause,
   Play,
   Plus,
+  Send,
   ShareNetwork,
   SpeakerHigh,
   SpeakerSlash,
@@ -89,6 +101,19 @@ export interface SavedStopwatchEntry {
   activity: UnifiedActivity;
 }
 
+export interface TracksideStopwatchLaunchPreset {
+  meetTitle?: string;
+  meetDate?: string;
+  eventCode?: string;
+  heatLabel?: string;
+  sessionType?: 'WORKOUT' | 'RACE';
+  runners?: Array<{
+    membershipId?: string;
+    athleteName: string;
+    hipOrLane?: string;
+  }>;
+}
+
 export interface TracksideStopwatchViewProps {
   selfName: string;
   selfProfile: AthleteProfile;
@@ -102,6 +127,87 @@ export interface TracksideStopwatchViewProps {
   onOpenActivitiesTab: () => void;
   postSaveActionLabel?: string;
   onOpenRosterModal: () => void;
+  onOpenDelegateTiming?: () => void;
+  pendingTimingCount?: number;
+  launchPreset?: TracksideStopwatchLaunchPreset | null;
+}
+
+const EVENT_GROUP_FILTER_LABELS: Array<{ value: CoachEventGroup; label: string }> = [
+  { value: 'SPRINTS', label: 'Sprints' },
+  { value: 'HURDLES', label: 'Hurdles' },
+  { value: 'MID_DISTANCE', label: 'Mid-Distance' },
+  { value: 'DISTANCE', label: 'Distance' },
+  { value: 'JUMPS', label: 'Jumps' },
+  { value: 'THROWS', label: 'Throws' },
+  { value: 'MULTI', label: 'Multis' },
+];
+
+export type StopwatchSaveResultExtended = StopwatchSaveResult & {
+  deadLetteredBatches?: number;
+  syncWarning?: string;
+};
+
+export function resolveStopwatchSaveFeedback(
+  saveResult: StopwatchSaveResultExtended,
+  sessionType: 'WORKOUT' | 'RACE',
+  endedEarlyStimulusRatio: number | null
+): { tone: 'prime' | 'caution'; message: string } {
+  const isDeadLettered =
+    (saveResult.syncStatus as string) === 'DEAD_LETTERED' ||
+    (saveResult.deadLetteredBatches ?? 0) > 0;
+
+  if (saveResult.savedCount === 0) {
+    return {
+      tone: 'caution',
+      message:
+        saveResult.skippedReadOnlyNames.length > 0
+          ? `Skipped read-only teammate logs (${saveResult.skippedReadOnlyNames.join(', ')}).`
+          : 'No writable athlete logs selected.',
+    };
+  }
+
+  const parts: string[] = [];
+  let tone: 'prime' | 'caution' = 'prime';
+
+  if (isDeadLettered) {
+    tone = 'caution';
+    parts.push(
+      saveResult.syncWarning ||
+        `Team cloud sync failed (${saveResult.deadLetteredBatches ?? 1} batch quarantined as DEAD_LETTERED). Local marks preserved; review roster permissions before retrying.`
+    );
+  } else if (saveResult.syncStatus === 'PENDING_OFFLINE') {
+    tone = 'caution';
+    parts.push(
+      `Saved ${saveResult.savedCount} ${sessionType === 'RACE' ? 'Race' : 'Interval'} ${
+        saveResult.savedCount === 1 ? 'Log' : 'Logs'
+      } locally — Pending Sync (${saveResult.pendingTeamCount} team ${
+        saveResult.pendingTeamCount === 1 ? 'entry' : 'entries'
+      } queued until back online).`
+    );
+  } else {
+    parts.push(
+      sessionType === 'RACE'
+        ? `Saved ${saveResult.savedCount} Hand-Timed Race ${saveResult.savedCount === 1 ? 'Mark' : 'Marks'} into MeetReady Activities.`
+        : endedEarlyStimulusRatio !== null
+          ? `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (${Math.round(endedEarlyStimulusRatio * 100)}% quality stimulus preserved) into MeetReady Activities.`
+          : `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into MeetReady Activities.`
+    );
+  }
+
+  if (saveResult.walkOnCount > 0) {
+    parts.push(
+      `${saveResult.walkOnCount} walk-on ${saveResult.walkOnCount === 1 ? 'entry' : 'entries'} saved to local Walk-On Archive (kept separate from your personal log).`
+    );
+  }
+  if (saveResult.skippedReadOnlyNames.length > 0) {
+    tone = 'caution';
+    parts.push(`Skipped read-only: ${saveResult.skippedReadOnlyNames.join(', ')}.`);
+  }
+
+  return {
+    tone,
+    message: parts.join(' '),
+  };
 }
 
 interface WakeLockSentinelLike {
@@ -124,6 +230,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   onOpenActivitiesTab,
   postSaveActionLabel = 'View in Activities',
   onOpenRosterModal,
+  onOpenDelegateTiming,
+  pendingTimingCount = 0,
+  launchPreset = null,
 }) => {
   const {
     stopwatchRunning,
@@ -162,6 +271,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     dismissedAutoRegSignatures,
     relayQuartets,
     relayBatonTimestampsSecs,
+    repStartTimestampsSecs,
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -169,6 +279,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     assignChuteToRunner,
     clearChuteQueue,
     undoLastSplit,
+    undoRunnerLastSplit,
+    swapLastTwoSplits,
+    startNextRepForPod,
+    startNextRepAll,
     setExtraPodAthletes,
     setSessionType,
     setViewMode,
@@ -235,14 +349,24 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
   const [includeSelfRunner, setIncludeSelfRunner] = useState<boolean>(!isCoachingTeam);
   const [selectedPodFilter, setSelectedPodFilter] = useState<string>('ALL');
+  const [selectedEventGroupFilter, setSelectedEventGroupFilter] = useState<'ALL' | CoachEventGroup>('ALL');
+  const [showInjuredAthletes, setShowInjuredAthletes] = useState<boolean>(false);
   const [runnerSearchQuery, setRunnerSearchQuery] = useState<string>('');
   const [pinnedRunnerIds, setPinnedRunnerIds] = useState<string[]>([]);
+  const [hipOrLaneByRunnerId, setHipOrLaneByRunnerId] = useState<Record<string, string>>({});
   const [onlyOnTrack, setOnlyOnTrack] = useState<boolean>(false);
   const [showPinStrip, setShowPinStrip] = useState<boolean>(false);
   const [walkOnName, setWalkOnName] = useState<string>('');
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
   const [copiedCsv, setCopiedCsv] = useState<boolean>(false);
-  const [includeWarmupCooldown, setIncludeWarmupCooldown] = useState<boolean>(true);
+  const [includeWarmupCooldown, setIncludeWarmupCooldown] = useState<boolean>(false);
+  const [isMobileViewport, setIsMobileViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
+  const hudHoldPauseTimerRef = useRef<number | null>(null);
+  const hudHoldPauseSucceededRef = useRef<boolean>(false);
+  const [isHoldingHudPause, setIsHoldingHudPause] = useState<boolean>(false);
+  const lastAppliedPresetRef = useRef<string>('');
   const [saveFeedbackMsg, setSaveFeedbackMsg] = useState<string | null>(null);
   const [saveFeedbackTone, setSaveFeedbackTone] = useState<'prime' | 'caution'>('prime');
   const [isSavingToThresh, setIsSavingToThresh] = useState<boolean>(false);
@@ -264,6 +388,21 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   useEffect(() => {
     setIncludeSelfRunner(!isCoachingTeam);
   }, [isCoachingTeam]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onResize = () => {
+      setIsMobileViewport(window.innerWidth < 768);
+    };
+    onResize();
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      if (hudHoldPauseTimerRef.current !== null) {
+        window.clearTimeout(hudHoldPauseTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -518,6 +657,101 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     [roster]
   );
 
+  useEffect(() => {
+    if (!launchPreset) {
+      lastAppliedPresetRef.current = '';
+      return;
+    }
+    const serialized = JSON.stringify(launchPreset);
+    if (!serialized || serialized === lastAppliedPresetRef.current) return;
+    lastAppliedPresetRef.current = serialized;
+
+    const codeNorm = (launchPreset.eventCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const matchedRacePreset = launchPreset.eventCode
+      ? RACE_STOPWATCH_PRESETS.find((preset) => {
+          const pNorm = preset.label.toUpperCase().replace(/[^A-Z0-9]/g, '');
+          return pNorm === codeNorm || codeNorm.includes(pNorm) || pNorm.includes(codeNorm);
+        })
+      : undefined;
+
+    if (launchPreset.sessionType === 'RACE' || matchedRacePreset) {
+      setSessionType('RACE');
+      if (matchedRacePreset) {
+        setRaceEventLabel(matchedRacePreset.label);
+      }
+    }
+
+    const titleParts = [
+      launchPreset.meetTitle,
+      launchPreset.eventCode,
+      launchPreset.heatLabel,
+    ].filter((part): part is string => Boolean(part && part.trim()));
+    if (titleParts.length > 0) {
+      setSessionTitle(titleParts.join(' · '));
+    }
+
+    if (launchPreset.runners && launchPreset.runners.length > 0) {
+      const targetIds: string[] = [];
+      const hipMap: Record<string, string> = {};
+      const addedRunners: VdotPodRosterInput[] = [];
+
+      launchPreset.runners.forEach((runner, idx) => {
+        const cleanName = runner.athleteName.trim();
+        if (!cleanName) return;
+        const matchedRoster = connectedRoster.find(
+          (c) =>
+            (runner.membershipId &&
+              (c.id === `team-mem-${runner.membershipId}` || c.id === runner.membershipId)) ||
+            c.name.trim().toLowerCase() === cleanName.toLowerCase()
+        );
+        const resolvedId = matchedRoster
+          ? matchedRoster.id
+          : runner.membershipId
+            ? `team-mem-${runner.membershipId}`
+            : `walkon-preset-${idx}-${cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+
+        targetIds.push(resolvedId);
+        if (runner.hipOrLane && runner.hipOrLane.trim()) {
+          hipMap[resolvedId] = runner.hipOrLane.trim();
+        }
+        if (!matchedRoster) {
+          addedRunners.push({
+            id: resolvedId,
+            name: cleanName,
+            vdotOverride: 50,
+            thresholdPaceSecsPerKm: deriveThresholdPaceFromVdot(50),
+          });
+        }
+      });
+
+      if (addedRunners.length > 0) {
+        setExtraPodAthletes((prev) => {
+          const seen = new Set(prev.map((item) => item.id));
+          const merged = [...prev];
+          for (const entry of addedRunners) {
+            if (!seen.has(entry.id)) {
+              merged.push(entry);
+              seen.add(entry.id);
+            }
+          }
+          return merged;
+        });
+      }
+      if (targetIds.length > 0) {
+        setHipOrLaneByRunnerId(hipMap);
+        setPinnedRunnerIds(targetIds);
+        setOnlyOnTrack(true);
+      }
+    }
+  }, [
+    launchPreset,
+    connectedRoster,
+    setSessionType,
+    setRaceEventLabel,
+    setSessionTitle,
+    setExtraPodAthletes,
+  ]);
+
   const rosterInputs = useMemo<VdotPodRosterInput[]>(() => {
     const showSelf =
       includeSelfRunner ||
@@ -671,6 +905,45 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     return keys.length > 0 ? keys : ['Pod A'];
   }, [rosterInputs, runnerPodLookup]);
 
+  const rosterMetaById = useMemo(() => {
+    const outInjuryMemberIds = new Set<string>();
+    for (const c of activeTeam?.injuryCases || []) {
+      if (c.rtpStage === 'OUT') {
+        outInjuryMemberIds.add(c.membershipId);
+      }
+    }
+    const membershipById = new Map(
+      (activeTeam?.memberships || []).map((m) => [m.membershipId, m])
+    );
+    const meta = new Map<string, { eventGroup?: CoachEventGroup; isInjured: boolean }>();
+    for (const r of connectedRoster) {
+      const memId = r.id.startsWith('team-mem-')
+        ? r.id.slice('team-mem-'.length)
+        : r.id;
+      const membership = membershipById.get(memId);
+      const isInjured =
+        r.teamMemberStatus === 'INJURED' ||
+        membership?.status === 'INJURED' ||
+        outInjuryMemberIds.has(memId);
+      const eventGroup = r.eventGroup || membership?.eventGroup;
+      meta.set(r.id, { eventGroup, isInjured });
+    }
+    return meta;
+  }, [connectedRoster, activeTeam?.injuryCases, activeTeam?.memberships]);
+
+  const injuredAthleteCount = useMemo(() => {
+    let count = 0;
+    for (const r of rosterInputs) {
+      if (rosterMetaById.get(r.id)?.isInjured) count += 1;
+    }
+    return count;
+  }, [rosterInputs, rosterMetaById]);
+
+  const hasAssignedEventGroups = useMemo(
+    () => rosterInputs.some((r) => Boolean(rosterMetaById.get(r.id)?.eventGroup)),
+    [rosterInputs, rosterMetaById]
+  );
+
   const targetRaceLaps = sessionType === 'RACE' ? activeRacePreset.targetLaps : null;
 
   const runnerTelemetries = useMemo<RunnerSplitTelemetry[]>(() => {
@@ -680,11 +953,18 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         podWaveOffsetsSecs[podInfo.podKey] ??
         DEFAULT_POD_WAVE_OFFSETS[podInfo.podKey] ??
         0;
+      const repStarts = resolveRunnerRepStartTimestamps(
+        { repStartTimestampsSecs },
+        r.id,
+        podInfo.podKey
+      );
       return computeRunnerSplitTelemetry({
         runnerId: r.id,
         runnerName: r.name,
         podKey: podInfo.podKey,
+        hipOrLane: hipOrLaneByRunnerId[r.id],
         rawTimestampsSecs: athleteLapTimestampsSecs[r.id] || [],
+        repStartTimestampsSecs: repStarts,
         waveMode,
         waveOffsetSecs: waveOffset,
         targetLapSecs:
@@ -701,6 +981,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     rosterInputs,
     runnerPodLookup,
     podWaveOffsetsSecs,
+    repStartTimestampsSecs,
+    hipOrLaneByRunnerId,
     athleteLapTimestampsSecs,
     waveMode,
     targetRaceLaps,
@@ -710,9 +992,43 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     nowEpochMs,
   ]);
 
+  const recentSwapPair = useMemo(
+    () => getRecentSwappableSplitPair(tapHistory, nowEpochMs, 4, 8000),
+    [tapHistory, nowEpochMs]
+  );
+
+  const podsAwaitingNextRep = useMemo(() => {
+    if (sessionType !== 'WORKOUT' || restDurationSecs <= 0) return [];
+    const byPod = new Map<string, string[]>();
+    for (const t of runnerTelemetries) {
+      if (t.isAwaitingNextRepStart) {
+        const list = byPod.get(t.podKey) || [];
+        list.push(t.runnerId);
+        byPod.set(t.podKey, list);
+      }
+    }
+    return Array.from(byPod.entries()).map(([podKey, runnerIds]) => ({
+      podKey,
+      runnerIds,
+      waitingCount: runnerIds.length,
+    }));
+  }, [runnerTelemetries, sessionType, restDurationSecs]);
+
   const filteredTelemetries = useMemo(() => {
     const cleanQuery = runnerSearchQuery.trim().toLowerCase();
     return runnerTelemetries.filter((t) => {
+      const meta = rosterMetaById.get(t.runnerId);
+      const hasRecordedMarks = t.lapSplitsSecs.length > 0;
+      if (!hasRecordedMarks && !showInjuredAthletes && meta?.isInjured) {
+        return false;
+      }
+      if (
+        !hasRecordedMarks &&
+        selectedEventGroupFilter !== 'ALL' &&
+        meta?.eventGroup !== selectedEventGroupFilter
+      ) {
+        return false;
+      }
       if (selectedPodFilter !== 'ALL' && t.podKey !== selectedPodFilter) return false;
       if (onlyOnTrack && pinnedRunnerIds.length > 0 && !pinnedRunnerIds.includes(t.runnerId)) {
         return false;
@@ -720,7 +1036,16 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       if (cleanQuery && !t.runnerName.toLowerCase().includes(cleanQuery)) return false;
       return true;
     });
-  }, [runnerTelemetries, selectedPodFilter, runnerSearchQuery, onlyOnTrack, pinnedRunnerIds]);
+  }, [
+    runnerTelemetries,
+    rosterMetaById,
+    showInjuredAthletes,
+    selectedEventGroupFilter,
+    selectedPodFilter,
+    runnerSearchQuery,
+    onlyOnTrack,
+    pinnedRunnerIds,
+  ]);
 
   const maxColumnsInMatrix = useMemo(
     () => Math.max(1, ...filteredTelemetries.map((t) => t.lapSplitsSecs.length)),
@@ -861,6 +1186,26 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     setLiveAnnouncement(stopwatchRunning ? 'Stopwatch paused' : 'Stopwatch started');
   }, [toggleStartPause, playFeedback, stopwatchRunning]);
 
+  const handleStartHudHoldPause = useCallback(() => {
+    if (!stopwatchRunning || !isMobileViewport || isHoldingHudPause) return;
+    hudHoldPauseSucceededRef.current = false;
+    setIsHoldingHudPause(true);
+    hudHoldPauseTimerRef.current = window.setTimeout(() => {
+      hudHoldPauseTimerRef.current = null;
+      hudHoldPauseSucceededRef.current = true;
+      setIsHoldingHudPause(false);
+      handleGunToggle();
+    }, 450);
+  }, [stopwatchRunning, isMobileViewport, isHoldingHudPause, handleGunToggle]);
+
+  const cancelHudHoldPause = useCallback(() => {
+    if (hudHoldPauseTimerRef.current !== null) {
+      window.clearTimeout(hudHoldPauseTimerRef.current);
+      hudHoldPauseTimerRef.current = null;
+    }
+    setIsHoldingHudPause(false);
+  }, []);
+
   const handleUndo = useCallback(() => {
     const undone = undoLastSplit();
     if (undone) {
@@ -870,6 +1215,29 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
       );
     }
   }, [undoLastSplit, playFeedback]);
+
+  const handleUndoRunnerLastSplit = useCallback(
+    (runnerId: string) => {
+      const undone = undoRunnerLastSplit(runnerId);
+      if (undone) {
+        playFeedback('CHUTE');
+        setLiveAnnouncement(
+          `Undid ${undone.runnerName} mark at ${formatTrackMark(undone.timestampSecs, 2)}`
+        );
+      }
+    },
+    [undoRunnerLastSplit, playFeedback]
+  );
+
+  const handleSwapLastTwo = useCallback(() => {
+    const result = swapLastTwoSplits();
+    if (result.swapped && result.pair) {
+      playFeedback('SPLIT');
+      setLiveAnnouncement(
+        `Swapped last two finishes: ${result.pair.firstRunnerName} and ${result.pair.secondRunnerName}`
+      );
+    }
+  }, [swapLastTwoSplits, playFeedback]);
 
   // Trackside Physical Keyboard Accelerators (WCAG 2.1.4 user-toggleable): Space = Gun, 1–9 = Lane 1–9, C = Chute, Z = Undo
   useEffect(() => {
@@ -1143,47 +1511,20 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
       setPendingOutboxCount(countPendingStopwatchOutboxEntries(activeTeamId || undefined));
 
-      if (saveResult.savedCount === 0) {
-        setSaveFeedbackTone('caution');
-        setSaveFeedbackMsg(
-          saveResult.skippedReadOnlyNames.length > 0
-            ? `Skipped read-only teammate logs (${saveResult.skippedReadOnlyNames.join(', ')}).`
-            : 'No writable athlete logs selected.'
-        );
-        return;
-      }
-
-      const parts: string[] = [];
-      if (saveResult.syncStatus === 'PENDING_OFFLINE') {
-        setSaveFeedbackTone('caution');
-        parts.push(
-          `Saved ${saveResult.savedCount} ${sessionType === 'RACE' ? 'Race' : 'Interval'} ${
-            saveResult.savedCount === 1 ? 'Log' : 'Logs'
-          } locally — Pending Sync (${saveResult.pendingTeamCount} team ${
-            saveResult.pendingTeamCount === 1 ? 'entry' : 'entries'
-          } queued until back online).`
-        );
-      } else {
-        setSaveFeedbackTone('prime');
-        parts.push(
-          sessionType === 'RACE'
-            ? `Saved ${saveResult.savedCount} Official Race ${saveResult.savedCount === 1 ? 'Mark' : 'Marks'} into MeetReady Activities.`
-            : endedEarlyStimulusRatio !== null
-              ? `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (${Math.round(endedEarlyStimulusRatio * 100)}% quality stimulus preserved) into MeetReady Activities.`
-              : `Saved ${saveResult.savedCount} Interval Workout ${saveResult.savedCount === 1 ? 'Log' : 'Logs'} (rTSS computed) into MeetReady Activities.`
-        );
-      }
-
-      if (saveResult.walkOnCount > 0) {
-        parts.push(
-          `${saveResult.walkOnCount} walk-on ${saveResult.walkOnCount === 1 ? 'entry' : 'entries'} saved to local Walk-On Archive (kept separate from your personal log).`
-        );
-      }
-      if (saveResult.skippedReadOnlyNames.length > 0) {
-        parts.push(`Skipped read-only: ${saveResult.skippedReadOnlyNames.join(', ')}.`);
-      }
-
-      setSaveFeedbackMsg(parts.join(' '));
+      const feedback = resolveStopwatchSaveFeedback(
+        saveResult as StopwatchSaveResultExtended,
+        sessionType,
+        endedEarlyStimulusRatio
+      );
+      setSaveFeedbackTone(feedback.tone);
+      setSaveFeedbackMsg(feedback.message);
+    } catch (err) {
+      setSaveFeedbackTone('caution');
+      setSaveFeedbackMsg(
+        err instanceof Error
+          ? err.message
+          : 'Failed to sync stopwatch splits. Your local marks remain safely saved on device.'
+      );
     } finally {
       setIsSavingToThresh(false);
     }
@@ -1320,220 +1661,12 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     </select>
   );
 
-  const sessionTitleInputNode = (
-    <label className="flex flex-col gap-1 text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
-      <span>{sessionType === 'RACE' ? 'Meet / Heat Name' : 'Session Name'}</span>
-      <input
-        type="text"
-        value={sessionTitle}
-        onChange={(e) => setSessionTitle(e.target.value)}
-        placeholder={
-          sessionType === 'RACE' ? 'e.g. League Finals Heat 1' : 'e.g. Tuesday Track Intervals'
-        }
-        aria-label="Meet or Session Name"
-        className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-3 text-xs font-sans text-ap-ink dark:text-ap-chalk placeholder:text-ap-muted dark:placeholder:text-ap-muted-dark focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt"
-      />
-    </label>
+  const multiSetPlanStripNode = (
+    <TracksideMultiSetStrip
+      sessionType={sessionType}
+      customWorkoutSpec={customWorkoutSpec}
+    />
   );
-
-  const toggleKeyboardShortcuts = () => {
-    setKeyboardShortcutsEnabled((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(STORAGE_KEYS.STOPWATCH_SHORTCUTS, next ? '1' : '0');
-      } catch {
-        // ignore storage errors
-      }
-      return next;
-    });
-  };
-
-  const hardwareTogglesNode = (
-    <div className="flex flex-col gap-1 text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
-      <span>Trackside Hardware &amp; Keys</span>
-      <div className="grid grid-cols-3 gap-2">
-        <button
-          type="button"
-          aria-pressed={wakeLockEnabled}
-          onClick={() => setWakeLockEnabled(!wakeLockEnabled)}
-          className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
-            wakeLockEnabled
-              ? wakeLockState === 'ACTIVE'
-                ? 'ap-status-prime'
-                : 'ap-status-info'
-              : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
-          }`}
-          title="Keep mobile display awake while timing live track sessions"
-        >
-          <Sun className="w-3.5 h-3.5 shrink-0" weight="bold" />
-          <span className="truncate">
-            {wakeLockEnabled ? (wakeLockState === 'ACTIVE' ? 'Awake On' : 'Wake Ready') : 'Wake Off'}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          aria-pressed={soundEnabled}
-          onClick={() => setSoundEnabled(!soundEnabled)}
-          className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1.5 px-2.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
-            soundEnabled ? 'ap-status-info' : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
-          }`}
-          title="Play crisp Web Audio confirmation beep + vibration on splits"
-        >
-          {soundEnabled ? (
-            <SpeakerHigh className="w-3.5 h-3.5 shrink-0" weight="bold" />
-          ) : (
-            <SpeakerSlash className="w-3.5 h-3.5 shrink-0" weight="bold" />
-          )}
-          <span>{soundEnabled ? 'Beep On' : 'Muted'}</span>
-        </button>
-
-        <button
-          type="button"
-          data-testid="stopwatch-shortcuts-toggle"
-          aria-pressed={keyboardShortcutsEnabled}
-          onClick={toggleKeyboardShortcuts}
-          className={`min-h-[44px] sm:min-h-[38px] inline-flex items-center justify-center gap-1 px-2 rounded-xl text-xs font-semibold border transition-colors cursor-pointer ${
-            keyboardShortcutsEnabled
-              ? 'ap-status-info'
-              : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
-          }`}
-          title="Enable or disable single-key shortcuts (Space, 1-9, C, Z)"
-        >
-          <span>{keyboardShortcutsEnabled ? 'Keys On' : 'Keys Off'}</span>
-        </button>
-      </div>
-    </div>
-  );
-
-  const waveModeButtonsNode = (
-    <div
-      role="group"
-      aria-label="Start Wave Mode"
-      className="inline-flex flex-wrap items-center gap-1 p-1 rounded-xl liquid-capsule-track"
-    >
-      <button
-        type="button"
-        aria-pressed={waveMode === 'MASS'}
-        onClick={() => setWaveMode('MASS')}
-        className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
-          waveMode === 'MASS'
-            ? 'liquid-capsule-active'
-            : 'text-ap-muted dark:text-ap-muted-dark'
-        }`}
-      >
-        Mass Gun
-      </button>
-      <button
-        type="button"
-        data-testid="stopwatch-wave-toggle"
-        aria-pressed={waveMode === 'POD_STAGGER'}
-        onClick={() => {
-          const nextMode = waveMode === 'POD_STAGGER' ? 'MASS' : 'POD_STAGGER';
-          setWaveMode(nextMode);
-          if (nextMode === 'POD_STAGGER') {
-            for (const [podKey, defOffset] of Object.entries(DEFAULT_POD_WAVE_OFFSETS)) {
-              setPodWaveOffset(podKey, defOffset);
-            }
-          }
-        }}
-        className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
-          waveMode === 'POD_STAGGER'
-            ? 'liquid-capsule-active ap-status-caution font-bold'
-            : 'text-ap-muted dark:text-ap-muted-dark'
-        }`}
-      >
-        <Waves className="w-3.5 h-3.5" weight="bold" />
-        <span>Pod +10s</span>
-      </button>
-      <button
-        type="button"
-        data-testid="stopwatch-wave-pursuit"
-        aria-pressed={waveMode === 'PURSUIT'}
-        onClick={() => {
-          setWaveMode('PURSUIT');
-          for (const pod of vdotPods) {
-            const podKey = pod.podName.split(' — ')[0] || pod.podName;
-            if (typeof pod.pursuitStaggerOffsetSecs === 'number') {
-              setPodWaveOffset(podKey, pod.pursuitStaggerOffsetSecs);
-            }
-          }
-        }}
-        className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg text-xs font-semibold cursor-pointer ${
-          waveMode === 'PURSUIT'
-            ? 'liquid-capsule-active ap-status-prime font-bold'
-            : 'text-ap-muted dark:text-ap-muted-dark'
-        }`}
-        title="Offset faster pods so all pods finish each rep together"
-      >
-        Pursuit (Finish Together)
-      </button>
-    </div>
-  );
-
-  const resetButtonNode = !confirmReset ? (
-    <button
-      type="button"
-      data-testid="stopwatch-reset-btn"
-      onClick={() => {
-        if (hasActiveSession) {
-          setConfirmReset(true);
-        } else {
-          resetStopwatch();
-        }
-      }}
-      disabled={!hasActiveSession}
-      className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-card-inset text-xs font-semibold text-rose-700 dark:text-rose-300 disabled:opacity-45 cursor-pointer disabled:cursor-not-allowed"
-    >
-      <Trash className="w-4 h-4" weight="bold" />
-      <span>Reset</span>
-    </button>
-  ) : (
-    <button
-      type="button"
-      data-testid="stopwatch-reset-confirm-btn"
-      onClick={() => {
-        resetStopwatch();
-        setConfirmReset(false);
-        setSaveFeedbackMsg(null);
-      }}
-      className="min-h-[44px] inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl ap-status-strained font-bold text-xs cursor-pointer"
-    >
-      <span>Confirm Clear Splits</span>
-    </button>
-  );
-
-  const multiSetPlanStripNode =
-    sessionType === 'WORKOUT' &&
-    customWorkoutSpec?.sets &&
-    customWorkoutSpec.sets.length > 1 ? (
-      <div
-        data-testid="stopwatch-multiset-plan-strip"
-        className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-ap-frame/15 dark:border-white/10 text-2xs font-mono"
-      >
-        <span className="font-bold uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark mr-1">
-          Multi-Set Plan:
-        </span>
-        {customWorkoutSpec.warmupDistanceMeters && (
-          <span className="px-2 py-0.5 rounded bg-ap-inset dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
-            WU {(customWorkoutSpec.warmupDistanceMeters / 1609.344).toFixed(1)}mi
-          </span>
-        )}
-        {customWorkoutSpec.sets.map((s, idx) => (
-          <span
-            key={`sw-set-${idx}`}
-            className="px-2 py-0.5 rounded bg-ap-inset dark:bg-ap-turf text-ap-clay dark:text-ap-volt font-semibold"
-          >
-            {s.repCount}×{s.repDistanceMeters}m
-          </span>
-        ))}
-        {customWorkoutSpec.cooldownDistanceMeters && (
-          <span className="px-2 py-0.5 rounded bg-ap-inset dark:bg-ap-turf text-ap-ink dark:text-ap-chalk">
-            CD {(customWorkoutSpec.cooldownDistanceMeters / 1609.344).toFixed(1)}mi
-          </span>
-        )}
-      </div>
-    ) : null;
 
   const heatAbortBannerNode = activeEnvAdjustment.heatAbortTriggered ? (
     <div
@@ -1548,242 +1681,29 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     </div>
   ) : null;
 
-  const envPhysicsPanelNode = showEnvPhysicsPanel ? (
-    <div
-      data-testid="stopwatch-env-physics-panel"
-      className="rounded-xl ap-card-inset p-3.5 space-y-3"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-2xs font-mono font-bold uppercase tracking-wider text-ap-ink dark:text-ap-chalk">
-            World Athletics Oval Lane, Environment &amp; Spike Physics
-          </div>
-          <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark mt-0.5">
-            {activeEnvAdjustment.advisoryNote}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="px-2 py-0.5 rounded-lg ap-status-prime font-mono text-2xs font-bold tabular-nums">
-            {laneGeometry.lapLengthMeters.toFixed(2)}m/lap · +
-            {((activeEnvAdjustment.combinedSplitMultiplier - 1) * 100).toFixed(1)}%
-          </span>
-          {activeEnvAdjustment.altitudeRestMultiplier > 1 && (
-            <span className="px-2 py-0.5 rounded-lg ap-status-info font-mono text-2xs font-bold tabular-nums">
-              Rest {activeEnvAdjustment.adjustedRestDurationSecs}s (
-              {activeEnvAdjustment.altitudeRestMultiplier.toFixed(2)}x)
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
-        <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-            Oval Lane
-          </span>
-          <select
-            data-testid="stopwatch-lane-select"
-            value={trackLane}
-            onChange={(e) => setTrackLane(Number(e.target.value) as TrackLaneNumber)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk"
-          >
-            {([1, 2, 3, 4, 5, 6, 7, 8] as TrackLaneNumber[]).map((ln) => {
-              const g = computeWorldAthleticsOvalLaneGeometry(ln);
-              return (
-                <option key={ln} value={ln}>
-                  L{ln} ({g.lapLengthMeters.toFixed(2)}m)
-                </option>
-              );
-            })}
-          </select>
-        </label>
-
-        <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-            Track Facility
-          </span>
-          <select
-            data-testid="stopwatch-facility-select"
-            value={trackFacility}
-            onChange={(e) => setTrackFacility(e.target.value as NcaaTrackFacilityType)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk"
-          >
-            <option value="OUTDOOR_400M">400m Outdoor</option>
-            <option value="INDOOR_BANKED_200M">200m Banked</option>
-            <option value="INDOOR_FLAT_200M">200m Flat (+Turn)</option>
-          </select>
-        </label>
-
-        <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-            Air Temp (°F)
-          </span>
-          <input
-            data-testid="stopwatch-temp-input"
-            type="number"
-            min={15}
-            max={120}
-            placeholder="72"
-            value={airTempF ?? ''}
-            onChange={(e) =>
-              setAirTempF(e.target.value === '' ? null : Number(e.target.value))
-            }
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
-          />
-        </label>
-
-        <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-            Dew Point (°F)
-          </span>
-          <input
-            data-testid="stopwatch-dew-input"
-            type="number"
-            min={10}
-            max={90}
-            placeholder="55"
-            value={dewPointF ?? ''}
-            onChange={(e) =>
-              setDewPointF(e.target.value === '' ? null : Number(e.target.value))
-            }
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
-          />
-        </label>
-
-        <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-            Wind (m/s)
-          </span>
-          <input
-            data-testid="stopwatch-wind-input"
-            type="number"
-            min={0}
-            max={25}
-            step={0.5}
-            value={windSpeedMps}
-            onChange={(e) => setWindSpeedMps(Number(e.target.value) || 0)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
-          />
-        </label>
-
-        <label className="space-y-1">
-          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-            Altitude (m)
-          </span>
-          <input
-            data-testid="stopwatch-altitude-input"
-            type="number"
-            min={0}
-            max={4000}
-            step={50}
-            value={altitudeMeters}
-            onChange={(e) => setAltitudeMeters(Number(e.target.value) || 0)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono tabular-nums text-ap-ink dark:text-ap-chalk"
-          />
-        </label>
-
-        <label className="space-y-1 col-span-2 sm:col-span-2 lg:col-span-1">
-          <span className="block text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
-            Footwear
-          </span>
-          <select
-            data-testid="stopwatch-footwear-select"
-            value={footwearClass}
-            onChange={(e) => setFootwearClass(e.target.value as TrackFootwearClass)}
-            className="w-full min-h-[44px] sm:min-h-[38px] rounded-xl ap-card px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk"
-          >
-            <option value="DAILY_TRAINER">Daily Trainer (1.0x)</option>
-            <option value="LIGHTWEIGHT_FLAT_SUPER_TRAINER">Super Trainer / Flat (1.1x)</option>
-            <option value="CARBON_ROAD_RACER">Carbon Road Racer (1.2x)</option>
-            <option value="TRADITIONAL_TRACK_SPIKE">Track Spike (1.35x)</option>
-            <option value="CARBON_SUPER_SPIKE">Carbon Super-Spike (1.52x)</option>
-          </select>
-        </label>
-      </div>
-
-      {trackLane > 1 && (
-        <div className="flex flex-wrap items-center gap-2 pt-1">
-          <button
-            type="button"
-            data-testid="stopwatch-stagger-toggle"
-            aria-pressed={isStaggeredStart}
-            onClick={() => setIsStaggeredStart(!isStaggeredStart)}
-            className={`min-h-[44px] sm:min-h-[34px] px-3 rounded-lg text-2xs font-mono font-semibold cursor-pointer ${
-              isStaggeredStart
-                ? 'ap-status-info font-bold'
-                : 'ap-card text-ap-muted dark:text-ap-muted-dark'
-            }`}
-          >
-            {isStaggeredStart
-              ? 'Staggered Starts Active (Exact 400m Mark Eq)'
-              : 'Non-Staggered Lane Distance (Scaling Lap Split)'}
-          </button>
-        </div>
-      )}
-    </div>
-  ) : null;
-
-  const waveOffsetsPanelNode =
-    waveMode === 'POD_STAGGER' || waveMode === 'PURSUIT' ? (
-      <div className="rounded-xl ap-card-inset p-3 space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
-          <span className="font-bold uppercase tracking-wider">
-            {waveMode === 'PURSUIT'
-              ? 'Pursuit Stagger Offsets — Finish Together'
-              : 'Staggered Pod Start Offsets'}
-          </span>
-          <span>Adjust (-5s / +5s) or tap Go Now</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          {activePodKeys.map((podKey) => {
-            const offset = podWaveOffsetsSecs[podKey] ?? DEFAULT_POD_WAVE_OFFSETS[podKey] ?? 0;
-            return (
-              <div
-                key={podKey}
-                className="rounded-xl bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark px-3 py-2 flex items-center justify-between gap-2"
-              >
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-ap-ink dark:text-ap-chalk truncate">
-                    {podKey}
-                  </div>
-                  <div className="text-2xs font-mono text-ap-clay dark:text-ap-volt">
-                    +{offset.toFixed(1)}s offset
-                  </div>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setPodWaveOffset(podKey, Math.max(0, offset - 5))}
-                    aria-label={`Decrease ${podKey} offset by 5 seconds`}
-                    className="min-h-[44px] sm:min-h-[32px] min-w-[36px] px-2 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
-                  >
-                    -5s
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPodWaveOffset(podKey, offset + 5)}
-                    aria-label={`Increase ${podKey} offset by 5 seconds`}
-                    className="min-h-[44px] sm:min-h-[32px] min-w-[36px] px-2 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
-                  >
-                    +5s
-                  </button>
-                  {stopwatchRunning && (
-                    <button
-                      type="button"
-                      onClick={() => triggerPodWaveNow(podKey)}
-                      className="min-h-[44px] sm:min-h-[32px] px-2 rounded-lg ap-status-info font-mono text-2xs font-bold cursor-pointer"
-                      title={`Stamp ${podKey} start at current clock`}
-                    >
-                      Go Now
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    ) : null;
+  const envPhysicsPanelNode = (
+    <TracksideEnvPhysicsPanel
+      showEnvPhysicsPanel={showEnvPhysicsPanel}
+      trackLane={trackLane}
+      setTrackLane={setTrackLane}
+      trackFacility={trackFacility}
+      setTrackFacility={setTrackFacility}
+      airTempF={airTempF}
+      setAirTempF={setAirTempF}
+      dewPointF={dewPointF}
+      setDewPointF={setDewPointF}
+      windSpeedMps={windSpeedMps}
+      setWindSpeedMps={setWindSpeedMps}
+      altitudeMeters={altitudeMeters}
+      setAltitudeMeters={setAltitudeMeters}
+      footwearClass={footwearClass}
+      setFootwearClass={setFootwearClass}
+      isStaggeredStart={isStaggeredStart}
+      setIsStaggeredStart={setIsStaggeredStart}
+      laneGeometry={laneGeometry}
+      activeEnvAdjustment={activeEnvAdjustment}
+    />
+  );
 
   const chuteQueueStripNode =
     chuteQueueSecs.length > 0 ? (
@@ -1883,6 +1803,22 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {onOpenDelegateTiming && (
+            <button
+              type="button"
+              data-testid="stopwatch-delegate-timing-btn"
+              onClick={onOpenDelegateTiming}
+              className="min-h-[44px] sm:min-h-[36px] inline-flex items-center gap-1.5 px-2.5 rounded-lg ap-card-inset hover:border-ap-frame/40 text-2xs font-mono font-bold text-ap-ink dark:text-ap-chalk border border-ap-frame/15 dark:border-white/15 cursor-pointer shrink-0"
+            >
+              <ShareNetwork className="w-3.5 h-3.5 shrink-0" weight="bold" />
+              <span>Delegate</span>
+              {pendingTimingCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded bg-ap-clay text-[#F6F3EC] dark:bg-ap-volt dark:text-[#121413] font-mono text-2xs leading-none">
+                  {pendingTimingCount}
+                </span>
+              )}
+            </button>
+          )}
           <button
             type="button"
             data-testid="stopwatch-header-beep-toggle"
@@ -1919,17 +1855,41 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             <button
               type="button"
               data-testid="stopwatch-gun-btn"
-              onClick={handleGunToggle}
+              onPointerDown={() => {
+                if (stopwatchRunning && isMobileViewport) {
+                  handleStartHudHoldPause();
+                }
+              }}
+              onPointerUp={cancelHudHoldPause}
+              onPointerLeave={cancelHudHoldPause}
+              onPointerCancel={cancelHudHoldPause}
+              onClick={(e) => {
+                if (stopwatchRunning && isMobileViewport && e.detail > 0) {
+                  e.preventDefault();
+                  return;
+                }
+                if (hudHoldPauseSucceededRef.current) {
+                  hudHoldPauseSucceededRef.current = false;
+                  return;
+                }
+                handleGunToggle();
+              }}
               className={
                 stopwatchRunning
-                  ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3 sm:px-4 rounded-xl ap-status-caution font-bold text-xs cursor-pointer'
+                  ? 'min-h-[44px] inline-flex items-center gap-1.5 px-3 sm:px-4 rounded-xl ap-status-caution font-bold text-xs cursor-pointer select-none'
                   : 'ap-btn-primary min-h-[44px] px-3 sm:px-4 text-xs cursor-pointer'
               }
             >
               {stopwatchRunning ? (
                 <>
                   <Pause className="w-4 h-4" weight="fill" />
-                  <span>Pause</span>
+                  <span>
+                    {isMobileViewport
+                      ? isHoldingHudPause
+                        ? 'Hold to Pause...'
+                        : 'Hold to Pause'
+                      : 'Pause'}
+                  </span>
                 </>
               ) : (
                 <>
@@ -2017,6 +1977,43 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
               );
             })}
           </select>
+
+          {(hasAssignedEventGroups || isCoachingTeam) && (
+            <select
+              data-testid="stopwatch-event-group-filter"
+              aria-label="Filter runners by event group"
+              value={selectedEventGroupFilter}
+              onChange={(e) =>
+                setSelectedEventGroupFilter(e.target.value as 'ALL' | CoachEventGroup)
+              }
+              className="min-h-[44px] sm:min-h-[38px] rounded-xl ap-card-inset px-2.5 text-xs font-mono font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
+            >
+              <option value="ALL">All Groups</option>
+              {EVENT_GROUP_FILTER_LABELS.map((grp) => (
+                <option key={grp.value} value={grp.value}>
+                  {grp.label}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {injuredAthleteCount > 0 && (
+            <button
+              type="button"
+              data-testid="stopwatch-show-injured-toggle"
+              aria-pressed={showInjuredAthletes}
+              onClick={() => setShowInjuredAthletes((prev) => !prev)}
+              className={`min-h-[44px] sm:min-h-[38px] px-2.5 rounded-xl text-2xs font-mono font-bold border cursor-pointer ${
+                showInjuredAthletes
+                  ? 'ap-status-caution'
+                  : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark border-transparent'
+              }`}
+            >
+              {showInjuredAthletes
+                ? `Hiding Injured OFF (${injuredAthleteCount})`
+                : `Show Injured (${injuredAthleteCount})`}
+            </button>
+          )}
 
           <input
             type="search"
@@ -2145,17 +2142,31 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         </div>
 
         {showToolsDrawer && (
-          <div className="pt-2.5 space-y-3 border-t border-ap-frame/15 dark:border-white/10">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {sessionTitleInputNode}
-              {hardwareTogglesNode}
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              {waveModeButtonsNode}
-              {resetButtonNode}
-            </div>
-            {waveOffsetsPanelNode}
-          </div>
+          <TracksideToolsPanel
+            sessionType={sessionType}
+            sessionTitle={sessionTitle}
+            setSessionTitle={setSessionTitle}
+            wakeLockEnabled={wakeLockEnabled}
+            setWakeLockEnabled={setWakeLockEnabled}
+            wakeLockState={wakeLockState}
+            soundEnabled={soundEnabled}
+            setSoundEnabled={setSoundEnabled}
+            keyboardShortcutsEnabled={keyboardShortcutsEnabled}
+            setKeyboardShortcutsEnabled={setKeyboardShortcutsEnabled}
+            waveMode={waveMode}
+            setWaveMode={setWaveMode}
+            vdotPods={vdotPods}
+            activePodKeys={activePodKeys}
+            podWaveOffsetsSecs={podWaveOffsetsSecs}
+            stopwatchRunning={stopwatchRunning}
+            setPodWaveOffset={setPodWaveOffset}
+            triggerPodWaveNow={triggerPodWaveNow}
+            hasActiveSession={hasActiveSession}
+            confirmReset={confirmReset}
+            setConfirmReset={setConfirmReset}
+            onResetStopwatch={resetStopwatch}
+            onClearFeedback={() => setSaveFeedbackMsg(null)}
+          />
         )}
 
         {heatAbortBannerNode}
@@ -2172,10 +2183,11 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 type="button"
                 data-testid="stopwatch-rep-dec"
                 aria-label="Decrease workout rep count"
+                disabled={stopwatchRunning}
                 onClick={() =>
                   setCustomRepOverride(Math.max(1, activeWorkoutPreset.repCount - 1))
                 }
-                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
+                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
               >
                 -
               </button>
@@ -2189,13 +2201,21 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 type="button"
                 data-testid="stopwatch-rep-inc"
                 aria-label="Increase workout rep count"
+                disabled={stopwatchRunning}
                 onClick={() =>
                   setCustomRepOverride(Math.min(30, activeWorkoutPreset.repCount + 1))
                 }
-                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer"
+                className="min-h-[44px] min-w-[40px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset font-mono text-sm font-bold text-ap-ink dark:text-white cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed"
               >
                 +
               </button>
+              {stopwatchRunning && (
+                <Lock
+                  className="w-3.5 h-3.5 text-ap-muted dark:text-ap-muted-dark ml-0.5"
+                  weight="bold"
+                  aria-hidden="true"
+                />
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Quick rep distance">
@@ -2207,8 +2227,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                     type="button"
                     data-testid={`stopwatch-dist-${dist}`}
                     aria-pressed={isSelected}
+                    disabled={stopwatchRunning}
                     onClick={() => setCustomDistOverride(dist)}
-                    className={`min-h-[44px] sm:min-h-[34px] px-2 sm:px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer ${
+                    className={`min-h-[44px] sm:min-h-[34px] px-2 sm:px-2.5 rounded-lg font-mono text-2xs font-bold transition-colors cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed ${
                       isSelected
                         ? 'liquid-capsule-active text-ap-ink dark:text-white'
                         : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
@@ -2219,60 +2240,92 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
                 );
               })}
             </div>
+
+            {stopwatchRunning && restDurationSecs > 0 && podsAwaitingNextRep.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto sm:ml-auto">
+                <button
+                  type="button"
+                  data-testid="stopwatch-start-next-rep-btn"
+                  onClick={() => {
+                    const allTargets = Array.from(
+                      new Set(
+                        podsAwaitingNextRep.flatMap((p) => [p.podKey, ...p.runnerIds])
+                      )
+                    );
+                    const startSecs = startNextRepAll(allTargets);
+                    playFeedback('GUN');
+                    setLiveAnnouncement(
+                      `Started next rep for resting runners at ${formatTrackMark(startSecs, 2)}`
+                    );
+                  }}
+                  className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1 px-3 rounded-lg ap-btn-primary text-2xs font-bold cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5" weight="fill" />
+                  <span>Start Next Rep</span>
+                </button>
+                {podsAwaitingNextRep.length > 1 &&
+                  podsAwaitingNextRep.map((pod) => (
+                    <button
+                      key={`next-rep-${pod.podKey}`}
+                      type="button"
+                      data-testid={`stopwatch-start-next-rep-${pod.podKey}`}
+                      onClick={() => {
+                        const startSecs = startNextRepForPod(pod.podKey, pod.runnerIds);
+                        playFeedback('GUN');
+                        setLiveAnnouncement(
+                          `Started next rep for ${pod.podKey} at ${formatTrackMark(startSecs, 2)}`
+                        );
+                      }}
+                      className="min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg ap-status-info font-mono text-2xs font-bold cursor-pointer"
+                    >
+                      Go {pod.podKey} ({pod.waitingCount})
+                    </button>
+                  ))}
+              </div>
+            )}
           </div>
         )}
         {multiSetPlanStripNode}
         {envPhysicsPanelNode}
       </section>
 
-      {showPinStrip && (
-        <div
-          data-testid="stopwatch-pin-strip"
-          className="rounded-xl ap-card px-3 py-2 flex flex-wrap items-center gap-1.5 text-2xs"
-        >
-          <span className="font-mono font-bold uppercase text-ap-muted dark:text-ap-muted-dark mr-1">
-            Heat / On Track:
-          </span>
-          {runnerTelemetries.map((t) => {
-            const pinned = pinnedRunnerIds.includes(t.runnerId);
-            return (
-              <button
-                key={t.runnerId}
-                type="button"
-                aria-pressed={pinned}
-                onClick={() =>
-                  setPinnedRunnerIds((prev) =>
-                    prev.includes(t.runnerId)
-                      ? prev.filter((id) => id !== t.runnerId)
-                      : [...prev, t.runnerId]
-                  )
-                }
-                className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-semibold cursor-pointer ${
-                  pinned
-                    ? 'liquid-capsule-active text-ap-ink dark:text-white'
-                    : 'ap-card-inset text-ap-ink dark:text-ap-chalk'
-                }`}
-              >
-                {t.runnerName}
-              </button>
-            );
-          })}
-          {pinnedRunnerIds.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setPinnedRunnerIds([]);
-                setOnlyOnTrack(false);
-              }}
-              className="min-h-[44px] sm:min-h-[34px] px-2 rounded-lg font-mono text-ap-muted dark:text-ap-muted-dark underline cursor-pointer"
-            >
-              Clear Heat
-            </button>
-          )}
-        </div>
-      )}
+      <TracksidePinHeatStrip
+        showPinStrip={showPinStrip}
+        runnerTelemetries={runnerTelemetries}
+        pinnedRunnerIds={pinnedRunnerIds}
+        onTogglePinnedRunner={(runnerId) => {
+          const exists = pinnedRunnerIds.includes(runnerId);
+          const next = exists
+            ? pinnedRunnerIds.filter((id) => id !== runnerId)
+            : [...pinnedRunnerIds, runnerId];
+          setPinnedRunnerIds(next);
+          setOnlyOnTrack(next.length > 0);
+        }}
+        onClearPinnedRunners={() => {
+          setPinnedRunnerIds([]);
+          setOnlyOnTrack(false);
+        }}
+      />
 
       {autoRegBannerNode}
+
+      {recentSwapPair && !isRelayMode && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl ap-status-info px-3 py-2 text-xs">
+          <span className="font-mono font-semibold truncate">
+            Close finish detected ({recentSwapPair.tapGapSecs.toFixed(2)}s gap):{' '}
+            {recentSwapPair.prev.runnerName} → {recentSwapPair.last.runnerName}
+          </span>
+          <button
+            type="button"
+            data-testid="stopwatch-swap-last-two-btn"
+            onClick={handleSwapLastTwo}
+            className="min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3 rounded-lg bg-[#121413] text-[#D8FF2A] font-mono text-2xs font-bold cursor-pointer shrink-0"
+          >
+            <ArrowsLeftRight className="w-3.5 h-3.5" weight="bold" />
+            <span>Swap Last 2</span>
+          </button>
+        </div>
+      )}
 
       {/* 2. Unified Clean Runner Tap Area (Relay Baton Panel OR 4-Datum Cards / Matrix) */}
       {isRelayMode ? (
@@ -2306,6 +2359,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
           targetRaceLaps={targetRaceLaps}
           maxColumnsInMatrix={maxColumnsInMatrix}
           onRunnerAction={handleRunnerAction}
+          onUndoRunnerLastSplit={handleUndoRunnerLastSplit}
         />
       )}
 

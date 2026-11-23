@@ -254,9 +254,12 @@ describe('Trackside Multi-Athlete Stopwatch v2 Engine & Synthesizers', () => {
       placeFinish: '1ST',
       dateIso: '2026-11-14',
     });
-    expect(raceAct.officialRaceData?.platform).toBe('Official FAT');
+    expect(raceAct.officialRaceData?.platform).toBe('MeetReady Stopwatch');
+    expect(raceAct.officialRaceData?.timingMethod).toBe('HAND');
+    expect(raceAct.officialRaceData?.includeWarmupCooldown).toBe(false);
     expect(raceAct.officialRaceData?.vdotScore).toBeGreaterThan(60);
-    expect(raceAct.sourceBadges).toEqual(['Official FAT']);
+    expect(raceAct.sourceBadges).toEqual(['Hand-Timed']);
+    expect(raceAct.sourceBadges).not.toContain('Official FAT');
     expect(raceAct.stravaId).toBeUndefined();
   });
 });

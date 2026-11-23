@@ -1,8 +1,22 @@
 import React from 'react';
-import { BellRinging, Lock } from '../icons/PhosphorIcons';
+import { ArrowCounterClockwise, BellRinging, Lock } from '../icons/PhosphorIcons';
 import type { RunnerSplitTelemetry } from '../../hooks/useTracksideStopwatch';
 import { formatTrackMark } from '../../physiology/scholasticEngine';
 import { formatFatTime } from '../../utils/officialRaceSynthesizer';
+
+export function getRunnerInitials(name: string): string {
+  const parts = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+  }
+  if (parts.length === 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return 'RN';
+}
 
 export interface TracksideRunnerCardsAndMatrixProps {
   viewMode: 'CARDS' | 'MATRIX';
@@ -14,6 +28,8 @@ export interface TracksideRunnerCardsAndMatrixProps {
   targetRaceLaps: number | null;
   maxColumnsInMatrix: number;
   onRunnerAction: (telemetry: RunnerSplitTelemetry) => void;
+  onUndoRunnerLastSplit?: (runnerId: string) => void;
+  hidePodMeta?: boolean;
 }
 
 export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatrixProps> = ({
@@ -26,56 +42,70 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
   targetRaceLaps,
   maxColumnsInMatrix,
   onRunnerAction: handleRunnerAction,
+  onUndoRunnerLastSplit,
+  hidePodMeta = false,
 }) => {
   return (
-      <section className="space-y-3">
-        {viewMode === 'CARDS' ? (
-          <div
-            className={`grid ${filteredTelemetries.length >= 4 ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2.5'} md:grid-cols-2 xl:grid-cols-3`}
-          >
-            {filteredTelemetries.map((telemetry, idx) => {
-              const podMeta = runnerPodLookup.get(telemetry.runnerId);
-              const nextChuteTs = chuteQueueSecs[0];
-              const isJustTapped = lastTappedRunnerId === telemetry.runnerId;
+    <section className="space-y-3">
+      {viewMode === 'CARDS' ? (
+        <div
+          className={`grid ${
+            filteredTelemetries.length >= 6 ? 'grid-cols-2 gap-2' : 'grid-cols-1 gap-2.5'
+          } md:grid-cols-2 xl:grid-cols-3`}
+        >
+          {filteredTelemetries.map((telemetry, idx) => {
+            const podMeta = runnerPodLookup.get(telemetry.runnerId);
+            const nextChuteTs = chuteQueueSecs[0];
+            const isJustTapped = lastTappedRunnerId === telemetry.runnerId;
+            const badgeText = telemetry.hipOrLane || getRunnerInitials(telemetry.runnerName);
+            const canUndoRunner = Boolean(onUndoRunnerLastSplit && telemetry.lapCount > 0);
+            const visibleInlineLaps =
+              telemetry.lapSplitsSecs.length > 6
+                ? telemetry.lapSplitsSecs.slice(-6)
+                : telemetry.lapSplitsSecs;
+            const lapOffset = Math.max(0, telemetry.lapSplitsSecs.length - visibleInlineLaps.length);
 
-              return (
+            return (
+              <div
+                key={telemetry.runnerId}
+                className={`rounded-xl border transition-all flex items-stretch ${
+                  isJustTapped ? 'ring-2 ring-ap-clay dark:ring-ap-volt' : ''
+                } ${
+                  telemetry.isFinishedLocked
+                    ? 'bg-[#F0F7F3] dark:bg-[#13231A] border-[#1E4D36]/45'
+                    : telemetry.isBellLap
+                      ? 'ap-card border-[#D97706]/60 ring-1 ring-[#D97706]/50'
+                      : 'ap-card hover:border-[#121413]/45 dark:hover:border-ap-volt/60'
+                }`}
+              >
                 <button
-                  key={telemetry.runnerId}
                   type="button"
                   data-testid={`runner-card-${idx}`}
                   onClick={() => handleRunnerAction(telemetry)}
-                  className={`min-h-[92px] rounded-xl p-3 sm:p-3.5 gap-2 sm:gap-2.5 w-full text-left transition-all cursor-pointer flex flex-col justify-between border ${
-                    isJustTapped ? 'ring-2 ring-ap-clay dark:ring-ap-volt' : ''
-                  } ${
-                    telemetry.isFinishedLocked
-                      ? 'bg-[#F0F7F3] dark:bg-[#13231A] border-[#1E4D36]/45'
-                      : telemetry.isBellLap
-                        ? 'ap-card border-[#D97706]/60 ring-1 ring-[#D97706]/50'
-                        : 'ap-card hover:border-[#121413]/45 dark:hover:border-ap-volt/60 active:scale-[0.98]'
-                  }`}
+                  className="min-h-[92px] flex-1 min-w-0 p-3 sm:p-3.5 gap-2 sm:gap-2.5 text-left cursor-pointer flex flex-col justify-between active:scale-[0.99] transition-transform"
                 >
                   {/* Row 1: Athlete Name + Right Status Pill (+ Dedicated Mobile Target Sub-Row) */}
                   <div className="space-y-1 w-full">
                     <div className="flex items-start justify-between gap-1.5 w-full">
                       <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                         <span className="ap-lane-badge shrink-0">
-                          <span className="ap-lane-badge-inner">
-                            {idx < 9 ? `L${idx + 1}` : `#${idx + 1}`}
-                          </span>
+                          <span className="ap-lane-badge-inner">{badgeText}</span>
                         </span>
                         <div className="min-w-0">
                           <div className="text-xs sm:text-sm font-bold text-ap-ink dark:text-ap-chalk truncate">
                             {telemetry.runnerName}
                           </div>
-                          <div className="hidden sm:block text-2xs font-mono text-ap-muted dark:text-ap-muted-dark truncate">
-                            {telemetry.podKey}
-                            {telemetry.effectiveOffsetSecs > 0
-                              ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
-                              : ''}
-                            {sessionType === 'WORKOUT' && podMeta
-                              ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
-                              : ''}
-                          </div>
+                          {!hidePodMeta && (
+                            <div className="hidden sm:block text-2xs font-mono text-ap-muted dark:text-ap-muted-dark truncate">
+                              {telemetry.podKey}
+                              {telemetry.effectiveOffsetSecs > 0
+                                ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
+                                : ''}
+                              {sessionType === 'WORKOUT' && podMeta
+                                ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
+                                : ''}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -124,110 +154,175 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                       </div>
                     </div>
 
-                    <div className="sm:hidden text-2xs font-mono text-ap-muted dark:text-ap-muted-dark leading-tight">
-                      {telemetry.podKey}
-                      {telemetry.effectiveOffsetSecs > 0
-                        ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
-                        : ''}
-                      {sessionType === 'WORKOUT' && podMeta
-                        ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
-                        : ''}
-                    </div>
+                    {!hidePodMeta && (
+                      <div className="sm:hidden text-2xs font-mono text-ap-muted dark:text-ap-muted-dark leading-tight">
+                        {telemetry.podKey}
+                        {telemetry.effectiveOffsetSecs > 0
+                          ? ` +${telemetry.effectiveOffsetSecs.toFixed(0)}s`
+                          : ''}
+                        {sessionType === 'WORKOUT' && podMeta
+                          ? ` · ${formatTrackMark(podMeta.targetLapSecs, 1)}`
+                          : ''}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Row 2: Last Split (+ Target Delta) or Tap Split Cue */}
-                  <div className="flex items-center justify-between gap-2 w-full pt-2 border-t border-[#121413]/10 dark:border-white/10">
-                    {telemetry.lastLapSecs !== null ? (
-                      <>
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-ap-ink dark:text-ap-chalk">
-                            {formatTrackMark(telemetry.lastLapSecs, 2)}
-                          </span>
-                          {telemetry.lastDeltaVsTargetSecs !== null && (
-                            <span
-                              className={`font-mono text-2xs font-bold tabular-nums px-1.5 py-0.5 rounded ${
-                                telemetry.lastDeltaVsTargetSecs <= 0.5
-                                  ? 'ap-status-prime'
-                                  : 'ap-status-caution'
-                              }`}
-                            >
-                              {telemetry.lastDeltaVsTargetSecs >= 0 ? '+' : ''}
-                              {telemetry.lastDeltaVsTargetSecs.toFixed(1)}s
+                  {/* Row 2: Last Split (+ Target Delta) + Inline L1 · L2 · L3 Strip or Tap Split Cue */}
+                  <div className="space-y-1.5 w-full pt-2 border-t border-[#121413]/10 dark:border-white/10">
+                    <div className="flex items-center justify-between gap-2 w-full">
+                      {telemetry.lastLapSecs !== null ? (
+                        <>
+                          <div className="flex items-baseline gap-1.5 min-w-0">
+                            <span className="font-mono text-lg sm:text-xl font-extrabold tabular-nums text-ap-ink dark:text-ap-chalk">
+                              {formatTrackMark(telemetry.lastLapSecs, 2)}
                             </span>
-                          )}
-                        </div>
-                        <div className="text-right font-mono text-xs tabular-nums text-ap-muted dark:text-ap-muted-dark shrink-0">
-                          <span className="font-bold text-ap-ink dark:text-ap-chalk">
-                            {telemetry.netTotalSecs !== null
-                              ? formatFatTime(telemetry.netTotalSecs)
-                              : '--:--.--'}
+                            {telemetry.lastDeltaVsTargetSecs !== null && (
+                              <span
+                                className={`font-mono text-2xs font-bold tabular-nums px-1.5 py-0.5 rounded ${
+                                  telemetry.lastDeltaVsTargetSecs <= 0.5
+                                    ? 'ap-status-prime'
+                                    : 'ap-status-caution'
+                                }`}
+                              >
+                                {telemetry.lastDeltaVsTargetSecs >= 0 ? '+' : ''}
+                                {telemetry.lastDeltaVsTargetSecs.toFixed(1)}s
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-right font-mono text-xs tabular-nums text-ap-muted dark:text-ap-muted-dark shrink-0">
+                            <span className="font-bold text-ap-ink dark:text-ap-chalk">
+                              {telemetry.netTotalSecs !== null
+                                ? formatFatTime(telemetry.netTotalSecs)
+                                : '--:--.--'}
+                            </span>
+                          </div>
+                        </>
+                      ) : (
+                        <span className="w-full py-1.5 px-3 rounded-lg border border-[#121413]/22 dark:border-white/20 bg-[#FAF8F4] dark:bg-[#151816] text-center font-sans text-xs font-bold text-ap-ink dark:text-ap-chalk">
+                          Tap Split
+                        </span>
+                      )}
+                    </div>
+
+                    {visibleInlineLaps.length > 0 && (
+                      <div
+                        data-testid={`runner-inline-laps-${idx}`}
+                        className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 font-mono text-2xs tabular-nums text-ap-muted dark:text-ap-muted-dark"
+                      >
+                        {lapOffset > 0 && <span>…</span>}
+                        {visibleInlineLaps.map((splitVal, sIdx) => {
+                          const lapNum = lapOffset + sIdx + 1;
+                          return (
+                            <span key={`${telemetry.runnerId}-ilap-${lapNum}`}>
+                              {sIdx > 0 ? '· ' : ''}
+                              <span className="font-semibold text-ap-ink dark:text-ap-chalk">
+                                L{lapNum}
+                              </span>{' '}
+                              {formatTrackMark(splitVal, 2)}
+                            </span>
+                          );
+                        })}
+                        {telemetry.hasEstimatedSplits && (
+                          <span className="px-1 py-0.5 rounded ap-status-caution font-bold">
+                            ~est rest
                           </span>
-                        </div>
-                      </>
-                    ) : (
-                      <span className="w-full py-1.5 px-3 rounded-lg border border-[#121413]/22 dark:border-white/20 bg-[#FAF8F4] dark:bg-[#151816] text-center font-sans text-xs font-bold text-ap-ink dark:text-ap-chalk">
-                        Tap Split
-                      </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </button>
-              );
-            })}
-          </div>
-        ) : (
-          /* Matrix Clipboard Table View */
-          <div className="ap-card rounded-2xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table
-                data-testid="stopwatch-matrix-table"
-                className="w-full text-left border-collapse text-xs"
-              >
-                <thead>
-                  <tr className="border-b border-ap-frame/15 dark:border-white/10 bg-[#EDE9DF] dark:bg-ap-turf font-mono text-2xs uppercase text-ap-ink dark:text-ap-chalk">
-                    <th className="py-2.5 px-3 sticky left-0 bg-[#EDE9DF] dark:bg-ap-turf z-10">
-                      Athlete &amp; Split Action
+
+                {canUndoRunner && (
+                  <div className="flex items-center pr-2 sm:pr-2.5 border-l border-[#121413]/10 dark:border-white/10 pl-1.5">
+                    <button
+                      type="button"
+                      data-testid={`runner-undo-${idx}`}
+                      aria-label={`Undo last split for ${telemetry.runnerName}`}
+                      title={
+                        telemetry.isFinishedLocked
+                          ? `Undo & unlock ${telemetry.runnerName}`
+                          : `Undo last split for ${telemetry.runnerName}`
+                      }
+                      onClick={() => onUndoRunnerLastSplit?.(telemetry.runnerId)}
+                      className="min-h-[44px] min-w-[44px] rounded-xl ap-card-inset hover:border-ap-clay/50 dark:hover:border-ap-volt/60 inline-flex items-center justify-center text-ap-ink dark:text-ap-chalk font-mono text-sm font-bold cursor-pointer"
+                    >
+                      <ArrowCounterClockwise className="w-4 h-4" weight="bold" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* Matrix Clipboard Table View */
+        <div className="ap-card rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table
+              data-testid="stopwatch-matrix-table"
+              className="w-full text-left border-collapse text-xs"
+            >
+              <thead>
+                <tr className="border-b border-ap-frame/15 dark:border-white/10 bg-[#EDE9DF] dark:bg-ap-turf font-mono text-2xs uppercase text-ap-ink dark:text-ap-chalk">
+                  <th className="py-2.5 px-3 sticky left-0 bg-[#EDE9DF] dark:bg-ap-turf z-10">
+                    Athlete &amp; Split Action
+                  </th>
+                  <th className="py-2.5 px-2.5">Pod</th>
+                  <th className="py-2.5 px-2.5">
+                    {sessionType === 'RACE' ? 'Status' : 'Recovery'}
+                  </th>
+                  {Array.from({ length: maxColumnsInMatrix }, (_, i) => (
+                    <th key={`col-${i + 1}`} className="py-2.5 px-2.5 text-right">
+                      L{i + 1}
                     </th>
-                    <th className="py-2.5 px-2.5">Pod</th>
-                    <th className="py-2.5 px-2.5">
-                      {sessionType === 'RACE' ? 'Status' : 'Recovery'}
-                    </th>
-                    {Array.from({ length: maxColumnsInMatrix }, (_, i) => (
-                      <th key={`col-${i + 1}`} className="py-2.5 px-2.5 text-right">
-                        L{i + 1}
-                      </th>
-                    ))}
-                    <th className="py-2.5 px-2.5 text-right">Best</th>
-                    <th className="py-2.5 px-2.5 text-right">Avg</th>
-                    <th className="py-2.5 px-3 text-right">Net Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#121413]/10 dark:divide-white/10">
-                  {filteredTelemetries.map((telemetry, idx) => (
+                  ))}
+                  <th className="py-2.5 px-2.5 text-right">Best</th>
+                  <th className="py-2.5 px-2.5 text-right">Avg</th>
+                  <th className="py-2.5 px-3 text-right">Net Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#121413]/10 dark:divide-white/10">
+                {filteredTelemetries.map((telemetry, idx) => {
+                  const badgeText = telemetry.hipOrLane || getRunnerInitials(telemetry.runnerName);
+                  return (
                     <tr
                       key={`row-${telemetry.runnerId}`}
                       className="hover:bg-[#FAF8F4] dark:hover:bg-ap-turf/60"
                     >
                       <td className="py-2 px-3 sticky left-0 bg-white dark:bg-ap-carbon z-10">
-                        <button
-                          type="button"
-                          data-testid={`matrix-split-btn-${idx}`}
-                          onClick={() => handleRunnerAction(telemetry)}
-                          className="min-h-[44px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ap-card-inset hover:border-ap-frame/45 dark:hover:border-ap-volt/60 font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
-                        >
-                          <span className="font-mono text-2xs ap-text-brand font-bold">
-                            L{idx + 1}
-                          </span>
-                          <span className="truncate max-w-[140px]">
-                            {telemetry.runnerName}
-                          </span>
-                          <span className="px-1.5 py-0.5 rounded bg-[#121413] text-ap-volt font-mono text-2xs font-bold">
-                            {telemetry.isFinishedLocked
-                              ? 'Locked'
-                              : chuteQueueSecs.length > 0
-                                ? 'Assign #1'
-                                : '+Split'}
-                          </span>
-                        </button>
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            data-testid={`matrix-split-btn-${idx}`}
+                            onClick={() => handleRunnerAction(telemetry)}
+                            className="min-h-[44px] inline-flex items-center gap-2 px-3 py-1.5 rounded-xl ap-card-inset hover:border-ap-frame/45 dark:hover:border-ap-volt/60 font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
+                          >
+                            <span className="font-mono text-2xs ap-text-brand font-bold">
+                              {badgeText}
+                            </span>
+                            <span className="truncate max-w-[140px]">
+                              {telemetry.runnerName}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-[#121413] text-ap-volt font-mono text-2xs font-bold">
+                              {telemetry.isFinishedLocked
+                                ? 'Locked'
+                                : chuteQueueSecs.length > 0
+                                  ? 'Assign #1'
+                                  : '+Split'}
+                            </span>
+                          </button>
+                          {onUndoRunnerLastSplit && telemetry.lapCount > 0 && (
+                            <button
+                              type="button"
+                              data-testid={`matrix-undo-btn-${idx}`}
+                              aria-label={`Undo last split for ${telemetry.runnerName}`}
+                              onClick={() => onUndoRunnerLastSplit(telemetry.runnerId)}
+                              className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] rounded-xl ap-card-inset inline-flex items-center justify-center text-ap-ink dark:text-ap-chalk cursor-pointer"
+                            >
+                              <ArrowCounterClockwise className="w-3.5 h-3.5" weight="bold" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2 px-2.5 font-mono text-2xs text-slate-700 dark:text-slate-300 whitespace-nowrap">
                         {telemetry.podKey}
@@ -291,12 +386,13 @@ export const TracksideRunnerCardsAndMatrix: React.FC<TracksideRunnerCardsAndMatr
                           : '—'}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        )}
-      </section>
+        </div>
+      )}
+    </section>
   );
 };

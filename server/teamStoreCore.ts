@@ -19,6 +19,9 @@ import {
 } from '../src/physiology/teamOnboardingEngine.ts';
 import type { CoachLandingAttribution } from '../src/utils/attribution.ts';
 import type {
+  AthleteOwnMeetScheduleItem,
+  DelegatedSplitSubmissionRecord,
+  DelegatedTimingSessionRecord,
   FieldEventLogRecord,
   GuardianSafetyAlertRecord,
   MeetDayPacketRecord,
@@ -91,6 +94,10 @@ export interface StoredMembershipInternal extends TeamMembershipRecord {
   parentConsentTokenHash?: string;
 }
 
+export interface StoredDelegatedTimingSessionInternal extends DelegatedTimingSessionRecord {
+  pinHash?: string;
+}
+
 export interface StoredTeamDocument {
   brand: TeamBrandConfig;
   memberships: StoredMembershipInternal[];
@@ -103,6 +110,8 @@ export interface StoredTeamDocument {
   fieldMarkLogs?: FieldEventLogRecord[];
   fieldMarkLogsTotalCount?: number;
   meetDayPackets?: MeetDayPacketRecord[];
+  delegatedTimingSessions?: StoredDelegatedTimingSessionInternal[];
+  pendingTimingSubmissions?: DelegatedSplitSubmissionRecord[];
   injuryCases?: TeamInjuryCaseRecord[];
   billing?: TeamBillingSummary;
   teamMessages?: TeamMessageRecord[];
@@ -377,6 +386,98 @@ export function resolveTeamPlanTier(
       m.role !== 'PARENT_FOLLOWER'
   ).length;
   return activeOrInvitedAthletes <= 5 ? 'SANDBOX' : 'FOUNDING_TEAM';
+}
+
+export function shiftMeetClockTime(rawTime?: string, delayMinutes?: number): string | undefined {
+  if (!rawTime) return undefined;
+  const trimmed = String(rawTime).trim();
+  if (!trimmed) return undefined;
+  if (typeof delayMinutes !== 'number' || !Number.isFinite(delayMinutes) || delayMinutes === 0) {
+    return trimmed;
+  }
+  const shift = Math.round(delayMinutes);
+  const amPmMatch = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (amPmMatch) {
+    let hrs = Number(amPmMatch[1]);
+    const mins = Number(amPmMatch[2]);
+    const meridiem = amPmMatch[3].toUpperCase();
+    if (hrs < 1 || hrs > 12 || mins < 0 || mins > 59) return trimmed;
+    if (meridiem === 'PM' && hrs !== 12) hrs += 12;
+    if (meridiem === 'AM' && hrs === 12) hrs = 0;
+    const total = (((hrs * 60 + mins + shift) % 1440) + 1440) % 1440;
+    const nextHrs24 = Math.floor(total / 60);
+    const nextMins = total % 60;
+    const nextMeridiem = nextHrs24 >= 12 ? 'PM' : 'AM';
+    const nextHrs12 = nextHrs24 % 12 === 0 ? 12 : nextHrs24 % 12;
+    return `${nextHrs12}:${String(nextMins).padStart(2, '0')} ${nextMeridiem}`;
+  }
+  const militaryMatch = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+  if (militaryMatch) {
+    const hrs = Number(militaryMatch[1]);
+    const mins = Number(militaryMatch[2]);
+    if (hrs < 0 || hrs > 23 || mins < 0 || mins > 59) return trimmed;
+    const total = (((hrs * 60 + mins + shift) % 1440) + 1440) % 1440;
+    const nextHrs = Math.floor(total / 60);
+    const nextMins = total % 60;
+    return `${String(nextHrs).padStart(2, '0')}:${String(nextMins).padStart(2, '0')}`;
+  }
+  return trimmed;
+}
+
+function buildOwnMeetDaySchedule(params: {
+  packets?: MeetDayPacketRecord[];
+  targetMembershipIds: ReadonlySet<string>;
+}): AthleteOwnMeetScheduleItem[] {
+  const { packets, targetMembershipIds } = params;
+  if (!Array.isArray(packets) || packets.length === 0 || targetMembershipIds.size === 0) {
+    return [];
+  }
+  const out: AthleteOwnMeetScheduleItem[] = [];
+  for (const pkt of packets) {
+    if (!pkt || !Array.isArray(pkt.entries)) continue;
+    const delayMins =
+      typeof pkt.meetDelayMinutes === 'number' && Number.isFinite(pkt.meetDelayMinutes)
+        ? Math.round(pkt.meetDelayMinutes)
+        : undefined;
+    for (const entry of pkt.entries) {
+      if (!entry || entry.scratched) continue;
+      if (!entry.membershipId || !targetMembershipIds.has(entry.membershipId)) continue;
+      const shiftedStart = shiftMeetClockTime(entry.eventStartTime, delayMins);
+      const shiftedCall = shiftMeetClockTime(entry.checkInCallTime, delayMins);
+      out.push({
+        packetId: pkt.packetId,
+        meetTitle: pkt.meetTitle,
+        meetDate: pkt.meetDate,
+        eventCode: entry.eventCode,
+        seedMarkRaw: entry.seedMarkRaw,
+        ...(entry.division ? { division: entry.division } : {}),
+        ...(entry.genderDivision ? { genderDivision: entry.genderDivision } : {}),
+        ...(entry.relayTeamCode ? { relayTeamCode: entry.relayTeamCode } : {}),
+        ...(entry.relayLegOrder ? { relayLegOrder: entry.relayLegOrder } : {}),
+        ...(entry.isAlternate !== undefined ? { isAlternate: entry.isAlternate } : {}),
+        ...(entry.officialHeat !== undefined ? { officialHeat: entry.officialHeat } : {}),
+        ...(entry.officialLaneOrHip ? { officialLaneOrHip: entry.officialLaneOrHip } : {}),
+        ...(entry.officialFlight !== undefined ? { officialFlight: entry.officialFlight } : {}),
+        ...(entry.officialOrder !== undefined ? { officialOrder: entry.officialOrder } : {}),
+        ...(shiftedStart ? { eventStartTime: shiftedStart } : {}),
+        ...(shiftedCall ? { checkInCallTime: shiftedCall } : {}),
+        ...(entry.bibNumber ? { bibNumber: entry.bibNumber } : {}),
+        ...(entry.assignmentSource ? { assignmentSource: entry.assignmentSource } : {}),
+        ...(pkt.athleticLiveUrl ? { athleticLiveUrl: pkt.athleticLiveUrl } : {}),
+        ...(delayMins !== undefined ? { meetDelayMinutes: delayMins } : {}),
+        athleteName: entry.athleteName,
+        membershipId: entry.membershipId,
+      });
+    }
+  }
+  return out;
+}
+
+function sanitizeDelegatedTimingSessionForCaller(
+  session: StoredDelegatedTimingSessionInternal
+): DelegatedTimingSessionRecord {
+  const { pinHash: _dropPinHash, ...clean } = session;
+  return clean;
 }
 
 export function projectTeamSummaryForCaller(
@@ -754,6 +855,38 @@ export function projectTeamSummaryForCaller(
           : undefined
       : undefined;
 
+  const isProgramStaff = canProgramWorkoutsRole(myMembership.role);
+  const nowMs = Date.now();
+  const projectedDelegatedSessions =
+    isProgramStaff && !isParentFollower
+      ? (doc.delegatedTimingSessions || []).map(sanitizeDelegatedTimingSessionForCaller)
+      : undefined;
+  const projectedPendingSubmissions =
+    isProgramStaff && !isParentFollower ? doc.pendingTimingSubmissions || [] : undefined;
+  const projectedMyTimingAssignments =
+    !isParentFollower && myMembership.role === 'ATHLETE'
+      ? (doc.delegatedTimingSessions || [])
+          .filter(
+            (s) =>
+              s.assignedMembershipId === myMembership.membershipId &&
+              !s.revokedAt &&
+              (!s.expiresAt || Date.parse(s.expiresAt) > nowMs)
+          )
+          .map(sanitizeDelegatedTimingSessionForCaller)
+      : undefined;
+  const projectedMyMeetDaySchedule =
+    myMembership.role === 'ATHLETE'
+      ? buildOwnMeetDaySchedule({
+          packets: doc.meetDayPackets,
+          targetMembershipIds: new Set([myMembership.membershipId]),
+        })
+      : isParentFollower
+        ? buildOwnMeetDaySchedule({
+            packets: doc.meetDayPackets,
+            targetMembershipIds: linkedChildMembershipIds || new Set<string>(),
+          })
+        : undefined;
+
   return {
     brand: {
       ...doc.brand,
@@ -795,6 +928,18 @@ export function projectTeamSummaryForCaller(
       ? { fieldMarkLogsTotalCount: doc.fieldMarkLogsTotalCount }
       : {}),
     ...(isStaffViewer && !isParentFollower ? { meetDayPackets: doc.meetDayPackets || [] } : {}),
+    ...(projectedDelegatedSessions !== undefined
+      ? { delegatedTimingSessions: projectedDelegatedSessions }
+      : {}),
+    ...(projectedPendingSubmissions !== undefined
+      ? { pendingTimingSubmissions: projectedPendingSubmissions }
+      : {}),
+    ...(projectedMyTimingAssignments !== undefined
+      ? { myDelegatedTimingAssignments: projectedMyTimingAssignments }
+      : {}),
+    ...(projectedMyMeetDaySchedule !== undefined
+      ? { myMeetDaySchedule: projectedMyMeetDaySchedule }
+      : {}),
     ...(Array.isArray(doc.injuryCases)
       ? {
           injuryCases: doc.injuryCases
