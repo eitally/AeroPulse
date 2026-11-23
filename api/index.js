@@ -1,6 +1,6 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express10 from "express";
+import express11 from "express";
 
 // server/apiRouter.ts
 import express9 from "express";
@@ -25,36 +25,49 @@ function timingSafeStringEqual(a, b) {
   const bufB = Buffer.from(b, "utf8");
   return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
 }
+function isAnonSessionSubject(subject) {
+  const sub = String(subject || "").trim();
+  return !sub || sub.startsWith("anon_") || sub === "thresh-athlete" || sub === "thresh-supporter";
+}
 function isCanonicalAuthenticatedClaims(claims) {
   if (!claims || !claims.sub || !claims.sid) return false;
   if (claims.authLevel === "anon") return false;
-  const sub = String(claims.sub).trim();
-  if (!sub || sub.startsWith("anon_") || sub === "thresh-athlete") return false;
+  if (isAnonSessionSubject(claims.sub)) return false;
   return true;
 }
-var cachedSecret = null;
+var cachedEnvSecret = null;
+var cachedDevSecret = null;
 function getSessionSecret() {
-  if (cachedSecret) return cachedSecret;
   const envSecret = (process.env.SESSION_SECRET || process.env.TOKEN_VAULT_KEY || process.env.OAUTH_ENCRYPTION_KEY || process.env.STRAVA_CLIENT_SECRET || process.env.CRON_SECRET || "").trim();
   if (envSecret && envSecret.length >= 16) {
-    cachedSecret = crypto.createHash("sha256").update(`thresh:${envSecret}`).digest("hex");
-    return cachedSecret;
+    if (cachedEnvSecret && cachedEnvSecret.raw === envSecret) {
+      return cachedEnvSecret.derived;
+    }
+    const derived = crypto.createHash("sha256").update(`thresh:${envSecret}`).digest("hex");
+    cachedEnvSecret = { raw: envSecret, derived };
+    return derived;
   }
+  if (isProductionDeployment() && !process.env.VITEST) {
+    throw new Error(
+      "[MeetReady Security] SESSION_SECRET or TOKEN_VAULT_KEY must be configured in production."
+    );
+  }
+  if (cachedDevSecret) return cachedDevSecret;
   try {
     if (fs.existsSync(SESSION_SECRET_FILE)) {
       const existing = fs.readFileSync(SESSION_SECRET_FILE, "utf8").trim();
       if (existing.length >= 32) {
-        cachedSecret = existing;
-        return cachedSecret;
+        cachedDevSecret = existing;
+        return cachedDevSecret;
       }
     }
     const generated = crypto.randomBytes(32).toString("hex");
     fs.writeFileSync(SESSION_SECRET_FILE, generated, { encoding: "utf8", mode: 384 });
-    cachedSecret = generated;
-    return cachedSecret;
+    cachedDevSecret = generated;
+    return cachedDevSecret;
   } catch {
-    cachedSecret = crypto.randomBytes(32).toString("hex");
-    return cachedSecret;
+    cachedDevSecret = crypto.randomBytes(32).toString("hex");
+    return cachedDevSecret;
   }
 }
 function getPasskeyChallengeSecret() {
@@ -176,7 +189,7 @@ function clearOAuthStateCookie(res) {
 }
 function issueSessionToken(subject = "authenticated", existingSid, authLevel) {
   const sid = existingSid && /^[a-f0-9]{24,64}$/i.test(existingSid) ? existingSid : crypto.randomBytes(16).toString("hex");
-  const resolvedAuthLevel = authLevel || (subject.startsWith("anon_") || subject === "thresh-athlete" ? "anon" : "verified");
+  const resolvedAuthLevel = authLevel === "anon" || isAnonSessionSubject(subject) ? "anon" : authLevel || "verified";
   const exp = Date.now() + SESSION_TTL_MS;
   const payload = Buffer.from(
     JSON.stringify({ sid, sub: subject, exp, authLevel: resolvedAuthLevel }),
@@ -201,7 +214,7 @@ function decodeAndVerifyToken(token) {
     const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
     if (!decoded.exp || Date.now() > decoded.exp) return null;
     const sub = String(decoded.sub || "authenticated");
-    const authLevel = decoded.authLevel === "anon" || decoded.authLevel === "verified" ? decoded.authLevel : sub.startsWith("anon_") || sub === "thresh-athlete" ? "anon" : "verified";
+    const authLevel = decoded.authLevel === "anon" || isAnonSessionSubject(sub) ? "anon" : "verified";
     const sid = decoded.sid && /^[a-f0-9]{16,64}$/i.test(decoded.sid) ? decoded.sid : crypto.createHash("sha256").update(`${sub}:${sig}`).digest("hex").slice(0, 32);
     return { sid, sub, exp: decoded.exp, authLevel };
   } catch {
@@ -244,9 +257,23 @@ function getVerifiedSessionClaims(req) {
 function setSessionCookie(req, res, subject = "authenticated", explicitSid, authLevel) {
   const existing = getVerifiedSessionClaims(req);
   const targetSid = explicitSid || existing?.sid;
-  const preserveCanonicalUserSub = Boolean(existing?.sub?.startsWith("usr_")) && !subject.startsWith("usr_") && Boolean(targetSid && existing?.sid && targetSid === existing.sid);
+  const existingIsAnon = Boolean(
+    existing && (existing.authLevel === "anon" || isAnonSessionSubject(existing.sub))
+  );
+  const preserveCanonicalUserSub = Boolean(existing && isCanonicalAuthenticatedClaims(existing)) && Boolean(existing?.sub?.startsWith("usr_")) && !subject.startsWith("usr_") && Boolean(targetSid && existing?.sid && targetSid === existing.sid);
   const resolvedSubject = preserveCanonicalUserSub ? existing.sub : subject;
-  const resolvedAuthLevel = preserveCanonicalUserSub ? "verified" : authLevel || (resolvedSubject.startsWith("anon_") || resolvedSubject === "thresh-athlete" ? "anon" : "verified");
+  let resolvedAuthLevel;
+  if (authLevel === "anon" || isAnonSessionSubject(resolvedSubject)) {
+    resolvedAuthLevel = "anon";
+  } else if (authLevel === "verified") {
+    resolvedAuthLevel = "verified";
+  } else if (preserveCanonicalUserSub) {
+    resolvedAuthLevel = "verified";
+  } else if (existingIsAnon) {
+    resolvedAuthLevel = "anon";
+  } else {
+    resolvedAuthLevel = "verified";
+  }
   const token = issueSessionToken(resolvedSubject, targetSid, resolvedAuthLevel);
   const isSecure = req.secure || String(req.headers["x-forwarded-proto"] || "").toLowerCase() === "https";
   const maxAgeSecs = Math.floor(SESSION_TTL_MS / 1e3);
@@ -357,6 +384,36 @@ function resolveTrustedCorsOrigin(rawOrigin) {
   }
   return null;
 }
+var CANONICAL_PROD_ORIGIN = "https://meetready.app";
+function resolveTrustedRequestOrigin(req) {
+  const explicitRaw = String(req.body?.origin || req.query?.origin || "").trim();
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || req.protocol || "").split(",")[0].trim().toLowerCase();
+  const proto = forwardedProto === "https" || req.secure ? "https" : "http";
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
+  const hostOrigin = host ? `${proto}://${host}` : "";
+  if (isProductionDeployment()) {
+    if (explicitRaw) {
+      const trustedExplicit = resolveTrustedCorsOrigin(explicitRaw);
+      if (trustedExplicit) return trustedExplicit;
+    }
+    if (hostOrigin) {
+      const trustedHost = resolveTrustedCorsOrigin(hostOrigin);
+      if (trustedHost) return trustedHost;
+    }
+    for (const envCandidate of [process.env.APP_URL, process.env.APP_BASE_URL]) {
+      const resolved = resolveSafeOrigin(envCandidate);
+      if (resolved && !resolved.includes("MY_APP_URL")) {
+        return resolved;
+      }
+    }
+    return CANONICAL_PROD_ORIGIN;
+  }
+  const safeExplicit = resolveSafeOrigin(explicitRaw);
+  if (safeExplicit) return safeExplicit;
+  const safeHost = resolveSafeOrigin(hostOrigin);
+  if (safeHost) return safeHost;
+  return CANONICAL_PROD_ORIGIN;
+}
 function isPrivateIpv4Octets(octets) {
   if (octets.length !== 4 || octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) {
     return true;
@@ -450,6 +507,21 @@ function securityHeadersMiddleware(req, res, next) {
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
+  const isHttps = req.secure || forwardedProto === "https";
+  if (isHttps || isProductionDeployment()) {
+    res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+  }
+  const rawPath = (req.path || req.url || "").split("?")[0];
+  const isAuthOrConsentHtmlPath = /^\/auth\/[^/]+\/callback\/?$/i.test(rawPath) || rawPath === "/api/auth/magic-link/verify" || rawPath === "/api/teams/parent-consent";
+  if (isAuthOrConsentHtmlPath) {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'"
+    );
+  } else if (rawPath.startsWith("/api/")) {
+    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+  }
   const allowedOrigin = resolveTrustedCorsOrigin(req.headers.origin);
   if (allowedOrigin) {
     res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
@@ -474,7 +546,7 @@ function securityHeadersMiddleware(req, res, next) {
 }
 
 // server/sessionContext.ts
-import { AsyncLocalStorage } from "async_hooks";
+import { AsyncLocalStorage as AsyncLocalStorage2 } from "async_hooks";
 import crypto4 from "crypto";
 import fs4 from "fs";
 
@@ -484,6 +556,7 @@ import fs3 from "fs";
 import path from "path";
 
 // server/tokenVault.ts
+import { AsyncLocalStorage } from "async_hooks";
 import crypto2 from "crypto";
 import fs2 from "fs";
 import os from "os";
@@ -491,7 +564,8 @@ import pg from "pg";
 var { Pool } = pg;
 var VAULT_FILE_PREFIX = "/tmp/thresh-vault-";
 var VAULT_ENVELOPE_PREFIX = "v1.";
-var derivedKeyCache = null;
+var derivedEnvKeyCache = null;
+var derivedFallbackKeyCache = null;
 var warnedMissingVaultKey = false;
 function warnServerFallback(scope, err) {
   if (process.env.NODE_ENV === "test" || Boolean(process.env.VITEST)) {
@@ -501,16 +575,21 @@ function warnServerFallback(scope, err) {
   console.warn(`[thresh:${scope}] ${msg}`);
 }
 function getVaultEncryptionKey() {
-  if (derivedKeyCache) return derivedKeyCache;
   const rawSecret = (process.env.TOKEN_VAULT_KEY || process.env.OAUTH_ENCRYPTION_KEY || process.env.SESSION_SECRET || process.env.STRAVA_CLIENT_SECRET || process.env.CRON_SECRET || "").trim();
   if (rawSecret.length >= 16) {
-    if (/^[0-9a-fA-F]{64}$/.test(rawSecret)) {
-      derivedKeyCache = Buffer.from(rawSecret, "hex");
-      return derivedKeyCache;
+    if (derivedEnvKeyCache && derivedEnvKeyCache.raw === rawSecret) {
+      return derivedEnvKeyCache.key;
     }
-    derivedKeyCache = crypto2.scryptSync(rawSecret, "thresh-vault-v1-salt", 32);
-    return derivedKeyCache;
+    const key = /^[0-9a-fA-F]{64}$/.test(rawSecret) ? Buffer.from(rawSecret, "hex") : crypto2.scryptSync(rawSecret, "thresh-vault-v1-salt", 32);
+    derivedEnvKeyCache = { raw: rawSecret, key };
+    return key;
   }
+  if (isProductionDeployment() && !process.env.VITEST) {
+    throw new Error(
+      "[MeetReady Security] TOKEN_VAULT_KEY or SESSION_SECRET must be configured in production."
+    );
+  }
+  if (derivedFallbackKeyCache) return derivedFallbackKeyCache;
   if (process.env.NODE_ENV === "production" && !warnedMissingVaultKey) {
     warnedMissingVaultKey = true;
     console.warn(
@@ -518,8 +597,8 @@ function getVaultEncryptionKey() {
     );
   }
   const fallbackSeed = `thresh-local-vault:${os.hostname()}:${os.userInfo().username}`;
-  derivedKeyCache = crypto2.scryptSync(fallbackSeed, "thresh-dev-vault-salt", 32);
-  return derivedKeyCache;
+  derivedFallbackKeyCache = crypto2.scryptSync(fallbackSeed, "thresh-dev-vault-salt", 32);
+  return derivedFallbackKeyCache;
 }
 function sanitizeTenantId(rawTenantId) {
   const cleaned = String(rawTenantId || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
@@ -559,10 +638,13 @@ function decryptJsonFromVault(envelope) {
   }
 }
 var pgPool = null;
+var pgPoolUrl = null;
+var testPgPoolOverride = null;
 var pgSchemaInitialized = false;
 var pgSchemaPromise = null;
+var pgTxContext = new AsyncLocalStorage();
 function getVaultStorageBackend() {
-  return process.env.DATABASE_URL?.trim() ? "POSTGRES" : "ENCRYPTED_FILE";
+  return process.env.DATABASE_URL?.trim() || testPgPoolOverride ? "POSTGRES" : "ENCRYPTED_FILE";
 }
 function buildPostgresSslConfig(dbUrl, env = process.env) {
   const clean = String(dbUrl || "").trim().toLowerCase();
@@ -574,15 +656,28 @@ function buildPostgresSslConfig(dbUrl, env = process.env) {
   };
 }
 function getPostgresPool() {
+  if (testPgPoolOverride) return testPgPoolOverride;
   const dbUrl = process.env.DATABASE_URL?.trim();
   if (!dbUrl) return null;
+  if (pgPool && pgPoolUrl !== dbUrl) {
+    const oldPool = pgPool;
+    pgPool = null;
+    pgPoolUrl = null;
+    pgSchemaInitialized = false;
+    pgSchemaPromise = null;
+    void oldPool.end().catch(() => void 0);
+  }
   if (!pgPool) {
+    pgPoolUrl = dbUrl;
     pgPool = new Pool({
       connectionString: dbUrl,
       max: 5,
       idleTimeoutMillis: 15e3,
       connectionTimeoutMillis: 5e3,
       ssl: buildPostgresSslConfig(dbUrl)
+    });
+    pgPool.on("error", (err) => {
+      warnServerFallback("vault:pg-pool-error", err);
     });
   }
   return pgPool;
@@ -605,6 +700,10 @@ async function ensurePostgresVaultSchema(pool) {
           encrypted_doc TEXT NOT NULL,
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        CREATE INDEX IF NOT EXISTS idx_thresh_teams_slug
+          ON thresh_teams (slug);
+        CREATE INDEX IF NOT EXISTS idx_thresh_teams_join_code
+          ON thresh_teams (join_code);
         CREATE TABLE IF NOT EXISTS thresh_team_members (
           team_id TEXT NOT NULL,
           membership_id TEXT NOT NULL,
@@ -639,6 +738,52 @@ async function ensurePostgresVaultSchema(pool) {
     });
   }
   await pgSchemaPromise;
+}
+async function findTeamIdsByInvitedEmailPostgresAsync(email) {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!cleanEmail) return [];
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    const res = await runner.query(
+      `SELECT DISTINCT team_id
+       FROM thresh_team_members
+       WHERE invited_email = $1
+         AND status IN ('INVITED', 'OPENED')`,
+      [cleanEmail]
+    );
+    return res.rows.map((r) => r.team_id);
+  } catch (err) {
+    warnServerFallback("vault:find-teams-by-email", err);
+    return null;
+  }
+}
+async function checkPostgresHealthAsync(timeoutMs = 2e3) {
+  const pool = getPostgresPool();
+  if (!pool) {
+    return { configured: false, healthy: null };
+  }
+  let timer;
+  try {
+    await Promise.race([
+      pool.query("SELECT 1"),
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("Postgres health check timed out")), timeoutMs);
+        if (typeof timer.unref === "function") timer.unref();
+      })
+    ]);
+    return { configured: true, healthy: true };
+  } catch (err) {
+    warnServerFallback("vault:health-check", err);
+    return { configured: true, healthy: false };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 var MAX_MEMORY_VAULT_ENTRIES = 500;
 var MEMORY_VAULT_TTL_MS = 5 * 60 * 1e3;
@@ -718,11 +863,15 @@ function saveTenantVaultSync(tenantId, data) {
 }
 async function loadTenantVaultAsync(tenantId, fallback) {
   const safeId = sanitizeTenantId(tenantId);
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      const result = await pool.query(
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool;
+      const result = await queryRunner.query(
         "SELECT encrypted_envelope FROM thresh_tenant_vault WHERE tenant_id = $1 LIMIT 1",
         [safeId]
       );
@@ -740,7 +889,17 @@ async function loadTenantVaultAsync(tenantId, fallback) {
           return structuredClone(decrypted);
         }
       }
+      memoryVaultCache.delete(safeId);
+      try {
+        const encPath = getEncryptedVaultFilePath(safeId);
+        if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
+      } catch {
+      }
+      return structuredClone(fallback);
     } catch (err) {
+      if (txClient) {
+        throw err;
+      }
       warnServerFallback("vault:postgres-read-fallback", err);
     }
   }
@@ -748,18 +907,16 @@ async function loadTenantVaultAsync(tenantId, fallback) {
 }
 async function saveTenantVaultAsync(tenantId, data) {
   const safeId = sanitizeTenantId(tenantId);
-  setBoundedMemoryVaultEntry(safeId, structuredClone(data));
   const envelope = encryptJsonForVault(data);
-  try {
-    const encPath = getEncryptedVaultFilePath(safeId);
-    fs2.writeFileSync(encPath, envelope, { encoding: "utf8", mode: 384 });
-  } catch {
-  }
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      await pool.query(
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool;
+      await queryRunner.query(
         `INSERT INTO thresh_tenant_vault (tenant_id, encrypted_envelope, updated_at)
          VALUES ($1, $2, NOW())
          ON CONFLICT (tenant_id)
@@ -768,7 +925,14 @@ async function saveTenantVaultAsync(tenantId, data) {
       );
     } catch (err) {
       warnServerFallback("vault:postgres-upsert", err);
+      throw err;
     }
+  }
+  setBoundedMemoryVaultEntry(safeId, structuredClone(data));
+  try {
+    const encPath = getEncryptedVaultFilePath(safeId);
+    fs2.writeFileSync(encPath, envelope, { encoding: "utf8", mode: 384 });
+  } catch {
   }
 }
 var VAULT_COOKIE_NAME = "thresh_vault";
@@ -821,21 +985,35 @@ async function deleteTenantVault(tenantId) {
   } catch (err) {
     warnServerFallback("vault:local-unlink", err);
   }
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      await pool.query("DELETE FROM thresh_tenant_vault WHERE tenant_id = $1", [safeId]);
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool;
+      await queryRunner.query("DELETE FROM thresh_tenant_vault WHERE tenant_id = $1", [safeId]);
     } catch (err) {
       warnServerFallback("vault:postgres-delete", err);
+      throw err;
     }
   }
 }
 var vaultOperationQueues = /* @__PURE__ */ new Map();
+var activeVaultLocks = new AsyncLocalStorage();
 async function withVaultLock(tenantId, fn) {
   const safeId = sanitizeTenantId(tenantId);
+  const held = activeVaultLocks.getStore();
+  if (held && held.has(safeId)) {
+    return fn();
+  }
   const prev = vaultOperationQueues.get(safeId) || Promise.resolve();
-  const next = prev.catch(() => void 0).then(() => fn());
+  const next = prev.catch(() => void 0).then(() => {
+    const nextHeld = new Set(held || []);
+    nextHeld.add(safeId);
+    return activeVaultLocks.run(nextHeld, fn);
+  });
   vaultOperationQueues.set(safeId, next);
   try {
     return await next;
@@ -845,52 +1023,87 @@ async function withVaultLock(tenantId, fn) {
     }
   }
 }
+async function runNormalizedTeamSyncStatements(runner, safeTeamId, metadata, envelope, members) {
+  await runner.query(
+    `INSERT INTO thresh_teams (team_id, slug, join_code, org_type, encrypted_doc, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (team_id)
+     DO UPDATE SET
+       slug = EXCLUDED.slug,
+       join_code = EXCLUDED.join_code,
+       org_type = EXCLUDED.org_type,
+       encrypted_doc = EXCLUDED.encrypted_doc,
+       updated_at = NOW();`,
+    [
+      safeTeamId,
+      metadata.slug ? String(metadata.slug).slice(0, 80) : null,
+      metadata.joinCode ? String(metadata.joinCode).slice(0, 32) : null,
+      metadata.orgType ? String(metadata.orgType).slice(0, 32) : null,
+      envelope
+    ]
+  );
+  await runner.query("DELETE FROM thresh_team_members WHERE team_id = $1", [safeTeamId]);
+  if (members.length > 0) {
+    const teamIds = [];
+    const membershipIds = [];
+    const userSids = [];
+    const invitedEmails = [];
+    const roles = [];
+    const statuses = [];
+    for (const m of members) {
+      teamIds.push(safeTeamId);
+      membershipIds.push(String(m.membershipId).slice(0, 64));
+      userSids.push(m.userSid ? String(m.userSid).slice(0, 96) : null);
+      invitedEmails.push(
+        m.invitedEmail ? String(m.invitedEmail).trim().toLowerCase().slice(0, 160) : null
+      );
+      roles.push(String(m.role || "ATHLETE").slice(0, 32));
+      statuses.push(String(m.status || "INVITED").slice(0, 32));
+    }
+    await runner.query(
+      `INSERT INTO thresh_team_members (team_id, membership_id, user_sid, invited_email, role, status, updated_at)
+       SELECT u.team_id, u.membership_id, u.user_sid, u.invited_email, u.role, u.status, NOW()
+       FROM UNNEST($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[])
+         AS u(team_id, membership_id, user_sid, invited_email, role, status)
+       ON CONFLICT (team_id, membership_id)
+       DO UPDATE SET
+         user_sid = EXCLUDED.user_sid,
+         invited_email = EXCLUDED.invited_email,
+         role = EXCLUDED.role,
+         status = EXCLUDED.status,
+         updated_at = NOW();`,
+      [teamIds, membershipIds, userSids, invitedEmails, roles, statuses]
+    );
+  }
+}
 async function syncNormalizedTeamPostgresAsync(teamId, metadata, docPayload, members) {
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (!pool) return;
+  if (!txClient && !pool) return;
   const safeTeamId = sanitizeTenantId(teamId);
   const envelope = encryptJsonForVault(docPayload);
-  const client = await pool.connect().catch(() => null);
-  if (!client) return;
-  try {
-    await ensurePostgresVaultSchema(pool);
-    await client.query("BEGIN");
-    await client.query(
-      `INSERT INTO thresh_teams (team_id, slug, join_code, org_type, encrypted_doc, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (team_id)
-       DO UPDATE SET
-         slug = EXCLUDED.slug,
-         join_code = EXCLUDED.join_code,
-         org_type = EXCLUDED.org_type,
-         encrypted_doc = EXCLUDED.encrypted_doc,
-         updated_at = NOW();`,
-      [
-        safeTeamId,
-        metadata.slug ? String(metadata.slug).slice(0, 80) : null,
-        metadata.joinCode ? String(metadata.joinCode).slice(0, 32) : null,
-        metadata.orgType ? String(metadata.orgType).slice(0, 32) : null,
-        envelope
-      ]
-    );
-    await client.query("DELETE FROM thresh_team_members WHERE team_id = $1", [safeTeamId]);
-    for (const m of members) {
-      await client.query(
-        `INSERT INTO thresh_team_members (team_id, membership_id, user_sid, invited_email, role, status, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-        [
-          safeTeamId,
-          String(m.membershipId).slice(0, 64),
-          m.userSid ? String(m.userSid).slice(0, 96) : null,
-          m.invitedEmail ? String(m.invitedEmail).trim().toLowerCase().slice(0, 160) : null,
-          String(m.role || "ATHLETE").slice(0, 32),
-          String(m.status || "INVITED").slice(0, 32)
-        ]
-      );
+  if (txClient) {
+    await txClient.query("SAVEPOINT sync_norm_team");
+    try {
+      await runNormalizedTeamSyncStatements(txClient, safeTeamId, metadata, envelope, members);
+      await txClient.query("RELEASE SAVEPOINT sync_norm_team");
+    } catch (err) {
+      await txClient.query("ROLLBACK TO SAVEPOINT sync_norm_team").catch(() => void 0);
+      warnServerFallback("vault:sync-normalized-team", err);
+      throw err;
     }
+    return;
+  }
+  await ensurePostgresVaultSchema(pool);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await runNormalizedTeamSyncStatements(client, safeTeamId, metadata, envelope, members);
     await client.query("COMMIT");
-  } catch {
+  } catch (err) {
     await client.query("ROLLBACK").catch(() => void 0);
+    warnServerFallback("vault:sync-normalized-team", err);
+    throw err;
   } finally {
     client.release();
   }
@@ -899,15 +1112,20 @@ async function withTeamRowLock(teamId, fn) {
   const safeTeamId = sanitizeTenantId(teamId);
   const lockKey = `team_doc_${safeTeamId.slice(0, 40)}`;
   return withVaultLock(lockKey, async () => {
+    const existingClient = pgTxContext.getStore();
+    if (existingClient) {
+      await existingClient.query("SELECT pg_advisory_xact_lock(hashtext($1))", [safeTeamId]);
+      return fn();
+    }
     const pool = getPostgresPool();
     if (!pool) return fn();
-    const client = await pool.connect().catch(() => null);
-    if (!client) return fn();
+    await ensurePostgresVaultSchema(pool);
+    const client = await pool.connect();
     try {
-      await ensurePostgresVaultSchema(pool);
       await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '4000ms'");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [safeTeamId]);
-      const result = await fn();
+      const result = await pgTxContext.run(client, fn);
       await client.query("COMMIT");
       return result;
     } catch (err) {
@@ -938,11 +1156,15 @@ async function appendAuditLogAsync(params) {
     const next = [...existing, entry].slice(-MAX_LOCAL_AUDIT_ENTRIES);
     await saveTenantVaultAsync(key, next);
   });
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      await pool.query(
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool;
+      await queryRunner.query(
         `INSERT INTO thresh_audit_log (event_id, created_at, team_id, actor_sid, action, target_id, metadata_json)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (event_id) DO NOTHING`,
@@ -958,6 +1180,7 @@ async function appendAuditLogAsync(params) {
       );
     } catch (err) {
       warnServerFallback("audit:postgres-insert", err);
+      throw err;
     }
   }
   return entry;
@@ -965,11 +1188,15 @@ async function appendAuditLogAsync(params) {
 async function listTeamAuditLogAsync(teamId, limit = 100) {
   const safeTeamId = sanitizeTenantId(teamId);
   const clampedLimit = Math.max(1, Math.min(250, Math.round(limit)));
+  const txClient = pgTxContext.getStore();
   const pool = getPostgresPool();
-  if (pool) {
+  if (txClient || pool) {
     try {
-      await ensurePostgresVaultSchema(pool);
-      const res = await pool.query(
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool;
+      const res = await queryRunner.query(
         `SELECT event_id, created_at, team_id, actor_sid, action, target_id, metadata_json
          FROM thresh_audit_log
          WHERE team_id = $1
@@ -995,6 +1222,7 @@ async function listTeamAuditLogAsync(teamId, limit = 100) {
         }));
       }
     } catch (err) {
+      if (txClient) throw err;
       warnServerFallback("audit:postgres-list-fallback", err);
     }
   }
@@ -2878,7 +3106,7 @@ function normalizeGarminPersonalApiActivities(rawActivities, ftpWatts = 250, cal
 }
 
 // server/sessionContext.ts
-var requestContext = new AsyncLocalStorage();
+var requestContext = new AsyncLocalStorage2();
 var explicitScopeKeyByReq = /* @__PURE__ */ new WeakMap();
 var responseByReq = /* @__PURE__ */ new WeakMap();
 var SEGMENTS_BY_ACTIVITY_CACHE_FILE = "/tmp/thresh-segments-by-activity.json";
@@ -6681,7 +6909,7 @@ function sanitizeTelemetryForCleanRoom(rawSummary, options) {
 }
 
 // src/utils/teamPalette.ts
-function normalizeHexColor(input, fallback = "#1C5436") {
+function normalizeHexColor(input, fallback = "#B83A24") {
   const clean = String(input || "").trim().replace(/^#/, "");
   if (/^[0-9a-fA-F]{3}$/.test(clean)) {
     return `#${clean.split("").map((c) => c + c).join("").toUpperCase()}`;
@@ -6784,7 +7012,7 @@ function ensureContrastAgainstSurface(hex, surfaceHex, minRatio = 4.55) {
       return candidate;
     }
   }
-  return darken ? "#14532D" : "#A3E635";
+  return darken ? "#B83A24" : "#F6F3EC";
 }
 function selectButtonInk(bgHex) {
   const whiteCr = contrastRatio(bgHex, "#FFFFFF");
@@ -6792,8 +7020,8 @@ function selectButtonInk(bgHex) {
   return darkCr >= whiteCr ? "#080A09" : "#FFFFFF";
 }
 function computeAccessibleTeamPalette(rawPrimaryHex, rawSecondaryHex) {
-  const primaryHex = normalizeHexColor(rawPrimaryHex, "#1C5436");
-  const secondaryHex = normalizeHexColor(rawSecondaryHex, "#65A30D");
+  const primaryHex = normalizeHexColor(rawPrimaryHex, "#B83A24");
+  const secondaryHex = normalizeHexColor(rawSecondaryHex, "#D8FF2A");
   let primaryOnLight = ensureContrastAgainstSurface(primaryHex, "#E9EFE9", 4.6);
   primaryOnLight = ensureContrastAgainstSurface(primaryOnLight, "#FFFFFF", 4.65);
   const primaryOnDark = ensureContrastAgainstSurface(primaryHex, "#15231B", 4.65);
@@ -7342,6 +7570,19 @@ function sanitizeExternalSyncConfig(raw, existing) {
     ...merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}
   };
 }
+function projectSafePublicExternalSync(externalSync) {
+  if (!externalSync) return void 0;
+  return {
+    ...externalSync.platform ? { platform: externalSync.platform } : {},
+    ...externalSync.athleticNetSchoolId ? { athleticNetSchoolId: externalSync.athleticNetSchoolId } : {},
+    ...externalSync.athleticNetSportSlug ? { athleticNetSportSlug: externalSync.athleticNetSportSlug } : {},
+    ...externalSync.athleticNetUrl ? { athleticNetUrl: externalSync.athleticNetUrl } : {},
+    ...externalSync.tfrrsTeamUrl ? { tfrrsTeamUrl: externalSync.tfrrsTeamUrl } : {},
+    ...externalSync.tfrrsTeamCode ? { tfrrsTeamCode: externalSync.tfrrsTeamCode } : {},
+    ...typeof externalSync.enablePublicParentHub === "boolean" ? { enablePublicParentHub: externalSync.enablePublicParentHub } : {},
+    ...externalSync.lastSyncedAt ? { lastSyncedAt: externalSync.lastSyncedAt } : {}
+  };
+}
 async function loadTeamDocRaw(teamId) {
   return loadTenantVaultAsync(teamDocVaultKey(teamId), null);
 }
@@ -7489,13 +7730,38 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
         maskWellnessWeightKgZero: true
       }) : baseSnapshot;
     }
-    const officialPublicResults = Array.isArray(m.coachRecordedActivities) ? m.coachRecordedActivities.filter((a) => Boolean(a?.officialRaceData)).map((a) => ({
-      ...a,
-      athleteWeightKg: void 0,
-      avgHr: 0,
-      maxHr: 0,
-      streams: void 0
-    })) : void 0;
+    const officialPublicResults = Array.isArray(m.coachRecordedActivities) ? m.coachRecordedActivities.filter((a) => Boolean(a?.officialRaceData)).map((a) => {
+      const sanitized = {
+        ...a,
+        athleteWeightKg: void 0,
+        avgHr: 0,
+        maxHr: 0,
+        streams: void 0,
+        summaryPolyline: void 0,
+        routeLatLngs: void 0,
+        startLatLng: void 0,
+        endLatLng: void 0
+      };
+      delete sanitized.summaryPolyline;
+      delete sanitized.streams;
+      delete sanitized.routeLatLngs;
+      delete sanitized.startLatLng;
+      delete sanitized.endLatLng;
+      delete sanitized.map;
+      delete sanitized.description;
+      return sanitized;
+    }) : void 0;
+    const isLinkedChild = Boolean(
+      linkedChildMembershipIds && linkedChildMembershipIds.has(m.membershipId)
+    );
+    const shouldAbbreviateForParent = Boolean(
+      isParentFollower && !isLinkedChild && !m.externalSource && effectiveIsMinor && m.parentConsentStatus !== "ACKNOWLEDGED"
+    );
+    let projectedInvitedName = m.invitedName;
+    if (shouldAbbreviateForParent) {
+      const nameParts = String(m.invitedName || "").trim().split(/\s+/).filter(Boolean);
+      projectedInvitedName = nameParts.length >= 2 ? `${nameParts[0]} ${nameParts[nameParts.length - 1][0]}.` : nameParts[0] || "Athlete";
+    }
     const base = {
       membershipId: m.membershipId,
       teamId: m.teamId,
@@ -7508,7 +7774,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       ...isStaffViewer && Array.isArray(m.coachEventGroups) && m.coachEventGroups.length > 0 ? { coachEventGroups: m.coachEventGroups } : {},
       ...(isStaffViewer || isSelf) && m.coachSpecialtyTitle ? { coachSpecialtyTitle: m.coachSpecialtyTitle } : {},
       ...(isStaffViewer || isSelf) && Array.isArray(m.assignedAthleteMembershipIds) && m.assignedAthleteMembershipIds.length > 0 ? { assignedAthleteMembershipIds: m.assignedAthleteMembershipIds } : {},
-      invitedName: m.invitedName,
+      invitedName: projectedInvitedName,
       graduationYear: m.graduationYear,
       birthYear: isCoach || isSelf ? m.birthYear : void 0,
       birthMonthYear: isCoach || isSelf ? m.birthMonthYear : void 0,
@@ -7599,10 +7865,15 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   const visibleTeamMessages = (doc.teamMessages || []).filter((msg) => {
     if (isStaffViewer) return true;
     if (msg.channelScope === "COACHES_STAFF") return false;
-    if (msg.channelScope === "ALL_TEAM") return true;
+    if (msg.channelScope === "ALL_TEAM") {
+      if (isParentFollower) {
+        return canViewSafeguardingMedicalRole(msg.senderRole);
+      }
+      return true;
+    }
     if (msg.channelScope === "EVENT_GROUP") {
       if (isParentFollower) {
-        if (!msg.eventGroup) return true;
+        if (!msg.eventGroup) return Boolean(linkedChildMembershipIds && linkedChildMembershipIds.size > 0);
         return doc.memberships.some(
           (child) => linkedChildMembershipIds?.has(child.membershipId) && (!child.eventGroup || child.eventGroup === msg.eventGroup)
         );
@@ -7627,9 +7898,12 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
     )
   };
+  const projectedExternalSync = isParentFollower ? projectSafePublicExternalSync(doc.brand.externalSync) : doc.brand.externalSync;
   return {
     brand: {
       ...doc.brand,
+      ...isParentFollower ? { joinCode: "" } : {},
+      ...doc.brand.externalSync ? projectedExternalSync ? { externalSync: projectedExternalSync } : { externalSync: void 0 } : {},
       planTier: resolveTeamPlanTier(doc.memberships)
     },
     myRole: myMembership.role,
@@ -7674,6 +7948,95 @@ async function listTeamsForUser(callerSid, originUrl) {
     if (summary) out.push(summary);
   }
   return out;
+}
+async function autoLinkPendingTeamInvitesByEmail(params) {
+  const cleanEmail = params.email?.trim().toLowerCase();
+  if (!cleanEmail || !cleanEmail.includes("@") || !params.userSid) return [];
+  const pgTeamIds = await findTeamIdsByInvitedEmailPostgresAsync(cleanEmail);
+  const candidateTeamIds = pgTeamIds !== null ? pgTeamIds : (await loadDirectory()).allTeamIds;
+  const linkedTeamIds = [];
+  for (const teamId of candidateTeamIds) {
+    const linkedResult = await withTeamRowLock(teamId, async () => {
+      const doc = await loadTeamDocRaw(teamId);
+      if (!doc) return null;
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      let modified = false;
+      let linkedDisplayName;
+      let hasMatchedInvite = false;
+      for (const m of doc.memberships) {
+        if (m.status === "REVOKED") continue;
+        if (!m.invitedEmail || m.invitedEmail.trim().toLowerCase() !== cleanEmail) continue;
+        const isPendingInvite = m.status === "INVITED" || m.status === "OPENED";
+        if (!isPendingInvite) continue;
+        if (m.userSid && m.userSid !== params.userSid) continue;
+        hasMatchedInvite = true;
+        linkedDisplayName = m.invitedName;
+        if (m.userSid !== params.userSid) {
+          m.userSid = params.userSid;
+          modified = true;
+        }
+        m.status = "ACTIVE";
+        if (!m.openedAt) m.openedAt = nowIso;
+        if (!m.joinedAt) m.joinedAt = nowIso;
+        modified = true;
+        if (params.stravaAthleteId && !m.stravaAthleteId) {
+          m.stravaAthleteId = params.stravaAthleteId;
+        }
+        if (params.athleteName && (!m.invitedName || m.invitedName === "Team Athlete" || m.invitedName.trim().length === 0)) {
+          m.invitedName = params.athleteName.trim().slice(0, 64);
+          linkedDisplayName = m.invitedName;
+        }
+        if (!m.sharingTier) {
+          m.sharingTier = "SUMMARY_ONLY";
+        }
+        if (!m.liveSnapshot) {
+          const safeSportShieldEnforced = Boolean(
+            doc.brand.defaultSafeSportShield || m.isMinorU18
+          );
+          const calibrated = calibrateThresholdsFromSeedMark(
+            m.seedMarkOrFtp || "",
+            doc.brand.primarySport,
+            "mi"
+          );
+          m.liveSnapshot = {
+            updatedAt: nowIso,
+            hasConnectedWatch: Boolean(m.stravaAthleteId),
+            verdictLabel: "Auto-Matched \xB7 Email Verified",
+            readinessScore: 0,
+            ctl: 0,
+            atl: 0,
+            tsb: 0,
+            acuteLoad7d: 0,
+            lowAerobicPct: 0,
+            highAerobicPct: 0,
+            neuromuscularPct: 0,
+            caraHours7d: 0,
+            ftpWatts: calibrated.cyclingFtpWatts,
+            thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
+            safeSportHideWeight: safeSportShieldEnforced,
+            sharingTier: m.sharingTier
+          };
+        }
+      }
+      if (modified) {
+        doc.updatedAt = nowIso;
+        await saveTeamDocRaw(teamId, doc);
+      }
+      return hasMatchedInvite ? { displayName: linkedDisplayName } : null;
+    });
+    if (linkedResult) {
+      await addTeamToUserIndex(
+        params.userSid,
+        teamId,
+        linkedResult.displayName,
+        cleanEmail
+      );
+      if (!linkedTeamIds.includes(teamId)) {
+        linkedTeamIds.push(teamId);
+      }
+    }
+  }
+  return linkedTeamIds;
 }
 
 // server/teamEmailAndOtpService.ts
@@ -7967,7 +8330,7 @@ async function sendMagicLinkEmail(email, verifyUrl) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || "MeetReady <auth@meetready.app>",
+          from: (process.env.AUTH_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "MeetReady <auth@meetready.app>").trim(),
           to: [email],
           subject: "Sign in to MeetReady",
           html: `
@@ -7980,7 +8343,8 @@ async function sendMagicLinkEmail(email, verifyUrl) {
               <p style="font-size: 12px; color: #64748B;">If you didn't request this email, you can safely ignore it.</p>
             </div>
           `
-        })
+        }),
+        signal: AbortSignal.timeout(8e3)
       });
       if (res.ok) {
         return { sent: true };
@@ -8034,7 +8398,7 @@ async function createPendingEmailChange(userId, newEmail) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          from: process.env.AUTH_EMAIL_FROM || "MeetReady <auth@meetready.app>",
+          from: (process.env.AUTH_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "MeetReady <auth@meetready.app>").trim(),
           to: [cleanNewEmail],
           subject: "Verify your new MeetReady email address",
           html: `
@@ -8045,7 +8409,8 @@ async function createPendingEmailChange(userId, newEmail) {
               <p style="font-size: 12px; color: #64748B;">This code expires in 15 minutes. If you did not request this change, you can ignore this email.</p>
             </div>
           `
-        })
+        }),
+        signal: AbortSignal.timeout(8e3)
       });
       if (res.ok) {
         return { ok: true };
@@ -8132,6 +8497,23 @@ function verifyPasskeyChallengeToken(token) {
 }
 
 // server/teamEmailAndOtpService.ts
+async function withBoundedTimeout(promise, timeoutMs = 8e3, label = "notification") {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        );
+        if (typeof timer.unref === "function") timer.unref();
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 function emailOtpVaultKey(email) {
   const hash = crypto7.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
   return `email_otp_${hash}`;
@@ -8147,7 +8529,7 @@ async function sendEmailViaResend(params) {
       status: "READY_MANUAL_LINK"
     };
   }
-  const fromAddress = (process.env.RESEND_FROM_EMAIL || "MeetReady Coaching <auth@meetready.app>").trim();
+  const fromAddress = (process.env.RESEND_FROM_EMAIL || process.env.AUTH_EMAIL_FROM || "MeetReady Coaching <auth@meetready.app>").trim();
   try {
     const payload = {
       from: fromAddress,
@@ -8165,7 +8547,8 @@ async function sendEmailViaResend(params) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(8e3)
     });
     if (!resp.ok) {
       const errBody = await resp.text().catch(() => "");
@@ -8250,6 +8633,8 @@ function buildTeamInviteEmailContent(params) {
 }
 function buildParentConsentEmailContent(params) {
   const { brand, athleteName, parentConsentUrl } = params;
+  const safePrimaryHex = normalizeHexColor(brand.primaryHex, "#14532D");
+  const safeConsentUrl = escapeHtml(parentConsentUrl);
   const subject = `Notice: ${athleteName} joined ${brand.name} on MeetReady (Scholastic Safeguards Active)`;
   const html = `<!DOCTYPE html>
 <html>
@@ -8260,7 +8645,7 @@ function buildParentConsentEmailContent(params) {
 </head>
 <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111318;background:#F4F6F3;margin:0;padding:24px 12px;">
   <div style="max-width:540px;margin:0 auto;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:18px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.04);">
-    <div style="background:${brand.primaryHex};padding:24px;color:#FFFFFF;">
+    <div style="background:${safePrimaryHex};padding:24px;color:#FFFFFF;">
       <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">MeetReady SCHOLASTIC SAFEGUARDING</div>
       <h1 style="margin:8px 0 4px;font-size:20px;font-weight:800;color:#FFFFFF;">Parent / Guardian Notice</h1>
       <div style="font-size:14px;opacity:0.9;">${escapeHtml(brand.name)} \xB7 Coach ${escapeHtml(brand.coachDisplayName)}</div>
@@ -8281,13 +8666,13 @@ function buildParentConsentEmailContent(params) {
       </div>
 
       <div style="text-align:center;margin:24px 0 16px;">
-        <a href="${parentConsentUrl}" style="display:inline-block;background:${brand.primaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
+        <a href="${safeConsentUrl}" style="display:inline-block;background:${safePrimaryHex};color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:14px 28px;border-radius:10px;">
           Acknowledge & Confirm Roster Enrollment
         </a>
       </div>
 
       <p style="font-size:12px;color:#64748B;text-align:center;margin:0;">
-        Or review via browser: <a href="${parentConsentUrl}" style="color:${brand.primaryHex};word-break:break-all;">${parentConsentUrl}</a>
+        Or review via browser: <a href="${safeConsentUrl}" style="color:${safePrimaryHex};word-break:break-all;">${safeConsentUrl}</a>
       </p>
     </div>
   </div>
@@ -8320,7 +8705,10 @@ async function requestEmailOtpCode(rawEmail) {
     expiresAt: Date.now() + 10 * 60 * 1e3,
     attempts: 0
   };
-  await saveTenantVaultAsync(emailOtpVaultKey(email), record);
+  const otpKey = emailOtpVaultKey(email);
+  await withVaultLock(otpKey, async () => {
+    await saveTenantVaultAsync(otpKey, record);
+  });
   const html = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:460px;margin:0 auto;padding:24px;border:1px solid #E5E7EB;border-radius:16px;background:#FFFFFF;">
     <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#14532D;text-transform:uppercase;">MeetReady CROSS-DEVICE SIGN-IN</div>
     <h2 style="margin:8px 0 12px;color:#111318;">Your 6-Digit Verification Code</h2>
@@ -8355,90 +8743,64 @@ async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid) {
     return { ok: false, error: "Enter the 6-digit verification code." };
   }
   const key = emailOtpVaultKey(email);
-  const stored = await loadTenantVaultAsync(key, null);
-  if (!stored || Date.now() > stored.expiresAt) {
-    return { ok: false, error: "Verification code expired. Request a fresh code." };
+  const otpCheck = await withVaultLock(key, async () => {
+    const stored = await loadTenantVaultAsync(key, null);
+    if (!stored || Date.now() > stored.expiresAt) {
+      return { ok: false, error: "Verification code expired. Request a fresh code." };
+    }
+    if (stored.attempts >= 5) {
+      return { ok: false, error: "Too many attempts. Request a fresh code." };
+    }
+    const candidateHash = hashToken(`${email}:${code}`);
+    const a = Buffer.from(candidateHash);
+    const b = Buffer.from(stored.codeHash);
+    if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) {
+      stored.attempts += 1;
+      await saveTenantVaultAsync(key, stored);
+      return { ok: false, error: "Incorrect 6-digit code." };
+    }
+    await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
+    return { ok: true };
+  });
+  if (!otpCheck.ok) {
+    return { ok: false, error: otpCheck.error };
   }
-  if (stored.attempts >= 5) {
-    return { ok: false, error: "Too many attempts. Request a fresh code." };
-  }
-  const candidateHash = hashToken(`${email}:${code}`);
-  const a = Buffer.from(candidateHash);
-  const b = Buffer.from(stored.codeHash);
-  if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) {
-    stored.attempts += 1;
-    await saveTenantVaultAsync(key, stored);
-    return { ok: false, error: "Incorrect 6-digit code." };
-  }
-  await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
   const otpUser = await findOrCreateUser("magic_link", email, {
     email,
     name: email.split("@")[0]
   });
   const canonicalOtpSid = deriveUserSessionSid(otpUser.id);
-  const emailDir = await loadTenantVaultAsync(EMAIL_DIRECTORY_KEY, {
-    byEmail: {}
+  const account = await withVaultLock(EMAIL_DIRECTORY_KEY, async () => {
+    const emailDir = await loadTenantVaultAsync(EMAIL_DIRECTORY_KEY, {
+      byEmail: {}
+    });
+    let acct = emailDir.byEmail[email];
+    if (!acct) {
+      const newSid = preferredSid && /^[a-f0-9]{24,64}$/i.test(preferredSid) ? preferredSid : canonicalOtpSid;
+      acct = {
+        sid: newSid,
+        displayName: otpUser.name,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      emailDir.byEmail[email] = acct;
+      await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
+    } else if (!acct.displayName && otpUser.name) {
+      acct.displayName = otpUser.name;
+      acct.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      emailDir.byEmail[email] = acct;
+      await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
+    }
+    return acct;
   });
-  let account = emailDir.byEmail[email];
-  if (!account) {
-    const newSid = preferredSid && /^[a-f0-9]{24,64}$/i.test(preferredSid) ? preferredSid : canonicalOtpSid;
-    account = {
-      sid: newSid,
-      displayName: otpUser.name,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    emailDir.byEmail[email] = account;
-    await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
-  }
-  const dir = await loadTenantVaultAsync(TEAMS_DIRECTORY_KEY, {
-    bySlug: {},
-    byJoinCode: {},
-    allTeamIds: []
+  await autoLinkPendingTeamInvitesByEmail({
+    email,
+    userSid: account.sid,
+    athleteName: account.displayName
   });
-  const userTeams = await loadTenantVaultAsync(
-    userTeamsVaultKey(account.sid),
-    {
-      teamIds: [],
-      email,
-      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-    }
-  );
-  userTeams.email = email;
-  for (const teamId of dir.allTeamIds) {
-    const doc = await loadTenantVaultAsync(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-    let mutated = false;
-    for (const m of doc.memberships) {
-      if (m.invitedEmail && m.invitedEmail.toLowerCase() === email && m.status !== "REVOKED") {
-        m.userSid = account.sid;
-        if (m.status !== "ACTIVE") {
-          m.status = "ACTIVE";
-          m.joinedAt = (/* @__PURE__ */ new Date()).toISOString();
-        }
-        if (!account.displayName && m.invitedName) {
-          account.displayName = m.invitedName;
-        }
-        if (!userTeams.teamIds.includes(teamId)) {
-          userTeams.teamIds.push(teamId);
-        }
-        mutated = true;
-      }
-    }
-    if (mutated) {
-      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-    }
-  }
-  userTeams.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveTenantVaultAsync(userTeamsVaultKey(account.sid), userTeams);
-  emailDir.byEmail[email] = account;
-  await saveTenantVaultAsync(EMAIL_DIRECTORY_KEY, emailDir);
   return {
     ok: true,
     sid: account.sid,
+    userId: otpUser.id,
     email,
     displayName: account.displayName
   };
@@ -8804,7 +9166,8 @@ async function postTeamAnnouncement(params) {
   }
   const catRaw = String(params.category || "GENERAL").toUpperCase();
   const category = VALID_ANNOUNCEMENT_CATEGORIES.has(catRaw) ? catRaw : "GENERAL";
-  return withTeamRowLock(params.teamId, async () => {
+  let pendingPushPayload = null;
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, error: "Team not found." };
     const callerMem = doc.memberships.find(
@@ -8829,7 +9192,7 @@ async function postTeamAnnouncement(params) {
     doc.announcements = [announcement, ...doc.announcements || []].slice(0, 30);
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
-    void dispatchTeamPushNotifications({
+    pendingPushPayload = {
       teamId: params.teamId,
       senderSid: params.callerSid,
       senderName: announcement.authorName,
@@ -8838,8 +9201,7 @@ async function postTeamAnnouncement(params) {
       eventGroup: targetGroups && targetGroups.length === 1 ? targetGroups[0] : void 0,
       bodyText: `${cleanTitle} \u2014 ${cleanBody}`,
       isEmergency: category === "WEATHER"
-    }).catch(() => {
-    });
+    };
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
@@ -8856,6 +9218,13 @@ async function postTeamAnnouncement(params) {
       team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
     };
   });
+  if (lockedResult.ok && pendingPushPayload) {
+    const pushToSend = pendingPushPayload;
+    await Promise.allSettled([
+      withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "announcement-push")
+    ]);
+  }
+  return lockedResult;
 }
 async function deleteTeamAnnouncement(params) {
   return withTeamRowLock(params.teamId, async () => {
@@ -9170,8 +9539,19 @@ function isWithinQuietHours2(hour, startHour, endHour) {
   }
   return hour >= startHour && hour < endHour;
 }
+var ALLOWED_CHANNEL_SCOPES = /* @__PURE__ */ new Set([
+  "ALL_TEAM",
+  "EVENT_GROUP",
+  "DIRECT_TRANSPARENT",
+  "COACHES_STAFF"
+]);
 async function postTeamMessage(params) {
-  return withTeamRowLock(params.teamId, async () => {
+  if (!ALLOWED_CHANNEL_SCOPES.has(params.channelScope)) {
+    return { ok: false, status: 400, error: "Invalid team message channel scope." };
+  }
+  let pendingGuardianEmail = null;
+  let pendingPushPayload = null;
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, status: 404, error: "Team not found." };
     const callerMem = doc.memberships.find(
@@ -9186,6 +9566,7 @@ async function postTeamMessage(params) {
     }
     const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
     const isParentFollower = callerMem.role === "PARENT_FOLLOWER";
+    const effectiveEmergencyOverride = isStaff && params.isEmergencyOverride === true;
     const policy = defaultPolicyForDoc(doc);
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     if (params.channelScope === "COACHES_STAFF" && !isStaff) {
@@ -9195,11 +9576,11 @@ async function postTeamMessage(params) {
         error: "Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff."
       };
     }
-    if (isParentFollower && params.channelScope === "EVENT_GROUP") {
+    if (isParentFollower && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP" || params.channelScope === "COACHES_STAFF")) {
       return {
         ok: false,
         status: 403,
-        error: "Parents may view announcements or message coaching staff transparently."
+        error: "Parents may view announcements or message coaching staff transparently regarding their linked athlete."
       };
     }
     if (callerMem.role === "ATHLETE" && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP") && !policy.athleteRepliesEnabled) {
@@ -9214,7 +9595,6 @@ async function postTeamMessage(params) {
     let targetMembershipId;
     let targetAthleteName;
     let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
-    let guardianEmailNotified = false;
     if (params.channelScope === "COACHES_STAFF") {
       channelId = "staff:only";
       guardianCcApplied = false;
@@ -9222,6 +9602,14 @@ async function postTeamMessage(params) {
       resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
       channelId = `group:${resolvedEventGroup}`;
     } else if (params.channelScope === "DIRECT_TRANSPARENT") {
+      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
+      if (isParentFollower && !callerParentEmail) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Parents may only message coaches in the transparent thread of their linked child athlete."
+        };
+      }
       const targetMem = callerMem.role === "ATHLETE" ? callerMem : doc.memberships.find(
         (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED" && m.role === "ATHLETE"
       );
@@ -9231,6 +9619,16 @@ async function postTeamMessage(params) {
           status: 404,
           error: "Select a valid athlete on the roster for a transparent SafeSport message."
         };
+      }
+      if (isParentFollower) {
+        const targetParentEmail = targetMem.parentGuardianEmail?.trim().toLowerCase();
+        if (!callerParentEmail || !targetParentEmail || callerParentEmail !== targetParentEmail) {
+          return {
+            ok: false,
+            status: 403,
+            error: "Parents may only message coaches in the transparent thread of their linked child athlete."
+          };
+        }
       }
       const ageResolved = resolveAthleteAgeTier({
         birthMonthYear: targetMem.birthMonthYear,
@@ -9255,13 +9653,12 @@ async function postTeamMessage(params) {
         targetIsProtectedMinor || doc.brand.enableParentGuardianCc || targetMem.parentGuardianEmail
       );
       if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
-        guardianEmailNotified = true;
-        void sendEmailViaResend({
+        pendingGuardianEmail = {
           to: targetMem.parentGuardianEmail,
           subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
           html: `<p><strong>${escapeHtml2(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml2(callerMem.role)}) sent a team message to ${escapeHtml2(targetMem.invitedName)}:</p><blockquote>${escapeHtml2(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
           text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`
-        });
+        };
       }
     }
     const quietHoursActive = isWithinQuietHours2(
@@ -9284,16 +9681,16 @@ async function postTeamMessage(params) {
       body: cleanBody,
       createdAt: nowIso,
       guardianCcApplied,
-      ...guardianEmailNotified ? { guardianEmailNotified: true } : {},
+      ...pendingGuardianEmail ? { guardianEmailNotified: false } : {},
       secondAdultVisible: true,
-      ...quietHoursActive && !params.isEmergencyOverride ? { sentDuringQuietHours: true } : {},
-      ...params.isEmergencyOverride ? { isEmergencyOverride: true } : {},
+      ...quietHoursActive && !effectiveEmergencyOverride ? { sentDuringQuietHours: true } : {},
+      ...effectiveEmergencyOverride ? { isEmergencyOverride: true } : {},
       acknowledgedByMembershipIds: [callerMem.membershipId]
     };
     doc.teamMessages = [record, ...doc.teamMessages || []].slice(0, 500);
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
-    void dispatchTeamPushNotifications({
+    pendingPushPayload = {
       teamId: params.teamId,
       senderSid: params.callerSid,
       senderName: record.senderName,
@@ -9303,9 +9700,8 @@ async function postTeamMessage(params) {
       targetMembershipId,
       bodyText: cleanBody,
       clientLocalHour: params.clientLocalHour,
-      isEmergency: params.isEmergencyOverride === true
-    }).catch(() => {
-    });
+      isEmergency: effectiveEmergencyOverride
+    };
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
@@ -9325,6 +9721,34 @@ async function postTeamMessage(params) {
       team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
     };
   });
+  if (!lockedResult.ok) {
+    return lockedResult;
+  }
+  const emailToSend = pendingGuardianEmail;
+  const pushToSend = pendingPushPayload;
+  const [emailOutcome] = await Promise.allSettled([
+    emailToSend ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "guardian-dm-email") : Promise.resolve(null),
+    pushToSend ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "team-message-push") : Promise.resolve(null)
+  ]);
+  const emailDelivered = Boolean(emailToSend) && emailOutcome.status === "fulfilled" && emailOutcome.value !== null && emailOutcome.value.delivered === true;
+  if (emailDelivered) {
+    const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
+      const freshDoc = await loadTeamDocRaw(params.teamId);
+      if (!freshDoc) return null;
+      const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
+      if (targetMsg) {
+        targetMsg.guardianEmailNotified = true;
+        freshDoc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        await saveTeamDocRaw(params.teamId, freshDoc);
+      }
+      return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
+    });
+    lockedResult.message.guardianEmailNotified = true;
+    if (refreshedTeam) {
+      lockedResult.team = refreshedTeam;
+    }
+  }
+  return lockedResult;
 }
 async function acknowledgeTeamMessage(params) {
   return withTeamRowLock(params.teamId, async () => {
@@ -11234,7 +11658,9 @@ async function listTeamWorkoutComments(params) {
   return { ok: true, comments: filtered };
 }
 async function postTeamWorkoutComment(params) {
-  return withTeamRowLock(params.teamId, async () => {
+  let pendingCommentEmail = null;
+  let pendingPushPayload = null;
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) return { ok: false, status: 404, error: "Team not found." };
     const callerMem = doc.memberships.find(
@@ -11292,25 +11718,24 @@ async function postTeamWorkoutComment(params) {
       createdAt: nowIso
     };
     if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
-      void sendEmailViaResend({
+      pendingCommentEmail = {
         to: targetMem.parentGuardianEmail,
         subject: `[MeetReady Guardian CC] Coach note for ${targetMem.invitedName}`,
         html: `<p><strong>${escapeHtml(comment.authorName)}</strong> commented on ${escapeHtml(targetMem.invitedName)}&apos;s ${escapeHtml(comment.workoutDate)} workout:</p><blockquote>${escapeHtml(cleanBody)}</blockquote>`,
         text: `${comment.authorName} commented on ${targetMem.invitedName}'s ${comment.workoutDate} workout: ${cleanBody}`
-      });
+      };
     }
     doc.workoutComments = [comment, ...doc.workoutComments || []].slice(0, 300);
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
-    void dispatchTeamPushNotifications({
+    pendingPushPayload = {
       teamId: params.teamId,
       senderSid: params.callerSid,
       senderName: comment.authorName,
       kind: "WORKOUT_COMMENT",
       targetMembershipId: targetMem.membershipId,
       bodyText: cleanBody
-    }).catch(() => {
-    });
+    };
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
@@ -11327,6 +11752,15 @@ async function postTeamWorkoutComment(params) {
       summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
     };
   });
+  if (lockedResult.ok) {
+    const emailToSend = pendingCommentEmail;
+    const pushToSend = pendingPushPayload;
+    await Promise.allSettled([
+      emailToSend ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "workout-comment-email") : Promise.resolve(null),
+      pushToSend ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "workout-comment-push") : Promise.resolve(null)
+    ]);
+  }
+  return lockedResult;
 }
 async function getTeamGovernanceAuditLog(params) {
   const doc = await loadTeamDocRaw(params.teamId);
@@ -11439,90 +11873,26 @@ async function migrateAnonymousTeamsToStravaSid(params) {
     stravaAthleteId: params.stravaAthleteId
   });
 }
-async function autoLinkPendingTeamInvitesByEmail(params) {
-  const cleanEmail = params.email?.trim().toLowerCase();
-  if (!cleanEmail || !cleanEmail.includes("@") || !params.userSid) return [];
-  const dir = await loadDirectory();
-  const linkedTeamIds = [];
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  for (const teamId of dir.allTeamIds) {
-    const doc = await loadTenantVaultAsync(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-    let modified = false;
-    for (const m of doc.memberships) {
-      if (m.status === "REVOKED") continue;
-      if (m.invitedEmail && m.invitedEmail.trim().toLowerCase() === cleanEmail) {
-        if (m.userSid !== params.userSid) {
-          m.userSid = params.userSid;
-          modified = true;
-        }
-        if (m.status === "INVITED" || m.status === "OPENED") {
-          m.status = "ACTIVE";
-          if (!m.openedAt) m.openedAt = nowIso;
-          if (!m.joinedAt) m.joinedAt = nowIso;
-          modified = true;
-        }
-        if (params.stravaAthleteId && !m.stravaAthleteId) {
-          m.stravaAthleteId = params.stravaAthleteId;
-          modified = true;
-        }
-        if (params.athleteName && (!m.invitedName || m.invitedName === "Team Athlete" || m.invitedName.trim().length === 0)) {
-          m.invitedName = params.athleteName.trim().slice(0, 64);
-          modified = true;
-        }
-        if (!m.sharingTier) {
-          m.sharingTier = "SUMMARY_ONLY";
-          modified = true;
-        }
-        if (!m.liveSnapshot) {
-          const safeSportShieldEnforced = Boolean(
-            doc.brand.defaultSafeSportShield || m.isMinorU18
-          );
-          const calibrated = calibrateThresholdsFromSeedMark(
-            m.seedMarkOrFtp || "",
-            doc.brand.primarySport,
-            "mi"
-          );
-          m.liveSnapshot = {
-            updatedAt: nowIso,
-            hasConnectedWatch: Boolean(m.stravaAthleteId),
-            verdictLabel: "Auto-Matched \xB7 Email Verified",
-            readinessScore: 0,
-            ctl: 0,
-            atl: 0,
-            tsb: 0,
-            acuteLoad7d: 0,
-            lowAerobicPct: 0,
-            highAerobicPct: 0,
-            neuromuscularPct: 0,
-            caraHours7d: 0,
-            ftpWatts: calibrated.cyclingFtpWatts,
-            thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
-            safeSportHideWeight: safeSportShieldEnforced,
-            sharingTier: m.sharingTier
-          };
-          modified = true;
-        }
-        await addTeamToUserIndex(
-          params.userSid,
-          teamId,
-          m.invitedName,
-          cleanEmail
-        );
-        if (!linkedTeamIds.includes(teamId)) {
-          linkedTeamIds.push(teamId);
-        }
-      }
-    }
-    if (modified) {
-      doc.updatedAt = nowIso;
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
-    }
-  }
-  return linkedTeamIds;
+function sanitizeCoachAttribution(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return void 0;
+  const input = raw;
+  const cleanField = (key, maxLen) => {
+    const val = input[key];
+    if (typeof val !== "string") return void 0;
+    const trimmed = val.trim().slice(0, maxLen);
+    return trimmed || void 0;
+  };
+  const out = {
+    ...cleanField("utm_source", 80) ? { utm_source: cleanField("utm_source", 80) } : {},
+    ...cleanField("utm_medium", 80) ? { utm_medium: cleanField("utm_medium", 80) } : {},
+    ...cleanField("utm_campaign", 80) ? { utm_campaign: cleanField("utm_campaign", 80) } : {},
+    ...cleanField("utm_content", 80) ? { utm_content: cleanField("utm_content", 80) } : {},
+    ...cleanField("src", 80) ? { src: cleanField("src", 80) } : {},
+    ...cleanField("landing_path", 120) ? { landing_path: cleanField("landing_path", 120) } : {},
+    ...cleanField("selfReportedChannel", 60) ? { selfReportedChannel: cleanField("selfReportedChannel", 60) } : {},
+    ...cleanField("capturedAt", 40) ? { capturedAt: cleanField("capturedAt", 40) } : {}
+  };
+  return Object.keys(out).length > 0 ? out : void 0;
 }
 async function createTeamForCoach(params) {
   const dir = await loadDirectory();
@@ -11562,12 +11932,15 @@ async function createTeamForCoach(params) {
     ...params.externalSync ? { externalSync: sanitizeExternalSyncConfig(params.externalSync) } : {},
     createdAt: nowIso
   };
+  const cleanCoachEventGroups = sanitizeTargetEventGroups(params.coachEventGroups);
+  const coachAttribution = sanitizeCoachAttribution(params.attribution);
   const coachMembership = {
     membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
     teamId,
     userSid: params.callerSid,
     role: "HEAD_COACH",
     squadGroup: orgDefaults.defaultSquads[0] || "Varsity",
+    ...cleanCoachEventGroups && cleanCoachEventGroups.length > 0 ? { coachEventGroups: cleanCoachEventGroups } : {},
     invitedName: brand.coachDisplayName,
     invitedEmail: params.coachEmail ? params.coachEmail.trim().toLowerCase() : void 0,
     isMinorU18: false,
@@ -11580,6 +11953,7 @@ async function createTeamForCoach(params) {
     brand,
     memberships: [coachMembership],
     broadcastWorkouts: [],
+    ...coachAttribution ? { coachAttribution } : {},
     updatedAt: nowIso
   };
   await withVaultLock(TEAMS_DIRECTORY_KEY, async () => {
@@ -11915,7 +12289,8 @@ async function claimTeamJoinInvite(params) {
       error: "No team matched that Join Code or link. Check the 6-character code with your coach."
     };
   }
-  return withTeamRowLock(initialDoc.brand.teamId, async () => {
+  let pendingConsentEmail = null;
+  const lockedResult = await withTeamRowLock(initialDoc.brand.teamId, async () => {
     const doc = await loadTenantVaultAsync(
       teamDocVaultKey(initialDoc.brand.teamId),
       null
@@ -11949,7 +12324,7 @@ async function claimTeamJoinInvite(params) {
     }
     if (!mem && cleanNameLower && cleanNameLower !== "team athlete" && cleanNameLower !== "athlete") {
       const unclaimed = doc.memberships.filter(
-        (m) => (m.status === "INVITED" || m.status === "OPENED") && !m.userSid && m.role === "ATHLETE"
+        (m) => (m.status === "INVITED" || m.status === "OPENED") && !m.userSid && !m.invitedEmail && m.role === "ATHLETE"
       );
       const exactMatches = unclaimed.filter(
         (m) => m.invitedName.trim().toLowerCase().replace(/\s+/g, " ") === cleanNameLower || normClaimNameKey && normalizeAthleteMatchKey(m.invitedName) === normClaimNameKey
@@ -12088,12 +12463,12 @@ async function claimTeamJoinInvite(params) {
           athleteName: mem.invitedName,
           parentConsentUrl: consentUrl
         });
-        void sendEmailViaResend({
+        pendingConsentEmail = {
           to: mem.parentGuardianEmail,
           subject: emailContent.subject,
           html: emailContent.html,
           text: emailContent.text
-        });
+        };
       }
     } else if (!mem.parentConsentStatus) {
       mem.parentConsentStatus = mem.isMinorU18 ? "PENDING" : "NOT_REQUIRED";
@@ -12158,6 +12533,13 @@ async function claimTeamJoinInvite(params) {
       safeSportShieldEnforced
     };
   });
+  if (lockedResult.ok && pendingConsentEmail) {
+    const emailToSend = pendingConsentEmail;
+    await Promise.allSettled([
+      withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "parent-consent-email")
+    ]);
+  }
+  return lockedResult;
 }
 async function acknowledgeParentConsent(token) {
   const cleanToken = String(token || "").trim();
@@ -12772,23 +13154,42 @@ async function issueOrResendParentConsentLink(params) {
 
 // server/routers/teamRouter.ts
 var teamRouter = express3.Router();
-function resolveRequestOrigin(req) {
-  const explicit = resolveSafeOrigin(
-    String(req.body?.origin || req.query?.origin || "")
-  );
-  if (explicit) return explicit;
-  const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
-  const proto = forwardedProto === "https" || req.secure ? "https" : "http";
-  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").trim();
-  if (host) {
-    const candidate = resolveSafeOrigin(`${proto}://${host}`);
-    if (candidate) return candidate;
+var emailOtpRateStore = /* @__PURE__ */ new Map();
+function checkEmailOtpRateLimit(key, limit, windowMs = 10 * 60 * 1e3) {
+  const now = Date.now();
+  if (emailOtpRateStore.size > 2e3) {
+    for (const [k, v] of emailOtpRateStore.entries()) {
+      if (now > v.resetAt) emailOtpRateStore.delete(k);
+    }
   }
-  return "https://meetready.app";
+  const existing = emailOtpRateStore.get(key);
+  if (!existing || now > existing.resetAt) {
+    emailOtpRateStore.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (existing.count >= limit) {
+    return false;
+  }
+  existing.count += 1;
+  return true;
+}
+function getClientRateLimitIp(req) {
+  return String(req.headers["x-vercel-forwarded-for"] || req.ip || "local").split(",")[0].trim() || "local";
+}
+function resolveRequestOrigin(req) {
+  return resolveTrustedRequestOrigin(req);
 }
 teamRouter.post("/api/auth/email/send-otp", async (req, res) => {
   try {
-    const email = String(req.body?.email || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const clientIp = getClientRateLimitIp(req);
+    if (!checkEmailOtpRateLimit(`otp_send_ip:${clientIp}`, 10) || email && !checkEmailOtpRateLimit(`otp_send_em:${email}`, 5)) {
+      res.status(429).json({
+        ok: false,
+        error: "Too many verification code requests. Please wait a few minutes and try again."
+      });
+      return;
+    }
     const result = await requestEmailOtpCode(email);
     if (!result.ok) {
       res.status(400).json({ ok: false, error: result.error || "Unable to send OTP." });
@@ -12809,10 +13210,19 @@ teamRouter.post("/api/auth/email/send-otp", async (req, res) => {
 });
 teamRouter.post("/api/auth/email/verify-otp", async (req, res) => {
   try {
-    const email = String(req.body?.email || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
     const code = String(req.body?.code || "").trim();
+    const clientIp = getClientRateLimitIp(req);
+    if (!checkEmailOtpRateLimit(`otp_verify_ip:${clientIp}`, 20) || email && !checkEmailOtpRateLimit(`otp_verify_em:${email}`, 10)) {
+      res.status(429).json({
+        ok: false,
+        error: "Too many verification attempts. Please wait a few minutes and try again."
+      });
+      return;
+    }
     const currentClaims = getVerifiedSessionClaims(req);
-    const result = await verifyEmailOtpCode(email, code, currentClaims?.sid);
+    const verifiedPreferredSid = currentClaims && isCanonicalAuthenticatedClaims(currentClaims) ? currentClaims.sid : void 0;
+    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid);
     if (!result.ok || !result.sid) {
       res.status(400).json({ ok: false, error: result.error || "Invalid code." });
       return;
@@ -12820,7 +13230,7 @@ teamRouter.post("/api/auth/email/verify-otp", async (req, res) => {
     const sessionToken = setSessionCookie(
       req,
       res,
-      result.displayName || result.email || "thresh-athlete",
+      result.userId || `usr_${result.sid}`,
       result.sid,
       "verified"
     );
@@ -12898,7 +13308,9 @@ teamRouter.post("/api/teams", async (req, res) => {
       enableParentGuardianCc: req.body?.enableParentGuardianCc,
       coachDisplayName: req.body?.coachDisplayName,
       coachEmail: req.body?.coachEmail,
-      externalSync: req.body?.externalSync
+      externalSync: req.body?.externalSync,
+      attribution: req.body?.attribution,
+      coachEventGroups: sanitizeTargetEventGroups(req.body?.eventGroups)
     });
     res.json({
       ok: true,
@@ -13452,7 +13864,7 @@ teamRouter.patch(
   async (req, res) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: "Authentication required." });
         return;
       }
@@ -13565,7 +13977,7 @@ teamRouter.patch(
   async (req, res) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: "Authentication required." });
         return;
       }
@@ -14444,6 +14856,7 @@ teamRouter.post("/api/push/test", async (req, res) => {
 });
 
 // server/routers/teamSyncRouter.ts
+import crypto15 from "crypto";
 import express4 from "express";
 
 // server/athleticSyncService.ts
@@ -14857,8 +15270,11 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
     officialResultCount += officialResults.length;
+    const isProtectedMinor = Boolean(
+      m.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
+    );
     const abbreviateUnconsentedMinor = Boolean(
-      !m.externalSource && m.isMinorU18 && m.parentConsentStatus === "PENDING"
+      !m.externalSource && isProtectedMinor && m.parentConsentStatus !== "ACKNOWLEDGED"
     );
     let displayName = m.invitedName;
     if (abbreviateUnconsentedMinor) {
@@ -14879,12 +15295,12 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
       officialResults
     };
   });
+  const safePublicExternalSync = projectSafePublicExternalSync(doc.brand.externalSync);
   return {
     found: true,
     brand: {
       teamId: doc.brand.teamId,
       slug: doc.brand.slug,
-      joinCode: doc.brand.joinCode,
       name: doc.brand.name,
       shortName: doc.brand.shortName,
       ...doc.brand.mascotOrMotto ? { mascotOrMotto: doc.brand.mascotOrMotto } : {},
@@ -14895,7 +15311,7 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
       secondaryHex: doc.brand.secondaryHex,
       defaultSafeSportShield: doc.brand.defaultSafeSportShield,
       coachDisplayName: doc.brand.coachDisplayName,
-      ...doc.brand.externalSync ? { externalSync: doc.brand.externalSync } : {}
+      ...safePublicExternalSync ? { externalSync: safePublicExternalSync } : {}
     },
     upcomingMeets,
     recentSchedule,
@@ -14964,24 +15380,14 @@ async function followTeamAsParentOrFan(params) {
 // server/routers/teamSyncRouter.ts
 var teamSyncRouter = express4.Router();
 function resolveSyncOrigin(req) {
-  const explicit = resolveSafeOrigin(
-    String(req.body?.origin || req.query?.origin || "")
-  );
-  if (explicit) return explicit;
-  const proto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https" || req.secure ? "https" : "http";
-  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").trim();
-  if (host) {
-    const candidate = resolveSafeOrigin(`${proto}://${host}`);
-    if (candidate) return candidate;
-  }
-  return "https://meetready.app";
+  return resolveTrustedRequestOrigin(req);
 }
 teamSyncRouter.post(
   "/api/teams/:teamId/external-sync/config",
   async (req, res) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: "Authentication required." });
         return;
       }
@@ -15015,7 +15421,7 @@ teamSyncRouter.post(
   async (req, res) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: "Authentication required." });
         return;
       }
@@ -15049,7 +15455,7 @@ teamSyncRouter.post(
   async (req, res) => {
     try {
       const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid) {
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
         res.status(401).json({ ok: false, error: "Authentication required." });
         return;
       }
@@ -15118,15 +15524,18 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
     let sid = existing?.sid;
     let sessionToken;
     if (!sid) {
+      const anonSid = crypto15.randomBytes(16).toString("hex");
       sessionToken = setSessionCookie(
         req,
         res,
-        String(req.body?.followerName || "thresh-supporter")
+        `anon_supporter_${anonSid.slice(0, 8)}`,
+        anonSid,
+        "anon"
       );
-      sid = decodeAndVerifyToken(sessionToken)?.sid || "000000000000000000000000";
+      sid = anonSid;
     }
     const originUrl = resolveSyncOrigin(req);
-    const verifiedUser = sid ? await getUserById(sid).catch(() => null) : null;
+    const verifiedUser = existing && isCanonicalAuthenticatedClaims(existing) && existing.sub.startsWith("usr_") ? await getUserById(existing.sub).catch(() => null) : null;
     const result = await followTeamAsParentOrFan({
       callerSid: sid,
       codeOrSlug: String(req.body?.codeOrSlug || ""),
@@ -15155,10 +15564,10 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
 
 // server/routers/authRouter.ts
 import express5 from "express";
-import crypto16 from "crypto";
+import crypto17 from "crypto";
 
 // server/webauthnVerify.ts
-import crypto15 from "crypto";
+import crypto16 from "crypto";
 function readCborLength(buf, addtl, offset) {
   if (addtl < 24) {
     return { length: addtl, nextOffset: offset };
@@ -15269,7 +15678,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 1 || !Buffer.isBuffer(xBuf) || !Buffer.isBuffer(yBuf)) {
       throw new Error("Invalid COSE EC2 P-256 public key parameters.");
     }
-    const pubKey = crypto15.createPublicKey({
+    const pubKey = crypto16.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -15290,7 +15699,7 @@ function coseKeyMapToSpki(coseMap) {
     if (!Buffer.isBuffer(nBuf) || !Buffer.isBuffer(eBuf)) {
       throw new Error("Invalid COSE RSA public key parameters.");
     }
-    const pubKey = crypto15.createPublicKey({
+    const pubKey = crypto16.createPublicKey({
       key: {
         kty: "RSA",
         n: nBuf.toString("base64url"),
@@ -15310,7 +15719,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 6 || !Buffer.isBuffer(xBuf)) {
       throw new Error("Invalid COSE Ed25519 public key parameters.");
     }
-    const pubKey = crypto15.createPublicKey({
+    const pubKey = crypto16.createPublicKey({
       key: {
         kty: "OKP",
         crv: "Ed25519",
@@ -15357,9 +15766,9 @@ function assertRpIdHashAndFlags(authData, expectedRpId, requireAtFlag) {
   if (!Buffer.isBuffer(authData) || authData.length < minLen) {
     throw new Error("Truncated WebAuthn authenticatorData.");
   }
-  const expectedRpHash = crypto15.createHash("sha256").update(expectedRpId).digest();
+  const expectedRpHash = crypto16.createHash("sha256").update(expectedRpId).digest();
   const actualRpHash = authData.subarray(0, 32);
-  if (!crypto15.timingSafeEqual(actualRpHash, expectedRpHash)) {
+  if (!crypto16.timingSafeEqual(actualRpHash, expectedRpHash)) {
     throw new Error("WebAuthn RP ID hash mismatch.");
   }
   const flags = authData.readUInt8(32);
@@ -15462,15 +15871,15 @@ function verifyWebAuthnAssertion(params) {
         error: "Passkey record lacks stored public key."
       };
     }
-    const pubKey = crypto15.createPublicKey({
+    const pubKey = crypto16.createPublicKey({
       key: Buffer.from(params.publicKeySpkiBase64, "base64"),
       format: "der",
       type: "spki"
     });
-    const clientDataHash = crypto15.createHash("sha256").update(clientDataBytes).digest();
+    const clientDataHash = crypto16.createHash("sha256").update(clientDataBytes).digest();
     const signedData = Buffer.concat([authData, clientDataHash]);
     const algDigest = params.coseAlg === -8 ? null : "sha256";
-    const isValidSig = crypto15.verify(algDigest, signedData, pubKey, sigBuf);
+    const isValidSig = crypto16.verify(algDigest, signedData, pubKey, sigBuf);
     if (!isValidSig) {
       return {
         verified: false,
@@ -16140,8 +16549,8 @@ authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
   const rpId = getRpId(req);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
-  const challenge = crypto16.randomBytes(32).toString("base64url");
-  const userId = crypto16.randomBytes(16).toString("base64url");
+  const challenge = crypto17.randomBytes(32).toString("base64url");
+  const userId = crypto17.randomBytes(16).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "register",
@@ -16251,7 +16660,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
 });
 authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
   const rpId = getRpId(req);
-  const challenge = crypto16.randomBytes(32).toString("base64url");
+  const challenge = crypto17.randomBytes(32).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "auth"
@@ -16463,7 +16872,7 @@ authRouter.delete("/api/auth/account", async (req, res) => {
 
 // server/routers/configRouter.ts
 import { Router as Router6 } from "express";
-import crypto19 from "crypto";
+import crypto20 from "crypto";
 import fs7 from "fs";
 
 // server/secretManager.ts
@@ -16861,7 +17270,7 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
 }
 
 // server/oauthHelpers.ts
-import crypto17 from "crypto";
+import crypto18 from "crypto";
 function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
   const verified = getVerifiedSessionClaims(req);
   if (verified?.sid) {
@@ -16874,7 +17283,7 @@ function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
     );
     return { sid: verified.sid, sessionToken: sessionToken2 };
   }
-  const sid = crypto17.randomBytes(16).toString("hex");
+  const sid = crypto18.randomBytes(16).toString("hex");
   const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return { sid, sessionToken };
@@ -16905,16 +17314,16 @@ function renderThreshOAuthHtml(opts) {
   </body>
 </html>`;
 }
-var CANONICAL_PROD_ORIGIN = "https://meetready.app";
+var CANONICAL_PROD_ORIGIN2 = "https://meetready.app";
 var LEGACY_PROD_ORIGIN = "https://aeropulse-eta.vercel.app";
 function canonicalizeOrigin(origin) {
-  return origin.toLowerCase() === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN : origin;
+  return origin.toLowerCase() === LEGACY_PROD_ORIGIN ? CANONICAL_PROD_ORIGIN2 : origin;
 }
 function canonicalizeRedirectUrl(rawUrl) {
   try {
     const parsed = new URL(rawUrl);
     if (parsed.origin.toLowerCase() === LEGACY_PROD_ORIGIN) {
-      return `${CANONICAL_PROD_ORIGIN}${parsed.pathname}${parsed.search}${parsed.hash}`;
+      return `${CANONICAL_PROD_ORIGIN2}${parsed.pathname}${parsed.search}${parsed.hash}`;
     }
     return parsed.toString();
   } catch {
@@ -16932,7 +17341,8 @@ function resolveStandardOAuthCallbackUrl(req, envVarName, callbackPath) {
     } catch {
     }
   }
-  const safeOrigin = resolveSafeOrigin(req.query.origin);
+  const rawQueryOrigin = req.query.origin;
+  const safeOrigin = isProductionDeployment() ? resolveTrustedCorsOrigin(rawQueryOrigin) : resolveSafeOrigin(rawQueryOrigin);
   if (safeOrigin) {
     return `${canonicalizeOrigin(safeOrigin)}${callbackPath}`;
   }
@@ -16941,10 +17351,21 @@ function resolveStandardOAuthCallbackUrl(req, envVarName, callbackPath) {
     return `${canonicalizeOrigin(appUrl)}${callbackPath}`;
   }
   const rawProto = String(req.headers["x-forwarded-proto"] || req.protocol || "http").split(",")[0].trim().toLowerCase();
-  const proto = rawProto === "https" ? "https" : "http";
+  const proto = rawProto === "https" || req.secure ? "https" : "http";
   const rawHost = String(
     req.headers["x-forwarded-host"] || req.headers.host || "localhost:3000"
   ).split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
+  if (isProductionDeployment()) {
+    const trustedHostOrigin = rawHost ? resolveTrustedCorsOrigin(`${proto}://${rawHost}`) : null;
+    if (trustedHostOrigin) {
+      return `${canonicalizeOrigin(trustedHostOrigin)}${callbackPath}`;
+    }
+    const appBaseUrl = resolveSafeOrigin(process.env.APP_BASE_URL || "");
+    if (appBaseUrl && !appBaseUrl.includes("MY_APP_URL")) {
+      return `${canonicalizeOrigin(appBaseUrl)}${callbackPath}`;
+    }
+    return `${CANONICAL_PROD_ORIGIN2}${callbackPath}`;
+  }
   const canonicalHost = rawHost.toLowerCase() === "aeropulse-eta.vercel.app" ? "meetready.app" : rawHost;
   return `${proto}://${canonicalHost || "localhost:3000"}${callbackPath}`;
 }
@@ -17046,7 +17467,7 @@ async function resolveValidatedStravaCallbackUrl(req, clientId) {
   if (appOrigin && appOrigin.startsWith("https://") && !appOrigin.includes("MY_APP_URL")) {
     pushCandidate(`${appOrigin}/auth/strava/callback`);
   }
-  pushCandidate(`${CANONICAL_PROD_ORIGIN}/auth/strava/callback`);
+  pushCandidate(`${CANONICAL_PROD_ORIGIN2}/auth/strava/callback`);
   pushCandidate("https://thresh-dev.vercel.app/auth/strava/callback");
   pushCandidate(`${LEGACY_PROD_ORIGIN}/auth/strava/callback`);
   for (const candidate of fallbackCandidates) {
@@ -17412,7 +17833,7 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 
 // server/routers/stravaRouter.ts
 import express6 from "express";
-import crypto18 from "crypto";
+import crypto19 from "crypto";
 import fs6 from "fs";
 
 // server/stravaIdUtils.ts
@@ -18218,7 +18639,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = (prevClaims?.sub === canonicalUserId ? prevClaims.sid : void 0) || (opts.expectedUserId === canonicalUserId ? opts.expectedSid : void 0) || deriveUserSessionSid(canonicalUserId);
     sessionSubject = canonicalUserId;
   } else {
-    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto18.randomBytes(16).toString("hex");
+    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto19.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
   if (opts.athleteId) {
@@ -22389,7 +22810,7 @@ configRouter.post("/api/auth/session", (req, res) => {
     res.json({ ok: true, sessionToken: refreshedToken, authLevel: "verified" });
     return;
   }
-  const anonSub = `anon_${crypto19.randomBytes(8).toString("hex")}`;
+  const anonSub = `anon_${crypto20.randomBytes(8).toString("hex")}`;
   const sessionToken = setSessionCookie(req, res, anonSub, void 0, "anon");
   res.json({ ok: true, sessionToken, authLevel: "anon" });
 });
@@ -23244,6 +23665,18 @@ apiRouter.use((req, res, next) => {
     next();
   });
 });
+apiRouter.get("/api/health", async (_req, res) => {
+  const pgHealth = await checkPostgresHealthAsync(2e3);
+  const ok = pgHealth.configured ? pgHealth.healthy === true : true;
+  res.status(ok ? 200 : 503).json({
+    ok,
+    status: ok ? "ok" : "degraded",
+    storageBackend: getVaultStorageBackend(),
+    databaseConfigured: pgHealth.configured,
+    databaseHealthy: pgHealth.healthy,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString()
+  });
+});
 apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
@@ -23260,18 +23693,493 @@ apiRouter.use(activitiesRouter);
 apiRouter.use(coachRouter);
 apiRouter.use(webhookRouter);
 
+// server/observability.ts
+import crypto21 from "crypto";
+function sanitizeTelemetryString(raw, maxLen = 300) {
+  return String(raw || "").replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[REDACTED]").replace(/([?&](?:token|code|secret|key|t)=)[^&\s]+/gi, "$1[REDACTED]").slice(0, maxLen);
+}
+function parseSentryDsn(rawDsn) {
+  const trimmed = String(rawDsn || "").trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    const publicKey = parsed.username;
+    const pathParts = parsed.pathname.replace(/^\/+/, "").split("/").filter(Boolean);
+    const projectId = pathParts.pop();
+    if (!publicKey || !projectId || !parsed.host) return null;
+    const prefix = pathParts.length > 0 ? `/${pathParts.join("/")}` : "";
+    return {
+      storeUrl: `${parsed.protocol}//${parsed.host}${prefix}/api/${encodeURIComponent(projectId)}/store/`,
+      publicKey,
+      projectId
+    };
+  } catch {
+    return null;
+  }
+}
+async function postSentryEvent(dsn, eventPayload) {
+  try {
+    await fetch(dsn.storeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Sentry-Auth": `Sentry sentry_version=7, sentry_key=${dsn.publicKey}, sentry_client=meetready-server/2.1`
+      },
+      body: JSON.stringify(eventPayload),
+      signal: AbortSignal.timeout(2e3)
+    });
+  } catch {
+  }
+}
+function shouldSuppressConsoleTelemetry() {
+  return process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+}
+async function captureServerException(err, context = {}) {
+  const errName = err instanceof Error ? err.name : "Error";
+  const errMsg = sanitizeTelemetryString(
+    err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown server error"
+  );
+  const cleanPath = context.path ? sanitizeTelemetryString(context.path.split("?")[0], 160) : void 0;
+  const scope = sanitizeTelemetryString(context.scope || "server", 80);
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  if (!shouldSuppressConsoleTelemetry()) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        timestamp,
+        scope,
+        ...context.method ? { method: context.method } : {},
+        ...cleanPath ? { path: cleanPath } : {},
+        ...typeof context.statusCode === "number" ? { statusCode: context.statusCode } : {},
+        errorName: errName,
+        message: errMsg
+      })
+    );
+  }
+  const dsn = parseSentryDsn(process.env.SENTRY_DSN);
+  if (!dsn) return;
+  await postSentryEvent(dsn, {
+    event_id: crypto21.randomBytes(16).toString("hex"),
+    timestamp,
+    level: "error",
+    platform: "node",
+    server_name: "meetready-api",
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "development",
+    message: `${scope}: ${errMsg}`,
+    tags: {
+      scope,
+      ...context.method ? { method: context.method } : {},
+      ...cleanPath ? { path: cleanPath } : {},
+      ...typeof context.statusCode === "number" ? { statusCode: String(context.statusCode) } : {}
+    },
+    exception: {
+      values: [
+        {
+          type: errName,
+          value: errMsg
+        }
+      ]
+    }
+  });
+}
+
+// server/routers/ogPreviewRouter.ts
+import fs9 from "node:fs";
+import path2 from "node:path";
+import { fileURLToPath } from "node:url";
+import express10 from "express";
+
+// src/utils/shareWorkoutCodec.ts
+var FORBIDDEN_RAW_TELEMETRY_KEYS = [
+  "stravaId",
+  "stravaActivityId",
+  "activities",
+  "streams",
+  "rawTelemetry",
+  "latlng",
+  "heartrate",
+  "wattsStream"
+];
+function stripEmailAndControls(input, maxLen) {
+  const s = String(input ?? "").replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").trim();
+  return s.slice(0, maxLen);
+}
+function normalizeSportCategory(val) {
+  if (val === "Cycling" || val === "Running" || val === "Swimming" || val === "Strength" || val === "Multisport") {
+    return val;
+  }
+  return "Running";
+}
+function sanitizeSharedWorkoutPayload(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw;
+  const cleanSource = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (!FORBIDDEN_RAW_TELEMETRY_KEYS.includes(k)) {
+      cleanSource[k] = v;
+    }
+  }
+  const title = stripEmailAndControls(cleanSource.title || "MeetReady Structured Session", 90);
+  if (!title) return null;
+  const kind = cleanSource.kind === "STOPWATCH" ? "STOPWATCH" : "WORKOUT";
+  const sport = normalizeSportCategory(cleanSource.sport);
+  const dateRaw = typeof cleanSource.date === "string" ? cleanSource.date.slice(0, 10) : "";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateRaw) ? dateRaw : void 0;
+  const workoutSyntax = typeof cleanSource.workoutSyntax === "string" && cleanSource.workoutSyntax.trim() ? cleanSource.workoutSyntax.trim().slice(0, 2500) : void 0;
+  const description = typeof cleanSource.description === "string" && cleanSource.description.trim() ? stripEmailAndControls(cleanSource.description, 280) : void 0;
+  const authorLabel = typeof cleanSource.authorLabel === "string" && cleanSource.authorLabel.trim() ? stripEmailAndControls(cleanSource.authorLabel, 48) : void 0;
+  const teamName = typeof cleanSource.teamName === "string" && cleanSource.teamName.trim() ? stripEmailAndControls(cleanSource.teamName, 60) : void 0;
+  const plannedDurationSecs = typeof cleanSource.plannedDurationSecs === "number" && Number.isFinite(cleanSource.plannedDurationSecs) && cleanSource.plannedDurationSecs > 0 ? Math.round(Math.min(43200, cleanSource.plannedDurationSecs)) : void 0;
+  const plannedLoad = typeof cleanSource.plannedLoad === "number" && Number.isFinite(cleanSource.plannedLoad) && cleanSource.plannedLoad >= 0 ? Math.round(Math.min(1200, cleanSource.plannedLoad)) : void 0;
+  const defaultUnit = cleanSource.defaultUnit === "km" || cleanSource.defaultUnit === "mi" ? cleanSource.defaultUnit : void 0;
+  const referenceFtpWatts = typeof cleanSource.referenceFtpWatts === "number" && Number.isFinite(cleanSource.referenceFtpWatts) ? Math.round(Math.max(80, Math.min(600, cleanSource.referenceFtpWatts))) : void 0;
+  const referenceThresholdPaceSecsPerKm = typeof cleanSource.referenceThresholdPaceSecsPerKm === "number" && Number.isFinite(cleanSource.referenceThresholdPaceSecsPerKm) ? Math.round(Math.max(120, Math.min(600, cleanSource.referenceThresholdPaceSecsPerKm))) : void 0;
+  let splits;
+  if (Array.isArray(cleanSource.splits) && cleanSource.splits.length > 0) {
+    splits = cleanSource.splits.slice(0, 16).filter((s) => s && typeof s === "object").map((s) => {
+      const row = s;
+      return {
+        label: stripEmailAndControls(row.label || "Split", 40),
+        lapTime: stripEmailAndControls(row.lapTime || "0:00", 18),
+        ...row.paceOrPower ? { paceOrPower: stripEmailAndControls(row.paceOrPower, 28) } : {},
+        ...typeof row.distanceMeters === "number" && Number.isFinite(row.distanceMeters) ? { distanceMeters: Math.round(Math.max(10, Math.min(1e5, row.distanceMeters))) } : {},
+        ...row.cumulativeTime ? { cumulativeTime: stripEmailAndControls(row.cumulativeTime, 18) } : {}
+      };
+    });
+  }
+  return {
+    kind,
+    version: 1,
+    title,
+    sport,
+    ...date ? { date } : {},
+    ...workoutSyntax ? { workoutSyntax } : {},
+    ...plannedDurationSecs ? { plannedDurationSecs } : {},
+    ...plannedLoad !== void 0 ? { plannedLoad } : {},
+    ...description ? { description } : {},
+    ...authorLabel ? { authorLabel } : {},
+    ...teamName ? { teamName } : {},
+    ...defaultUnit ? { defaultUnit } : {},
+    ...referenceFtpWatts ? { referenceFtpWatts } : {},
+    ...referenceThresholdPaceSecsPerKm ? { referenceThresholdPaceSecsPerKm } : {},
+    ...splits && splits.length > 0 ? { splits } : {}
+  };
+}
+function base64UrlToUint8(token) {
+  const padded = token.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((token.length + 3) % 4);
+  if (typeof atob === "function") {
+    const binary = atob(padded);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      out[i] = binary.charCodeAt(i);
+    }
+    return out;
+  }
+  return new Uint8Array(Buffer.from(padded, "base64"));
+}
+function decodeSharedWorkoutPayload(token) {
+  if (!token || typeof token !== "string") return null;
+  try {
+    const clean = token.trim();
+    if (!clean || clean.length > 12e3) return null;
+    const bytes = base64UrlToUint8(clean);
+    const json = new TextDecoder().decode(bytes);
+    const parsed = JSON.parse(json);
+    return sanitizeSharedWorkoutPayload(parsed);
+  } catch {
+    return null;
+  }
+}
+function formatMmSs(totalSecs) {
+  const safe = Math.max(0, Math.round(totalSecs));
+  const m = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+function formatSharedWorkoutOgSummary(payload) {
+  const kindLabel = payload.kind === "STOPWATCH" ? "Stopwatch Splits" : "Structured Workout";
+  const title = `${payload.title} \u2014 MeetReady ${kindLabel}`;
+  const parts = [payload.sport];
+  if (payload.teamName) {
+    parts.push(payload.teamName);
+  }
+  if (payload.kind === "STOPWATCH" && payload.splits && payload.splits.length > 0) {
+    parts.push(`${payload.splits.length} ${payload.splits.length === 1 ? "split" : "splits"}`);
+  } else if (payload.plannedDurationSecs) {
+    parts.push(`${formatMmSs(payload.plannedDurationSecs)} planned`);
+  }
+  if (payload.description) {
+    parts.push(payload.description);
+  } else if (payload.workoutSyntax) {
+    parts.push(payload.workoutSyntax.slice(0, 110));
+  }
+  const description = `${parts.join(" \xB7 ")} \u2014 Open and save to your training calendar on MeetReady.`.slice(
+    0,
+    220
+  );
+  return { title, description };
+}
+
+// server/routers/ogPreviewRouter.ts
+var CANONICAL_ORIGIN = "https://meetready.app";
+var STATIC_OG_IMAGE = "https://meetready.app/brand/meetready-og-1200x630.png";
+var MINIMAL_FALLBACK_HTML_SHELL = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>MeetReady \u2014 Track &amp; Field &amp; Cross Country</title>
+    <meta name="description" content="Every mark. Every mile. Meet ready. Track, Field &amp; Cross Country team platform." />
+    <link rel="canonical" href="https://meetready.app/" />
+    <meta property="og:title" content="MeetReady \u2014 Track &amp; Field &amp; Cross Country" />
+    <meta property="og:description" content="Every mark. Every mile. Meet ready. Track, Field &amp; Cross Country team platform." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://meetready.app/" />
+    <meta property="og:image" content="${STATIC_OG_IMAGE}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="MeetReady \u2014 Track &amp; Field &amp; Cross Country" />
+    <meta name="twitter:description" content="Offline 0.01s splits, jumps/throws/vaults field sheets, auto-scaled pace pods, and SafeSport guardrails." />
+    <meta name="twitter:image" content="${STATIC_OG_IMAGE}" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg?v=7" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>`;
+function resolveDistIndexHtml(customPath) {
+  const candidates = [];
+  if (customPath) {
+    candidates.push(customPath);
+  }
+  candidates.push(path2.resolve(process.cwd(), "dist", "index.html"));
+  try {
+    const dir = path2.dirname(fileURLToPath(import.meta.url));
+    candidates.push(path2.resolve(dir, "../dist/index.html"));
+    candidates.push(path2.resolve(dir, "../../dist/index.html"));
+  } catch {
+  }
+  for (const candidate of candidates) {
+    try {
+      if (fs9.existsSync(candidate) && fs9.statSync(candidate).isFile()) {
+        return fs9.readFileSync(candidate, "utf8");
+      }
+    } catch {
+    }
+  }
+  return MINIMAL_FALLBACK_HTML_SHELL;
+}
+function replaceOrInsertHeadTag(html, pattern, replacementTag) {
+  if (pattern.test(html)) {
+    return html.replace(pattern, () => replacementTag);
+  }
+  const headCloseIdx = html.search(/<\/head>/i);
+  if (headCloseIdx !== -1) {
+    return `${html.slice(0, headCloseIdx)}    ${replacementTag}
+  ${html.slice(headCloseIdx)}`;
+  }
+  return html;
+}
+function injectOgMetadataIntoHtml(templateHtml, meta) {
+  const safeTitle = escapeHtml(meta.title);
+  const safeDesc = escapeHtml(meta.description);
+  const safeCanonical = escapeHtml(meta.canonicalUrl);
+  const safeOgUrl = escapeHtml(meta.ogUrl);
+  let out = templateHtml;
+  out = replaceOrInsertHeadTag(out, /<title>[\s\S]*?<\/title>/i, `<title>${safeTitle}</title>`);
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bname=["']description["'][^>]*\/?>/i,
+    `<meta name="description" content="${safeDesc}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<link\b[^>]*\brel=["']canonical["'][^>]*\/?>/i,
+    `<link rel="canonical" href="${safeCanonical}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bproperty=["']og:title["'][^>]*\/?>/i,
+    `<meta property="og:title" content="${safeTitle}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bproperty=["']og:description["'][^>]*\/?>/i,
+    `<meta property="og:description" content="${safeDesc}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bproperty=["']og:url["'][^>]*\/?>/i,
+    `<meta property="og:url" content="${safeOgUrl}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bproperty=["']og:image["'][^>]*\/?>/i,
+    `<meta property="og:image" content="${STATIC_OG_IMAGE}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bname=["']twitter:title["'][^>]*\/?>/i,
+    `<meta name="twitter:title" content="${safeTitle}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bname=["']twitter:description["'][^>]*\/?>/i,
+    `<meta name="twitter:description" content="${safeDesc}" />`
+  );
+  out = replaceOrInsertHeadTag(
+    out,
+    /<meta\b[^>]*\bname=["']twitter:image["'][^>]*\/?>/i,
+    `<meta name="twitter:image" content="${STATIC_OG_IMAGE}" />`
+  );
+  return out;
+}
+function buildPublicTeamOgMetadata(slug, payload) {
+  const safeSlugSegment = encodeURIComponent(payload?.brand?.slug || slug);
+  const url = `${CANONICAL_ORIGIN}/team/${safeSlugSegment}`;
+  if (payload?.found && payload.brand) {
+    const teamName = payload.brand.name;
+    const sportLabel = payload.brand.primarySport || "Running";
+    const meetCount = payload.stats?.meetCount ?? 0;
+    const resultCount = payload.stats?.officialResultCount ?? 0;
+    const athleteCount = payload.stats?.athleteCount ?? 0;
+    return {
+      title: `${teamName} \u2014 MeetReady Team Hub`,
+      description: `${teamName} (${sportLabel}) public meet schedule and official FAT results (${meetCount} meets, ${resultCount} official marks, ${athleteCount} athletes) on MeetReady.`,
+      canonicalUrl: url,
+      ogUrl: url
+    };
+  }
+  return {
+    title: "MeetReady \u2014 Public Team Hub & Schedule",
+    description: "Public Track, Field & Cross Country meet schedule, official FAT results, and team announcements on MeetReady.",
+    canonicalUrl: url,
+    ogUrl: url
+  };
+}
+function buildJoinOgMetadata(slug, preview) {
+  const safeSlugSegment = encodeURIComponent(preview?.brand?.slug || slug);
+  const cleanJoinUrl = `${CANONICAL_ORIGIN}/join/${safeSlugSegment}`;
+  if (preview?.found && preview.brand) {
+    const teamName = preview.brand.name;
+    const sportLabel = preview.brand.primarySport || "Running";
+    return {
+      title: `Join ${teamName} on MeetReady`,
+      description: `Join ${teamName} (${sportLabel}) on MeetReady for watchless splits, field sheets, auto-scaled pace pods, and U18 SafeSport & FERPA protection.`,
+      canonicalUrl: cleanJoinUrl,
+      ogUrl: cleanJoinUrl
+    };
+  }
+  return {
+    title: "Join Team Roster \u2014 MeetReady",
+    description: "Accept your MeetReady Track, Field & Cross Country team roster invite with built-in SafeSport & FERPA guardrails.",
+    canonicalUrl: cleanJoinUrl,
+    ogUrl: cleanJoinUrl
+  };
+}
+function createOgPreviewRouter(options = {}) {
+  const router = express10.Router();
+  let cachedHtmlShell = options.htmlShell ?? null;
+  const getHtmlShell = () => {
+    if (cachedHtmlShell !== null) {
+      return cachedHtmlShell;
+    }
+    cachedHtmlShell = resolveDistIndexHtml(options.indexHtmlPath);
+    return cachedHtmlShell;
+  };
+  const loadHub = options.loadTeamHub ?? getPublicTeamHubBySlugOrCode;
+  const loadJoin = options.loadTeamJoinPreview ?? ((codeOrSlug) => previewTeamJoinInvite(codeOrSlug));
+  router.get("/team/:slug", async (req, res) => {
+    const slug = String(req.params.slug || "").trim();
+    let payload = null;
+    if (slug) {
+      try {
+        payload = await loadHub(slug);
+      } catch {
+        payload = null;
+      }
+    }
+    const meta = buildPublicTeamOgMetadata(slug || "team", payload);
+    const html = injectOgMetadataIntoHtml(getHtmlShell(), meta);
+    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+    res.type("text/html; charset=utf-8");
+    res.status(200).send(html);
+  });
+  router.get("/join/:slug", async (req, res) => {
+    const slug = String(req.params.slug || "").trim();
+    const rawToken = typeof req.query.t === "string" ? req.query.t.trim() : "";
+    const hasInviteToken = rawToken.length > 0;
+    let preview = null;
+    if (slug) {
+      try {
+        preview = await loadJoin(slug);
+      } catch {
+        preview = null;
+      }
+    }
+    const meta = buildJoinOgMetadata(slug || "team", preview);
+    const html = injectOgMetadataIntoHtml(getHtmlShell(), meta);
+    res.setHeader(
+      "Cache-Control",
+      hasInviteToken ? "private, no-store" : "public, s-maxage=300, stale-while-revalidate=600"
+    );
+    res.type("text/html; charset=utf-8");
+    res.status(200).send(html);
+  });
+  router.get("/share/workout", (req, res) => {
+    const rawPayloadParam = typeof req.query.w === "string" ? req.query.w.trim() : "";
+    const decoded = rawPayloadParam ? decodeSharedWorkoutPayload(rawPayloadParam) : null;
+    let meta;
+    if (decoded) {
+      const summary = formatSharedWorkoutOgSummary(decoded);
+      const safeShareUrl = `${CANONICAL_ORIGIN}/share/workout?w=${encodeURIComponent(rawPayloadParam)}`;
+      meta = {
+        title: summary.title,
+        description: summary.description,
+        canonicalUrl: `${CANONICAL_ORIGIN}/share/workout`,
+        ogUrl: safeShareUrl
+      };
+    } else {
+      meta = {
+        title: "Shared Workout & Stopwatch Splits \u2014 MeetReady",
+        description: "Clean-Room structured workout & 0.01s stopwatch splits shared via MeetReady. Zero third-party telemetry leakage.",
+        canonicalUrl: `${CANONICAL_ORIGIN}/share/workout`,
+        ogUrl: `${CANONICAL_ORIGIN}/share/workout`
+      };
+    }
+    const html = injectOgMetadataIntoHtml(getHtmlShell(), meta);
+    res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+    res.type("text/html; charset=utf-8");
+    res.status(200).send(html);
+  });
+  return router;
+}
+var ogPreviewRouter = createOgPreviewRouter();
+
 // server/vercelApp.ts
-var app = express10();
+var app = express11();
 app.disable("x-powered-by");
-app.use(securityHeadersMiddleware);
 app.use(
-  express10.json({
+  express11.json({
     limit: "2mb",
     reviver: strava64BitJsonReviver
   })
 );
-app.use(express10.urlencoded({ extended: false }));
 app.use(apiRouter);
+app.use(ogPreviewRouter);
+app.use((err, req, res, _next) => {
+  const statusCode = typeof err === "object" && err !== null && "status" in err && typeof err.status === "number" ? err.status : 500;
+  void captureServerException(err, {
+    scope: "vercel-app-error",
+    method: req.method,
+    path: req.path,
+    statusCode
+  });
+  if (res.headersSent) return;
+  const message = statusCode >= 500 ? "Internal server error." : err instanceof Error ? err.message : "Bad request.";
+  res.status(statusCode).json({ ok: false, error: message });
+});
 var vercelApp_default = app;
 export {
   vercelApp_default as default

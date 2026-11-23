@@ -78,14 +78,14 @@ test.describe('Sprint 1C E2E: Demo Isolation, 0-Activity Persistence, Honest Tre
     await expect(nav).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Exit Demo', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Sign In or Get Started' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: /Join Team or Start Free|Start Your Free Team Pilot|Sign In or Get Started/i })).toBeVisible({
       timeout: 15000,
     });
     expect(new URL(page.url()).searchParams.has('demo')).toBe(false);
 
     // Reload stays outside demo mode and real stopwatch entry survives
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Sign In or Get Started' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: /Join Team or Start Free|Start Your Free Team Pilot|Sign In or Get Started/i })).toBeVisible({
       timeout: 15000,
     });
     const preservedSw = await page.evaluate(() =>

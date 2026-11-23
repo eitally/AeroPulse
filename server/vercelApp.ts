@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { apiRouter } from './apiRouter.ts';
 import { captureServerException } from './observability.ts';
+import { ogPreviewRouter } from './routers/ogPreviewRouter.ts';
 import { strava64BitJsonReviver } from './stravaIdUtils.ts';
 
 const app = express();
@@ -13,6 +14,7 @@ app.use(
   })
 );
 app.use(apiRouter);
+app.use(ogPreviewRouter);
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const statusCode =
     typeof err === 'object' &&

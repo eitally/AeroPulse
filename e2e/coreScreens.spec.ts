@@ -296,7 +296,7 @@ test.describe('THRESH Core Screens Visual & E2E Net (QA-01)', () => {
           page.waitForEvent('download'),
           page.getByTestId('stopwatch-export-csv').click(),
         ]);
-        expect(download.suggestedFilename()).toMatch(/^thresh-stopwatch-race-.*\.csv$/);
+        expect(download.suggestedFilename()).toMatch(/^meetready-stopwatch-race-.*\.csv$/);
       } finally {
         await context.setOffline(false);
       }

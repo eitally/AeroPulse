@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { apiRouter } from './server/apiRouter.ts';
 import { captureServerException } from './server/observability.ts';
+import { ogPreviewRouter } from './server/routers/ogPreviewRouter.ts';
 import { strava64BitJsonReviver } from './server/stravaIdUtils.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -121,6 +122,7 @@ async function startServer() {
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
+    app.use(ogPreviewRouter);
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
