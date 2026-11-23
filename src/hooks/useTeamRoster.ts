@@ -13,6 +13,7 @@ import {
   mergeActivitiesNonDestructive,
 } from '../utils/telemetryStorage';
 import { overlayPendingStopwatchOutboxOnTeams } from '../utils/stopwatchTeamSync';
+import { overlayPendingFieldOutboxOnTeams } from '../utils/fieldEventsOutbox';
 
 interface UseTeamRosterParams {
   isSampleDemoMode: boolean;
@@ -327,7 +328,9 @@ export function useTeamRoster({
       const raw = localStorage.getItem('thresh_my_teams_v1');
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return overlayPendingStopwatchOutboxOnTeams(parsed);
+        if (Array.isArray(parsed)) {
+          return overlayPendingFieldOutboxOnTeams(overlayPendingStopwatchOutboxOnTeams(parsed));
+        }
       }
     } catch {
       // ignore
@@ -424,7 +427,9 @@ export function useTeamRoster({
           setResendConfigured(data.resendConfigured);
         }
         if (Array.isArray(data.teams)) {
-          const teamsWithPending = overlayPendingStopwatchOutboxOnTeams(data.teams);
+          const teamsWithPending = overlayPendingFieldOutboxOnTeams(
+            overlayPendingStopwatchOutboxOnTeams(data.teams)
+          );
           setMyTeams(teamsWithPending);
           try {
             localStorage.setItem('thresh_my_teams_v1', JSON.stringify(teamsWithPending));

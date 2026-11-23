@@ -24,6 +24,7 @@ import {
   buildInitialConnectedAthletes,
 } from '../data/athleteRosterData';
 import { clearAllUserBrowserStorage } from '../utils/storageKeys';
+import { clearFieldOutboxDb } from '../utils/fieldEventsOutbox';
 import {
   buildCompleteAthleteProfile,
   clearPersistedTelemetrySnapshot,
@@ -242,6 +243,7 @@ export function useWorkspaceOnboarding({
       // Always purge shared-device IndexedDB workouts & wellness on Sign Out so the next user
       // on a school iPad / Chromebook never inherits the prior athlete's history.
       await clearPersistedTelemetrySnapshot();
+      await clearFieldOutboxDb();
       setIdbSavedAt(null);
       await fetchServerConfigStatus();
     },

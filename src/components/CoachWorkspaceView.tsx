@@ -1682,7 +1682,9 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               isOpen={showMeetDayModal}
               onClose={() => setShowMeetDayModal(false)}
               activeTeam={activeTeam}
+              myTeams={myTeams}
               connectedAthletes={connectedAthletesOnly}
+              onTeamsUpdated={onTeamsUpdated}
             />
           </Suspense>
         </WorkspaceErrorBoundary>

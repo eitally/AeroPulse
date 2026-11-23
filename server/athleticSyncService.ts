@@ -37,9 +37,16 @@ import {
 } from '../src/physiology/fieldEventsEngine.ts';
 import { getLocalDateIso } from '../src/physiology/stravaLoadCalibration.ts';
 import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
+import {
+  applyParsedExternalFieldMarksToDoc,
+  type MatchedExternalFieldMarkInput,
+} from './athleticFieldSyncHelper.ts';
 import { assertSafeExternalFetch } from './securityUtils.ts';
-import { loadFullTeamFieldMarksArchive } from './teamFieldAndDailyOpsService.ts';
-import { withTeamRowLock } from './tokenVault.ts';
+import {
+  loadFullTeamFieldMarksArchive,
+  teamFieldLogsVaultKey,
+} from './teamFieldAndDailyOpsService.ts';
+import { saveTenantVaultAsync, withTeamRowLock } from './tokenVault.ts';
 import {
   addTeamToUserIndex,
   findTeamDocumentByCodeOrSlug,
@@ -462,19 +469,27 @@ export async function applyExternalTeamSyncBatch(params: {
     addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
   }
 
+  const matchedFieldItems: MatchedExternalFieldMarkInput[] = [];
   for (const row of (params.results || []).slice(0, 200)) {
     const { mem, created } = findOrCreateExternalMembership(doc, {
       name: row.athleteName,
       squadGroup: row.squadGroup,
       graduationYear: row.graduationYear,
       genderDivision: row.genderDivision,
-      seedMarkOrFtp: row.displayFatTime,
+      seedMarkOrFtp: row.isFieldEvent
+        ? row.displayFieldMark || row.displayFatTime
+        : row.displayFatTime,
       externalSource: row.externalSource,
       externalAthleteId: row.externalAthleteId,
       externalProfileUrl: row.externalProfileUrl,
       isMinorU18: doc.brand.orgType === 'HIGH_SCHOOL',
     });
     if (created) addedAthletes += 1;
+
+    if (row.isFieldEvent) {
+      matchedFieldItems.push({ row, mem });
+      continue;
+    }
 
     const existingActs = Array.isArray(mem.coachRecordedActivities)
       ? mem.coachRecordedActivities
@@ -518,6 +533,22 @@ export async function applyExternalTeamSyncBatch(params: {
       await archiveCoachActivitiesForMember(mem, [activity]).catch(() => undefined);
     }
     recordedResults += 1;
+  }
+
+  if (matchedFieldItems.length > 0) {
+    const existingFieldLogs = await loadFullTeamFieldMarksArchive(
+      params.teamId,
+      doc.fieldMarkLogs
+    );
+    const fieldRes = applyParsedExternalFieldMarksToDoc({
+      doc,
+      existingLogs: existingFieldLogs,
+      matchedFieldItems,
+    });
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), fieldRes.mergedLogs);
+    doc.fieldMarkLogs = fieldRes.mergedLogs.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = fieldRes.mergedLogs.length;
+    recordedResults += fieldRes.addedCount;
   }
 
   doc.brand.externalSync = sanitizeExternalSyncConfig(

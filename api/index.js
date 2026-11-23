@@ -1,9 +1,9 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express11 from "express";
+import express12 from "express";
 
 // server/apiRouter.ts
-import express9 from "express";
+import express10 from "express";
 
 // server/securityUtils.ts
 import crypto from "crypto";
@@ -4829,6 +4829,13 @@ async function ensureStoreSessionHydrated(req) {
     store.stravaAthleteId = String(persisted.stravaAthleteId);
   }
 }
+var VALID_FOOTWEAR_CLASSES = /* @__PURE__ */ new Set([
+  "DAILY_TRAINER",
+  "LIGHTWEIGHT_FLAT_SUPER_TRAINER",
+  "CARBON_ROAD_RACER",
+  "TRADITIONAL_TRACK_SPIKE",
+  "CARBON_SUPER_SPIKE"
+]);
 var SAFE_PROFILE_KEYS = [
   "name",
   "primarySport",
@@ -4940,6 +4947,26 @@ function sanitizeAthleteCloudState(raw, existing) {
     ...act,
     streams: void 0
   })) : base.coachArchivedActivities;
+  const gearItems = Array.isArray(input.gearItems) ? input.gearItems.slice(0, 40).map((item, idx) => {
+    const cleanType = item?.type === "BIKE" ? "BIKE" : "SHOE";
+    const cleanFootwear = item?.footwearClass && VALID_FOOTWEAR_CLASSES.has(item.footwearClass) ? item.footwearClass : void 0;
+    const dist = Number(item?.distanceMeters);
+    const maxDist = Number(item?.maxRecommendedMeters);
+    return {
+      id: String(item?.id || `gear-${Date.now()}-${idx}`).slice(0, 80),
+      name: String(item?.name || "Running Shoe").trim().slice(0, 120) || "Running Shoe",
+      type: cleanType,
+      distanceMeters: Number.isFinite(dist) && dist >= 0 ? Math.round(dist) : 0,
+      maxRecommendedMeters: Number.isFinite(maxDist) && maxDist >= 1e3 ? Math.round(maxDist) : 724205,
+      primary: Boolean(item?.primary),
+      ...typeof item?.brand === "string" && item.brand.trim() ? { brand: item.brand.trim().slice(0, 60) } : {},
+      ...cleanFootwear ? { footwearClass: cleanFootwear } : {},
+      ...item?.retired ? { retired: true } : {},
+      ...typeof item?.retiredAt === "string" && item.retiredAt.trim() ? { retiredAt: item.retiredAt.trim().slice(0, 32) } : {},
+      ...typeof item?.purchaseDate === "string" && item.purchaseDate.trim() ? { purchaseDate: item.purchaseDate.trim().slice(0, 16) } : {},
+      ...typeof item?.notes === "string" && item.notes.trim() ? { notes: item.notes.trim().slice(0, 300) } : {}
+    };
+  }) : base.gearItems;
   return {
     version: 1,
     updatedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -4948,6 +4975,7 @@ function sanitizeAthleteCloudState(raw, existing) {
     annualMileageGoals,
     ...athleteProfile ? { athleteProfile } : {},
     ...distanceUnit ? { distanceUnit } : {},
+    ...gearItems !== void 0 ? { gearItems } : {},
     ...sessionCheckIns ? { sessionCheckIns } : {},
     ...coachArchivedActivities?.length ? { coachArchivedActivities } : {}
   };
@@ -5596,7 +5624,7 @@ function parseClockOrSecondsToken(token) {
   }
   return null;
 }
-function extractDistanceMeters(cleanLine) {
+function extractDistanceMeters(cleanLine, isRepeatWork = false) {
   const distPart = cleanLine.replace(/(?:\b(?:at|@)\b).*$/i, "").trim();
   const source = distPart.length > 0 ? distPart : cleanLine;
   const kmMatch = source.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
@@ -5605,12 +5633,25 @@ function extractDistanceMeters(cleanLine) {
   if (miMatch) return Math.round(Number(miMatch[1]) * 1609.34);
   const metersWordMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
   if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
+  const hasExplicitMinutesHint = /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|cooldown|cool-down|steady|progression)\b|\d+\s*%/i.test(
+    source
+  );
   const mTokens = Array.from(source.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
   for (const tok of mTokens) {
     const val = Number(tok[1]);
     if (val >= 100) return val;
-    if (val >= 30 && val <= 99 && /\b(sprint|stride|fly|accel|hill|walk|jog|float|rec|recovery)\b/i.test(cleanLine)) {
-      return val;
+    if (val >= 10 && val <= 99 && !hasExplicitMinutesHint) {
+      if (/\b(sprint|stride|fly|flys|flies|accel|acceleration|block|blocks|start|starts|wicket|wickets|hurdle|hurdles|hill|walk|jog|float)\b/i.test(
+        source
+      )) {
+        return val;
+      }
+      if (val >= 30 && /\b(rec|recovery)\b/i.test(source)) {
+        return val;
+      }
+      if (isRepeatWork) {
+        return val;
+      }
     }
   }
   return void 0;
@@ -5702,8 +5743,8 @@ function inferStepKind(cleanLine, explicitKind) {
   if (/\b(?:jog|walk|rest|recovery|float|standing)\b/i.test(cleanLine)) return "rest";
   return "work";
 }
-function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explicitKind) {
-  const distanceMeters = extractDistanceMeters(cleanLine);
+function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explicitKind, isRepeatWork = false) {
+  const distanceMeters = extractDistanceMeters(cleanLine, isRepeatWork);
   const explicitPct = extractExplicitIntensityPct(cleanLine);
   const { paceSecsPerKm: parsedTargetPace, repSplitSecs } = extractTargetPaceSecsPerKm(
     cleanLine,
@@ -5733,8 +5774,8 @@ function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explici
       intensityPct = 98;
     } else if (/z5|vo2|\bI\b/i.test(cleanLine)) {
       intensityPct = 110;
-    } else if (/z6|sprint|anaerobic/i.test(cleanLine)) {
-      intensityPct = 130;
+    } else if (/z6|sprint|anaerobic|fly|flys|flies|blocks?|starts?|accel/i.test(cleanLine) || distanceMeters !== void 0 && distanceMeters < 100 && stepKind === "work") {
+      intensityPct = 135;
     }
   }
   const effectiveTargetPace = parsedTargetPace ?? namedPace.paceSecsPerKm ?? (distanceMeters ? Number((thresholdPaceSecsPerKm * 100 / Math.max(40, intensityPct)).toFixed(1)) : void 0);
@@ -5882,10 +5923,10 @@ function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
         restPart = withRestMatch[1].trim();
         mainPart = remainder.slice(0, withRestMatch.index).trim();
       }
-      const workStep = parseSingleWorkoutLine(mainPart, thresholdPaceSecsPerKm, "work");
+      const workStep = parseSingleWorkoutLine(mainPart, thresholdPaceSecsPerKm, "work", true);
       const groupSteps = [workStep];
       if (restPart) {
-        groupSteps.push(parseSingleWorkoutLine(restPart, thresholdPaceSecsPerKm, "rest"));
+        groupSteps.push(parseSingleWorkoutLine(restPart, thresholdPaceSecsPerKm, "rest", false));
       }
       nodes.push({
         type: "repeat",
@@ -5895,7 +5936,13 @@ function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
       });
       continue;
     }
-    const step = parseSingleWorkoutLine(clean, thresholdPaceSecsPerKm);
+    const inferredKind = inferStepKind(clean);
+    const step = parseSingleWorkoutLine(
+      clean,
+      thresholdPaceSecsPerKm,
+      void 0,
+      Boolean(currentRepeat && inferredKind === "work")
+    );
     if (currentRepeat) {
       if (step.stepKind === "cooldown" || step.stepKind === "warmup") {
         flushRepeat();
@@ -6700,9 +6747,107 @@ var FIELD_EVENT_CATALOG = [
 function getFieldEventSpec(code) {
   return FIELD_EVENT_CATALOG.find((c) => c.code === code) || FIELD_EVENT_CATALOG[0];
 }
+function formatFieldMarkImperial(meters) {
+  if (!Number.isFinite(meters) || meters <= 0) return "\u2014";
+  const totalInches = meters / 0.0254;
+  let feet = Math.floor(totalInches / 12);
+  let inches = Math.round((totalInches - feet * 12) * 4) / 4;
+  if (inches >= 12) {
+    feet += 1;
+    inches = 0;
+  }
+  const inchStr = Number.isInteger(inches) ? String(inches) : inches.toFixed(2).replace(/0$/, "");
+  return `${feet}' ${inchStr}"`;
+}
+function formatFieldMarkDual(meters) {
+  if (!Number.isFinite(meters) || meters <= 0) return "\u2014";
+  return `${formatFieldMarkImperial(meters)} (${meters.toFixed(2)}m)`;
+}
+function evaluateVerticalFlightAthlete(attempts) {
+  let bestClearedHeightMeters = null;
+  let consecutiveMisses = 0;
+  let isEliminated = false;
+  const heightOrder = [];
+  const heightBuckets = /* @__PURE__ */ new Map();
+  const summaryTokens = [];
+  let totalMissesAll = 0;
+  for (const a of attempts || []) {
+    const symbol = a.outcome === "CLEAR" ? "O" : a.outcome === "MISS" ? "X" : "-";
+    const h = a.barHeightMeters ?? a.markMeters;
+    summaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
+    if (typeof h === "number" && Number.isFinite(h) && h > 0) {
+      const hKey = h.toFixed(3);
+      let bucket = heightBuckets.get(hKey);
+      if (!bucket) {
+        bucket = { heightMeters: Number(h.toFixed(3)), tokens: [], misses: 0 };
+        heightBuckets.set(hKey, bucket);
+        heightOrder.push(hKey);
+      }
+      bucket.tokens.push(symbol);
+      if (symbol === "X") {
+        bucket.misses += 1;
+      }
+    }
+    if (symbol === "X") {
+      totalMissesAll += 1;
+    }
+    if (isEliminated) {
+      continue;
+    }
+    if (a.outcome === "CLEAR") {
+      consecutiveMisses = 0;
+      if (typeof h === "number" && Number.isFinite(h) && h > 0) {
+        const rounded = Number(h.toFixed(3));
+        if (bestClearedHeightMeters === null || rounded > bestClearedHeightMeters) {
+          bestClearedHeightMeters = rounded;
+        }
+      }
+    } else if (a.outcome === "MISS") {
+      consecutiveMisses += 1;
+      if (consecutiveMisses >= 3) {
+        isEliminated = true;
+      }
+    }
+  }
+  let missesAtClearingHeight = null;
+  let totalMisses = 0;
+  if (bestClearedHeightMeters !== null) {
+    const clearKey = bestClearedHeightMeters.toFixed(3);
+    missesAtClearingHeight = heightBuckets.get(clearKey)?.misses ?? 0;
+    for (const bucket of heightBuckets.values()) {
+      if (bucket.heightMeters <= bestClearedHeightMeters + 5e-4) {
+        totalMisses += bucket.misses;
+      }
+    }
+  } else {
+    totalMisses = totalMissesAll;
+  }
+  const heightMarks = heightOrder.map((key) => {
+    const b = heightBuckets.get(key);
+    return {
+      heightMeters: b.heightMeters,
+      tokens: b.tokens,
+      summary: b.tokens.join("")
+    };
+  });
+  return {
+    bestClearedHeightMeters,
+    missesAtClearingHeight,
+    totalMisses,
+    totalMissesAll,
+    consecutiveMisses,
+    isEliminated,
+    isNoHeight: isEliminated && bestClearedHeightMeters === null,
+    heightMarks,
+    verticalSeriesSummary: summaryTokens.join(" ")
+  };
+}
 function summarizeFieldSeries(eventCode, attempts, rpe) {
   const spec = getFieldEventSpec(eventCode);
   let bestMarkMeters = null;
+  let bestWindLegalMeters = null;
+  let bestMarkWindMps;
+  let isWindAidedBest = false;
   let legalCount = 0;
   let foulOrMissCount = 0;
   const barSummaryTokens = [];
@@ -6711,9 +6856,23 @@ function summarizeFieldSeries(eventCode, attempts, rpe) {
       foulOrMissCount += 1;
     } else if (a.outcome === "MARK" || a.outcome === "CLEAR") {
       legalCount += 1;
-      const candidate = spec.mode === "VERTICAL" ? a.barHeightMeters ?? a.markMeters ?? 0 : a.markMeters ?? a.barHeightMeters ?? 0;
-      if (candidate > 0 && (bestMarkMeters === null || candidate > bestMarkMeters)) {
-        bestMarkMeters = Number(candidate.toFixed(3));
+      const candidateRaw = spec.mode === "VERTICAL" ? a.barHeightMeters ?? a.markMeters ?? 0 : a.markMeters ?? a.barHeightMeters ?? 0;
+      if (candidateRaw > 0) {
+        const candidate = Number(candidateRaw.toFixed(3));
+        const hasWind = typeof a.windMps === "number" && Number.isFinite(a.windMps);
+        const attemptWind = hasWind ? Number(a.windMps.toFixed(2)) : void 0;
+        const attemptWindAided = hasWind && a.windMps > 2;
+        if (bestMarkMeters === null || candidate > bestMarkMeters) {
+          bestMarkMeters = candidate;
+          bestMarkWindMps = attemptWind;
+          isWindAidedBest = attemptWindAided;
+        } else if (candidate === bestMarkMeters && isWindAidedBest && !attemptWindAided) {
+          bestMarkWindMps = attemptWind;
+          isWindAidedBest = false;
+        }
+        if (!attemptWindAided && (bestWindLegalMeters === null || candidate > bestWindLegalMeters)) {
+          bestWindLegalMeters = candidate;
+        }
       }
     }
     if (spec.mode === "VERTICAL") {
@@ -6721,6 +6880,12 @@ function summarizeFieldSeries(eventCode, attempts, rpe) {
       const h = a.barHeightMeters ?? a.markMeters;
       barSummaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
     }
+  }
+  let verticalEval = null;
+  if (spec.mode === "VERTICAL") {
+    verticalEval = evaluateVerticalFlightAthlete(attempts);
+    bestMarkMeters = verticalEval.bestClearedHeightMeters;
+    bestWindLegalMeters = verticalEval.bestClearedHeightMeters;
   }
   const totalContacts = attempts.filter((a) => a.outcome !== "PASS").length;
   const basePerContact = spec.mode === "HORIZONTAL" ? 4.2 : spec.mode === "VERTICAL" ? 3.8 : spec.mode === "THROW" ? 2.2 : 5;
@@ -6731,12 +6896,203 @@ function summarizeFieldSeries(eventCode, attempts, rpe) {
   );
   return {
     bestMarkMeters,
+    bestWindLegalMeters,
+    ...bestMarkWindMps !== void 0 ? { bestMarkWindMps } : {},
+    isWindAidedBest,
     legalCount,
     foulOrMissCount,
     totalContacts,
     verticalSeriesSummary: barSummaryTokens.join(" "),
-    estimatedLoadTss
+    estimatedLoadTss,
+    ...verticalEval ? {
+      isNoHeight: verticalEval.isNoHeight,
+      ...verticalEval.missesAtClearingHeight !== null ? { missesAtClearingHeight: verticalEval.missesAtClearingHeight } : {},
+      totalVerticalMisses: verticalEval.totalMisses,
+      isEliminated: verticalEval.isEliminated
+    } : {}
   };
+}
+function formatPublicSafeSportDisplayName(params) {
+  const isProtectedMinor = Boolean(
+    params.isMinorU18 || params.orgType === "HIGH_SCHOOL"
+  );
+  const abbreviateUnconsentedMinor = Boolean(
+    !params.externalSource && isProtectedMinor && params.parentConsentStatus !== "ACKNOWLEDGED"
+  );
+  if (!abbreviateUnconsentedMinor) {
+    return params.invitedName;
+  }
+  const parts = String(params.invitedName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  }
+  return parts[0] || "Athlete";
+}
+function extractFieldLogPrEvaluation(log) {
+  const spec = getFieldEventSpec(log.eventCode);
+  if (spec.mode === "MULTI") {
+    const pts = typeof log.multiPoints === "number" && Number.isFinite(log.multiPoints) && log.multiPoints > 0 ? Math.round(log.multiPoints) : void 0;
+    return { isWindAidedOverall: false, multiPoints: pts };
+  }
+  let windLegalMeters;
+  let windLegalWindMps;
+  let overallMeters;
+  let overallWindMps;
+  let isWindAidedOverall = false;
+  if (Array.isArray(log.attempts) && log.attempts.length > 0) {
+    for (const a of log.attempts) {
+      if (a.outcome !== "MARK" && a.outcome !== "CLEAR") continue;
+      const rawMark = spec.mode === "VERTICAL" ? a.barHeightMeters ?? a.markMeters ?? 0 : a.markMeters ?? a.barHeightMeters ?? 0;
+      if (!Number.isFinite(rawMark) || rawMark <= 0) continue;
+      const roundedMark = Number(rawMark.toFixed(3));
+      const hasWind = typeof a.windMps === "number" && Number.isFinite(a.windMps);
+      const windVal = hasWind ? Number(a.windMps.toFixed(2)) : void 0;
+      const windAided = hasWind && a.windMps > 2;
+      if (overallMeters === void 0 || roundedMark > overallMeters) {
+        overallMeters = roundedMark;
+        overallWindMps = windVal;
+        isWindAidedOverall = windAided;
+      } else if (roundedMark === overallMeters && isWindAidedOverall && !windAided) {
+        overallWindMps = windVal;
+        isWindAidedOverall = false;
+      }
+      if (!windAided && (windLegalMeters === void 0 || roundedMark > windLegalMeters)) {
+        windLegalMeters = roundedMark;
+        windLegalWindMps = windVal;
+      }
+    }
+  }
+  if (windLegalMeters === void 0 && typeof log.bestWindLegalMeters === "number" && log.bestWindLegalMeters > 0) {
+    windLegalMeters = Number(log.bestWindLegalMeters.toFixed(3));
+    if (!log.isWindAidedBest && typeof log.bestMarkWindMps === "number") {
+      windLegalWindMps = Number(log.bestMarkWindMps.toFixed(2));
+    }
+  }
+  if (overallMeters === void 0 && typeof log.bestMarkMeters === "number" && log.bestMarkMeters > 0) {
+    overallMeters = Number(log.bestMarkMeters.toFixed(3));
+    overallWindMps = typeof log.bestMarkWindMps === "number" ? Number(log.bestMarkWindMps.toFixed(2)) : void 0;
+    isWindAidedOverall = Boolean(
+      log.isWindAidedBest || typeof log.bestMarkWindMps === "number" && log.bestMarkWindMps > 2
+    );
+    if (!isWindAidedOverall && windLegalMeters === void 0) {
+      windLegalMeters = overallMeters;
+      windLegalWindMps = overallWindMps;
+    }
+  }
+  return {
+    windLegalMeters,
+    windLegalWindMps,
+    overallMeters,
+    overallWindMps,
+    isWindAidedOverall
+  };
+}
+function buildPublicFieldLeaderboardFromLogs(params) {
+  const athleteByMemId = /* @__PURE__ */ new Map();
+  for (const m of params.memberships || []) {
+    if (m.status === "REVOKED" || m.role !== "ATHLETE") continue;
+    athleteByMemId.set(m.membershipId, {
+      mem: m,
+      displayName: formatPublicSafeSportDisplayName({
+        invitedName: m.invitedName,
+        externalSource: m.externalSource,
+        isMinorU18: m.isMinorU18,
+        parentConsentStatus: m.parentConsentStatus,
+        orgType: params.orgType
+      })
+    });
+  }
+  const bestLegalByKey = /* @__PURE__ */ new Map();
+  const bestAidedByKey = /* @__PURE__ */ new Map();
+  for (const log of params.fieldLogs || []) {
+    if (!log || log.isCompetition !== true) continue;
+    if (!log.membershipId || !athleteByMemId.has(log.membershipId)) continue;
+    const evalRes = extractFieldLogPrEvaluation(log);
+    const key = `${log.membershipId}|${log.eventCode}`;
+    const spec = getFieldEventSpec(log.eventCode);
+    if (spec.mode === "MULTI") {
+      if (!evalRes.multiPoints) continue;
+      const existing = bestLegalByKey.get(key);
+      if (!existing || (existing.multiPoints ?? 0) < evalRes.multiPoints) {
+        bestLegalByKey.set(key, {
+          log,
+          multiPoints: evalRes.multiPoints,
+          isWindAided: false
+        });
+      }
+      continue;
+    }
+    if (evalRes.windLegalMeters !== void 0 && evalRes.windLegalMeters > 0) {
+      const existing = bestLegalByKey.get(key);
+      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.windLegalMeters) {
+        bestLegalByKey.set(key, {
+          log,
+          bestMarkMeters: evalRes.windLegalMeters,
+          windMps: evalRes.windLegalWindMps,
+          isWindAided: false
+        });
+      }
+    } else if (evalRes.overallMeters !== void 0 && evalRes.overallMeters > 0) {
+      const existing = bestAidedByKey.get(key);
+      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.overallMeters) {
+        bestAidedByKey.set(key, {
+          log,
+          bestMarkMeters: evalRes.overallMeters,
+          windMps: evalRes.overallWindMps,
+          isWindAided: evalRes.isWindAidedOverall
+        });
+      }
+    }
+  }
+  const allKeys = /* @__PURE__ */ new Set([...bestLegalByKey.keys(), ...bestAidedByKey.keys()]);
+  const eventOrder = new Map(
+    FIELD_EVENT_CATALOG.map((spec, idx) => [spec.code, idx])
+  );
+  const fieldPrsByMembershipId = /* @__PURE__ */ new Map();
+  const fieldLeaderboard = [];
+  for (const key of allKeys) {
+    const chosen = bestLegalByKey.get(key) || bestAidedByKey.get(key);
+    if (!chosen || !chosen.log.membershipId) continue;
+    const athRef = athleteByMemId.get(chosen.log.membershipId);
+    if (!athRef) continue;
+    const spec = getFieldEventSpec(chosen.log.eventCode);
+    const displayMark = spec.mode === "MULTI" && typeof chosen.multiPoints === "number" ? `${chosen.multiPoints.toLocaleString()} pts` : typeof chosen.bestMarkMeters === "number" ? formatFieldMarkDual(chosen.bestMarkMeters) : "";
+    if (!displayMark) continue;
+    const item = {
+      id: chosen.log.id,
+      membershipId: athRef.mem.membershipId,
+      displayName: athRef.displayName,
+      ...athRef.mem.genderDivision ? { genderDivision: athRef.mem.genderDivision } : {},
+      ...athRef.mem.graduationYear ? { graduationYear: athRef.mem.graduationYear } : {},
+      ...athRef.mem.squadGroup ? { squadGroup: athRef.mem.squadGroup } : {},
+      eventCode: chosen.log.eventCode,
+      eventLabel: spec.label,
+      ...typeof chosen.bestMarkMeters === "number" ? { bestMarkMeters: chosen.bestMarkMeters } : {},
+      displayMark,
+      ...typeof chosen.windMps === "number" ? { windMps: chosen.windMps } : {},
+      ...chosen.isWindAided ? { isWindAided: true } : {},
+      ...typeof chosen.multiPoints === "number" ? { multiPoints: chosen.multiPoints } : {},
+      ...chosen.log.meetOrPracticeTitle ? { meetName: chosen.log.meetOrPracticeTitle } : {},
+      date: chosen.log.date
+    };
+    fieldLeaderboard.push(item);
+    const list = fieldPrsByMembershipId.get(athRef.mem.membershipId) || [];
+    list.push(item);
+    fieldPrsByMembershipId.set(athRef.mem.membershipId, list);
+  }
+  const sortPrs = (a, b) => {
+    const orderDiff = (eventOrder.get(a.eventCode) ?? 99) - (eventOrder.get(b.eventCode) ?? 99);
+    if (orderDiff !== 0) return orderDiff;
+    const scoreA = a.multiPoints ?? a.bestMarkMeters ?? 0;
+    const scoreB = b.multiPoints ?? b.bestMarkMeters ?? 0;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return a.displayName.localeCompare(b.displayName);
+  };
+  fieldLeaderboard.sort(sortPrs);
+  for (const list of fieldPrsByMembershipId.values()) {
+    list.sort(sortPrs);
+  }
+  return { fieldPrsByMembershipId, fieldLeaderboard };
 }
 var DECATHLON_MEN_COEFFS = {
   "100m": { type: "TRACK", a: 25.4347, b: 18, c: 1.81 },
@@ -7925,6 +8281,8 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     ...isStaffViewer && doc.attendanceByDate ? { attendanceByDate: doc.attendanceByDate } : {},
     announcements: visibleAnnouncements,
     ...isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks },
+    ...typeof doc.fieldMarkLogsTotalCount === "number" && !isParentFollower ? { fieldMarkLogsTotalCount: doc.fieldMarkLogsTotalCount } : {},
+    ...isStaffViewer && !isParentFollower ? { meetDayPackets: doc.meetDayPackets || [] } : {},
     teamMessages: visibleTeamMessages,
     messagingPolicy: resolvedMessagingPolicy
   };
@@ -9256,6 +9614,101 @@ async function deleteTeamAnnouncement(params) {
     };
   });
 }
+var VALID_FIELD_ATTEMPT_OUTCOMES = /* @__PURE__ */ new Set([
+  "MARK",
+  "FOUL",
+  "PASS",
+  "CLEAR",
+  "MISS"
+]);
+function teamFieldLogsVaultKey(teamId) {
+  return `team_field_logs_${sanitizeTenantId(teamId).slice(0, 48)}`;
+}
+function sanitizeClientBatchId(raw) {
+  if (typeof raw !== "string") return void 0;
+  const cleaned = raw.trim().replace(/[^a-zA-Z0-9_.:-]/g, "").slice(0, 72);
+  return cleaned || void 0;
+}
+function sanitizeFieldAttempts(rawAttempts) {
+  if (!Array.isArray(rawAttempts)) return [];
+  const out = [];
+  for (let i = 0; i < Math.min(24, rawAttempts.length); i += 1) {
+    const raw = rawAttempts[i];
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw;
+    const outcome = String(item.outcome || "").toUpperCase();
+    if (!VALID_FIELD_ATTEMPT_OUTCOMES.has(outcome)) continue;
+    const attemptNumber = typeof item.attemptNumber === "number" && Number.isFinite(item.attemptNumber) ? Math.max(1, Math.min(24, Math.round(item.attemptNumber))) : i + 1;
+    const markMeters = typeof item.markMeters === "number" && Number.isFinite(item.markMeters) && item.markMeters >= 0.3 && item.markMeters <= 110 ? Number(item.markMeters.toFixed(3)) : void 0;
+    const barHeightMeters = typeof item.barHeightMeters === "number" && Number.isFinite(item.barHeightMeters) && item.barHeightMeters >= 0.3 && item.barHeightMeters <= 10 ? Number(item.barHeightMeters.toFixed(3)) : void 0;
+    const windMps = typeof item.windMps === "number" && Number.isFinite(item.windMps) && item.windMps >= -20 && item.windMps <= 20 ? Number(item.windMps.toFixed(2)) : void 0;
+    const round = item.round === "PRELIM" || item.round === "FINAL" ? item.round : void 0;
+    const note = typeof item.note === "string" && item.note.trim() ? item.note.trim().slice(0, 120) : void 0;
+    out.push({
+      attemptNumber,
+      outcome,
+      ...markMeters !== void 0 ? { markMeters } : {},
+      ...barHeightMeters !== void 0 ? { barHeightMeters } : {},
+      ...windMps !== void 0 ? { windMps } : {},
+      ...round ? { round } : {},
+      ...note ? { note } : {}
+    });
+  }
+  return out;
+}
+async function loadFullTeamFieldMarksArchive(teamId, inlineFallback) {
+  const vaulted = await loadTenantVaultAsync(
+    teamFieldLogsVaultKey(teamId),
+    null
+  );
+  const inline = Array.isArray(inlineFallback) ? inlineFallback : [];
+  if (!Array.isArray(vaulted)) {
+    return [...inline];
+  }
+  if (inline.length === 0) {
+    return [...vaulted];
+  }
+  const seenIds = new Set(vaulted.map((r) => r.id));
+  const extraInline = inline.filter((r) => r && r.id && !seenIds.has(r.id));
+  return extraInline.length > 0 ? [...extraInline, ...vaulted] : [...vaulted];
+}
+async function listTeamFieldMarks(params) {
+  const limit = Math.max(1, Math.min(200, Math.floor(params.limit ?? 100)));
+  const offset = Math.max(0, Math.floor(params.offset ?? 0));
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) {
+    return { ok: false, logs: [], totalCount: 0, limit, offset, error: "Team not found." };
+  }
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || callerMem.role === "PARENT_FOLLOWER") {
+    return {
+      ok: false,
+      logs: [],
+      totalCount: 0,
+      limit,
+      offset,
+      error: "Coach or athlete team membership required."
+    };
+  }
+  const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const requestedCode = params.eventCode ? String(params.eventCode).toUpperCase() : void 0;
+  const filterByCode = requestedCode && VALID_FIELD_EVENT_CODES.has(requestedCode) ? requestedCode : void 0;
+  const visible = archive.filter((log) => {
+    if (!isStaff && log.membershipId !== callerMem.membershipId) return false;
+    if (filterByCode && log.eventCode !== filterByCode) return false;
+    return true;
+  });
+  return {
+    ok: true,
+    logs: visible.slice(offset, offset + limit),
+    totalCount: visible.length,
+    limit,
+    offset
+  };
+}
 async function recordTeamFieldMarks(params) {
   return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
@@ -9267,14 +9720,21 @@ async function recordTeamFieldMarks(params) {
       return { ok: false, recordedCount: 0, error: "Coach permissions required." };
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    doc.fieldMarkLogs = doc.fieldMarkLogs || [];
+    const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
+    const existingBatchKeys = /* @__PURE__ */ new Set();
+    for (const existing of archive) {
+      if (!existing.clientBatchId) continue;
+      const who = existing.membershipId || `name:${existing.athleteName.toLowerCase()}`;
+      existingBatchKeys.add(`${existing.clientBatchId}|${existing.eventCode}|${who}`);
+    }
+    const topBatchId = sanitizeClientBatchId(params.clientBatchId);
     let recordedCount = 0;
-    for (const rawEntry of (params.entries || []).slice(0, 60)) {
+    for (const rawEntry of (params.entries || []).slice(0, 120)) {
       const code = String(rawEntry.eventCode || "").toUpperCase();
       if (!VALID_FIELD_EVENT_CODES.has(code)) continue;
       const spec = getFieldEventSpec(code);
       const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(String(rawEntry.date || "")) ? String(rawEntry.date).slice(0, 10) : nowIso.slice(0, 10);
-      const cleanAttempts = Array.isArray(rawEntry.attempts) ? rawEntry.attempts.slice(0, 24) : [];
+      const cleanAttempts = sanitizeFieldAttempts(rawEntry.attempts);
       const summary = summarizeFieldSeries(code, cleanAttempts, rawEntry.rpe);
       const targetMem = rawEntry.membershipId ? doc.memberships.find(
         (m) => m.membershipId === rawEntry.membershipId && m.status !== "REVOKED"
@@ -9282,6 +9742,24 @@ async function recordTeamFieldMarks(params) {
       const athleteName = String(
         targetMem?.invitedName || rawEntry.athleteName || "Team Athlete"
       ).trim().slice(0, 64);
+      const entryBatchId = sanitizeClientBatchId(rawEntry.clientBatchId) || topBatchId;
+      if (entryBatchId) {
+        const who = targetMem ? targetMem.membershipId : `name:${athleteName.toLowerCase()}`;
+        const batchKey = `${entryBatchId}|${code}|${who}`;
+        if (existingBatchKeys.has(batchKey)) {
+          continue;
+        }
+      }
+      const bestMarkMeters = summary.bestMarkMeters !== null ? summary.bestMarkMeters : typeof rawEntry.bestMarkMeters === "number" && Number.isFinite(rawEntry.bestMarkMeters) && rawEntry.bestMarkMeters > 0 ? Number(rawEntry.bestMarkMeters.toFixed(3)) : void 0;
+      const bestWindLegalMeters = summary.bestWindLegalMeters !== null ? summary.bestWindLegalMeters : typeof rawEntry.bestWindLegalMeters === "number" && Number.isFinite(rawEntry.bestWindLegalMeters) && rawEntry.bestWindLegalMeters > 0 ? Number(rawEntry.bestWindLegalMeters.toFixed(3)) : void 0;
+      const bestMarkWindMps = summary.bestMarkWindMps !== void 0 ? summary.bestMarkWindMps : typeof rawEntry.bestMarkWindMps === "number" && Number.isFinite(rawEntry.bestMarkWindMps) ? Number(rawEntry.bestMarkWindMps.toFixed(2)) : void 0;
+      const isWindAidedBest = bestMarkMeters !== void 0 ? summary.bestMarkMeters !== null ? summary.isWindAidedBest : Boolean(rawEntry.isWindAidedBest) : void 0;
+      const isNoHeight = summary.isNoHeight !== void 0 ? summary.isNoHeight : typeof rawEntry.isNoHeight === "boolean" ? rawEntry.isNoHeight : void 0;
+      const missesAtClearingHeight = summary.missesAtClearingHeight !== void 0 ? summary.missesAtClearingHeight : typeof rawEntry.missesAtClearingHeight === "number" && Number.isFinite(rawEntry.missesAtClearingHeight) ? Math.max(0, Math.round(rawEntry.missesAtClearingHeight)) : void 0;
+      const totalVerticalMisses = summary.totalVerticalMisses !== void 0 ? summary.totalVerticalMisses : typeof rawEntry.totalVerticalMisses === "number" && Number.isFinite(rawEntry.totalVerticalMisses) ? Math.max(0, Math.round(rawEntry.totalVerticalMisses)) : void 0;
+      const flightName = typeof rawEntry.flightName === "string" && rawEntry.flightName.trim() ? rawEntry.flightName.trim().slice(0, 48) : void 0;
+      const placeRank = typeof rawEntry.placeRank === "number" && Number.isFinite(rawEntry.placeRank) && rawEntry.placeRank >= 1 ? Math.round(rawEntry.placeRank) : void 0;
+      const advancedToFinals = typeof rawEntry.advancedToFinals === "boolean" ? rawEntry.advancedToFinals : void 0;
       const recordId = `fld_${crypto9.randomBytes(6).toString("hex")}`;
       const record = {
         id: recordId,
@@ -9293,19 +9771,29 @@ async function recordTeamFieldMarks(params) {
         eventGroup: spec.eventGroup,
         isCompetition: Boolean(rawEntry.isCompetition),
         meetOrPracticeTitle: String(rawEntry.meetOrPracticeTitle || "").trim().slice(0, 100) || `${spec.label} ${rawEntry.isCompetition ? "Competition" : "Practice Sheet"}`,
+        ...flightName ? { flightName } : {},
         ...rawEntry.implementSpec ? { implementSpec: String(rawEntry.implementSpec).trim().slice(0, 64) } : {},
         ...rawEntry.poleSpec ? { poleSpec: String(rawEntry.poleSpec).trim().slice(0, 64) } : {},
         ...typeof rawEntry.approachSteps === "number" && Number.isFinite(rawEntry.approachSteps) ? { approachSteps: Math.max(1, Math.min(30, Math.round(rawEntry.approachSteps))) } : {},
         attempts: cleanAttempts,
-        ...summary.bestMarkMeters !== null ? { bestMarkMeters: summary.bestMarkMeters } : {},
+        ...bestMarkMeters !== void 0 ? { bestMarkMeters } : {},
+        ...bestWindLegalMeters !== void 0 ? { bestWindLegalMeters } : {},
+        ...bestMarkWindMps !== void 0 ? { bestMarkWindMps } : {},
+        ...isWindAidedBest ? { isWindAidedBest: true } : {},
+        ...isNoHeight ? { isNoHeight: true } : {},
+        ...missesAtClearingHeight !== void 0 ? { missesAtClearingHeight } : {},
+        ...totalVerticalMisses !== void 0 ? { totalVerticalMisses } : {},
+        ...placeRank !== void 0 ? { placeRank } : {},
+        ...advancedToFinals !== void 0 ? { advancedToFinals } : {},
         ...typeof rawEntry.multiPoints === "number" && Number.isFinite(rawEntry.multiPoints) ? { multiPoints: Math.round(rawEntry.multiPoints) } : {},
         ...typeof rawEntry.rpe === "number" && Number.isFinite(rawEntry.rpe) ? { rpe: Math.max(1, Math.min(10, rawEntry.rpe)) } : {},
+        ...entryBatchId ? { clientBatchId: entryBatchId } : {},
         createdAt: nowIso
       };
-      doc.fieldMarkLogs.unshift(record);
+      archive.unshift(record);
       recordedCount += 1;
       if (targetMem) {
-        const bestLabel = summary.bestMarkMeters !== null ? `${summary.bestMarkMeters.toFixed(2)}m` : `${summary.totalContacts} attempts`;
+        const bestLabel = bestMarkMeters !== void 0 ? `${bestMarkMeters.toFixed(2)}m` : `${summary.totalContacts} attempts`;
         const mirroredAct = {
           id: recordId,
           startDateLocal: `${cleanDate}T15:30:00`,
@@ -9336,14 +9824,20 @@ async function recordTeamFieldMarks(params) {
         ].slice(0, 80);
       }
     }
-    doc.fieldMarkLogs = doc.fieldMarkLogs.slice(0, 200);
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), archive);
+    doc.fieldMarkLogs = archive.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = archive.length;
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
       action: "FIELD_MARKS_RECORDED",
-      metadata: { recordedCount }
+      metadata: {
+        recordedCount,
+        totalArchiveCount: archive.length,
+        ...topBatchId ? { clientBatchId: topBatchId } : {}
+      }
     });
     return {
       ok: true,
@@ -10142,7 +10636,7 @@ function generateDefaultLapSplits(eventDistanceMeters, fatTimeSecs, splitDistanc
     (w) => Number((w / weightSum * fatTimeSecs).toFixed(2))
   );
   const sumExceptLast = rawSplits.slice(0, -1).reduce((s, v) => s + v, 0);
-  rawSplits[rawSplits.length - 1] = Number(Math.max(10, fatTimeSecs - sumExceptLast).toFixed(2));
+  rawSplits[rawSplits.length - 1] = Number(Math.max(1, fatTimeSecs - sumExceptLast).toFixed(2));
   return rawSplits;
 }
 function synthesizeOfficialRaceActivity(candidate, athleteLthr = 172, athleteMaxHr = 192) {
@@ -10154,7 +10648,7 @@ function synthesizeOfficialRaceActivity(candidate, athleteLthr = 172, athleteMax
     candidate.fatTimeSecs,
     candidate.includeWarmupCooldown
   );
-  const totalSecs = Math.max(10, Math.round(candidate.fatTimeSecs));
+  const totalSecs = Math.max(5, Math.round(candidate.fatTimeSecs));
   const timeStream = [];
   const distanceStream = [];
   const velocityStream = [];
@@ -10164,8 +10658,8 @@ function synthesizeOfficialRaceActivity(candidate, athleteLthr = 172, athleteMax
   let elapsedSecsCursor = 0;
   let elapsedDistCursor = 0;
   splits.forEach((lapSecs, idx) => {
-    const lapDist = idx === splits.length - 1 ? Math.max(100, candidate.eventDistanceMeters - elapsedDistCursor) : splitMeters;
-    const lapSpeedMps = lapDist / Math.max(1, lapSecs);
+    const lapDist = idx === splits.length - 1 ? Math.max(10, candidate.eventDistanceMeters - elapsedDistCursor) : splitMeters;
+    const lapSpeedMps = lapDist / Math.max(0.5, lapSecs);
     const lapPaceSecsKm = Math.round(1e3 / Math.max(0.5, lapSpeedMps));
     const lapDurationInt = Math.max(1, Math.round(lapSecs));
     const lapStartHr = idx === 0 ? Math.round(athleteLthr * 0.92) : Math.min(athleteMaxHr, Math.round(athleteLthr * 1.01 + idx * 2.5));
@@ -10368,7 +10862,7 @@ function parseOfficialResultsTextDeterministically(rawText, defaultUrl) {
     let lapSplitsSecs = [];
     const splitsMatch = line.match(/splits?\s*:\s*([0-9.,\s:]+)/i);
     if (splitsMatch) {
-      lapSplitsSecs = splitsMatch[1].split(/[,\s]+/).map((s) => parseFatTimeString(s)).filter((n) => n > 8 && n < 400);
+      lapSplitsSecs = splitsMatch[1].split(/[,\s]+/).map((s) => parseFatTimeString(s)).filter((n) => n > 4 && n < 600);
     }
     if (lapSplitsSecs.length === 0) {
       lapSplitsSecs = generateDefaultLapSplits(
@@ -10545,10 +11039,22 @@ function resolveRaceEventDistance(rawText, fallbackMeters = 5e3) {
       };
     }
   }
-  const meterMatch = s.match(/(\d{3,5}(?:,\d{3})?)\s*m(?:eters?)?\b/i);
+  const hurdleMatch = s.match(/(?<![\d.])(\d{2,3})\s*m\s*(?:h|hurdles?)\b/i);
+  if (hurdleMatch) {
+    const meters = parseInt(hurdleMatch[1], 10);
+    if (Number.isFinite(meters) && meters >= 50 && meters <= 400) {
+      return {
+        eventLabel: `${meters}mH`,
+        distanceMeters: meters,
+        trackType: trackSurface,
+        isCrossCountry: false
+      };
+    }
+  }
+  const meterMatch = s.match(/(?<![\d.])(\d{2,5}(?:,\d{3})?)\s*m(?:eters?)?\b/i);
   if (meterMatch) {
     const meters = parseInt(meterMatch[1].replace(/,/g, ""), 10);
-    if (Number.isFinite(meters) && meters >= 60) {
+    if (Number.isFinite(meters) && meters >= 50) {
       const isXc = /\bxc\b|cross\s*country|varsity|frosh|jv\b/i.test(s) && meters >= 3e3;
       const eventLabel = isXc && meters === 5e3 ? "XC 5K" : `${meters}m`;
       return {
@@ -10648,6 +11154,64 @@ function normalizeAthleteMatchKey(name) {
   const commaParts = s.split(",").map((p) => p.trim()).filter(Boolean);
   const reordered = commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : s;
   return reordered.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function buildExternalFieldEventLogRecord(params) {
+  const { row, teamId, membershipId, athleteName, nowIso, idSuffix } = params;
+  const eventCode = row.fieldEventCode || "LJ";
+  const spec = getFieldEventSpec(eventCode);
+  const attempts = row.isNoMarkOrFoul ? [
+    {
+      attemptNumber: 1,
+      outcome: spec.mode === "VERTICAL" ? "MISS" : "FOUL",
+      ...typeof row.windMps === "number" ? { windMps: row.windMps } : {},
+      note: `${row.displayFieldMark || "NM"} (${row.meetName})`
+    }
+  ] : typeof row.fieldMarkMeters === "number" && row.fieldMarkMeters > 0 ? [
+    {
+      attemptNumber: 1,
+      outcome: spec.mode === "VERTICAL" ? "CLEAR" : "MARK",
+      ...spec.mode === "VERTICAL" ? { barHeightMeters: row.fieldMarkMeters } : { markMeters: row.fieldMarkMeters },
+      ...typeof row.windMps === "number" ? { windMps: row.windMps } : {},
+      note: row.displayFieldMark || formatFieldMarkDual(row.fieldMarkMeters)
+    }
+  ] : [];
+  const summary = summarizeFieldSeries(eventCode, attempts);
+  const placeNum = row.placeFinish ? parseInt(row.placeFinish.replace(/\D/g, ""), 10) : NaN;
+  const isWindAided = Boolean(row.isWindAided || typeof row.windMps === "number" && row.windMps > 2);
+  const bestWindLegalMeters = typeof row.fieldMarkMeters === "number" && row.fieldMarkMeters > 0 && !isWindAided ? row.fieldMarkMeters : void 0;
+  return {
+    id: `ext-field-${row.date}-${eventCode.toLowerCase()}-${idSuffix || Math.random().toString(36).slice(2, 8)}`,
+    ...teamId ? { teamId } : {},
+    ...membershipId ? { membershipId } : {},
+    athleteName: athleteName || row.athleteName,
+    date: row.date,
+    eventCode,
+    eventGroup: spec.eventGroup,
+    isCompetition: true,
+    meetOrPracticeTitle: row.meetName,
+    attempts,
+    ...summary.bestMarkMeters !== null ? { bestMarkMeters: summary.bestMarkMeters } : {},
+    ...bestWindLegalMeters !== void 0 ? { bestWindLegalMeters } : {},
+    ...typeof row.windMps === "number" ? { bestMarkWindMps: row.windMps } : {},
+    ...isWindAided ? { isWindAidedBest: true } : {},
+    ...row.isNoMarkOrFoul ? { isNoHeight: true } : {},
+    ...Number.isFinite(placeNum) && placeNum > 0 ? { placeRank: placeNum } : {},
+    createdAt: nowIso || (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function isDuplicateExternalFieldLog(existing, candidate) {
+  if (existing.date !== candidate.date || existing.eventCode !== candidate.eventCode) {
+    return false;
+  }
+  const sameAthlete = candidate.membershipId && existing.membershipId ? existing.membershipId === candidate.membershipId : normalizeAthleteMatchKey(existing.athleteName) === normalizeAthleteMatchKey(candidate.athleteName);
+  if (!sameAthlete) return false;
+  if (candidate.isNoHeight || existing.isNoHeight) {
+    return Boolean(candidate.isNoHeight) === Boolean(existing.isNoHeight);
+  }
+  if (typeof candidate.bestMarkMeters === "number" && typeof existing.bestMarkMeters === "number") {
+    return Math.abs(existing.bestMarkMeters - candidate.bestMarkMeters) < 5e-3;
+  }
+  return existing.bestMarkMeters === candidate.bestMarkMeters;
 }
 
 // server/teamWorkoutAndGovernanceService.ts
@@ -14480,6 +15044,45 @@ teamRouter.delete("/api/teams/:teamId/announcements/:announcementId", async (req
     });
   }
 });
+teamRouter.get("/api/teams/:teamId/field-marks", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const eventCode = typeof req.query.eventCode === "string" && req.query.eventCode.trim() ? req.query.eventCode.trim().toUpperCase() : void 0;
+    const rawLimit = typeof req.query.limit === "string" ? Number(req.query.limit) : void 0;
+    const rawOffset = typeof req.query.offset === "string" ? Number(req.query.offset) : void 0;
+    const result = await listTeamFieldMarks({
+      teamId: String(req.params.teamId || ""),
+      callerSid: claims.sid,
+      ...eventCode ? { eventCode } : {},
+      ...typeof rawLimit === "number" && Number.isFinite(rawLimit) ? { limit: rawLimit } : {},
+      ...typeof rawOffset === "number" && Number.isFinite(rawOffset) ? { offset: rawOffset } : {}
+    });
+    if (!result.ok) {
+      const status = result.error === "Team not found." ? 404 : 403;
+      res.status(status).json({
+        ok: false,
+        error: result.error || "Unable to list field marks."
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      logs: result.logs,
+      totalCount: result.totalCount,
+      limit: result.limit,
+      offset: result.offset
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading field marks."
+    });
+  }
+});
 teamRouter.post("/api/teams/:teamId/field-marks", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -14489,6 +15092,7 @@ teamRouter.post("/api/teams/:teamId/field-marks", async (req, res) => {
     }
     const originUrl = resolveRequestOrigin(req);
     const body = req.body || {};
+    const topClientBatchId = typeof body.clientBatchId === "string" ? body.clientBatchId : void 0;
     const entries = Array.isArray(body.entries) ? body.entries.map((entry) => ({
       membershipId: typeof entry?.membershipId === "string" ? entry.membershipId : void 0,
       athleteName: String(entry?.athleteName || ""),
@@ -14496,16 +15100,28 @@ teamRouter.post("/api/teams/:teamId/field-marks", async (req, res) => {
       eventCode: String(entry?.eventCode || "LJ"),
       isCompetition: entry?.isCompetition === true,
       meetOrPracticeTitle: typeof entry?.meetOrPracticeTitle === "string" ? entry.meetOrPracticeTitle : void 0,
+      flightName: typeof entry?.flightName === "string" ? entry.flightName : void 0,
       implementSpec: typeof entry?.implementSpec === "string" ? entry.implementSpec : void 0,
       poleSpec: typeof entry?.poleSpec === "string" ? entry.poleSpec : void 0,
       approachSteps: typeof entry?.approachSteps === "number" ? entry.approachSteps : void 0,
       attempts: Array.isArray(entry?.attempts) ? entry.attempts : [],
+      bestMarkMeters: typeof entry?.bestMarkMeters === "number" ? entry.bestMarkMeters : void 0,
+      bestWindLegalMeters: typeof entry?.bestWindLegalMeters === "number" ? entry.bestWindLegalMeters : void 0,
+      bestMarkWindMps: typeof entry?.bestMarkWindMps === "number" ? entry.bestMarkWindMps : void 0,
+      isWindAidedBest: typeof entry?.isWindAidedBest === "boolean" ? entry.isWindAidedBest : void 0,
+      isNoHeight: typeof entry?.isNoHeight === "boolean" ? entry.isNoHeight : void 0,
+      missesAtClearingHeight: typeof entry?.missesAtClearingHeight === "number" ? entry.missesAtClearingHeight : void 0,
+      totalVerticalMisses: typeof entry?.totalVerticalMisses === "number" ? entry.totalVerticalMisses : void 0,
+      placeRank: typeof entry?.placeRank === "number" ? entry.placeRank : void 0,
+      advancedToFinals: typeof entry?.advancedToFinals === "boolean" ? entry.advancedToFinals : void 0,
       multiPoints: typeof entry?.multiPoints === "number" ? entry.multiPoints : void 0,
-      rpe: typeof entry?.rpe === "number" ? entry.rpe : void 0
+      rpe: typeof entry?.rpe === "number" ? entry.rpe : void 0,
+      clientBatchId: typeof entry?.clientBatchId === "string" ? entry.clientBatchId : topClientBatchId
     })) : [];
     const result = await recordTeamFieldMarks({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ""),
+      clientBatchId: topClientBatchId,
       entries,
       originUrl
     });
@@ -14855,12 +15471,343 @@ teamRouter.post("/api/push/test", async (req, res) => {
   }
 });
 
-// server/routers/teamSyncRouter.ts
-import crypto15 from "crypto";
+// server/routers/teamMeetDayRouter.ts
 import express4 from "express";
 
-// server/athleticSyncService.ts
+// server/teamMeetDayOpsService.ts
 import crypto14 from "crypto";
+function sanitizeMeetDayPacketEntry(raw, idx) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw;
+  const athleteName = String(obj.athleteName || "").trim().slice(0, 64);
+  const eventCode = String(obj.eventCode || "").trim().slice(0, 24);
+  if (!athleteName || !eventCode) return null;
+  const rawGender = String(obj.genderDivision || "").trim().toUpperCase();
+  const genderDivision = rawGender === "M" || rawGender === "F" || rawGender === "NONBINARY" ? rawGender : void 0;
+  const division = typeof obj.division === "string" && obj.division.trim() ? obj.division.trim().slice(0, 32) : void 0;
+  const membershipId = typeof obj.membershipId === "string" && obj.membershipId.trim() ? obj.membershipId.trim().slice(0, 64) : void 0;
+  const gradNum = typeof obj.graduationYear === "number" && Number.isFinite(obj.graduationYear) ? Math.round(obj.graduationYear) : void 0;
+  const graduationYear = gradNum && gradNum >= 2e3 && gradNum <= 2045 ? gradNum : void 0;
+  const seedMarkRaw = String(obj.seedMarkRaw ?? "NT").trim().slice(0, 32) || "NT";
+  const relayTeamCode = typeof obj.relayTeamCode === "string" && obj.relayTeamCode.trim() ? obj.relayTeamCode.trim().toUpperCase().slice(0, 4) : void 0;
+  const rawLeg = typeof obj.relayLegOrder === "number" && Number.isInteger(obj.relayLegOrder) ? obj.relayLegOrder : void 0;
+  const relayLegOrder = rawLeg === 1 || rawLeg === 2 || rawLeg === 3 || rawLeg === 4 ? rawLeg : void 0;
+  const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 64) : `entry_${idx}_${crypto14.randomBytes(4).toString("hex")}`;
+  return {
+    id,
+    athleteName,
+    ...membershipId ? { membershipId } : {},
+    ...genderDivision ? { genderDivision } : {},
+    ...division ? { division } : {},
+    ...graduationYear ? { graduationYear } : {},
+    eventCode,
+    seedMarkRaw,
+    ...relayTeamCode ? { relayTeamCode } : {},
+    ...relayLegOrder ? { relayLegOrder } : {}
+  };
+}
+async function listMeetDayPackets(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) {
+    return { ok: false, status: 404, error: "Team not found." };
+  }
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    return { ok: false, status: 403, error: "Coaching staff permissions required." };
+  }
+  return {
+    ok: true,
+    packets: doc.meetDayPackets || []
+  };
+}
+async function saveMeetDayPacket(params) {
+  const cleanTitle = String(params.packet?.meetTitle || "").trim().slice(0, 120);
+  if (!cleanTitle) {
+    return { ok: false, status: 400, error: "Meet title is required." };
+  }
+  const rawDate = String(params.packet?.meetDate || "").trim().slice(0, 10);
+  const meetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  const rawLaneCount = Number(params.packet?.laneCount);
+  const laneCount = Number.isFinite(rawLaneCount) ? Math.max(4, Math.min(16, Math.round(rawLaneCount))) : 8;
+  const rawFlightSize = Number(params.packet?.flightSize);
+  const flightSize = Number.isFinite(rawFlightSize) ? Math.max(4, Math.min(24, Math.round(rawFlightSize))) : 12;
+  const partitionByDivision = params.packet?.partitionByDivision !== false;
+  const rawEntries = Array.isArray(params.packet?.entries) ? params.packet.entries : [];
+  const entries = [];
+  for (let i = 0; i < Math.min(500, rawEntries.length); i++) {
+    const clean = sanitizeMeetDayPacketEntry(rawEntries[i], i);
+    if (clean) entries.push(clean);
+  }
+  const requestedPacketId = typeof params.packet?.packetId === "string" ? params.packet.packetId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : "";
+  const packetId = requestedPacketId || `mdp_${crypto14.randomBytes(6).toString("hex")}`;
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, status: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coach or Org Admin permissions required to manage meet-day packets."
+      };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const savedPacket = {
+      packetId,
+      meetTitle: cleanTitle,
+      meetDate,
+      laneCount,
+      flightSize,
+      partitionByDivision,
+      entries,
+      updatedAt: nowIso,
+      updatedByName: callerMem.invitedName || doc.brand.coachDisplayName || "Coach"
+    };
+    const existing = Array.isArray(doc.meetDayPackets) ? doc.meetDayPackets : [];
+    doc.meetDayPackets = [
+      savedPacket,
+      ...existing.filter((p) => p.packetId !== packetId)
+    ].slice(0, 50);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "MEET_DAY_PACKET_SAVED",
+      targetId: packetId,
+      metadata: {
+        meetTitle: cleanTitle,
+        entryCount: entries.length,
+        partitionByDivision
+      }
+    });
+    return {
+      ok: true,
+      packet: savedPacket,
+      packets: doc.meetDayPackets,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function deleteMeetDayPacket(params) {
+  const cleanPacketId = String(params.packetId || "").trim();
+  if (!cleanPacketId) {
+    return { ok: false, status: 400, error: "Packet ID is required." };
+  }
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, status: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coach or Org Admin permissions required to delete meet-day packets."
+      };
+    }
+    const before = Array.isArray(doc.meetDayPackets) ? doc.meetDayPackets : [];
+    const next = before.filter((p) => p.packetId !== cleanPacketId);
+    if (next.length === before.length) {
+      return { ok: false, status: 404, error: "Meet-day packet not found." };
+    }
+    doc.meetDayPackets = next;
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "MEET_DAY_PACKET_DELETED",
+      targetId: cleanPacketId,
+      metadata: {}
+    });
+    return {
+      ok: true,
+      packets: doc.meetDayPackets,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+
+// server/routers/teamMeetDayRouter.ts
+var teamMeetDayRouter = express4.Router();
+teamMeetDayRouter.get(
+  "/api/teams/:teamId/meet-day-packets",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const result = await listMeetDayPackets({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || "")
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to load meet-day packets."
+        });
+        return;
+      }
+      res.json({ ok: true, packets: result.packets || [] });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed loading meet-day packets."
+      });
+    }
+  }
+);
+teamMeetDayRouter.post(
+  "/api/teams/:teamId/meet-day-packets",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const body = req.body || {};
+      const result = await saveMeetDayPacket({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        originUrl,
+        packet: {
+          packetId: body.packetId,
+          meetTitle: body.meetTitle,
+          meetDate: body.meetDate,
+          laneCount: body.laneCount,
+          flightSize: body.flightSize,
+          partitionByDivision: body.partitionByDivision,
+          entries: body.entries
+        }
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to save meet-day packet."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({
+        ok: true,
+        packet: result.packet,
+        packets: result.packets || [],
+        team: result.team,
+        teams
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed saving meet-day packet."
+      });
+    }
+  }
+);
+teamMeetDayRouter.delete(
+  "/api/teams/:teamId/meet-day-packets/:packetId",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const result = await deleteMeetDayPacket({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        packetId: String(req.params.packetId || ""),
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to delete meet-day packet."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({
+        ok: true,
+        packets: result.packets || [],
+        team: result.team,
+        teams
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed deleting meet-day packet."
+      });
+    }
+  }
+);
+
+// server/routers/teamSyncRouter.ts
+import crypto17 from "crypto";
+import express5 from "express";
+
+// server/athleticSyncService.ts
+import crypto16 from "crypto";
+
+// server/athleticFieldSyncHelper.ts
+import crypto15 from "node:crypto";
+function applyParsedExternalFieldMarksToDoc(params) {
+  const baseLogs = Array.isArray(params.existingLogs) ? [...params.existingLogs] : Array.isArray(params.doc.fieldMarkLogs) ? [...params.doc.fieldMarkLogs] : [];
+  const mergedLogs = [...baseLogs];
+  const addedRecords = [];
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  for (const item of params.matchedFieldItems || []) {
+    const row = item?.row;
+    if (!row || !row.isFieldEvent) continue;
+    const normName = normalizeAthleteMatchKey(row.athleteName);
+    const fallbackMem = !item.mem && !item.membershipId ? (params.doc.memberships || []).find(
+      (m) => m.status !== "REVOKED" && m.role !== "PARENT_FOLLOWER" && (row.externalAthleteId && m.externalAthleteId === row.externalAthleteId || Boolean(normName) && normalizeAthleteMatchKey(m.invitedName) === normName)
+    ) : void 0;
+    const membershipId = item.mem?.membershipId || item.membershipId || fallbackMem?.membershipId;
+    const athleteName = item.mem?.invitedName || item.matchedAthleteName || item.athleteName || fallbackMem?.invitedName || row.athleteName;
+    const eventCode = row.fieldEventCode || "LJ";
+    const candidate = buildExternalFieldEventLogRecord({
+      row,
+      teamId: params.doc.brand.teamId,
+      membershipId,
+      athleteName,
+      nowIso,
+      idSuffix: crypto15.randomBytes(4).toString("hex")
+    });
+    const isDup = mergedLogs.some(
+      (existing) => isDuplicateExternalFieldLog(existing, candidate)
+    );
+    if (isDup) continue;
+    if (fallbackMem && !fallbackMem.eventGroup) {
+      fallbackMem.eventGroup = getFieldEventSpec(eventCode).eventGroup;
+    }
+    mergedLogs.unshift(candidate);
+    addedRecords.push(candidate);
+  }
+  params.doc.fieldMarkLogs = mergedLogs;
+  params.doc.fieldMarkLogsTotalCount = mergedLogs.length;
+  return {
+    addedRecords,
+    mergedLogs,
+    addedCount: addedRecords.length
+  };
+}
+
+// server/athleticSyncService.ts
 function assertCoachMembership(doc, callerSid) {
   const mem = doc.memberships.find(
     (m) => m.userSid === callerSid && m.status !== "REVOKED"
@@ -14889,7 +15836,7 @@ function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
     const estDist = meet.distanceMeters || 5e3;
     const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
     additions.push({
-      broadcastId: `meet_${crypto14.randomBytes(6).toString("hex")}`,
+      broadcastId: `meet_${crypto16.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup: "ALL",
       date: cleanDate,
@@ -15098,10 +16045,10 @@ function findOrCreateExternalMembership(doc, candidate) {
     candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
   );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-  const rawToken = crypto14.randomBytes(12).toString("base64url");
+  const rawToken = crypto16.randomBytes(12).toString("base64url");
   const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
   const createdMem = {
-    membershipId: `mem_${crypto14.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto16.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
     role: "ATHLETE",
     squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
@@ -15118,7 +16065,7 @@ function findOrCreateExternalMembership(doc, candidate) {
     status: "INVITED",
     emailDeliveryStatus: "READY_MANUAL_LINK",
     rawInviteToken: rawToken,
-    inviteTokenHash: crypto14.createHash("sha256").update(rawToken).digest("hex"),
+    inviteTokenHash: crypto16.createHash("sha256").update(rawToken).digest("hex"),
     invitedAt: nowIso,
     liveSnapshot: {
       updatedAt: nowIso,
@@ -15165,26 +16112,31 @@ async function applyExternalTeamSyncBatch(params) {
     const extSource = params.externalSyncPatch?.platform === "TFRRS" || doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
     addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
   }
+  const matchedFieldItems = [];
   for (const row of (params.results || []).slice(0, 200)) {
     const { mem, created } = findOrCreateExternalMembership(doc, {
       name: row.athleteName,
       squadGroup: row.squadGroup,
       graduationYear: row.graduationYear,
       genderDivision: row.genderDivision,
-      seedMarkOrFtp: row.displayFatTime,
+      seedMarkOrFtp: row.isFieldEvent ? row.displayFieldMark || row.displayFatTime : row.displayFatTime,
       externalSource: row.externalSource,
       externalAthleteId: row.externalAthleteId,
       externalProfileUrl: row.externalProfileUrl,
       isMinorU18: doc.brand.orgType === "HIGH_SCHOOL"
     });
     if (created) addedAthletes += 1;
+    if (row.isFieldEvent) {
+      matchedFieldItems.push({ row, mem });
+      continue;
+    }
     const existingActs = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
     const duplicate = existingActs.some(
       (a) => a.startDateLocal?.slice(0, 10) === row.date && a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters && Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
     );
     if (duplicate) continue;
     const activity = synthesizeOfficialRaceActivity({
-      id: `ext-meet-${crypto14.randomBytes(5).toString("hex")}`,
+      id: `ext-meet-${crypto16.randomBytes(5).toString("hex")}`,
       date: row.date,
       meetName: row.meetName,
       eventLabel: row.eventLabel,
@@ -15208,6 +16160,21 @@ async function applyExternalTeamSyncBatch(params) {
       await archiveCoachActivitiesForMember(mem, [activity]).catch(() => void 0);
     }
     recordedResults += 1;
+  }
+  if (matchedFieldItems.length > 0) {
+    const existingFieldLogs = await loadFullTeamFieldMarksArchive(
+      params.teamId,
+      doc.fieldMarkLogs
+    );
+    const fieldRes = applyParsedExternalFieldMarksToDoc({
+      doc,
+      existingLogs: existingFieldLogs,
+      matchedFieldItems
+    });
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), fieldRes.mergedLogs);
+    doc.fieldMarkLogs = fieldRes.mergedLogs.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = fieldRes.mergedLogs.length;
+    recordedResults += fieldRes.addedCount;
   }
   doc.brand.externalSync = sanitizeExternalSyncConfig(
     {
@@ -15235,10 +16202,20 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
       upcomingMeets: [],
       recentSchedule: [],
       rosterLeaderboard: [],
-      stats: { athleteCount: 0, meetCount: 0, officialResultCount: 0 }
+      fieldLeaderboard: [],
+      stats: { athleteCount: 0, meetCount: 0, officialResultCount: 0, fieldPrCount: 0 }
     };
   }
   const todayIso = getLocalDateIso();
+  const fullFieldLogs = await loadFullTeamFieldMarksArchive(
+    doc.brand.teamId,
+    doc.fieldMarkLogs
+  );
+  const { fieldPrsByMembershipId, fieldLeaderboard } = buildPublicFieldLeaderboardFromLogs({
+    orgType: doc.brand.orgType,
+    memberships: doc.memberships,
+    fieldLogs: fullFieldLogs
+  });
   const meetItems = (doc.broadcastWorkouts || []).filter((bw) => bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name)).filter((bw) => !bw.targetMembershipIds || bw.targetMembershipIds.length === 0).map((bw) => ({
     id: bw.broadcastId,
     date: bw.date,
@@ -15270,17 +16247,14 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
       };
     }).sort((a, b) => b.date.localeCompare(a.date));
     officialResultCount += officialResults.length;
-    const isProtectedMinor = Boolean(
-      m.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
-    );
-    const abbreviateUnconsentedMinor = Boolean(
-      !m.externalSource && isProtectedMinor && m.parentConsentStatus !== "ACKNOWLEDGED"
-    );
-    let displayName = m.invitedName;
-    if (abbreviateUnconsentedMinor) {
-      const parts = m.invitedName.trim().split(/\s+/).filter(Boolean);
-      displayName = parts.length >= 2 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0] || "Athlete";
-    }
+    const displayName = formatPublicSafeSportDisplayName({
+      invitedName: m.invitedName,
+      externalSource: m.externalSource,
+      isMinorU18: m.isMinorU18,
+      parentConsentStatus: m.parentConsentStatus,
+      orgType: doc.brand.orgType
+    });
+    const memberFieldPrs = fieldPrsByMembershipId.get(m.membershipId);
     return {
       membershipId: m.membershipId,
       name: displayName,
@@ -15292,7 +16266,8 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
       ...m.externalSource ? { externalSource: m.externalSource } : {},
       ...m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {},
       ...m.externalProfileUrl && isSafeHttpsUrl(m.externalProfileUrl.trim()) ? { externalProfileUrl: m.externalProfileUrl.trim() } : {},
-      officialResults
+      officialResults,
+      ...memberFieldPrs && memberFieldPrs.length > 0 ? { fieldPrs: memberFieldPrs } : {}
     };
   });
   const safePublicExternalSync = projectSafePublicExternalSync(doc.brand.externalSync);
@@ -15316,6 +16291,7 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
     upcomingMeets,
     recentSchedule,
     rosterLeaderboard,
+    fieldLeaderboard,
     announcements: (doc.announcements || []).filter((a) => a.publishToParentHub).slice(0, 6).map((a) => ({
       id: a.id,
       title: a.title,
@@ -15326,7 +16302,8 @@ async function getPublicTeamHubBySlugOrCode(slugOrCode) {
     stats: {
       athleteCount: rosterLeaderboard.length,
       meetCount: meetItems.length,
-      officialResultCount
+      officialResultCount,
+      fieldPrCount: fieldLeaderboard.length
     }
   };
 }
@@ -15347,7 +16324,7 @@ async function followTeamAsParentOrFan(params) {
     if (!mem) {
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       mem = {
-        membershipId: `mem_${crypto14.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto16.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         role: "PARENT_FOLLOWER",
@@ -15378,7 +16355,7 @@ async function followTeamAsParentOrFan(params) {
 }
 
 // server/routers/teamSyncRouter.ts
-var teamSyncRouter = express4.Router();
+var teamSyncRouter = express5.Router();
 function resolveSyncOrigin(req) {
   return resolveTrustedRequestOrigin(req);
 }
@@ -15524,7 +16501,7 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
     let sid = existing?.sid;
     let sessionToken;
     if (!sid) {
-      const anonSid = crypto15.randomBytes(16).toString("hex");
+      const anonSid = crypto17.randomBytes(16).toString("hex");
       sessionToken = setSessionCookie(
         req,
         res,
@@ -15563,11 +16540,11 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
 });
 
 // server/routers/authRouter.ts
-import express5 from "express";
-import crypto17 from "crypto";
+import express6 from "express";
+import crypto19 from "crypto";
 
 // server/webauthnVerify.ts
-import crypto16 from "crypto";
+import crypto18 from "crypto";
 function readCborLength(buf, addtl, offset) {
   if (addtl < 24) {
     return { length: addtl, nextOffset: offset };
@@ -15678,7 +16655,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 1 || !Buffer.isBuffer(xBuf) || !Buffer.isBuffer(yBuf)) {
       throw new Error("Invalid COSE EC2 P-256 public key parameters.");
     }
-    const pubKey = crypto16.createPublicKey({
+    const pubKey = crypto18.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -15699,7 +16676,7 @@ function coseKeyMapToSpki(coseMap) {
     if (!Buffer.isBuffer(nBuf) || !Buffer.isBuffer(eBuf)) {
       throw new Error("Invalid COSE RSA public key parameters.");
     }
-    const pubKey = crypto16.createPublicKey({
+    const pubKey = crypto18.createPublicKey({
       key: {
         kty: "RSA",
         n: nBuf.toString("base64url"),
@@ -15719,7 +16696,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 6 || !Buffer.isBuffer(xBuf)) {
       throw new Error("Invalid COSE Ed25519 public key parameters.");
     }
-    const pubKey = crypto16.createPublicKey({
+    const pubKey = crypto18.createPublicKey({
       key: {
         kty: "OKP",
         crv: "Ed25519",
@@ -15766,9 +16743,9 @@ function assertRpIdHashAndFlags(authData, expectedRpId, requireAtFlag) {
   if (!Buffer.isBuffer(authData) || authData.length < minLen) {
     throw new Error("Truncated WebAuthn authenticatorData.");
   }
-  const expectedRpHash = crypto16.createHash("sha256").update(expectedRpId).digest();
+  const expectedRpHash = crypto18.createHash("sha256").update(expectedRpId).digest();
   const actualRpHash = authData.subarray(0, 32);
-  if (!crypto16.timingSafeEqual(actualRpHash, expectedRpHash)) {
+  if (!crypto18.timingSafeEqual(actualRpHash, expectedRpHash)) {
     throw new Error("WebAuthn RP ID hash mismatch.");
   }
   const flags = authData.readUInt8(32);
@@ -15871,15 +16848,15 @@ function verifyWebAuthnAssertion(params) {
         error: "Passkey record lacks stored public key."
       };
     }
-    const pubKey = crypto16.createPublicKey({
+    const pubKey = crypto18.createPublicKey({
       key: Buffer.from(params.publicKeySpkiBase64, "base64"),
       format: "der",
       type: "spki"
     });
-    const clientDataHash = crypto16.createHash("sha256").update(clientDataBytes).digest();
+    const clientDataHash = crypto18.createHash("sha256").update(clientDataBytes).digest();
     const signedData = Buffer.concat([authData, clientDataHash]);
     const algDigest = params.coseAlg === -8 ? null : "sha256";
-    const isValidSig = crypto16.verify(algDigest, signedData, pubKey, sigBuf);
+    const isValidSig = crypto18.verify(algDigest, signedData, pubKey, sigBuf);
     if (!isValidSig) {
       return {
         verified: false,
@@ -16143,7 +17120,7 @@ async function deleteThreshAccountPermanently(req, res) {
 }
 
 // server/routers/authRouter.ts
-var authRouter = express5.Router();
+var authRouter = express6.Router();
 var magicLinkRateStore = /* @__PURE__ */ new Map();
 function checkMagicLinkRateLimit(key, limit, windowMs = 10 * 60 * 1e3) {
   const now = Date.now();
@@ -16549,8 +17526,8 @@ authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
   const rpId = getRpId(req);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
-  const challenge = crypto17.randomBytes(32).toString("base64url");
-  const userId = crypto17.randomBytes(16).toString("base64url");
+  const challenge = crypto19.randomBytes(32).toString("base64url");
+  const userId = crypto19.randomBytes(16).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "register",
@@ -16660,7 +17637,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
 });
 authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
   const rpId = getRpId(req);
-  const challenge = crypto17.randomBytes(32).toString("base64url");
+  const challenge = crypto19.randomBytes(32).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "auth"
@@ -16872,7 +17849,7 @@ authRouter.delete("/api/auth/account", async (req, res) => {
 
 // server/routers/configRouter.ts
 import { Router as Router6 } from "express";
-import crypto20 from "crypto";
+import crypto22 from "crypto";
 import fs7 from "fs";
 
 // server/secretManager.ts
@@ -17270,7 +18247,7 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
 }
 
 // server/oauthHelpers.ts
-import crypto18 from "crypto";
+import crypto20 from "crypto";
 function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
   const verified = getVerifiedSessionClaims(req);
   if (verified?.sid) {
@@ -17283,7 +18260,7 @@ function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
     );
     return { sid: verified.sid, sessionToken: sessionToken2 };
   }
-  const sid = crypto18.randomBytes(16).toString("hex");
+  const sid = crypto20.randomBytes(16).toString("hex");
   const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return { sid, sessionToken };
@@ -17490,7 +18467,7 @@ function resolvePolarCallbackUrl(req) {
 var resolveCallbackUrl = resolveStravaCallbackUrl;
 
 // server/routers/intervalsRouter.ts
-import express7 from "express";
+import express8 from "express";
 
 // server/routers/activitiesRouter.ts
 import { Router as Router2 } from "express";
@@ -17832,8 +18809,8 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 });
 
 // server/routers/stravaRouter.ts
-import express6 from "express";
-import crypto19 from "crypto";
+import express7 from "express";
+import crypto21 from "crypto";
 import fs6 from "fs";
 
 // server/stravaIdUtils.ts
@@ -18639,7 +19616,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = (prevClaims?.sub === canonicalUserId ? prevClaims.sid : void 0) || (opts.expectedUserId === canonicalUserId ? opts.expectedSid : void 0) || deriveUserSessionSid(canonicalUserId);
     sessionSubject = canonicalUserId;
   } else {
-    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto19.randomBytes(16).toString("hex");
+    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto21.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
   if (opts.athleteId) {
@@ -19103,7 +20080,7 @@ var stravaCallbackHandler = async (req, res) => {
     );
   }
 };
-var stravaRouter = express6.Router();
+var stravaRouter = express7.Router();
 stravaRouter.post("/api/strava/credentials", async (req, res) => {
   const clientId = (req.body?.clientId || "").trim();
   const clientSecret = (req.body?.clientSecret || "").trim();
@@ -20661,7 +21638,7 @@ var intervalsCallbackHandler = async (req, res) => {
     );
   }
 };
-var intervalsRouter = express7.Router();
+var intervalsRouter = express8.Router();
 intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
@@ -22810,7 +23787,7 @@ configRouter.post("/api/auth/session", (req, res) => {
     res.json({ ok: true, sessionToken: refreshedToken, authLevel: "verified" });
     return;
   }
-  const anonSub = `anon_${crypto20.randomBytes(8).toString("hex")}`;
+  const anonSub = `anon_${crypto22.randomBytes(8).toString("hex")}`;
   const sessionToken = setSessionCookie(req, res, anonSub, void 0, "anon");
   res.json({ ok: true, sessionToken, authLevel: "anon" });
 });
@@ -23456,7 +24433,7 @@ garminRouter.post("/api/garmin/disconnect", async (req, res) => {
 });
 
 // server/routers/webhookRouter.ts
-import express8 from "express";
+import express9 from "express";
 import fs8 from "fs";
 async function executeHourlyBackgroundPoll() {
   const results = {
@@ -23489,7 +24466,7 @@ async function executeHourlyBackgroundPoll() {
   await saveSessionCacheAsync();
   return results;
 }
-var webhookRouter = express8.Router();
+var webhookRouter = express9.Router();
 webhookRouter.all("/api/cron/hourly-sync", async (req, res) => {
   if (!hasValidCronAuthorization(req)) {
     res.status(401).json({ ok: false, error: "Unauthorized cron invocation." });
@@ -23648,9 +24625,9 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
 });
 
 // server/apiRouter.ts
-var apiRouter = express9.Router();
+var apiRouter = express10.Router();
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use(express9.urlencoded({ extended: false }));
+apiRouter.use(express10.urlencoded({ extended: false }));
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
@@ -23681,6 +24658,7 @@ apiRouter.use(vaultAndPhysiologyRouter);
 apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
+apiRouter.use(teamMeetDayRouter);
 apiRouter.use(teamSyncRouter);
 apiRouter.use(authRouter);
 apiRouter.use(configRouter);
@@ -23694,7 +24672,7 @@ apiRouter.use(coachRouter);
 apiRouter.use(webhookRouter);
 
 // server/observability.ts
-import crypto21 from "crypto";
+import crypto23 from "crypto";
 function sanitizeTelemetryString(raw, maxLen = 300) {
   return String(raw || "").replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[REDACTED]").replace(/([?&](?:token|code|secret|key|t)=)[^&\s]+/gi, "$1[REDACTED]").slice(0, maxLen);
 }
@@ -23760,7 +24738,7 @@ async function captureServerException(err, context = {}) {
   const dsn = parseSentryDsn(process.env.SENTRY_DSN);
   if (!dsn) return;
   await postSentryEvent(dsn, {
-    event_id: crypto21.randomBytes(16).toString("hex"),
+    event_id: crypto23.randomBytes(16).toString("hex"),
     timestamp,
     level: "error",
     platform: "node",
@@ -23788,7 +24766,7 @@ async function captureServerException(err, context = {}) {
 import fs9 from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
-import express10 from "express";
+import express11 from "express";
 
 // src/utils/shareWorkoutCodec.ts
 var FORBIDDEN_RAW_TELEMETRY_KEYS = [
@@ -24079,7 +25057,7 @@ function buildJoinOgMetadata(slug, preview) {
   };
 }
 function createOgPreviewRouter(options = {}) {
-  const router = express10.Router();
+  const router = express11.Router();
   let cachedHtmlShell = options.htmlShell ?? null;
   const getHtmlShell = () => {
     if (cachedHtmlShell !== null) {
@@ -24158,10 +25136,10 @@ function createOgPreviewRouter(options = {}) {
 var ogPreviewRouter = createOgPreviewRouter();
 
 // server/vercelApp.ts
-var app = express11();
+var app = express12();
 app.disable("x-powered-by");
 app.use(
-  express11.json({
+  express12.json({
     limit: "2mb",
     reviver: strava64BitJsonReviver
   })

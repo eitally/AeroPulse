@@ -50,6 +50,10 @@ import {
   type StopwatchSaveResult,
 } from './utils/stopwatchTeamSync';
 import {
+  flushFieldOutbox,
+  overlayPendingFieldOutboxOnTeams,
+} from './utils/fieldEventsOutbox';
+import {
   buildCompleteAthleteProfile,
   inferPrimarySportFromActivities,
   isGenericAthleteName,
@@ -1655,7 +1659,9 @@ export default function App() {
         const replaced = prev.map((t) =>
           t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
         );
-        const withOutbox = overlayPendingStopwatchOutboxOnTeams(replaced);
+        const withOutbox = overlayPendingFieldOutboxOnTeams(
+          overlayPendingStopwatchOutboxOnTeams(replaced)
+        );
         try {
           localStorage.setItem('thresh_my_teams_v1', JSON.stringify(withOutbox));
         } catch {
@@ -1671,18 +1677,22 @@ export default function App() {
     if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) {
       return { syncedBatches: 0, syncedEntries: 0, remainingBatches: 0, remainingEntries: 0 };
     }
-    return flushStopwatchOutbox(applyUpdatedTeamToState);
+    const swRes = await flushStopwatchOutbox(applyUpdatedTeamToState);
+    void flushFieldOutbox(applyUpdatedTeamToState);
+    return swRes;
   }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, applyUpdatedTeamToState]);
 
   useEffect(() => {
     if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
     void handleFlushStopwatchOutbox();
+    void flushFieldOutbox(applyUpdatedTeamToState);
     const onOnline = () => {
       void handleFlushStopwatchOutbox();
+      void flushFieldOutbox(applyUpdatedTeamToState);
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
-  }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, handleFlushStopwatchOutbox]);
+  }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, handleFlushStopwatchOutbox, applyUpdatedTeamToState]);
 
   const handleSaveStopwatchActivities = useCallback(
     async (entries: SavedStopwatchEntry[]): Promise<StopwatchSaveResult> => {
@@ -1772,7 +1782,9 @@ export default function App() {
       if (!isSampleDemoMode && activeTeamId && teamApiEntries.length > 0) {
         enqueueStopwatchOutboxBatch(activeTeamId, teamApiEntries);
         setMyTeams((prev) => {
-          const withOutbox = overlayPendingStopwatchOutboxOnTeams(prev);
+          const withOutbox = overlayPendingFieldOutboxOnTeams(
+            overlayPendingStopwatchOutboxOnTeams(prev)
+          );
           try {
             localStorage.setItem('thresh_my_teams_v1', JSON.stringify(withOutbox));
           } catch {
