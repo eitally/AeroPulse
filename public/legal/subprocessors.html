@@ -93,9 +93,9 @@
             </tr>
             <tr>
               <td><strong>Neon (PostgreSQL)</strong></td>
-              <td>Encrypted multi-tenant vaults, normalized team roster/audit records &amp; backup storage</td>
-              <td>AES-256-GCM encrypted token envelopes, team memberships, hashed tokens, audit log</td>
-              <td>Strict TLS (<code>rejectUnauthorized: true</code>), zero plaintext OAuth tokens</td>
+              <td>Encrypted multi-tenant vaults, normalized team roster/audit records, anonymous aggregate funnel counters &amp; backup storage</td>
+              <td>AES-256-GCM encrypted token envelopes, team memberships, hashed tokens, audit log &amp; anonymous aggregate funnel event counters (zero PII, zero IP storage)</td>
+              <td>Strict TLS (<code>rejectUnauthorized: true</code>), zero plaintext OAuth tokens; aggregate counters excluded from minor/student accounts</td>
             </tr>
             <tr>
               <td><strong>Resend</strong></td>
@@ -178,6 +178,7 @@
     <section class="legal-section">
       <h2>Self-Serve Data Portability, Erasure &amp; 30-Day Change Notice</h2>
       <ul>
+        <li><strong>First-Party Anonymous Conversion Counters (Zero Third-Party Analytics):</strong> MeetReady does not embed Google Analytics, Meta Pixel, Segment, or third-party ad trackers. Public landing and coach onboarding milestones emit only first-party anonymous aggregate conversion counters (zero cookies, zero PII, zero IP address storage, and unconditionally excluded from minor/student accounts).</li>
         <li><strong>Self-Serve Export &amp; Deletion:</strong> Signed-in athletes and coaches can export their complete personal and team-scoped records anytime in JSON or CSV via <em>Account, Teams &amp; Privacy &rarr; Download My Data</em> (<code>GET /api/auth/export</code>), or permanently erase their account and team telemetry via <em>Delete My Account</em> (<code>DELETE /api/auth/account</code>).</li>
         <li><strong>Subprocessor Updates:</strong> School districts and partner athletic departments receive at least 30 days&apos; advance notice before any material new subprocessor handles institutional student records. Questions: <a href="mailto:privacy@meetready.app">privacy@meetready.app</a>.</li>
       </ul>

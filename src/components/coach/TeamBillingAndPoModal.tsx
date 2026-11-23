@@ -16,6 +16,7 @@ import {
   issueSchoolPoInvoiceApi,
   openPrintableSchoolPoInvoiceWindow,
 } from '../../utils/schoolPoInvoiceHelper';
+import { emitFunnelEvent } from '../../utils/funnelTelemetry';
 import type {
   SchoolPoInvoiceRecord,
   TeamBillingPlanCode,
@@ -80,10 +81,14 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
   const [isSubmittingPo, setIsSubmittingPo] = useState<boolean>(false);
   const [isStartingStripe, setIsStartingStripe] = useState<boolean>(false);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const [lastEmailStatus, setLastEmailStatus] = useState<
+    'SENT_RESEND' | 'READY_MANUAL_LINK' | 'FAILED' | null
+  >(null);
 
   useEffect(() => {
     if (!isOpen || !activeTeam) return;
     setNotice(null);
+    setLastEmailStatus(null);
     setSchoolName(activeTeam.billing?.schoolOrDistrictName || activeTeam.brand.name || '');
     setBillingEmail(activeTeam.billing?.billingContactEmail || '');
     setPoNumber(activeTeam.billing?.poNumber || '');
@@ -170,13 +175,15 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
       );
       setNotice({
         tone: 'ok',
-        text: `Generated Net-30 demo invoice ${demoInvoice.invoiceNumber} ($${demoInvoice.amountUsd} USD).`,
+        text: `Generated Net-30 demo invoice ${demoInvoice.invoiceNumber} ($${demoInvoice.amountUsd} USD). Ready for manual PDF download below (READY_MANUAL_LINK).`,
       });
+      setLastEmailStatus('READY_MANUAL_LINK');
       return;
     }
 
     setIsSubmittingPo(true);
     setNotice(null);
+    setLastEmailStatus(null);
     try {
       const resp = await issueSchoolPoInvoiceApi(activeTeam.brand.teamId, {
         planCode: selectedPlan,
@@ -193,9 +200,21 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
           resp.team.brand.teamId
         );
       }
+      const deliveryStatus = resp.emailStatus || 'READY_MANUAL_LINK';
+      setLastEmailStatus(deliveryStatus);
+      emitFunnelEvent('po_generated', {
+        role: activeTeam.myRole === 'ORG_ADMIN' ? 'ORG_ADMIN' : 'COACH',
+        tier: selectedPlan,
+      });
+      const deliverySuffix =
+        deliveryStatus === 'SENT_RESEND'
+          ? `Email sent via Resend to ${resp.invoice.billingContactEmail} (SENT_RESEND).`
+          : deliveryStatus === 'FAILED'
+            ? `Automated email failed — click Print Invoice & W-9 below to send manually (FAILED).`
+            : `Ready for manual PDF download/forwarding to ${resp.invoice.billingContactEmail} (READY_MANUAL_LINK).`;
       setNotice({
         tone: 'ok',
-        text: `Issued Net-30 School PO Invoice ${resp.invoice.invoiceNumber} ($${resp.invoice.amountUsd} USD, due ${resp.invoice.dueDate}).`,
+        text: `Issued Net-30 School PO Invoice ${resp.invoice.invoiceNumber} ($${resp.invoice.amountUsd} USD, due ${resp.invoice.dueDate}). ${deliverySuffix}`,
       });
     } catch (err) {
       setNotice({
@@ -224,6 +243,11 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
         ...(billingEmail.trim() ? { billingContactEmail: billingEmail.trim() } : {}),
       });
       if (resp.stripeConfigured && resp.checkoutUrl) {
+        emitFunnelEvent('stripe_checkout_started', {
+          role: activeTeam.myRole === 'ORG_ADMIN' ? 'ORG_ADMIN' : 'COACH',
+          tier: selectedPlan,
+          useBeacon: true,
+        });
         window.location.assign(resp.checkoutUrl);
         return;
       }
@@ -291,16 +315,30 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
           <div
             role="status"
             data-testid="billing-modal-notice"
-            className={`rounded-xl px-3.5 py-2.5 text-xs font-semibold flex items-center gap-2 ${
+            className={`rounded-xl px-3.5 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-between gap-2 ${
               notice.tone === 'ok' ? 'ap-status-prime' : 'ap-status-strained'
             }`}
           >
-            {notice.tone === 'ok' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertTriangle className="w-4 h-4 shrink-0" />
+            <div className="flex items-center gap-2 min-w-0">
+              {notice.tone === 'ok' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              )}
+              <span>{notice.text}</span>
+            </div>
+            {lastEmailStatus && notice.tone === 'ok' && (
+              <span
+                data-testid="billing-email-status-badge"
+                className="px-2 py-0.5 rounded font-mono text-2xs font-bold border border-current/25 shrink-0"
+              >
+                {lastEmailStatus === 'SENT_RESEND'
+                  ? 'SENT_RESEND'
+                  : lastEmailStatus === 'FAILED'
+                    ? 'FAILED'
+                    : 'READY_MANUAL_LINK'}
+              </span>
             )}
-            <span>{notice.text}</span>
           </div>
         )}
 
@@ -343,6 +381,18 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
             );
           })}
         </div>
+
+        {(selectedPlan === 'DISTRICT_2000' || billingState?.planCode === 'DISTRICT_2000') && (
+          <div
+            data-testid="billing-district-rollup-note"
+            className="rounded-xl ap-status-info px-3.5 py-2.5 text-xs flex items-start gap-2"
+          >
+            <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              <strong>Multi-School District Rollup Active:</strong> Covers every high school and middle school program across your district under one District AD &amp; SafeSport compliance dashboard, countersigned California SDPC NDPA, and single Net-30 PO.
+            </span>
+          </div>
+        )}
 
         {/* Net-30 School PO Form */}
         <form
@@ -506,10 +556,10 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
               href="/procurement"
               target="_blank"
               rel="noopener noreferrer"
+              data-testid="billing-open-w9-ndpa-link"
               className="inline-flex items-center gap-1 text-ap-cobalt dark:text-ap-volt hover:underline"
             >
-              <span>Procurement Pack</span>
-              <ExternalLink className="w-3 h-3" />
+              <span>Open W-9 &amp; NDPA Pack ↗</span>
             </a>
             <a
               href="/for-athletic-directors"

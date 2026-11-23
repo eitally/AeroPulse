@@ -199,7 +199,16 @@ export function buildSchoolPoInvoicePrintHtml(params: {
 
     <div class="total">Total Due (Net-30): $${invoice.amountUsd.toFixed(2)} USD</div>
 
-    <div class="box" style="margin-top:20px;">
+    <section class="box" style="margin-top:16px;break-inside:avoid;">
+      <div class="kicker" style="margin-bottom:6px;">Procurement &amp; IRS W-9 Vendor Summary</div>
+      <div><strong>Vendor / Payee:</strong> MeetReady Athletics (Track, Field &amp; Cross Country Platform)</div>
+      <div><strong>IRS Form W-9 &amp; Tax ID:</strong> Signed W-9 PDF &amp; Vendor Setup Sheet furnished same-day via <strong>procurement@meetready.app</strong></div>
+      <div><strong>Student Data Privacy:</strong> California SDPC NDPA · CA AB-1584 / SOPIPA · FERPA School Official Addendum · HECVAT Lite</div>
+      <div><strong>Payment Methods:</strong> District / ASB Check, ACH Transfer, or P-Card · Net-30 Terms · Students &amp; Parents $0 Forever</div>
+      <div><strong>Procurement Packet URL:</strong> https://meetready.app/procurement</div>
+    </section>
+
+    <div class="box" style="margin-top:14px;break-inside:avoid;">
       <strong>Payment &amp; District Onboarding Instructions:</strong><br/>
       1. Remit ASB check, ACH, or district check referencing Invoice <strong>${escapeHtmlSafe(invoice.invoiceNumber)}</strong> to <strong>procurement@meetready.app</strong>.<br/>
       2. Need a signed IRS Form W-9, HECVAT Lite summary, or countersigned California SDPC NDPA? Download or request same-day countersignature at <strong>https://meetready.app/procurement</strong>.

@@ -1,11 +1,12 @@
 import React from 'react';
-import { AlertTriangle, RotateCcw } from './icons/PhosphorIcons';
+import { AlertTriangle, Download, RotateCcw } from './icons/PhosphorIcons';
 import type { ActiveTab } from '../types';
 import {
   isDynamicChunkLoadError,
   purgeStaleRuntimeChunkCaches,
   triggerChunkSkewReload,
 } from '../utils/lazyWithRetry';
+import { downloadSupportDiagnosticsJson } from '../utils/supportDiagnostics';
 
 export interface WorkspaceErrorBoundaryProps {
   children: React.ReactNode;
@@ -16,6 +17,8 @@ export interface WorkspaceErrorBoundaryProps {
 
 interface WorkspaceErrorBoundaryState {
   error: Error | null;
+  downloadingDiagnostics?: boolean;
+  diagnosticsDone?: boolean;
 }
 
 /**
@@ -52,7 +55,7 @@ export class WorkspaceErrorBoundary extends React.Component<
   }
 
   private handleRetry = (): void => {
-    this.setState({ error: null });
+    this.setState({ error: null, downloadingDiagnostics: false, diagnosticsDone: false });
   };
 
   private handleReloadLatestBuild = (): void => {
@@ -63,8 +66,27 @@ export class WorkspaceErrorBoundary extends React.Component<
     });
   };
 
+  private handleDownloadDiagnostics = (): void => {
+    const activeError = this.state.error;
+    this.setState({ downloadingDiagnostics: true });
+    void downloadSupportDiagnosticsJson({
+      source: 'workspace-error-boundary',
+      restoreTab: this.props.restoreTab,
+      boundaryError: activeError,
+    })
+      .then((res) => {
+        this.setState({
+          downloadingDiagnostics: false,
+          diagnosticsDone: Boolean(res?.downloaded || res?.snapshot),
+        });
+      })
+      .catch(() => {
+        this.setState({ downloadingDiagnostics: false });
+      });
+  };
+
   render(): React.ReactNode {
-    const { error } = this.state;
+    const { error, downloadingDiagnostics, diagnosticsDone } = this.state;
     if (!error) {
       return this.props.children;
     }
@@ -119,6 +141,22 @@ export class WorkspaceErrorBoundary extends React.Component<
             className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-4 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
           >
             <span>Reload Latest Build</span>
+          </button>
+          <button
+            type="button"
+            data-testid="error-boundary-diagnostics-btn"
+            disabled={Boolean(downloadingDiagnostics)}
+            onClick={this.handleDownloadDiagnostics}
+            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>
+              {downloadingDiagnostics
+                ? 'Preparing Diagnostics…'
+                : diagnosticsDone
+                  ? 'Diagnostics Downloaded'
+                  : 'Download Support Diagnostics'}
+            </span>
           </button>
         </div>
       </section>

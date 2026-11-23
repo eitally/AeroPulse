@@ -152,7 +152,7 @@
       function syncLabel() {
         var dark = document.documentElement.classList.contains('dark');
         var slate = document.documentElement.classList.contains('theme-slate');
-        btn.textContent = dark ? (slate ? 'Midnight Slate' : 'Dark') : 'Daylight';
+        btn.textContent = dark ? (slate ? 'Slate Dark' : 'Asphalt Dark') : 'Chalk Light';
       }
       syncLabel();
       btn.addEventListener('click', function () {
@@ -205,6 +205,37 @@
         } else if (ref && !stored.referrer) {
           stored.referrer = ref;
           sessionStorage.setItem(KEY, JSON.stringify(stored));
+        }
+        var lvKey = 'meetready_funnel_lv_' + (window.location.pathname || '/');
+        if (!sessionStorage.getItem(lvKey) && typeof fetch === 'function') {
+          sessionStorage.setItem(lvKey, '1');
+          var refHost = '';
+          try {
+            var rawRef = stored.referrer || ref;
+            if (rawRef) {
+              var ru = new URL(rawRef);
+              if (ru.hostname && ru.hostname.toLowerCase() !== window.location.hostname.toLowerCase()) {
+                refHost = ru.hostname.toLowerCase().slice(0, 80);
+              }
+            }
+          } catch (errRef) {}
+          fetch('/api/analytics/event', {
+            method: 'POST',
+            credentials: 'omit',
+            keepalive: true,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'landing_view',
+              role: 'ORG_ADMIN',
+              utm_source: stored.utm_source,
+              utm_medium: stored.utm_medium,
+              utm_campaign: stored.utm_campaign,
+              utm_content: stored.utm_content,
+              src: stored.src,
+              referrerHost: refHost || undefined,
+              landing_path: window.location.pathname
+            })
+          }).catch(function () {});
         }
         var attrKeys = Object.keys(stored).filter(function (k) {
           return (BASE_KEYS.indexOf(k) !== -1 || k.indexOf('utm_') === 0) && Boolean(stored[k]);

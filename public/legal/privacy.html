@@ -101,6 +101,7 @@
         <li><strong>Zero Advertising &amp; Zero Data Sales:</strong> Student and athlete records are never sold, rented, or used for targeted advertising, behavioral profiling, or third-party ad networks.</li>
         <li><strong>School Official &amp; LEA Ownership:</strong> When provisioned by a school or district, pupil records remain under the legal control of the Educational Agency in compliance with FERPA and California Education Code § 49073.1 (AB-1584) / SOPIPA.</li>
         <li><strong>FERPA Directory Opt-Out:</strong> Coaches and school administrators control public meet leaderboard opt-outs for <code>/team/:slug</code>; public hubs never expose athlete emails, phone numbers, guardian emails, GPS routes, HRV, sleep, RPE, or weight.</li>
+        <li><strong>First-Party Anonymous Aggregate Conversion Counters:</strong> MeetReady records strictly anonymous, first-party aggregate funnel event counts (such as landing views, demo entry, coach sign-up, team creation, or school PO generation) via <code>POST /api/analytics/event</code>. Counters use zero tracking cookies, store zero PII (never email, name, user ID, team ID, or user agent), perform zero IP address storage, and are unconditionally excluded from all minor/student accounts.</li>
       </ul>
     </section>
 

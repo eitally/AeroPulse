@@ -37,6 +37,7 @@ import {
   updateMyTeamSharingTierApi,
 } from '../utils/teamLifecycleApi';
 import { markSessionActiveHint } from '../utils/sessionHint';
+import { downloadSupportDiagnosticsJson } from '../utils/supportDiagnostics';
 
 export type RosterTab =
   | 'TEAMS_BRANDING'
@@ -142,6 +143,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<'json' | 'csv' | null>(null);
+  const [isExportingDiagnostics, setIsExportingDiagnostics] = useState(false);
 
   useEffect(() => {
     if (currentUser?.email) {
@@ -1185,6 +1187,49 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                       <Download className="w-3.5 h-3.5" />
                       <span>
                         {exportingFormat === 'csv' ? 'Exporting CSV…' : 'Download My Data (CSV)'}
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-stone-200/70 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-2.5">
+                    <div>
+                      <div className="text-xs font-semibold text-slate-900 dark:text-white">
+                        Support Diagnostics
+                      </div>
+                      <p className="text-2xs text-slate-600 dark:text-slate-300 mt-0.5">
+                        No personal data, tokens, or workouts included
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="privacy-support-diagnostics-btn"
+                      disabled={isExportingDiagnostics}
+                      onClick={async () => {
+                        setIsExportingDiagnostics(true);
+                        setPrivacyActionMsg(null);
+                        setPrivacyActionErr(null);
+                        try {
+                          const res = await downloadSupportDiagnosticsJson({
+                            source: 'privacy-shield-tab',
+                          });
+                          setPrivacyActionMsg(
+                            res.downloaded
+                              ? `Downloaded redacted diagnostics (${res.filename}).`
+                              : 'Generated redacted support diagnostics snapshot.'
+                          );
+                        } catch {
+                          setPrivacyActionErr('Unable to generate support diagnostics.');
+                        } finally {
+                          setIsExportingDiagnostics(false);
+                        }
+                      }}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>
+                        {isExportingDiagnostics
+                          ? 'Preparing Diagnostics…'
+                          : 'Download Support Diagnostics'}
                       </span>
                     </button>
                   </div>

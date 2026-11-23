@@ -4,6 +4,7 @@ import { COACH_EVENT_GROUP_OPTIONS } from '../../physiology/teamOnboardingEngine
 import { buildThreshSessionHeaders } from '../../utils/teamLifecycleApi';
 import { markSessionActiveHint } from '../../utils/sessionHint';
 import { getStoredCoachAttribution } from '../../utils/attribution';
+import { emitFunnelEvent, type FunnelEventTier } from '../../utils/funnelTelemetry';
 import { useModalDialog } from '../../hooks/useModalDialog';
 import type {
   CoachComplexityTier,
@@ -117,6 +118,12 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
       if (resp.ok && data?.ok && data.team) {
         markSessionActiveHint();
         const created = data.team as TeamSummaryWithRole;
+        const telemetryTier: FunnelEventTier =
+          orgType === 'CYCLING_CLUB' ? 'RUNNING_CLUB' : orgType;
+        emitFunnelEvent('team_created', {
+          role: 'COACH',
+          tier: telemetryTier,
+        });
         setCreatedTeam(created);
         onTeamCreated([...myTeams, created], created.brand.teamId);
         setStep(3);
@@ -390,6 +397,12 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
                   {copiedCode ? <Check className="w-3.5 h-3.5 text-ap-volt" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copiedCode ? 'Copied' : 'Copy Code'}</span>
                 </button>
+              </div>
+              <div
+                data-testid="wizard-pilot-reassurance-badge"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-ap-carbon border border-ap-edge px-2.5 py-1 text-2xs font-mono font-semibold text-ap-volt"
+              >
+                $0 Founding Season Pilot · Students &amp; Parents Free Forever
               </div>
             </div>
 

@@ -363,8 +363,8 @@ export async function createStripeCheckoutSession(params: {
 
   const form = new URLSearchParams();
   form.set('mode', 'subscription');
-  form.set('success_url', `${cleanOrigin}/#coach?billing=success`);
-  form.set('cancel_url', `${cleanOrigin}/#coach?billing=cancelled`);
+  form.set('success_url', `${cleanOrigin}/?billing=success#coach/roster`);
+  form.set('cancel_url', `${cleanOrigin}/?billing=cancelled#coach/roster`);
   form.set('client_reference_id', doc.brand.teamId);
   form.set('metadata[teamId]', doc.brand.teamId);
   form.set('metadata[planCode]', rawPlan);

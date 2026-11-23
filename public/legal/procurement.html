@@ -70,6 +70,10 @@
       <div class="legal-kicker">SCHOOL DISTRICT, AD &amp; NCAA PROCUREMENT PACK</div>
       <h1>CA SDPC NDPA, FERPA Addendum, HECVAT Lite &amp; PO Pricing</h1>
       <p class="legal-meta">Prepared for District IT Directors, Athletic Directors, Compliance Officers, and University Procurement Teams.</p>
+      <div style="margin-top:0.85rem;display:flex;flex-wrap:wrap;gap:0.65rem;">
+        <button type="button" class="legal-btn legal-btn-primary" id="procurementPrintBtn" onclick="window.print()">Print Procurement Pack (PDF)</button>
+        <a class="legal-btn" href="/for-athletic-directors">For Athletic Directors</a>
+      </div>
     </section>
 
     <section class="legal-section">
@@ -127,9 +131,9 @@
           <p>Free forever for student-athletes, verified parent/guardian accounts, and individual runners.</p>
         </div>
         <div class="price-card">
-          <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">HIGH SCHOOL PROGRAM</span>
+          <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">HIGH SCHOOL &amp; COMMUNITY CLUB</span>
           <div class="price-value">Free Pilot · $250 / yr</div>
-          <p>Free Founding Season Pilot, then $250/yr flat per school: unlimited athletes across Track, Field &amp; XC, watchless Stopwatch, Guardian Hub &amp; PO/ASB invoice.</p>
+          <p>Free Founding Season Pilot, then $250/yr flat per school or youth/community club: unlimited athletes across Track, Field &amp; XC, watchless Stopwatch, Guardian Hub &amp; PO/ASB invoice.</p>
         </div>
         <div class="price-card">
           <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">COLLEGIATE / NCAA PROGRAM</span>
@@ -139,7 +143,7 @@
         <div class="price-card">
           <span class="mono" style="font-size:0.72rem;color:var(--text-muted)">DISTRICT MULTI-SCHOOL</span>
           <div class="price-value">$2,000 / yr</div>
-          <p>District-wide deployment across every school with countersigned CA SDPC NDPA execution (Private Club tier available at $49/mo).</p>
+          <p>District-wide deployment across every school with countersigned CA SDPC NDPA execution (youth and community clubs use the $250 / yr flat annual program rate).</p>
         </div>
       </div>
       <div class="legal-callout" style="margin-top:1rem;">
@@ -214,6 +218,37 @@
         } else if (ref && !stored.referrer) {
           stored.referrer = ref;
           sessionStorage.setItem(KEY, JSON.stringify(stored));
+        }
+        var lvKey = 'meetready_funnel_lv_' + (window.location.pathname || '/');
+        if (!sessionStorage.getItem(lvKey) && typeof fetch === 'function') {
+          sessionStorage.setItem(lvKey, '1');
+          var refHost = '';
+          try {
+            var rawRef = stored.referrer || ref;
+            if (rawRef) {
+              var ru = new URL(rawRef);
+              if (ru.hostname && ru.hostname.toLowerCase() !== window.location.hostname.toLowerCase()) {
+                refHost = ru.hostname.toLowerCase().slice(0, 80);
+              }
+            }
+          } catch (errRef) {}
+          fetch('/api/analytics/event', {
+            method: 'POST',
+            credentials: 'omit',
+            keepalive: true,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              event: 'landing_view',
+              role: 'UNKNOWN',
+              utm_source: stored.utm_source,
+              utm_medium: stored.utm_medium,
+              utm_campaign: stored.utm_campaign,
+              utm_content: stored.utm_content,
+              src: stored.src,
+              referrerHost: refHost || undefined,
+              landing_path: window.location.pathname
+            })
+          }).catch(function () {});
         }
         var attrKeys = Object.keys(stored).filter(function (k) {
           return (BASE_KEYS.indexOf(k) !== -1 || k.indexOf('utm_') === 0) && Boolean(stored[k]);
