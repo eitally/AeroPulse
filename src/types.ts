@@ -162,7 +162,8 @@ export type OfficialRacePlatform =
   | 'TFRRS'
   | 'MileSplit'
   | 'RunSignup'
-  | 'Official FAT';
+  | 'Official FAT'
+  | 'MeetReady Stopwatch';
 
 export type OfficialTrackSurface =
   | 'OUTDOOR_400M'
@@ -177,6 +178,22 @@ export type TrackSplitTimingContext =
   | 'HAND_CONVERTED'
   | 'RELAY_LEADOFF'
   | 'RELAY_FLYING';
+
+export type DelegatedTimingStation =
+  | 'START_FINISH'
+  | '200M_MARK'
+  | '100M_MARK'
+  | 'RELAY_ZONE'
+  | 'CUSTOM';
+
+export interface DelegatedHandSplitCaptureSummary {
+  submissionId?: string;
+  capturedByName: string;
+  stationType: DelegatedTimingStation;
+  totalSecs: number;
+  lapSplitsSecs: number[];
+  capturedAt: string;
+}
 
 export interface OfficialRaceMetadata {
   platform: OfficialRacePlatform;
@@ -196,6 +213,11 @@ export interface OfficialRaceMetadata {
   timingMethod?: 'FAT' | 'HAND';
   splitContext?: TrackSplitTimingContext;
   sourceUrl?: string;
+  handTimedTotalSecs?: number;
+  capturedByName?: string;
+  timingStation?: DelegatedTimingStation;
+  splitsEstimated?: boolean;
+  handSplitCaptures?: DelegatedHandSplitCaptureSummary[];
 }
 
 export type ActivitySourceBadge =
@@ -209,7 +231,11 @@ export type ActivitySourceBadge =
   | 'TFRRS'
   | 'MileSplit'
   | 'RunSignup'
-  | 'Official FAT';
+  | 'Official FAT'
+  | 'MeetReady Stopwatch'
+  | 'Hand-Timed'
+  | 'Delegated Hand-Timed'
+  | 'Self-Logged';
 
 export interface StopwatchFusionMetadata {
   stopwatchActivityId: string;
@@ -1704,6 +1730,15 @@ export interface PublicTeamHubPayload {
   };
 }
 
+export type MeetSeedingAuthority = 'EXTERNAL_MEET' | 'HOST_DUAL_MEET';
+
+export type MeetAssignmentSource =
+  | 'UNASSIGNED'
+  | 'IMPORTED_HYTEK'
+  | 'IMPORTED_ATHLETICLIVE'
+  | 'CLERK_OVERRIDE'
+  | 'LOCAL_HOST_SEED';
+
 export interface MeetDayPacketEntryRecord {
   id: string;
   athleteName: string;
@@ -1715,6 +1750,16 @@ export interface MeetDayPacketEntryRecord {
   seedMarkRaw: string;
   relayTeamCode?: string;
   relayLegOrder?: 1 | 2 | 3 | 4;
+  isAlternate?: boolean;
+  scratched?: boolean;
+  officialHeat?: number;
+  officialLaneOrHip?: string;
+  officialFlight?: number;
+  officialOrder?: number;
+  eventStartTime?: string;
+  checkInCallTime?: string;
+  bibNumber?: string;
+  assignmentSource?: MeetAssignmentSource;
 }
 
 export interface MeetDayPacketRecord {
@@ -1724,9 +1769,136 @@ export interface MeetDayPacketRecord {
   laneCount: number;
   flightSize: number;
   partitionByDivision: boolean;
+  seedingAuthority?: MeetSeedingAuthority;
+  athleticLiveUrl?: string;
+  meetDelayMinutes?: number;
   entries: MeetDayPacketEntryRecord[];
   updatedAt: string;
   updatedByName?: string;
+}
+
+export interface DelegatedTimingRunner {
+  entryKey: string;
+  membershipId?: string;
+  displayName: string;
+  hipOrLane?: string;
+  targetSplitSecs?: number;
+  isWalkOn?: boolean;
+}
+
+export interface DelegatedTimingSessionRecord {
+  sessionId: string;
+  teamId: string;
+  passCode: string;
+  meetTitle: string;
+  meetDate: string;
+  eventCode: string;
+  eventLabel: string;
+  heatLabel?: string;
+  stationType: DelegatedTimingStation;
+  stationLabel: string;
+  splitPlanLabel: string;
+  targetSplitMeters: number;
+  targetLapCount: number;
+  runners: DelegatedTimingRunner[];
+  assignedMembershipId?: string;
+  assignedDelegateName?: string;
+  createdBySid: string;
+  createdByName: string;
+  expiresAt: string;
+  revokedAt?: string;
+  pinRequired?: boolean;
+  createdAt: string;
+}
+
+export interface DelegatedSplitSubmissionEntry {
+  entryKey: string;
+  membershipId?: string;
+  athleteName: string;
+  hipOrLane?: string;
+  totalSecs: number;
+  lapSplitsSecs: number[];
+  rawLapTimestampsSecs: number[];
+  isWalkOn?: boolean;
+}
+
+export type DelegatedSubmissionReviewStatus =
+  | 'PENDING_COACH_APPROVAL'
+  | 'APPROVED'
+  | 'BACKUP_ARCHIVED'
+  | 'DISCARDED';
+
+export interface DelegatedSplitSubmissionRecord {
+  submissionId: string;
+  sessionId: string;
+  teamId: string;
+  clientSubmissionId: string;
+  meetTitle: string;
+  meetDate: string;
+  eventCode: string;
+  eventLabel: string;
+  heatLabel?: string;
+  stationType: DelegatedTimingStation;
+  capturedByName: string;
+  capturedByMembershipId?: string;
+  gunStartEpochMs?: number;
+  submittedAt: string;
+  entries: DelegatedSplitSubmissionEntry[];
+  reviewStatus: DelegatedSubmissionReviewStatus;
+  reviewedAt?: string;
+  reviewedByName?: string;
+}
+
+export interface PublicDelegatedTimingPassPayload {
+  found: boolean;
+  expiredOrRevoked?: boolean;
+  pinRequired?: boolean;
+  pinVerified?: boolean;
+  teamShortName?: string;
+  teamName?: string;
+  session?: {
+    sessionId: string;
+    teamId: string;
+    passCode: string;
+    meetTitle: string;
+    meetDate: string;
+    eventCode: string;
+    eventLabel: string;
+    heatLabel?: string;
+    stationType: DelegatedTimingStation;
+    stationLabel: string;
+    splitPlanLabel: string;
+    targetSplitMeters: number;
+    targetLapCount: number;
+    runners: DelegatedTimingRunner[];
+    expiresAt: string;
+  };
+}
+
+export interface AthleteOwnMeetScheduleItem {
+  packetId: string;
+  meetTitle: string;
+  meetDate: string;
+  eventCode: string;
+  seedMarkRaw: string;
+  division?: string;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
+  relayTeamCode?: string;
+  relayLegOrder?: 1 | 2 | 3 | 4;
+  isAlternate?: boolean;
+  scratched?: boolean;
+  officialHeat?: number;
+  officialLaneOrHip?: string;
+  officialFlight?: number;
+  officialOrder?: number;
+  eventStartTime?: string;
+  checkInCallTime?: string;
+  bibNumber?: string;
+  assignmentSource?: MeetAssignmentSource;
+  athleticLiveUrl?: string;
+  meetDelayMinutes?: number;
+  athleteName?: string;
+  membershipId?: string;
 }
 
 export type TeamInjuryRtpStage = 'OUT' | 'MODIFIED' | 'LIMITED' | 'CLEARED';
@@ -1872,6 +2044,10 @@ export interface TeamSummaryWithRole {
   fieldMarkLogs?: FieldEventLogRecord[];
   fieldMarkLogsTotalCount?: number;
   meetDayPackets?: MeetDayPacketRecord[];
+  delegatedTimingSessions?: DelegatedTimingSessionRecord[];
+  pendingTimingSubmissions?: DelegatedSplitSubmissionRecord[];
+  myDelegatedTimingAssignments?: DelegatedTimingSessionRecord[];
+  myMeetDaySchedule?: AthleteOwnMeetScheduleItem[];
   injuryCases?: TeamInjuryCaseRecord[];
   billing?: TeamBillingSummary;
   teamMessages?: TeamMessageRecord[];

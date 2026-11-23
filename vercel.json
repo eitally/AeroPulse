@@ -169,6 +169,14 @@
       "destination": "/for-athletic-directors.html"
     },
     {
+      "source": "/time/:passCode",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/time/:passCode/",
+      "destination": "/index.html"
+    },
+    {
       "source": "/((?!api/|auth/|assets/|docs(?:/|$)|legal(?:/|$)|privacy(?:/|$)|terms(?:/|$)|subprocessors(?:/|$)|procurement(?:/|$)|for-athletic-directors(?:/|$)|.*\\..*).*)",
       "destination": "/index.html"
     }
