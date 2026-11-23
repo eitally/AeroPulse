@@ -202,7 +202,6 @@ teamSyncRouter.post('/api/teams/follow', async (req: Request, res: Response) => 
     const teams = await listTeamsForUser(sid, originUrl);
     res.json({
       ok: true,
-      ...(sessionToken ? { sessionToken } : {}),
       team: result.summary,
       teams,
     });

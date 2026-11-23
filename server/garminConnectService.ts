@@ -265,7 +265,7 @@ export interface GarminWorkoutPushInput {
   ftpWatts?: number;
   lthrBpm?: number;
   thresholdPaceSecsPerKm?: number;
-  steps: GarminWorkoutStepSpec[];
+  steps?: GarminWorkoutStepSpec[];
 }
 
 export interface GarminWorkoutPushResult {

@@ -33,6 +33,7 @@ import { doesCoachOwnAthlete } from '../physiology/teamOnboardingEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
 import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
+import { hasSessionActiveHint } from '../utils/sessionHint';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
 import type { SavedStopwatchEntry } from './TracksideStopwatchView';
@@ -794,7 +795,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     try {
       if (
         typeof window === 'undefined' ||
-        !window.localStorage.getItem('aeropulse_session_token') ||
+        !hasSessionActiveHint() ||
         window.sessionStorage.getItem('meetready_coach_wizard_seen') === '1'
       ) {
         return;

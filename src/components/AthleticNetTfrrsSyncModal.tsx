@@ -18,6 +18,7 @@ import {
   X,
 } from './icons/PhosphorIcons';
 import type { TeamExternalSyncConfig, TeamSummaryWithRole } from '../types';
+import { markSessionActiveHint } from '../utils/sessionHint';
 import {
   COLLEGIATE_TFRRS_PRESET,
   COURSE_DISTANCE_PRESETS,
@@ -299,13 +300,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
       if (createResp.ok) {
         const createdData = await createResp.json();
         const createdTeam: TeamSummaryWithRole | undefined = createdData.team;
-        if (createdData.sessionToken && typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('aeropulse_session_token', String(createdData.sessionToken));
-          } catch {
-            // ignore
-          }
-        }
+        markSessionActiveHint();
         if (createdTeam) {
           const athletes = parseExternalTeamRoster(
             isWg ? WILLOW_GLEN_XC_PRESET.sampleRosterText : COLLEGIATE_TFRRS_PRESET.sampleRosterText,

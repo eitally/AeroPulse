@@ -2169,9 +2169,18 @@ export interface ServerConfigStatusResponse {
   intervalsAuthMethod?: 'OAUTH' | 'API_KEY' | 'NONE';
   intervalsAthleteId?: string;
   intervalsAthleteName?: string;
+  intervalsScope?: string;
+  intervalsCanWriteCalendar?: boolean;
   intervalsSource?: 'ENV' | 'USER_INPUT' | 'OAUTH' | 'NONE';
+  garminConfigured?: boolean;
   garminConnected?: boolean;
+  garminAuthMethod?: 'OAUTH' | 'PERSONAL_KEY' | 'NONE';
+  garminCanPushWorkouts?: boolean;
   garminAthleteName?: string;
+  corosConfigured?: boolean;
+  corosConnected?: boolean;
+  corosAthleteId?: string;
+  corosAthleteName?: string;
   wahooConfigured?: boolean;
   wahooConnected?: boolean;
   wahooAthleteId?: string;

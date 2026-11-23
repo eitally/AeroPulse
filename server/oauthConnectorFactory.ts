@@ -284,7 +284,7 @@ export function registerOAuthConnectorRoutes(
       await exchanged.applyToStore(store, { req, sid });
 
       const callerClaims = getVerifiedSessionClaims(req);
-      if (callerClaims && callerClaims.sub?.startsWith('usr_') && provider !== 'coros') {
+      if (callerClaims && callerClaims.sub?.startsWith('usr_')) {
         await connectServiceToUser(
           callerClaims.sub,
           provider,
@@ -390,7 +390,7 @@ export function registerOAuthConnectorRoutes(
     }
 
     const callerClaims = getVerifiedSessionClaims(req);
-    if (callerClaims && callerClaims.sub?.startsWith('usr_') && provider !== 'coros') {
+    if (callerClaims && callerClaims.sub?.startsWith('usr_')) {
       await disconnectServiceFromUser(callerClaims.sub, provider);
     }
 

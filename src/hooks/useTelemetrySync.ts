@@ -44,13 +44,14 @@ import {
   saveRotatedStravaTokensToStorage,
   saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
+import { hasSessionActiveHint, markSessionActiveHint } from '../utils/sessionHint';
 
 export function hasStravaClientCredentials(): boolean {
   try {
     const notLoggedOut = localStorage.getItem('aeropulse_logged_out') !== '1';
     return Boolean(
       notLoggedOut &&
-        (localStorage.getItem('aeropulse_session_token') ||
+        (hasSessionActiveHint() ||
           localStorage.getItem('aeropulse_strava_access_token') ||
           localStorage.getItem('aeropulse_strava_refresh_token'))
     );
@@ -400,12 +401,15 @@ export function useTelemetrySync({
         notLoggedOut && (data.stravaConnected || hasStravaClientCredentials())
       );
 
-      if (isActiveStravaSession && data.sessionToken) {
-        try {
-          localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
-        } catch {
-          // ignore
-        }
+      if (
+        notLoggedOut &&
+        (isActiveStravaSession ||
+          data.garminConnected ||
+          data.corosConnected ||
+          data.wahooConnected ||
+          data.polarConnected)
+      ) {
+        markSessionActiveHint();
       }
       if (isActiveStravaSession && data.stravaTokens) {
         saveRotatedStravaTokensToStorage(data.stravaTokens);
@@ -446,13 +450,7 @@ export function useTelemetrySync({
               ];
               await reconcileStoreOwnerAthleteId(authenticatedUser.id, linkedIds);
               if (isNotLoggedOut()) {
-                if (authMeData.sessionToken) {
-                  try {
-                    localStorage.setItem('aeropulse_session_token', String(authMeData.sessionToken));
-                  } catch {
-                    // ignore
-                  }
-                }
+                markSessionActiveHint();
                 try {
                   if (localStorage.getItem('aeropulse_auth_gate_passed') === '1') {
                     setIsSessionLoggedOut(false);

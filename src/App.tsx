@@ -104,6 +104,7 @@ import {
   sanitizePersistedTargetGoals,
 } from './utils/lazyWithRetry';
 import { STORAGE_KEYS } from './utils/storageKeys';
+import { hasSessionActiveHint } from './utils/sessionHint';
 import { captureLandingAttribution } from './utils/attribution';
 
 const StravaAuthGate = lazyWithRetry(
@@ -336,7 +337,7 @@ export default function App() {
         localStorage.getItem('aeropulse_auth_gate_passed') === '1' &&
         localStorage.getItem('aeropulse_logged_out') !== '1';
       const hasStravaSession = Boolean(
-        localStorage.getItem('aeropulse_session_token') ||
+        hasSessionActiveHint() ||
           localStorage.getItem('aeropulse_strava_access_token') ||
           localStorage.getItem('aeropulse_strava_refresh_token')
       );
@@ -350,6 +351,11 @@ export default function App() {
     hasEnteredWorkspaceRef.current = hasEnteredWorkspace;
   }, [hasEnteredWorkspace]);
   useEffect(() => {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.SESSION_TOKEN);
+    } catch {
+      // ignore storage cleanup errors
+    }
     captureLandingAttribution();
   }, []);
   const [isSessionLoggedOut, setIsSessionLoggedOut] = useState<boolean>(() => {
@@ -980,6 +986,7 @@ export default function App() {
     try {
       const resp = await fetch('/api/intervals/profile/sync', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           ...getSavedIntervalsHeaders(),
@@ -1081,6 +1088,7 @@ export default function App() {
       try {
         await fetch('/api/athlete/profile', {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
             ...getSavedIntervalsHeaders(),
@@ -2290,6 +2298,8 @@ export default function App() {
               }}
               onConnectIntervals={handleConnectIntervals}
               onLaunchIntervalsOAuth={handleLaunchIntervalsOAuth}
+              onLaunchGarminOAuth={handleLaunchGarminOAuth}
+              onLaunchCorosOAuth={handleLaunchCorosOAuth}
               onLaunchWahooOAuth={handleLaunchWahooOAuth}
               onLaunchPolarOAuth={handleLaunchPolarOAuth}
               onSyncNow={syncLiveTelemetry}

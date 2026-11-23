@@ -25,7 +25,7 @@ export interface ThreshPasskeyCredential {
 }
 
 export interface ThreshConnectedService {
-  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar';
+  service: 'strava' | 'garmin' | 'coros' | 'intervals' | 'wahoo' | 'polar';
   connectedAt: string;
   status: 'CONNECTED' | 'DISCONNECTED';
   athleteId?: string;
@@ -330,7 +330,7 @@ export async function updateUserBirthMonthYear(
  */
 export async function connectServiceToUser(
   userId: string,
-  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar',
+  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar' | 'coros',
   serviceAthleteId?: string,
   athleteName?: string
 ): Promise<ThreshUser | null> {
@@ -366,7 +366,7 @@ export async function connectServiceToUser(
  */
 export async function disconnectServiceFromUser(
   userId: string,
-  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar'
+  service: 'strava' | 'garmin' | 'coros' | 'intervals' | 'wahoo' | 'polar'
 ): Promise<ThreshUser | null> {
   const user = await getUserById(userId);
   if (!user) return null;

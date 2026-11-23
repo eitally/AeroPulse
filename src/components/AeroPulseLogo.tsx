@@ -401,6 +401,7 @@ export const AeroPulseLogo: React.FC<AeroPulseLogoProps> = ({
     return (
       <span
         className="inline-flex items-center gap-2 shrink-0"
+        role="img"
         aria-label={label}
       >
         <ThreshMark

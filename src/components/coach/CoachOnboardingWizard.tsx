@@ -2,6 +2,7 @@ import React, { useId, useRef, useState } from 'react';
 import { Check, Copy, Trophy, Users, X } from '../icons/PhosphorIcons';
 import { COACH_EVENT_GROUP_OPTIONS } from '../../physiology/teamOnboardingEngine';
 import { buildThreshSessionHeaders } from '../../utils/teamLifecycleApi';
+import { markSessionActiveHint } from '../../utils/sessionHint';
 import { getStoredCoachAttribution } from '../../utils/attribution';
 import { useModalDialog } from '../../hooks/useModalDialog';
 import type {
@@ -114,13 +115,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
       });
       const data = await resp.json().catch(() => ({}));
       if (resp.ok && data?.ok && data.team) {
-        if (data.sessionToken && typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
-          } catch {
-            // ignore storage errors
-          }
-        }
+        markSessionActiveHint();
         const created = data.team as TeamSummaryWithRole;
         setCreatedTeam(created);
         onTeamCreated([...myTeams, created], created.brand.teamId);

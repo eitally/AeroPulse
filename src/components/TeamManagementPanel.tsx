@@ -56,6 +56,7 @@ import {
 } from '../utils/teamLifecycleApi';
 import { AeroPulseLogo } from './AeroPulseLogo';
 import { getStoredCoachAttribution } from '../utils/attribution';
+import { markSessionActiveHint } from '../utils/sessionHint';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 const CoachingStaffPanel = lazyWithRetry(
@@ -578,13 +579,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           });
           return;
         }
-        if (data.sessionToken && typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
-          } catch {
-            // ignore storage failures
-          }
-        }
+        markSessionActiveHint();
         const created = data.team as TeamSummaryWithRole;
         onTeamsUpdated([...myTeams, created], created.brand.teamId);
         setShowCreateOrEditStudio(false);
@@ -638,13 +633,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
         });
         return;
       }
-      if (data.sessionToken && typeof window !== 'undefined') {
-        try {
-          localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
-        } catch {
-          // ignore storage failures
-        }
-      }
+      markSessionActiveHint();
       const updatedTeams = (data.teams as TeamSummaryWithRole[]) || [];
       onTeamsUpdated(updatedTeams, data.team?.brand?.teamId);
       setJoinAnotherCode('');

@@ -477,6 +477,13 @@ export async function activateStravaCanonicalScope(
     store.polarExpiresAt = prevStore.polarExpiresAt;
     store.polarScope = prevStore.polarScope;
   }
+  if (!store.corosAccessToken && prevStore.corosAccessToken) {
+    store.corosAccessToken = prevStore.corosAccessToken;
+    store.corosRefreshToken = prevStore.corosRefreshToken;
+    store.corosExpiresAt = prevStore.corosExpiresAt;
+    store.corosAthleteId = prevStore.corosAthleteId;
+    store.corosAthleteName = prevStore.corosAthleteName;
+  }
   if (!store.stravaSyncPolicy && prevStore.stravaSyncPolicy) {
     store.stravaSyncPolicy = prevStore.stravaSyncPolicy;
   }

@@ -38,6 +38,7 @@ import {
   isGenericName,
 } from '../physiologyEngine.ts';
 import { resolveCallbackUrl } from '../oauthHelpers.ts';
+import { validateCoppaAgeInput } from '../coppaGuard.ts';
 import { clearGarminSessionAsync } from '../garminConnectService.ts';
 import {
   getEffectiveIntervalsConfig,
@@ -71,13 +72,13 @@ export const configRouter = Router();
 configRouter.post('/api/auth/session', (req: Request, res: Response) => {
   const existing = getVerifiedSessionClaims(req);
   if (existing && isCanonicalAuthenticatedClaims(existing)) {
-    const refreshedToken = setSessionCookie(req, res, existing.sub, existing.sid, 'verified');
-    res.json({ ok: true, sessionToken: refreshedToken, authLevel: 'verified' });
+    setSessionCookie(req, res, existing.sub, existing.sid, 'verified');
+    res.json({ ok: true, authLevel: 'verified' });
     return;
   }
   const anonSub = `anon_${crypto.randomBytes(8).toString('hex')}`;
-  const sessionToken = setSessionCookie(req, res, anonSub, undefined, 'anon');
-  res.json({ ok: true, sessionToken, authLevel: 'anon' });
+  setSessionCookie(req, res, anonSub, undefined, 'anon');
+  res.json({ ok: true, authLevel: 'anon' });
 });
 
 configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request, res: Response) => {
@@ -220,7 +221,6 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
       (intervalsKey || resolvedIntervalsScope.toUpperCase().includes('CALENDAR:WRITE'))
   );
 
-  let sessionToken: string | undefined;
   if (
     (isVerifiedSession || Boolean(resolvedStravaAthleteId)) &&
     (isStravaConnected ||
@@ -237,7 +237,7 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
       : resolvedStravaAthleteId
         ? deriveStravaSessionSid(resolvedStravaAthleteId)
         : existingClaims?.sid;
-    sessionToken = setSessionCookie(
+    setSessionCookie(
       req,
       res,
       keepUserSub
@@ -306,7 +306,6 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
     athleteProfile: runtimeStore.athleteProfile || undefined,
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : undefined,
-    sessionToken,
     mapTileProvider: effectiveMapProvider,
     mapTileApiKeyConfigured: Boolean(effectiveMapKey),
     mapTileApiKey: isVerifiedSession && effectiveMapKey ? effectiveMapKey : undefined,
@@ -315,8 +314,28 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
 
 configRouter.post('/api/athlete/profile', (req: Request, res: Response) => {
   const incoming = (req.body?.athleteProfile || req.body || {}) as Record<string, unknown>;
+  const coppaCheck = validateCoppaAgeInput({
+    birthMonthYear: incoming.birthMonthYear,
+    birthYear: incoming.birthYear,
+    existingBirthMonthYear:
+      typeof runtimeStore.athleteProfile?.birthMonthYear === 'string'
+        ? runtimeStore.athleteProfile.birthMonthYear
+        : undefined,
+  });
+  if (!coppaCheck.ok) {
+    res.status(coppaCheck.statusCode || 400).json({
+      ok: false,
+      error: coppaCheck.error,
+      coppaBlocked: coppaCheck.isUnder13,
+    });
+    return;
+  }
   const updated = buildServerAthleteProfile(
-    { ...incoming, source: 'CUSTOM_OVERRIDE' },
+    {
+      ...incoming,
+      ...(coppaCheck.birthMonthYear ? { birthMonthYear: coppaCheck.birthMonthYear } : {}),
+      source: 'CUSTOM_OVERRIDE',
+    },
     null
   );
   runtimeStore.athleteFtp = updated.ftp;

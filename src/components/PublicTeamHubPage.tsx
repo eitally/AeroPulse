@@ -27,6 +27,7 @@ import { buildPresetExternalTeamSummary } from '../utils/athleticNetAndTfrrsEngi
 import { buildCleanRoomPublicHubFromTeamSummary } from '../utils/publicTeamHubRoute';
 import { formatPracticeTime12h } from '../utils/workoutScheduleUtils';
 import { getSavedIntervalsHeaders } from '../utils/telemetryStorage';
+import { markSessionActiveHint } from '../utils/sessionHint';
 import { AeroPulseLogo } from './AeroPulseLogo';
 
 export interface PublicTeamHubPageProps {
@@ -136,7 +137,9 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
 
     (async () => {
       try {
-        const resp = await fetch(`/api/teams/public/${encodeURIComponent(slugOrCode)}`);
+        const resp = await fetch(`/api/teams/public/${encodeURIComponent(slugOrCode)}`, {
+          credentials: 'include',
+        });
         if (!cancelled && resp.ok) {
           const data = (await resp.json()) as PublicTeamHubPayload;
           if (data.found) {
@@ -262,13 +265,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
       });
       if (resp.ok) {
         const data = await resp.json();
-        if (data.sessionToken && typeof window !== 'undefined') {
-          try {
-            localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
-          } catch {
-            // ignore
-          }
-        }
+        markSessionActiveHint();
         if (Array.isArray(data.teams) && onFollowedTeam) {
           onFollowedTeam(data.teams, payload.brand.teamId);
         }

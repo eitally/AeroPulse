@@ -26,6 +26,7 @@ import {
   saveRotatedStravaTokensToStorage,
   saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
+import { markSessionActiveHint } from '../utils/sessionHint';
 
 interface IncomingOAuthBroadcastPayload {
   type?: string;
@@ -109,9 +110,7 @@ export function useTelemetryConnectors({
       }
       try {
         localStorage.removeItem('aeropulse_logged_out');
-        if (sessionToken) {
-          localStorage.setItem('aeropulse_session_token', String(sessionToken));
-        }
+        markSessionActiveHint();
       } catch {
         // ignore
       }
@@ -673,15 +672,6 @@ export function useTelemetryConnectors({
     (pollStateToken: string, popup: Window | null) => {
       stopStravaOAuthPoll();
       let attempts = 0;
-      const pollHeaders: Record<string, string> = {};
-      try {
-        const sessionTok = sanitizeHttpHeaderValue(
-          localStorage.getItem('aeropulse_session_token')
-        );
-        if (sessionTok) pollHeaders['x-session-token'] = sessionTok;
-      } catch {
-        // ignore
-      }
       const timer = window.setInterval(async () => {
         attempts += 1;
         if (oauthCompletedRef.current || oauthErrorReceivedRef.current || attempts > 80) {
@@ -691,7 +681,7 @@ export function useTelemetryConnectors({
         try {
           const pollResp = await fetch(
             `/api/strava/auth/poll?state=${encodeURIComponent(pollStateToken)}`,
-            { credentials: 'include', headers: pollHeaders }
+            { credentials: 'include' }
           );
           if (!pollResp.ok) return;
           const pollData = await pollResp.json();
@@ -791,10 +781,8 @@ export function useTelemetryConnectors({
 
     const launchHeaders: Record<string, string> = {};
     try {
-      const sessionTok = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_session_token'));
       const cid = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_strava_client_id'));
       const csec = sanitizeHttpHeaderValue(localStorage.getItem('aeropulse_strava_client_secret'));
-      if (sessionTok) launchHeaders['x-session-token'] = sessionTok;
       if (cid && csec) {
         launchHeaders['x-strava-client-id'] = cid;
         launchHeaders['x-strava-client-secret'] = csec;
@@ -822,16 +810,6 @@ export function useTelemetryConnectors({
             'Strava sign-in is temporarily unavailable on this server. Ask your administrator to configure STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET.'
         );
         return;
-      }
-
-      if (data.sessionToken) {
-        try {
-          if (!localStorage.getItem('aeropulse_session_token')) {
-            localStorage.setItem('aeropulse_session_token', String(data.sessionToken));
-          }
-        } catch {
-          // ignore
-        }
       }
 
       const pollStateToken = String(data.state || oauthState);
@@ -953,6 +931,7 @@ export function useTelemetryConnectors({
     }
     await fetch('/api/map/config', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ provider, apiKey: cleanKey }),
     });
@@ -979,6 +958,7 @@ export function useTelemetryConnectors({
     try {
       const resp = await fetch('/api/gemini/config', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
         body: JSON.stringify({ apiKey: cleanKey }),
       });
@@ -1005,6 +985,7 @@ export function useTelemetryConnectors({
   } | null> => {
     try {
       const resp = await fetch('/api/config/export-bundle', {
+        credentials: 'include',
         headers: getSavedIntervalsHeaders(),
       });
       if (!resp.ok) return null;
@@ -1019,6 +1000,7 @@ export function useTelemetryConnectors({
     setSyncError(null);
     const resp = await fetch('/api/config/import-bundle', {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
       body: JSON.stringify({ bundle: bundleOrEnv }),
     });

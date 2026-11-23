@@ -1,9 +1,9 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express12 from "express";
+import express14 from "express";
 
 // server/apiRouter.ts
-import express10 from "express";
+import express12 from "express";
 
 // server/securityUtils.ts
 import crypto from "crypto";
@@ -529,7 +529,7 @@ function securityHeadersMiddleware(req, res, next) {
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.setHeader(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, x-session-token, x-strava-client-id, x-strava-client-secret, x-strava-refresh-token, x-strava-access-token, x-strava-expires-at, x-strava-sync-window, x-strava-import-gear, x-intervals-api-key, x-intervals-athlete-id, x-intervals-access-token, x-wahoo-access-token, x-polar-access-token, x-garmin-personal-api-key, x-garmin-bearer-token, x-garmin-oauth1-token, x-garmin-oauth1-secret, x-map-tile-api-key, x-map-tile-provider, x-gemini-api-key"
+      "Content-Type, Authorization, x-session-token, x-strava-client-id, x-strava-client-secret, x-strava-refresh-token, x-strava-access-token, x-strava-expires-at, x-strava-sync-window, x-strava-import-gear, x-intervals-api-key, x-intervals-athlete-id, x-intervals-access-token, x-wahoo-access-token, x-polar-access-token, x-coros-access-token, x-garmin-personal-api-key, x-garmin-bearer-token, x-garmin-oauth1-token, x-garmin-oauth1-secret, x-map-tile-api-key, x-map-tile-provider, x-gemini-api-key"
     );
     res.setHeader("Vary", "Origin");
   }
@@ -547,11 +547,10 @@ function securityHeadersMiddleware(req, res, next) {
 
 // server/sessionContext.ts
 import { AsyncLocalStorage as AsyncLocalStorage2 } from "async_hooks";
-import crypto4 from "crypto";
+import crypto3 from "crypto";
 import fs4 from "fs";
 
 // server/garminConnectService.ts
-import crypto3 from "crypto";
 import fs3 from "fs";
 import path from "path";
 
@@ -730,6 +729,14 @@ async function ensurePostgresVaultSchema(pool) {
         );
         CREATE INDEX IF NOT EXISTS idx_thresh_audit_log_team_created
           ON thresh_audit_log (team_id, created_at DESC);
+        CREATE TABLE IF NOT EXISTS thresh_rate_limits (
+          rate_key TEXT PRIMARY KEY,
+          window_start BIGINT NOT NULL,
+          request_count INTEGER NOT NULL,
+          expires_at BIGINT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_rate_limits_expires
+          ON thresh_rate_limits (expires_at);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -1228,6 +1235,152 @@ async function listTeamAuditLogAsync(teamId, limit = 100) {
   }
   const local = await loadTenantVaultAsync(auditVaultKey(safeTeamId), []);
   return [...local].reverse().slice(0, clampedLimit);
+}
+async function consumeRateLimitPostgresAsync(key, limit, windowMs) {
+  const cleanKey = String(key || "").trim().slice(0, 180);
+  if (!cleanKey) {
+    return { allowed: true, retryAfterSecs: 0, remaining: Math.max(0, limit) };
+  }
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    const now = Date.now();
+    const nextExpiresAt = now + Math.max(1e3, Math.floor(windowMs));
+    const res = await runner.query(
+      `INSERT INTO thresh_rate_limits (rate_key, window_start, request_count, expires_at)
+       VALUES ($1, $2, 1, $3)
+       ON CONFLICT (rate_key) DO UPDATE SET
+         window_start = CASE
+           WHEN thresh_rate_limits.expires_at <= $2 THEN $2
+           ELSE thresh_rate_limits.window_start
+         END,
+         request_count = CASE
+           WHEN thresh_rate_limits.expires_at <= $2 THEN 1
+           ELSE thresh_rate_limits.request_count + 1
+         END,
+         expires_at = CASE
+           WHEN thresh_rate_limits.expires_at <= $2 THEN $3
+           ELSE thresh_rate_limits.expires_at
+         END
+       RETURNING request_count, expires_at`,
+      [cleanKey, now, nextExpiresAt]
+    );
+    if (res.rows.length === 0) return null;
+    const count = Number(res.rows[0].request_count);
+    const expiresAt = Number(res.rows[0].expires_at);
+    const allowed = count <= limit;
+    if (!txClient && pool && Math.random() < 0.02) {
+      void pool.query("DELETE FROM thresh_rate_limits WHERE expires_at <= $1", [now]).catch(() => void 0);
+    }
+    return {
+      allowed,
+      retryAfterSecs: allowed ? 0 : Math.max(1, Math.ceil((expiresAt - now) / 1e3)),
+      remaining: Math.max(0, limit - count)
+    };
+  } catch (err) {
+    warnServerFallback("rate-limit:postgres", err);
+    return null;
+  }
+}
+async function deleteTeamPostgresRowsAsync(teamId) {
+  const safeTeamId = sanitizeTenantId(teamId);
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    await runner.query("DELETE FROM thresh_team_members WHERE team_id = $1", [safeTeamId]);
+    await runner.query("DELETE FROM thresh_teams WHERE team_id = $1", [safeTeamId]);
+    await runner.query("DELETE FROM thresh_audit_log WHERE team_id = $1", [safeTeamId]);
+  } catch (err) {
+    warnServerFallback("vault:delete-team-postgres", err);
+    if (txClient) throw err;
+  }
+}
+async function deleteMemberPostgresRowsAsync(params) {
+  const txClient = pgTxContext.getStore();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return;
+  const safeTeamId = params.teamId ? sanitizeTenantId(params.teamId) : void 0;
+  const membershipIds = Array.from(
+    new Set((params.membershipIds || []).map((v) => String(v || "").trim()).filter(Boolean))
+  );
+  const userSids = Array.from(
+    new Set((params.userSids || []).map((v) => String(v || "").trim()).filter(Boolean))
+  );
+  const emails = Array.from(
+    new Set((params.emails || []).map((v) => String(v || "").trim().toLowerCase()).filter(Boolean))
+  );
+  if (membershipIds.length === 0 && userSids.length === 0 && emails.length === 0) {
+    return;
+  }
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    if (safeTeamId && membershipIds.length > 0) {
+      await runner.query(
+        "DELETE FROM thresh_team_members WHERE team_id = $1 AND membership_id = ANY($2::text[])",
+        [safeTeamId, membershipIds]
+      );
+      await runner.query(
+        `UPDATE thresh_audit_log
+         SET metadata_json = '{"redacted":true}'
+         WHERE team_id = $1 AND target_id = ANY($2::text[])`,
+        [safeTeamId, membershipIds]
+      );
+    }
+    if (userSids.length > 0) {
+      if (safeTeamId) {
+        await runner.query(
+          "DELETE FROM thresh_team_members WHERE team_id = $1 AND user_sid = ANY($2::text[])",
+          [safeTeamId, userSids]
+        );
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET actor_sid = 'deleted_user', metadata_json = '{"redacted":true}'
+           WHERE team_id = $1 AND actor_sid = ANY($2::text[])`,
+          [safeTeamId, userSids]
+        );
+      } else {
+        await runner.query(
+          "DELETE FROM thresh_team_members WHERE user_sid = ANY($1::text[])",
+          [userSids]
+        );
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET actor_sid = 'deleted_user', metadata_json = '{"redacted":true}'
+           WHERE actor_sid = ANY($1::text[])`,
+          [userSids]
+        );
+      }
+    }
+    if (emails.length > 0) {
+      if (safeTeamId) {
+        await runner.query(
+          "DELETE FROM thresh_team_members WHERE team_id = $1 AND LOWER(invited_email) = ANY($2::text[])",
+          [safeTeamId, emails]
+        );
+      } else {
+        await runner.query(
+          "DELETE FROM thresh_team_members WHERE LOWER(invited_email) = ANY($1::text[])",
+          [emails]
+        );
+      }
+    }
+  } catch (err) {
+    warnServerFallback("vault:delete-member-postgres", err);
+    if (txClient) throw err;
+  }
 }
 
 // src/physiology/stravaLoadCalibration.ts
@@ -1975,12 +2128,662 @@ function parseClientTzOffsetMins(raw) {
   return Math.round(n);
 }
 
+// src/physiology/trackSpeedReserveEngine.ts
+var clamp = (val, min, max) => Math.max(min, Math.min(max, val));
+var round1 = (val) => Number(val.toFixed(1));
+var round2 = (val) => Number(val.toFixed(2));
+var round3 = (val) => Number(val.toFixed(3));
+function vo2AtVelocityMpm(vMpm) {
+  const safeV = Math.max(50, vMpm);
+  return -4.6 + 0.182258 * safeV + 104e-6 * safeV * safeV;
+}
+function pctVo2MaxAtDurationMins(tMins) {
+  const t = Math.max(0.5, tMins);
+  return 0.8 + 0.1894393 * Math.exp(-0.012778 * t) + 0.2989558 * Math.exp(-0.1932605 * t);
+}
+function solveVelocityMpmForTargetVo2(targetVo2) {
+  const a = 104e-6;
+  const b = 0.182258;
+  const c = -(4.6 + Math.max(8, targetVo2));
+  const discriminant = Math.max(0, b * b - 4 * a * c);
+  return (-b + Math.sqrt(discriminant)) / (2 * a);
+}
+function solveTrackPaceSecsPerKmForPctVdot(vdotAer, pctVo2, clampRange = [95, 540]) {
+  const safeVdot = clamp(vdotAer || 50, 20, 92);
+  const vMpm = solveVelocityMpmForTargetVo2(safeVdot * pctVo2);
+  const rawPaceSecsPerKm = 6e4 / Math.max(80, vMpm);
+  return round1(clamp(rawPaceSecsPerKm, clampRange[0], clampRange[1]));
+}
+function computeRawMarkVdot(distanceMeters, durationSecs) {
+  if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSecs)) return 50;
+  if (distanceMeters < 150 || durationSecs < 15) return 50;
+  const tMins = Math.max(0.75, durationSecs / 60);
+  const vMpm = distanceMeters / tMins;
+  const raw = vo2AtVelocityMpm(vMpm) / Math.max(0.55, pctVo2MaxAtDurationMins(tMins));
+  return round2(clamp(raw, 22, 92));
+}
+function buildSplitRow(code, name, pctVdotAer, paceSecsPerKm) {
+  const safePace = Math.max(95, paceSecsPerKm);
+  const speedMps = 1e3 / safePace;
+  return {
+    code,
+    name,
+    pctVdotAer: round3(pctVdotAer),
+    paceSecsPerKm: round1(safePace),
+    speedMps: round3(speedMps),
+    splitsSecs: {
+      m200: round1(safePace * 200 / 1e3),
+      m300: round1(safePace * 300 / 1e3),
+      m400: round1(safePace * 400 / 1e3),
+      m600: round1(safePace * 600 / 1e3),
+      m800: round1(safePace * 800 / 1e3),
+      m1000: round1(safePace),
+      m1200: round1(safePace * 1200 / 1e3),
+      m1600: round1(safePace * 1600 / 1e3)
+    }
+  };
+}
+function solveCriticalSpeedAndDPrimeOls(marks) {
+  const valid = marks.filter(
+    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 550 && m.distanceMeters <= 1e4 && m.durationSecs >= 45
+  );
+  if (valid.length < 2) return null;
+  const bestByBucket = /* @__PURE__ */ new Map();
+  for (const m of valid) {
+    const bucket = Math.round(m.distanceMeters / 50) * 50;
+    const existing = bestByBucket.get(bucket);
+    if (!existing || m.durationSecs < existing.durationSecs) {
+      bestByBucket.set(bucket, m);
+    }
+  }
+  const allDistinct = Array.from(bestByBucket.values()).sort(
+    (a, b) => a.distanceMeters - b.distanceMeters
+  );
+  const trackSevere = allDistinct.filter(
+    (m) => m.distanceMeters >= 600 && m.distanceMeters <= 5e3
+  );
+  const pickPool = (pool, minDistSpan, minTimeSpan) => {
+    if (pool.length < 2) return false;
+    const dSpan = pool[pool.length - 1].distanceMeters - pool[0].distanceMeters;
+    const tSpan = Math.max(...pool.map((p) => p.durationSecs)) - Math.min(...pool.map((p) => p.durationSecs));
+    return dSpan >= minDistSpan && tSpan >= minTimeSpan;
+  };
+  const chosen = pickPool(trackSevere, 600, 45) ? trackSevere : pickPool(allDistinct, 500, 35) ? allDistinct : null;
+  if (!chosen) return null;
+  const n = chosen.length;
+  const meanT = chosen.reduce((acc, m) => acc + m.durationSecs, 0) / n;
+  const meanD = chosen.reduce((acc, m) => acc + m.distanceMeters, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (const m of chosen) {
+    const dt = m.durationSecs - meanT;
+    const dd = m.distanceMeters - meanD;
+    num += dt * dd;
+    den += dt * dt;
+  }
+  if (den <= 1e-6) return null;
+  const rawCs = num / den;
+  const csMps = round3(clamp(rawCs, 2.5, 6.8));
+  const rawDPrime = meanD - csMps * meanT;
+  const dPrimeMeters = Math.round(clamp(rawDPrime, 110, 420));
+  return { csMps, dPrimeMeters, usedMarksCount: n };
+}
+function classifySpeedReservePhenotype(srr, dPrimeMeters, override) {
+  if (override && override !== "AUTO") return override;
+  if (srr >= 1.58 || dPrimeMeters > 235) return "SPEED";
+  if (srr < 1.48 || dPrimeMeters < 205) return "ENDURANCE";
+  return "HYBRID";
+}
+function buildTrackSpeedReserveProfile(input = {}) {
+  const {
+    marks = [],
+    thresholdPaceSecsPerKm,
+    maxSprintSpeedMps,
+    flying30mSecs,
+    phenotypeOverride = "AUTO"
+  } = input;
+  const validMarks = marks.filter(
+    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 200 && m.durationSecs >= 20
+  ).sort((a, b) => a.distanceMeters - b.distanceMeters);
+  const vdotRawBest = validMarks.length > 0 ? Math.max(...validMarks.map((m) => computeRawMarkVdot(m.distanceMeters, m.durationSecs))) : thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0 ? round2(
+    clamp(
+      vo2AtVelocityMpm(6e4 / clamp(thresholdPaceSecsPerKm, 130, 460)) / 0.88,
+      22,
+      90
+    )
+  ) : 50;
+  const ols = solveCriticalSpeedAndDPrimeOls(validMarks);
+  let modelSource = "PROFILE_THRESHOLD_FALLBACK";
+  let csMps = 3.85;
+  let dPrimeMeters = 215;
+  let vdotAer = 50;
+  if (ols) {
+    modelSource = "MULTI_MARK_CS_DPRIME";
+    csMps = ols.csMps;
+    dPrimeMeters = ols.dPrimeMeters;
+    vdotAer = round2(clamp(vo2AtVelocityMpm(csMps * 60) / 0.9215, 22, 90));
+  } else if (validMarks.length > 0) {
+    modelSource = "SINGLE_MARK_SCALED";
+    const primary = [...validMarks].reverse().find((m) => m.distanceMeters >= 600) ?? validMarks[validMarks.length - 1];
+    const rawVdot = computeRawMarkVdot(primary.distanceMeters, primary.durationSecs);
+    let alpha = 1;
+    if (primary.distanceMeters <= 900) {
+      alpha = 0.945;
+    } else if (primary.distanceMeters <= 1650) {
+      alpha = phenotypeOverride === "SPEED" ? 0.96 : phenotypeOverride === "ENDURANCE" ? 0.99 : 0.975;
+    }
+    vdotAer = round2(clamp(rawVdot * alpha, 22, 90));
+    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
+    const dPrimePrior = phenotypeOverride === "SPEED" ? 265 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
+    if (primary.distanceMeters <= 1650) {
+      const impliedD = clamp(primary.distanceMeters - csMps * primary.durationSecs, 140, 320);
+      dPrimeMeters = Math.round(0.5 * dPrimePrior + 0.5 * impliedD);
+    } else {
+      dPrimeMeters = dPrimePrior;
+    }
+  } else {
+    modelSource = "PROFILE_THRESHOLD_FALLBACK";
+    const safeThresh = clamp(thresholdPaceSecsPerKm || 255, 130, 460);
+    vdotAer = round2(clamp(vo2AtVelocityMpm(6e4 / safeThresh) / 0.88, 22, 90));
+    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
+    dPrimeMeters = phenotypeOverride === "SPEED" ? 260 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
+  }
+  const masMps = round3(solveVelocityMpmForTargetVo2(vdotAer) / 60);
+  let mssMps;
+  if (typeof maxSprintSpeedMps === "number" && maxSprintSpeedMps >= 4.5) {
+    mssMps = clamp(maxSprintSpeedMps, 4.5, 11.2);
+  } else if (typeof flying30mSecs === "number" && flying30mSecs >= 2.6 && flying30mSecs <= 8) {
+    mssMps = clamp(30 / flying30mSecs, 4.5, 11.2);
+  } else {
+    const mssFromDPrime = masMps * (1.26 + 118e-5 * dPrimeMeters);
+    const mark400 = validMarks.find(
+      (m) => m.distanceMeters >= 350 && m.distanceMeters <= 450
+    );
+    const mark800 = validMarks.find(
+      (m) => m.distanceMeters >= 750 && m.distanceMeters <= 850
+    );
+    const est400 = mark400 ? mark400.distanceMeters / mark400.durationSecs * 1.11 : 0;
+    const est800 = mark800 ? mark800.distanceMeters / mark800.durationSecs * 1.23 : 0;
+    mssMps = clamp(Math.max(mssFromDPrime, est400, est800), 4.5, 11.2);
+  }
+  mssMps = round3(mssMps);
+  const asrMps = round2(Math.max(1.2, mssMps - masMps));
+  const srr = round3(mssMps / Math.max(2, masMps));
+  const phenotype = classifySpeedReservePhenotype(srr, dPrimeMeters, phenotypeOverride);
+  const paceE = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.7, [175, 540]);
+  const paceSubT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.86, [140, 430]);
+  const paceT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.88, [140, 430]);
+  const paceCv = round1(clamp(1e3 / csMps, 135, 420));
+  const paceI = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.98, [125, 390]);
+  const t1550 = (1550 - dPrimeMeters) / csMps;
+  const pace1550Hyperbolic = Math.max(185, t1550) / 1550 * 1e3;
+  const rawPaceR = modelSource === "PROFILE_THRESHOLD_FALLBACK" ? Math.min(paceI - 15, pace1550Hyperbolic) : Math.min(paceI - 6, pace1550Hyperbolic);
+  const paceR = round1(clamp(rawPaceR, 110, 360));
+  const t800Eff = (800 - 0.8 * dPrimeMeters) / csMps;
+  const v800Eff = 800 / Math.max(92, t800Eff);
+  const vFr = Math.max(v800Eff, masMps + 0.35 * asrMps, 1e3 / Math.max(105, paceR - 10));
+  const paceFr = round1(clamp(1e3 / vFr, 95, 330));
+  const zones = {
+    E: buildSplitRow("E", "Easy / Recovery", 0.7, paceE),
+    SUB_T: buildSplitRow("SUB_T", "Norwegian Sub-Threshold", 0.86, paceSubT),
+    T: buildSplitRow("T", "Lactate Threshold", 0.88, paceT),
+    CV: buildSplitRow("CV", "Critical Velocity (CS)", 0.9215, paceCv),
+    I: buildSplitRow("I", "VO2max Interval", 0.98, paceI),
+    R: buildSplitRow("R", "Mile / 1500m Repetition", 1.07, paceR),
+    FR: buildSplitRow("FR", "800m / Fast Repetition", 1.18, paceFr)
+  };
+  return {
+    modelSource,
+    csMps,
+    criticalPaceSecsPerKm: paceCv,
+    dPrimeMeters,
+    vdotAer,
+    vdotRawBest,
+    masMps,
+    mssMps,
+    asrMps,
+    srr,
+    phenotype,
+    thresholdPaceSecsPerKm: paceT,
+    zones
+  };
+}
+function solve400mRacePaceSecsPerKm(profile) {
+  const t400Eff = Math.max(
+    43,
+    (400 - 0.62 * profile.dPrimeMeters) / Math.max(2, profile.csMps)
+  );
+  const v400Hyper = 400 / t400Eff;
+  const v400Asr = profile.masMps + 0.55 * profile.asrMps;
+  const vMinFasterThan800 = 1e3 / Math.max(85, profile.zones.FR.paceSecsPerKm - 14);
+  const v400 = Math.max(v400Hyper, v400Asr, vMinFasterThan800);
+  return round1(clamp(1e3 / v400, 95, 290));
+}
+
+// src/utils/workoutParser.ts
+var INTERVALS_EFFORT_ZONES = [
+  {
+    zone: 1,
+    code: "Z1",
+    name: "Recovery",
+    color: "#94A3B8",
+    inkClass: "text-slate-700 dark:text-slate-200",
+    heightPct: 28
+  },
+  {
+    zone: 2,
+    code: "Z2",
+    name: "Endurance",
+    color: "#0D9488",
+    inkClass: "ap-ink-teal",
+    heightPct: 44
+  },
+  {
+    zone: 3,
+    code: "Z3",
+    name: "Tempo / Sweet Spot",
+    color: "#D97706",
+    inkClass: "ap-ink-amber",
+    heightPct: 62
+  },
+  {
+    zone: 4,
+    code: "Z4",
+    name: "Threshold",
+    color: "#EA580C",
+    inkClass: "ap-ink-vermilion",
+    heightPct: 78
+  },
+  {
+    zone: 5,
+    code: "Z5",
+    name: "VO2max",
+    color: "#DC2626",
+    inkClass: "ap-ink-rose",
+    heightPct: 92
+  },
+  {
+    zone: 6,
+    code: "Z6+",
+    name: "Anaerobic / Sprint",
+    color: "#7C3AED",
+    inkClass: "ap-ink-violet",
+    heightPct: 100
+  }
+];
+function getIntervalsZoneFromIntensityPct(intensityPct) {
+  if (intensityPct < 56) return INTERVALS_EFFORT_ZONES[0];
+  if (intensityPct <= 75) return INTERVALS_EFFORT_ZONES[1];
+  if (intensityPct <= 90) return INTERVALS_EFFORT_ZONES[2];
+  if (intensityPct <= 105) return INTERVALS_EFFORT_ZONES[3];
+  if (intensityPct <= 120) return INTERVALS_EFFORT_ZONES[4];
+  return INTERVALS_EFFORT_ZONES[5];
+}
+function parseClockOrSecondsToken(token) {
+  const trimmed = token.trim();
+  const minSecMatch = trimmed.match(/^(\d{1,2}):(\d{2}(?:\.\d+)?)$/);
+  if (minSecMatch) {
+    return Number(minSecMatch[1]) * 60 + Number(minSecMatch[2]);
+  }
+  const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s?$/i);
+  if (secMatch) {
+    return Number(secMatch[1]);
+  }
+  return null;
+}
+function extractDistanceMeters(cleanLine, isRepeatWork = false) {
+  const distPart = cleanLine.replace(/(?:\b(?:at|@)\b).*$/i, "").trim();
+  const source = distPart.length > 0 ? distPart : cleanLine;
+  const kmMatch = source.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
+  if (kmMatch) return Math.round(Number(kmMatch[1]) * 1e3);
+  const miMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/i);
+  if (miMatch) return Math.round(Number(miMatch[1]) * 1609.34);
+  const metersWordMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
+  if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
+  const hasExplicitMinutesHint = /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|cooldown|cool-down|steady|progression)\b|\d+\s*%/i.test(
+    source
+  );
+  const mTokens = Array.from(source.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
+  for (const tok of mTokens) {
+    const val = Number(tok[1]);
+    if (val >= 100) return val;
+    if (val >= 10 && val <= 99 && !hasExplicitMinutesHint) {
+      if (/\b(sprint|stride|fly|flys|flies|accel|acceleration|block|blocks|start|starts|wicket|wickets|hurdle|hurdles|hill|walk|jog|float)\b/i.test(
+        source
+      )) {
+        return val;
+      }
+      if (val >= 30 && /\b(rec|recovery)\b/i.test(source)) {
+        return val;
+      }
+      if (isRepeatWork) {
+        return val;
+      }
+    }
+  }
+  return void 0;
+}
+function resolveNamedTrackPaceSecsPerKm(cleanLine, thresholdPaceSecsPerKm) {
+  const sr = buildTrackSpeedReserveProfile({ thresholdPaceSecsPerKm });
+  if (/\bwarm\s*-?\s*up\b|\bcool\s*-?\s*down\b/i.test(cleanLine)) {
+    return { paceSecsPerKm: sr.zones.E.paceSecsPerKm, forceIntensityPct: 55 };
+  }
+  if (/\b(?:walk|standing|recovery)\b/i.test(cleanLine) && !/\bjog\b/i.test(cleanLine)) {
+    return { forceIntensityPct: 48 };
+  }
+  if (/\b400\s*m?\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = solve400mRacePaceSecsPerKm(sr);
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b800\s*m?\s*(?:race\s*)?(?:pace|effort)\b|\bFR\b|fast\s*rep/i.test(cleanLine)) {
+    const pace = sr.zones.FR.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:1600\s*m?|1500\s*m?|1\s*mile|mile)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = sr.zones.R.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:3200\s*m?|3000\s*m?|3k|2\s*mile|2\s*mi)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = Number(((sr.zones.I.paceSecsPerKm + sr.zones.R.paceSecsPerKm) / 2).toFixed(1));
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:5000\s*m?|5k)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
+    const pace = sr.zones.I.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:10k|cv|critical\s*velocity)\b/i.test(cleanLine)) {
+    const pace = sr.zones.CV.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:threshold|lt2)\b/i.test(cleanLine)) {
+    const pace = sr.zones.T.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  if (/\b(?:sub-?t|sub-?threshold)\b/i.test(cleanLine)) {
+    const pace = sr.zones.SUB_T.paceSecsPerKm;
+    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
+  }
+  return {};
+}
+function extractExplicitIntensityPct(cleanLine) {
+  const rangeMatch = cleanLine.match(/(\d{2,3})\s*-\s*(\d{2,3})\s*%/);
+  if (rangeMatch) {
+    return Math.round((Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2);
+  }
+  const pctMatch = cleanLine.match(/(\d{2,3})\s*%/);
+  if (pctMatch) {
+    return Number(pctMatch[1]);
+  }
+  return void 0;
+}
+function extractTargetPaceSecsPerKm(cleanLine, distanceMeters) {
+  const unitPaceMatch = cleanLine.match(
+    /(?:@|at)\s*(\d{1,2}:\d{2}(?:\.\d+)?|\d+(?:\.\d+)?s?)\s*\/\s*(km|mi|400m|200m|800m)\b/i
+  );
+  if (unitPaceMatch) {
+    const secs = parseClockOrSecondsToken(unitPaceMatch[1]);
+    if (secs && secs > 5) {
+      const unit = unitPaceMatch[2].toLowerCase();
+      if (unit === "km") return { paceSecsPerKm: Number(secs.toFixed(1)) };
+      if (unit === "mi") return { paceSecsPerKm: Number((secs / 1.60934).toFixed(1)) };
+      if (unit === "400m") return { paceSecsPerKm: Number((secs * 2.5).toFixed(1)) };
+      if (unit === "200m") return { paceSecsPerKm: Number((secs * 5).toFixed(1)) };
+      if (unit === "800m") return { paceSecsPerKm: Number((secs * 1.25).toFixed(1)) };
+    }
+  }
+  const repTargetMatch = cleanLine.match(
+    /(?:@|at)\s*(\d{1,2}:\d{2}(?:\.\d+)?|\d+(?:\.\d+)?\s*s)\b/i
+  );
+  if (repTargetMatch && distanceMeters && distanceMeters > 0) {
+    const splitSecs = parseClockOrSecondsToken(repTargetMatch[1]);
+    if (splitSecs && splitSecs > 4) {
+      const paceSecsPerKm = Number((splitSecs / distanceMeters * 1e3).toFixed(1));
+      return { paceSecsPerKm, repSplitSecs: splitSecs };
+    }
+  }
+  return {};
+}
+function inferStepKind(cleanLine, explicitKind) {
+  if (explicitKind) return explicitKind;
+  if (/\bwarm\s*-?\s*up\b/i.test(cleanLine)) return "warmup";
+  if (/\bcool\s*-?\s*down\b/i.test(cleanLine)) return "cooldown";
+  if (/\b(?:jog|walk|rest|recovery|float|standing)\b/i.test(cleanLine)) return "rest";
+  return "work";
+}
+function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explicitKind, isRepeatWork = false) {
+  const distanceMeters = extractDistanceMeters(cleanLine, isRepeatWork);
+  const explicitPct = extractExplicitIntensityPct(cleanLine);
+  const { paceSecsPerKm: parsedTargetPace, repSplitSecs } = extractTargetPaceSecsPerKm(
+    cleanLine,
+    distanceMeters
+  );
+  const stepKind = inferStepKind(cleanLine, explicitKind);
+  const namedPace = explicitPct === void 0 && !parsedTargetPace ? resolveNamedTrackPaceSecsPerKm(cleanLine, thresholdPaceSecsPerKm) : {};
+  let intensityPct = explicitPct ?? namedPace.forceIntensityPct ?? 65;
+  if (explicitPct === void 0 && namedPace.forceIntensityPct === void 0) {
+    if (parsedTargetPace && parsedTargetPace > 60) {
+      intensityPct = Math.round(thresholdPaceSecsPerKm / parsedTargetPace * 100);
+    } else if (/\bFR\b|fast\s*rep|800m\s*(?:race|pace|effort)/i.test(cleanLine)) {
+      intensityPct = 122;
+    } else if (/\bR\b|repetition|fast/i.test(cleanLine)) {
+      intensityPct = 114;
+    } else if (/\bsub-?t\b|sub-?threshold/i.test(cleanLine)) {
+      intensityPct = 94;
+    } else if (/\bcv\b|critical/i.test(cleanLine)) {
+      intensityPct = 102;
+    } else if (/z1|recovery|easy|warm\s*-?\s*up|cool\s*-?\s*down|jog|float|walk/i.test(cleanLine)) {
+      intensityPct = 55;
+    } else if (/z2|endurance|aerobic/i.test(cleanLine)) {
+      intensityPct = 68;
+    } else if (/z3|tempo|sweet\s*spot/i.test(cleanLine)) {
+      intensityPct = 86;
+    } else if (/z4|threshold|ftp|\bT\b/i.test(cleanLine)) {
+      intensityPct = 98;
+    } else if (/z5|vo2|\bI\b/i.test(cleanLine)) {
+      intensityPct = 110;
+    } else if (/z6|sprint|anaerobic|fly|flys|flies|blocks?|starts?|accel/i.test(cleanLine) || distanceMeters !== void 0 && distanceMeters < 100 && stepKind === "work") {
+      intensityPct = 135;
+    }
+  }
+  const effectiveTargetPace = parsedTargetPace ?? namedPace.paceSecsPerKm ?? (distanceMeters ? Number((thresholdPaceSecsPerKm * 100 / Math.max(40, intensityPct)).toFixed(1)) : void 0);
+  let durationSecs = 600;
+  const hrMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs)\b/i);
+  const secMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:s|sec|secs)\b/i);
+  const minMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:min|mins)\b/i);
+  const bareMinMatch = !distanceMeters ? cleanLine.match(/\b(\d+(?:\.\d+)?)\s*m\b/i) : null;
+  if (hrMatch) {
+    durationSecs = Math.round(Number(hrMatch[1]) * 3600);
+  } else if (distanceMeters) {
+    if (repSplitSecs && repSplitSecs > 4) {
+      durationSecs = Number(repSplitSecs.toFixed(1));
+    } else if (effectiveTargetPace) {
+      durationSecs = Number((distanceMeters / 1e3 * effectiveTargetPace).toFixed(1));
+    }
+  } else if (minMatch) {
+    durationSecs = Math.round(Number(minMatch[1]) * 60);
+  } else if (secMatch && !/@\s*\d+(?:\.\d+)?s\b/.test(cleanLine)) {
+    durationSecs = Number(secMatch[1]);
+  } else if (bareMinMatch) {
+    durationSecs = Math.round(Number(bareMinMatch[1]) * 60);
+  }
+  const durationMins = durationSecs >= 60 && durationSecs % 60 === 0 ? durationSecs / 60 : Math.max(0.25, Number((durationSecs / 60).toFixed(2)));
+  const zoneMeta = getIntervalsZoneFromIntensityPct(intensityPct);
+  return {
+    label: cleanLine,
+    durationMins,
+    durationSecs,
+    distanceMeters,
+    intensityPct,
+    targetPaceSecsPerKm: effectiveTargetPace,
+    zone: zoneMeta.zone,
+    zoneCode: zoneMeta.code,
+    zoneColor: zoneMeta.color,
+    stepKind
+  };
+}
+function splitTopLevelClauses(line) {
+  const parts = [];
+  let buf = "";
+  let depth = 0;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "(") depth += 1;
+    else if (ch === ")" && depth > 0) depth -= 1;
+    if (depth === 0 && (ch === "+" || ch === ",")) {
+      const trimmed = buf.trim();
+      if (trimmed) parts.push(trimmed);
+      buf = "";
+      continue;
+    }
+    buf += ch;
+  }
+  const tail = buf.trim();
+  if (tail) parts.push(tail);
+  return parts;
+}
+function normalizeInputLines(syntax) {
+  const out = [];
+  for (const raw of syntax.split("\n")) {
+    const line = raw.trim();
+    if (!line) {
+      out.push("");
+      continue;
+    }
+    if (line.startsWith("-")) {
+      out.push(line);
+      continue;
+    }
+    if (line.includes("+") || line.includes(",")) {
+      const clauses = splitTopLevelClauses(line);
+      if (clauses.length > 1 && clauses.some(
+        (c) => /^(?:\d{1,2}\s*[x×]|\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)|warm\s*-?\s*up|cool\s*-?\s*down)/i.test(
+          c
+        )
+      )) {
+        for (const c of clauses) {
+          out.push(c.startsWith("-") ? c : `- ${c}`);
+        }
+        continue;
+      }
+    }
+    out.push(line);
+  }
+  return out;
+}
+function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
+  if (!syntax || !syntax.trim()) return [];
+  const rawLines = normalizeInputLines(syntax);
+  const nodes = [];
+  let currentRepeat = null;
+  const flushRepeat = () => {
+    if (currentRepeat && currentRepeat.steps.length > 0) {
+      nodes.push({
+        type: "repeat",
+        repeatCount: currentRepeat.repeatCount,
+        label: currentRepeat.label,
+        steps: currentRepeat.steps
+      });
+    }
+    currentRepeat = null;
+  };
+  for (const line of rawLines) {
+    if (!line) {
+      flushRepeat();
+      continue;
+    }
+    const looksLikeStandaloneStep = !line.startsWith("-") && (/^(\d{1,2})\s*[x×]\s*\d+/i.test(line) || /^\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)\b/i.test(line));
+    if (!line.startsWith("-") && !looksLikeStandaloneStep) {
+      const headerRepeatMatch = line.match(
+        /^(?:main\s+set\s+|set\s*\d*\s*:?\s*|repeat\s+)?(\d{1,2})\s*[x×]\b[:\s-]*(.*)$/i
+      );
+      if (headerRepeatMatch) {
+        flushRepeat();
+        const count = Math.max(2, Number(headerRepeatMatch[1]));
+        const suffix = headerRepeatMatch[2]?.trim();
+        currentRepeat = {
+          repeatCount: count,
+          label: suffix ? `${count}x ${suffix}` : `Repeat ${count}x`,
+          steps: []
+        };
+      } else {
+        flushRepeat();
+      }
+      continue;
+    }
+    const clean = line.replace(/^-+\s*/, "").trim();
+    if (!clean) continue;
+    const inlineRepeatMatch = clean.match(/^(\d{1,2})\s*[x×](?:\s+|(?=\d))(.+)$/i);
+    if (inlineRepeatMatch) {
+      flushRepeat();
+      const count = Math.max(1, Number(inlineRepeatMatch[1]));
+      const remainder = inlineRepeatMatch[2].trim();
+      let mainPart = remainder;
+      let restPart = null;
+      const parenRestMatch = remainder.match(
+        /\(([^)]*(?:rest|jog|rec|float|walk|standing)[^)]*)\)\s*$/i
+      );
+      const withRestMatch = remainder.match(/\bw\/\s*(.+)$/i);
+      if (parenRestMatch) {
+        restPart = parenRestMatch[1].trim();
+        mainPart = remainder.slice(0, parenRestMatch.index).trim();
+      } else if (withRestMatch) {
+        restPart = withRestMatch[1].trim();
+        mainPart = remainder.slice(0, withRestMatch.index).trim();
+      }
+      const workStep = parseSingleWorkoutLine(mainPart, thresholdPaceSecsPerKm, "work", true);
+      const groupSteps = [workStep];
+      if (restPart) {
+        groupSteps.push(parseSingleWorkoutLine(restPart, thresholdPaceSecsPerKm, "rest", false));
+      }
+      nodes.push({
+        type: "repeat",
+        repeatCount: count,
+        label: `${count}x ${mainPart.slice(0, 14)}`.trim(),
+        steps: groupSteps
+      });
+      continue;
+    }
+    const inferredKind = inferStepKind(clean);
+    const step = parseSingleWorkoutLine(
+      clean,
+      thresholdPaceSecsPerKm,
+      void 0,
+      Boolean(currentRepeat && inferredKind === "work")
+    );
+    if (currentRepeat) {
+      if (step.stepKind === "cooldown" || step.stepKind === "warmup") {
+        flushRepeat();
+        nodes.push({ type: "step", step });
+      } else {
+        currentRepeat.steps.push(step);
+      }
+    } else {
+      nodes.push({ type: "step", step });
+    }
+  }
+  flushRepeat();
+  return nodes;
+}
+
 // server/garminConnectService.ts
-var DEFAULT_GARMIN_OAUTH_KEY = process.env.GARMIN_CONSUMER_KEY || "";
-var DEFAULT_GARMIN_OAUTH_SECRET = process.env.GARMIN_CONSUMER_SECRET || "";
-var GARMIN_API_BASE = "https://connectapi.garmin.com";
+var GarminPartnerOAuthError = class extends Error {
+  constructor(message, opts = {}) {
+    super(message);
+    this.name = "GarminPartnerOAuthError";
+    this.requiresPartnerOAuth = opts.requiresPartnerOAuth ?? true;
+    this.setupRequired = opts.setupRequired ?? false;
+  }
+};
+function getEffectiveGarminClientConfig(req) {
+  const headerClientId = String(req?.headers["x-garmin-client-id"] || "").trim();
+  const headerClientSecret = String(req?.headers["x-garmin-client-secret"] || "").trim();
+  const clientId = (headerClientId || process.env.GARMIN_CLIENT_ID || "").trim();
+  const clientSecret = (headerClientSecret || process.env.GARMIN_CLIENT_SECRET || "").trim();
+  return { clientId, clientSecret };
+}
 var GARMIN_PERSONAL_API_BASE = "https://personal.connectapi.garmin.com";
-var GARMIN_USER_AGENT = "com.garmin.android.apps.connectmobile";
+var GARMIN_PARTNER_OAUTH_TOKEN_URL = "https://diauth.garmin.com/di-oauth2-service/oauth/token";
+var GARMIN_PARTNER_API_BASE = "https://apis.garmin.com";
 var GARMIN_5_ZONE_HR_NAMES = [
   "Z1 Warm Up",
   "Z2 Easy",
@@ -1988,12 +2791,6 @@ var GARMIN_5_ZONE_HR_NAMES = [
   "Z4 Threshold",
   "Z5 Maximum"
 ];
-function percentEncode(str) {
-  return encodeURIComponent(str).replace(
-    /[!'()*]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
-  );
-}
 function parseJwtExp(jwtToken) {
   try {
     const parts = jwtToken.split(".");
@@ -2092,36 +2889,6 @@ async function fetchGarminPersonalApiJson(endpointPath, session) {
   const text = await resp.text();
   return text ? JSON.parse(text) : null;
 }
-function buildOAuth1Header(method, url, consumerKey, consumerSecret, token, tokenSecret, extraParams = {}) {
-  const parsedUrl = new URL(url);
-  const baseUrl = `${parsedUrl.origin}${parsedUrl.pathname}`;
-  const oauthParams = {
-    oauth_consumer_key: consumerKey,
-    oauth_nonce: crypto3.randomBytes(16).toString("hex"),
-    oauth_signature_method: "HMAC-SHA1",
-    oauth_timestamp: Math.floor(Date.now() / 1e3).toString(),
-    oauth_version: "1.0",
-    ...extraParams
-  };
-  if (token) {
-    oauthParams.oauth_token = token;
-  }
-  const allParams = { ...oauthParams };
-  parsedUrl.searchParams.forEach((v, k) => {
-    allParams[k] = v;
-  });
-  const sortedParamStr = Object.keys(allParams).sort().map((k) => `${percentEncode(k)}=${percentEncode(allParams[k])}`).join("&");
-  const baseString = [
-    method.toUpperCase(),
-    percentEncode(baseUrl),
-    percentEncode(sortedParamStr)
-  ].join("&");
-  const signingKey = `${percentEncode(consumerSecret)}&${tokenSecret ? percentEncode(tokenSecret) : ""}`;
-  const signature = crypto3.createHmac("sha1", signingKey).update(baseString).digest("base64");
-  oauthParams.oauth_signature = signature;
-  const headerParts = Object.keys(oauthParams).sort().map((k) => `${percentEncode(k)}="${percentEncode(oauthParams[k])}"`).join(", ");
-  return `OAuth ${headerParts}`;
-}
 function getGarminSessionFilePath(dataDir, scopeKey) {
   const safeScope = scopeKey.replace(/[^a-zA-Z0-9_-]/g, "_");
   return path.join(dataDir, `garmin_session_${safeScope}.json`);
@@ -2159,354 +2926,338 @@ async function clearGarminSessionAsync(dataDir, scopeKey) {
   } catch {
   }
 }
-async function refreshGarminOAuth2Token(session) {
-  if (!session.oauth1Token || !session.oauth1TokenSecret) {
+async function refreshGarminPartnerOAuthToken(session, req) {
+  if (!session.garminOAuthRefreshToken) {
     return session;
   }
-  const exchangeUrl = `${GARMIN_API_BASE}/oauth-service/oauth/exchange/user/2.0`;
-  const authHeader = buildOAuth1Header(
-    "POST",
-    exchangeUrl,
-    DEFAULT_GARMIN_OAUTH_KEY,
-    DEFAULT_GARMIN_OAUTH_SECRET,
-    session.oauth1Token,
-    session.oauth1TokenSecret
-  );
-  const resp = await fetch(exchangeUrl, {
+  const { clientId, clientSecret } = getEffectiveGarminClientConfig(req);
+  if (!clientId || !clientSecret) {
+    return session;
+  }
+  const resp = await fetch(GARMIN_PARTNER_OAUTH_TOKEN_URL, {
     method: "POST",
     headers: {
-      Authorization: authHeader,
-      "User-Agent": GARMIN_USER_AGENT,
-      "Content-Type": "application/x-www-form-urlencoded"
-    }
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json"
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: session.garminOAuthRefreshToken
+    }).toString()
   });
   if (!resp.ok) {
-    throw new Error(`Garmin OAuth2 token refresh failed (${resp.status})`);
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Garmin Partner OAuth token refresh failed (${resp.status}): ${errText.slice(0, 160)}`);
   }
   const data = await resp.json();
   if (data?.access_token) {
-    session.oauth2AccessToken = data.access_token;
-    session.oauth2RefreshToken = data.refresh_token || session.oauth2RefreshToken;
-    session.oauth2ExpiresAt = Math.floor(Date.now() / 1e3) + Number(data.expires_in || 3600);
+    session.garminOAuthAccessToken = data.access_token;
+    session.garminOAuthRefreshToken = data.refresh_token || session.garminOAuthRefreshToken;
+    session.garminOAuthExpiresAt = Math.floor(Date.now() / 1e3) + Number(data.expires_in || 86400);
   }
   return session;
 }
 async function authenticateGarminConnect(params) {
+  if (params.email?.trim() || params.password) {
+    throw new Error(
+      "Garmin password login has been removed. Connect via Official Garmin Partner OAuth, a read-only GCDC Personal API Key, or .FIT workout import."
+    );
+  }
   const rawPersonalKey = (params.personalApiKey || (params.directBearerToken?.trim().startsWith("GCDC_") ? params.directBearerToken : "") || "").trim();
   if (rawPersonalKey) {
-    const session2 = {
+    const session = {
       personalApiKey: rawPersonalKey,
+      garminAuthMethod: "PERSONAL_KEY",
       connectedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    await obtainGarminPersonalApiBearerToken(session2, true);
+    await obtainGarminPersonalApiBearerToken(session, true);
     const settings = await fetchGarminPersonalApiJson(
       "/userprofile-service/userprofile/settings",
-      session2
+      session
     ).catch(() => null);
     if (settings) {
       const displayName = settings.displayName || settings.userData?.displayName || settings.fullName || "Garmin Athlete";
-      session2.displayName = displayName;
-      session2.fullName = settings.fullName || displayName;
+      session.displayName = displayName;
+      session.fullName = settings.fullName || displayName;
     }
-    return session2;
+    return session;
   }
   if (params.directBearerToken?.trim()) {
     const cleanToken = params.directBearerToken.trim().replace(/^Bearer\s+/i, "");
-    const session2 = {
-      email: params.email?.trim() || void 0,
-      oauth2AccessToken: cleanToken,
-      oauth1Token: params.oauth1Token?.trim() || void 0,
-      oauth1TokenSecret: params.oauth1TokenSecret?.trim() || void 0,
-      oauth2ExpiresAt: Math.floor(Date.now() / 1e3) + 86400,
+    return {
+      garminOAuthAccessToken: cleanToken,
+      garminAuthMethod: "OAUTH",
+      garminOAuthExpiresAt: Math.floor(Date.now() / 1e3) + 86400,
       connectedAt: (/* @__PURE__ */ new Date()).toISOString()
     };
-    const profile2 = await fetchGarminJson(
-      "/userprofile-service/socialProfile",
-      session2
-    ).catch(() => null);
-    if (profile2) {
-      session2.displayName = profile2.displayName || profile2.userName;
-      session2.fullName = profile2.fullName || profile2.displayName;
-    }
-    return session2;
   }
-  if (params.oauth1Token?.trim() && params.oauth1TokenSecret?.trim()) {
-    const session2 = {
-      email: params.email?.trim() || void 0,
-      oauth1Token: params.oauth1Token.trim(),
-      oauth1TokenSecret: params.oauth1TokenSecret.trim(),
-      connectedAt: (/* @__PURE__ */ new Date()).toISOString()
-    };
-    await refreshGarminOAuth2Token(session2);
-    const profile2 = await fetchGarminJson(
-      "/userprofile-service/socialProfile",
-      session2
-    ).catch(() => null);
-    if (profile2) {
-      session2.displayName = profile2.displayName || profile2.userName;
-      session2.fullName = profile2.fullName || profile2.displayName;
-    }
-    return session2;
-  }
-  const email = (params.email || "").trim();
-  const password = params.password || "";
-  if (!email || !password) {
-    throw new Error(
-      "Please provide your Garmin Personal API Key (GCDC_...), or your Garmin email & password."
-    );
-  }
-  const ssoEmbedParams = new URLSearchParams({
-    id: "gauth-widget",
-    embedWidget: "true",
-    gauthHost: "https://sso.garmin.com/sso"
-  });
-  const ssoSignInParams = new URLSearchParams({
-    id: "gauth-widget",
-    embedWidget: "true",
-    gauthHost: "https://sso.garmin.com/sso/embed",
-    service: "https://sso.garmin.com/sso/embed",
-    source: "https://sso.garmin.com/sso/embed",
-    redirectAfterAccountLoginUrl: "https://sso.garmin.com/sso/embed",
-    redirectAfterAccountCreationUrl: "https://sso.garmin.com/sso/embed"
-  });
-  const embedResp = await fetch(
-    `https://sso.garmin.com/sso/embed?${ssoEmbedParams.toString()}`,
-    {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148"
-      }
-    }
+  throw new Error(
+    "Please connect via Official Garmin Partner OAuth or provide a valid Garmin Personal API Key (GCDC_...)."
   );
-  const embedCookies = embedResp.headers.get("set-cookie") || "";
-  const signinPageResp = await fetch(
-    `https://sso.garmin.com/sso/signin?${ssoSignInParams.toString()}`,
-    {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-        Cookie: embedCookies,
-        Referer: `https://sso.garmin.com/sso/embed?${ssoEmbedParams.toString()}`
-      }
-    }
-  );
-  const signinHtml = await signinPageResp.text();
-  const signinCookies = [
-    embedCookies,
-    signinPageResp.headers.get("set-cookie") || ""
-  ].filter(Boolean).join("; ");
-  const csrfMatch = signinHtml.match(/name="_csrf"\s+value="([^"]+)"/);
-  const csrfToken = csrfMatch ? csrfMatch[1] : "";
-  const formBody = new URLSearchParams({
-    username: email,
-    password,
-    embed: "true",
-    _csrf: csrfToken
-  });
-  const loginResp = await fetch(
-    `https://sso.garmin.com/sso/signin?${ssoSignInParams.toString()}`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148",
-        Cookie: signinCookies,
-        Origin: "https://sso.garmin.com",
-        Referer: `https://sso.garmin.com/sso/signin?${ssoSignInParams.toString()}`
-      },
-      body: formBody.toString()
-    }
-  );
-  const loginHtml = await loginResp.text();
-  const ticketMatch = loginHtml.match(/ticket=([A-Za-z0-9-]+-[A-Za-z0-9.-]+)/);
-  if (!ticketMatch) {
-    throw new Error(
-      "Garmin SSO requires MFA on this account. Please paste your Garmin Personal API Key (GCDC_...) instead."
-    );
-  }
-  const ticket = ticketMatch[1];
-  const preauthUrl = `${GARMIN_API_BASE}/oauth-service/oauth/preauthorized?ticket=${encodeURIComponent(
-    ticket
-  )}&login-url=https://sso.garmin.com/sso/embed&accepts-mfa-tokens=true`;
-  const oauth1Header = buildOAuth1Header(
-    "GET",
-    preauthUrl,
-    DEFAULT_GARMIN_OAUTH_KEY,
-    DEFAULT_GARMIN_OAUTH_SECRET
-  );
-  const preauthResp = await fetch(preauthUrl, {
-    headers: {
-      Authorization: oauth1Header,
-      "User-Agent": GARMIN_USER_AGENT
-    }
-  });
-  if (!preauthResp.ok) {
-    throw new Error(`Garmin OAuth1 exchange failed (${preauthResp.status})`);
-  }
-  const preauthQuery = new URLSearchParams(await preauthResp.text());
-  const oauth1Token = preauthQuery.get("oauth_token") || "";
-  const oauth1TokenSecret = preauthQuery.get("oauth_token_secret") || "";
-  if (!oauth1Token || !oauth1TokenSecret) {
-    throw new Error("Garmin OAuth1 response missing token pair.");
-  }
-  const session = {
-    email,
-    oauth1Token,
-    oauth1TokenSecret,
-    connectedAt: (/* @__PURE__ */ new Date()).toISOString()
-  };
-  await refreshGarminOAuth2Token(session);
-  const profile = await fetchGarminJson(
-    "/userprofile-service/socialProfile",
-    session
-  ).catch(() => null);
-  if (profile) {
-    session.displayName = profile.displayName || profile.userName;
-    session.fullName = profile.fullName || profile.displayName;
-  }
-  return session;
 }
-async function fetchGarminJson(endpointPath, session, options = {}) {
+async function fetchGarminPartnerApiJson(endpointPath, session, options = {}) {
   const nowSec = Math.floor(Date.now() / 1e3);
-  if ((!session.oauth2AccessToken || session.oauth2ExpiresAt && session.oauth2ExpiresAt - 120 < nowSec) && session.oauth1Token && session.oauth1TokenSecret) {
-    await refreshGarminOAuth2Token(session);
+  if ((!session.garminOAuthAccessToken || session.garminOAuthExpiresAt && session.garminOAuthExpiresAt - 120 < nowSec) && session.garminOAuthRefreshToken) {
+    await refreshGarminPartnerOAuthToken(session, options.req);
   }
-  if (!session.oauth2AccessToken) {
-    throw new Error("No active Garmin Connect OAuth2 token available.");
+  if (!session.garminOAuthAccessToken) {
+    throw new GarminPartnerOAuthError("No active Garmin Partner OAuth2 access token available.");
   }
-  const url = endpointPath.startsWith("http") ? endpointPath : `${GARMIN_API_BASE}${endpointPath}`;
+  const url = endpointPath.startsWith("http") ? endpointPath : `${GARMIN_PARTNER_API_BASE}${endpointPath}`;
   const doRequest = async (token) => fetch(url, {
     method: options.method || "GET",
     headers: {
       Authorization: `Bearer ${token}`,
-      "DI-Backend": "connectapi.garmin.com",
-      "User-Agent": GARMIN_USER_AGENT,
       Accept: "application/json",
       ...options.body ? { "Content-Type": "application/json" } : {}
     },
     body: options.body ? JSON.stringify(options.body) : void 0
   });
-  let resp = await doRequest(session.oauth2AccessToken);
-  if (resp.status === 401 && session.oauth1Token && session.oauth1TokenSecret) {
-    await refreshGarminOAuth2Token(session);
-    if (session.oauth2AccessToken) {
-      resp = await doRequest(session.oauth2AccessToken);
+  let resp = await doRequest(session.garminOAuthAccessToken);
+  if (resp.status === 401 && session.garminOAuthRefreshToken) {
+    await refreshGarminPartnerOAuthToken(session, options.req);
+    if (session.garminOAuthAccessToken) {
+      resp = await doRequest(session.garminOAuthAccessToken);
     }
   }
   if (!resp.ok) {
     const errText = await resp.text().catch(() => "");
     throw new Error(
-      `Garmin Connect API ${options.method || "GET"} ${endpointPath} failed (${resp.status}): ${errText.slice(0, 180)}`
+      `Garmin Partner API ${options.method || "GET"} ${endpointPath} failed (${resp.status}): ${errText.slice(0, 180)}`
     );
   }
   const text = await resp.text();
   return text ? JSON.parse(text) : {};
 }
-async function pushWorkoutToGarminConnect(session, input) {
-  if (!session.oauth2AccessToken && !session.oauth1Token) {
-    throw new Error(
-      'Garmin Personal API keys (GCDC_...) are read-only per Garmin policy. To send this workout to your Garmin watch or Edge head unit, click "Export Garmin .FIT" (or keep Intervals.icu Garmin workout upload enabled).'
-    );
+var STEP_TYPE_ID_MAP = {
+  warmup: 1,
+  cooldown: 2,
+  interval: 3,
+  rest: 4
+};
+function toGarminExecutableStepDto(opts) {
+  const {
+    stepOrder,
+    label,
+    durationSecs,
+    distanceMeters,
+    isRunning,
+    stepKind,
+    targetPctFtp = 75,
+    targetWatts,
+    targetMinWatts,
+    targetMaxWatts,
+    targetPaceSecsPerKm,
+    ftpWatts,
+    thresholdPaceSecsPerKm,
+    hrCeilingBpm
+  } = opts;
+  const stepTypeId = STEP_TYPE_ID_MAP[stepKind] || 3;
+  const hasDistance = typeof distanceMeters === "number" && distanceMeters > 0;
+  const safeDurationSecs = Math.max(5, Math.round(durationSecs || 60));
+  let targetType;
+  let targetValueOne = null;
+  let targetValueTwo = null;
+  if (stepKind === "rest") {
+    targetType = {
+      workoutTargetTypeId: 1,
+      workoutTargetTypeKey: "no.target",
+      displayOrder: 1
+    };
+  } else if (isRunning) {
+    const resolvedPace = targetPaceSecsPerKm && targetPaceSecsPerKm > 60 ? targetPaceSecsPerKm : Math.round(thresholdPaceSecsPerKm / Math.max(0.4, targetPctFtp / 100));
+    targetType = {
+      workoutTargetTypeId: 6,
+      workoutTargetTypeKey: "pace.zone",
+      displayOrder: 6
+    };
+    targetValueOne = Number((1e3 / (resolvedPace * 1.02)).toFixed(2));
+    targetValueTwo = Number((1e3 / (resolvedPace * 0.98)).toFixed(2));
+  } else {
+    const centerWatts = Number(targetWatts) > 0 ? Math.round(Number(targetWatts)) : Math.round(targetPctFtp / 100 * ftpWatts);
+    targetType = {
+      workoutTargetTypeId: 2,
+      workoutTargetTypeKey: "power.zone",
+      displayOrder: 2
+    };
+    targetValueOne = Number(targetMinWatts) > 0 ? Math.round(Number(targetMinWatts)) : Math.max(40, Math.round(centerWatts * 0.96));
+    targetValueTwo = Number(targetMaxWatts) > 0 ? Math.round(Number(targetMaxWatts)) : Math.round(centerWatts * 1.04);
   }
+  return {
+    type: "ExecutableStepDTO",
+    stepId: null,
+    stepOrder,
+    stepType: {
+      stepTypeId,
+      stepTypeKey: stepKind,
+      displayOrder: stepTypeId
+    },
+    childStepId: null,
+    description: `${label}${hrCeilingBpm ? ` (HR <= ${hrCeilingBpm} bpm)` : ""}`,
+    endCondition: {
+      conditionTypeId: hasDistance ? 3 : 2,
+      conditionTypeKey: hasDistance ? "distance" : "time",
+      displayOrder: hasDistance ? 3 : 2,
+      displayable: true
+    },
+    endConditionValue: hasDistance ? Math.round(distanceMeters) : safeDurationSecs,
+    preferredEndConditionUnit: null,
+    endConditionCompare: null,
+    targetType,
+    targetValueOne,
+    targetValueTwo,
+    zoneNumber: null
+  };
+}
+function buildGarminTrainingApiV2Payload(input) {
   const isRunning = String(input.sportCategory).toLowerCase().includes("run");
   const sportType = isRunning ? { sportTypeId: 1, sportTypeKey: "running", displayOrder: 1 } : { sportTypeId: 2, sportTypeKey: "cycling", displayOrder: 2 };
   const activeFtp = Math.max(100, Number(input.ftpWatts || 250));
-  const totalSteps = input.steps.length;
-  const executableSteps = input.steps.map((s, idx) => {
-    const isFirst = idx === 0;
-    const isLast = idx === totalSteps - 1 && totalSteps > 1;
-    const pct = Number(s.targetPctFtp || 70);
-    let stepTypeKey = s.stepType || "interval";
-    if (!s.stepType) {
-      if (isFirst) stepTypeKey = "warmup";
-      else if (isLast) stepTypeKey = "cooldown";
-      else if (pct <= 60 || /recov|easy|rest/i.test(s.label))
-        stepTypeKey = "recovery";
-      else stepTypeKey = "interval";
-    }
-    const stepTypeIdMap = {
-      warmup: 1,
-      cooldown: 2,
-      interval: 3,
-      recovery: 4
+  const thresholdPace = Math.max(95, Number(input.thresholdPaceSecsPerKm || 245));
+  const syntax = String(input.workoutSyntax || "").trim();
+  const astNodes = syntax ? parseStructuredTrackWorkout(syntax, thresholdPace) : [];
+  let estimatedDurationInSecs = 0;
+  let workoutSteps = [];
+  if (astNodes.length > 0) {
+    const mapAstKind = (kind) => {
+      if (kind === "warmup") return "warmup";
+      if (kind === "cooldown") return "cooldown";
+      if (kind === "rest") return "rest";
+      return "interval";
     };
-    const centerWatts = Number(s.targetWatts) > 0 ? Math.round(Number(s.targetWatts)) : Math.round(pct / 100 * activeFtp);
-    const lowWatts = Number(s.targetMinWatts) > 0 ? Math.round(Number(s.targetMinWatts)) : Math.max(40, centerWatts - 10);
-    const highWatts = Number(s.targetMaxWatts) > 0 ? Math.round(Number(s.targetMaxWatts)) : centerWatts + 10;
-    return {
-      type: "ExecutableStepDTO",
-      stepId: null,
-      stepOrder: idx + 1,
-      stepType: {
-        stepTypeId: stepTypeIdMap[stepTypeKey] || 3,
-        stepTypeKey,
-        displayOrder: stepTypeIdMap[stepTypeKey] || 3
-      },
-      childStepId: null,
-      description: `${s.label}${s.hrCeilingBpm ? ` (HR <= ${s.hrCeilingBpm} bpm)` : ""}`,
-      endCondition: {
-        conditionTypeId: 2,
-        conditionTypeKey: "time",
-        displayOrder: 2,
-        displayable: true
-      },
-      endConditionValue: Math.max(30, Math.round(s.durationSecs)),
-      preferredEndConditionUnit: null,
-      endConditionCompare: null,
-      targetType: {
-        workoutTargetTypeId: 2,
-        workoutTargetTypeKey: "power.zone",
-        displayOrder: 2
-      },
-      targetValueOne: lowWatts,
-      targetValueTwo: highWatts,
-      zoneNumber: null
-    };
-  });
-  const estimatedDurationInSecs = executableSteps.reduce(
-    (acc, s) => acc + s.endConditionValue,
-    0
-  );
-  const workoutPayload = {
+    workoutSteps = astNodes.map((node, idx) => {
+      if (node.type === "step") {
+        const s = node.step;
+        const pct = Math.max(40, Math.min(180, s.intensityPct || 75));
+        const durSecs = Math.max(5, Math.round(s.durationSecs || s.durationMins * 60 || 60));
+        estimatedDurationInSecs += durSecs;
+        return toGarminExecutableStepDto({
+          stepOrder: idx + 1,
+          label: s.label,
+          durationSecs: durSecs,
+          distanceMeters: s.distanceMeters,
+          isRunning,
+          stepKind: mapAstKind(s.stepKind),
+          targetPctFtp: pct,
+          targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+          ftpWatts: activeFtp,
+          thresholdPaceSecsPerKm: thresholdPace
+        });
+      }
+      const innerSteps = node.steps.map((inner, innerIdx) => {
+        const pct = Math.max(40, Math.min(180, inner.intensityPct || 75));
+        const durSecs = Math.max(5, Math.round(inner.durationSecs || inner.durationMins * 60 || 60));
+        estimatedDurationInSecs += durSecs * node.repeatCount;
+        return toGarminExecutableStepDto({
+          stepOrder: innerIdx + 1,
+          label: inner.label,
+          durationSecs: durSecs,
+          distanceMeters: inner.distanceMeters,
+          isRunning,
+          stepKind: mapAstKind(inner.stepKind),
+          targetPctFtp: pct,
+          targetPaceSecsPerKm: inner.targetPaceSecsPerKm,
+          ftpWatts: activeFtp,
+          thresholdPaceSecsPerKm: thresholdPace
+        });
+      });
+      return {
+        type: "RepeatGroupDTO",
+        stepOrder: idx + 1,
+        numberOfIterations: node.repeatCount,
+        smartRepeat: false,
+        workoutSteps: innerSteps
+      };
+    });
+  } else {
+    const rawSteps = Array.isArray(input.steps) && input.steps.length > 0 ? input.steps : [{ label: input.name || "Main Set", durationSecs: 1800, targetPctFtp: 75, stepType: "interval" }];
+    const totalSteps = rawSteps.length;
+    workoutSteps = rawSteps.map((s, idx) => {
+      const pct = Number(s.targetPctFtp || 70);
+      let stepKind = "interval";
+      if (s.stepType === "warmup") stepKind = "warmup";
+      else if (s.stepType === "cooldown") stepKind = "cooldown";
+      else if (s.stepType === "recovery" || s.stepType === "rest") stepKind = "rest";
+      else if (!s.stepType) {
+        if (idx === 0 && totalSteps > 1) stepKind = "warmup";
+        else if (idx === totalSteps - 1 && totalSteps > 1) stepKind = "cooldown";
+        else if (pct <= 60 || /recov|easy|rest/i.test(s.label)) stepKind = "rest";
+      }
+      const durSecs = Math.max(5, Math.round(s.durationSecs || 60));
+      estimatedDurationInSecs += durSecs;
+      return toGarminExecutableStepDto({
+        stepOrder: idx + 1,
+        label: s.label,
+        durationSecs: durSecs,
+        distanceMeters: s.distanceMeters,
+        isRunning,
+        stepKind,
+        targetPctFtp: pct,
+        targetWatts: s.targetWatts,
+        targetMinWatts: s.targetMinWatts,
+        targetMaxWatts: s.targetMaxWatts,
+        targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+        ftpWatts: activeFtp,
+        thresholdPaceSecsPerKm: thresholdPace,
+        hrCeilingBpm: s.hrCeilingBpm
+      });
+    });
+  }
+  return {
+    workoutName: input.name.slice(0, 64),
+    description: (input.description || "Prescribed by MeetReady Readiness Engine").slice(0, 512),
     sportType,
     subSportType: null,
-    workoutName: input.name.slice(0, 64),
-    description: (input.description || "Prescribed by MeetReady Readiness Engine").slice(
-      0,
-      512
-    ),
     estimatedDurationInSecs,
     workoutSegments: [
       {
         segmentOrder: 1,
         sportType,
-        workoutSteps: executableSteps
+        workoutSteps
       }
     ]
   };
-  const createdWorkout = await fetchGarminJson(
-    "/workout-service/workout",
-    session,
-    {
-      method: "POST",
-      body: workoutPayload
+}
+async function pushWorkoutToGarminConnect(session, input, req) {
+  const { clientId, clientSecret } = getEffectiveGarminClientConfig(req);
+  const partnerKeysConfigured = Boolean(clientId && clientSecret);
+  if (!session.garminOAuthAccessToken && !session.garminOAuthRefreshToken) {
+    if (session.personalApiKey) {
+      throw new GarminPartnerOAuthError(
+        partnerKeysConfigured ? 'Garmin Personal API keys (GCDC_...) are read-only per Garmin policy. Connect Official Garmin Partner OAuth in Data Sources (or click "Download .FIT" / Intervals.icu Cross-Watch Bridge) to push workouts to your watch.' : "Garmin Personal API keys (GCDC_...) are read-only and Official Garmin Partner OAuth credentials (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET) are pending. Use Download .FIT or Intervals.icu Cross-Watch Bridge in the meantime.",
+        { requiresPartnerOAuth: true, setupRequired: !partnerKeysConfigured }
+      );
     }
-  );
-  const workoutId = createdWorkout?.workoutId;
-  if (!workoutId) {
-    throw new Error("Garmin Connect did not return a workoutId.");
+    throw new GarminPartnerOAuthError(
+      partnerKeysConfigured ? "Connect Official Garmin Partner OAuth in Data Sources to push workouts directly to your Garmin watch." : "Garmin Partner OAuth credentials (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET) are pending. Use Download .FIT or Intervals.icu Cross-Watch Bridge to transfer this workout.",
+      { requiresPartnerOAuth: true, setupRequired: !partnerKeysConfigured }
+    );
   }
-  const scheduled = await fetchGarminJson(
-    `/workout-service/schedule/${encodeURIComponent(String(workoutId))}`,
-    session,
-    {
-      method: "POST",
-      body: { date: input.date.slice(0, 10) }
-    }
-  );
+  const workoutPayload = buildGarminTrainingApiV2Payload(input);
+  const createdWorkout = await fetchGarminPartnerApiJson("/training-api/workout/v2", session, {
+    method: "POST",
+    body: workoutPayload,
+    req
+  });
+  const workoutId = createdWorkout?.workoutId ?? createdWorkout?.id;
+  if (!workoutId) {
+    throw new Error("Garmin Training API v2 did not return a workoutId.");
+  }
+  const scheduled = await fetchGarminPartnerApiJson("/training-api/schedule/", session, {
+    method: "POST",
+    body: {
+      workoutId,
+      date: input.date.slice(0, 10)
+    },
+    req
+  });
   return {
     pushed: true,
     workoutId,
-    scheduleId: scheduled?.workoutScheduleId || workoutId,
-    message: `Pushed "${input.name}" directly to Garmin Connect Calendar (${input.date.slice(0, 10)}) \u2014 ready to sync to your Garmin watch & Edge head unit.`
+    scheduleId: scheduled?.workoutScheduleId ?? scheduled?.scheduleId ?? workoutId,
+    message: `Pushed "${input.name}" directly to Garmin Connect Calendar (${input.date.slice(0, 10)}) via Official Training API v2.`
   };
 }
 async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
@@ -2559,8 +3310,8 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
         session
       ).catch(() => null)
     ]);
-    const userData2 = profileSettings?.userData || profileSettings || {};
-    let weightKg2;
+    const userData = profileSettings?.userData || profileSettings || {};
+    let weightKg;
     const weightList = Array.isArray(weightRangeData) ? weightRangeData : weightRangeData?.dailyWeightSummaries || weightRangeData?.dateWeightList || [];
     if (Array.isArray(weightList) && weightList.length > 0) {
       const sortedWeights = [...weightList].sort((a, b) => {
@@ -2578,20 +3329,20 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
           wItem?.latestWeight?.weight ?? wItem?.summaryWeight ?? wItem?.weight ?? 0
         );
         if (rawW > 1e3) {
-          weightKg2 = Number((rawW / 1e3).toFixed(1));
+          weightKg = Number((rawW / 1e3).toFixed(1));
           break;
         } else if (rawW >= 35 && rawW <= 180) {
-          weightKg2 = Number(rawW.toFixed(1));
+          weightKg = Number(rawW.toFixed(1));
           break;
         }
       }
     }
-    if (!weightKg2) {
-      const rawProfileWeight = Number(userData2.weight ?? 0);
+    if (!weightKg) {
+      const rawProfileWeight = Number(userData.weight ?? 0);
       if (rawProfileWeight > 1e3) {
-        weightKg2 = Number((rawProfileWeight / 1e3).toFixed(1));
+        weightKg = Number((rawProfileWeight / 1e3).toFixed(1));
       } else if (rawProfileWeight >= 35 && rawProfileWeight <= 180) {
-        weightKg2 = Number(rawProfileWeight.toFixed(1));
+        weightKg = Number(rawProfileWeight.toFixed(1));
       }
     }
     const zonesArray = Array.isArray(hrZonesData) ? hrZonesData : Array.isArray(hrZonesData?.heartRateZones) ? hrZonesData.heartRateZones : hrZonesData ? [hrZonesData] : [];
@@ -2604,10 +3355,10 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
       (z) => /running|run/i.test(String(z?.sport || z?.sportType || ""))
     ) || cyclingZoneObj || {};
     const bikeLthr = Number(
-      cyclingZoneObj.lactateThresholdHeartRateUsed ?? cyclingZoneObj.lactateThresholdHeartRate ?? userData2.lactateThresholdHeartRate ?? 0
+      cyclingZoneObj.lactateThresholdHeartRateUsed ?? cyclingZoneObj.lactateThresholdHeartRate ?? userData.lactateThresholdHeartRate ?? 0
     );
     const bikeMaxHr = Number(
-      cyclingZoneObj.maxHeartRateUsed ?? cyclingZoneObj.maxHeartRate ?? userData2.maxHeartRate ?? 0
+      cyclingZoneObj.maxHeartRateUsed ?? cyclingZoneObj.maxHeartRate ?? userData.maxHeartRate ?? 0
     );
     const runLthr = Number(
       runningZoneObj.lactateThresholdHeartRateUsed ?? runningZoneObj.lactateThresholdHeartRate ?? bikeLthr ?? 0
@@ -2617,7 +3368,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
     );
     const fitnessAgeRhr = Number(fitnessAgeData?.components?.rhr?.value ?? 0);
     const restingHrFromZones = Number(
-      (fitnessAgeRhr >= 30 ? fitnessAgeRhr : 0) || cyclingZoneObj.restingHeartRateUsed || cyclingZoneObj.restingHeartRate || userData2.restingHeartRate || 0
+      (fitnessAgeRhr >= 30 ? fitnessAgeRhr : 0) || cyclingZoneObj.restingHeartRateUsed || cyclingZoneObj.restingHeartRate || userData.restingHeartRate || 0
     );
     const bikeHrFloors = [];
     const bikeHrCeilings = [];
@@ -2662,7 +3413,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
       if (!wellnessByDate.has(dateStr)) {
         wellnessByDate.set(dateStr, {
           id: dateStr,
-          weight: weightKg2
+          weight: weightKg
         });
       }
       return wellnessByDate.get(dateStr);
@@ -2748,7 +3499,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
       (a) => a?.ownerFullName && typeof a.ownerFullName === "string" && a.ownerFullName.trim().length > 1
     )?.ownerFullName;
     const activityOwnerId = rawActivitiesList.find((a) => a?.ownerId)?.ownerId;
-    const resolvedFullName = activityOwnerFullName || profileSettings?.fullName || userData2?.fullName || session.fullName || profileSettings?.displayName || session.displayName;
+    const resolvedFullName = activityOwnerFullName || profileSettings?.fullName || userData?.fullName || session.fullName || profileSettings?.displayName || session.displayName;
     if (resolvedFullName) {
       session.fullName = resolvedFullName;
     }
@@ -2801,7 +3552,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
         }
       }
     }
-    const derivedBikeFtp = Number(userData2.ftp) > 60 ? Math.round(Number(userData2.ftp)) : maxBike20mPower >= 90 ? Math.round(maxBike20mPower * 0.95) : void 0;
+    const derivedBikeFtp = Number(userData.ftp) > 60 ? Math.round(Number(userData.ftp)) : maxBike20mPower >= 90 ? Math.round(maxBike20mPower * 0.95) : void 0;
     const derivedBikePMax = maxBikePeakPower >= 350 ? Math.round(maxBikePeakPower) : void 0;
     const derivedBikeWPrime = derivedBikeFtp && derivedBikeFtp > 60 ? Math.round(derivedBikeFtp * 75) : void 0;
     const derivedRunThresholdPace = bestRun5kSecs > 0 ? Math.round(bestRun5kSecs / 5 * 1.03) : void 0;
@@ -2809,7 +3560,7 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
     const rawProfile2 = {
       id: activityOwnerId || profileSettings?.id || "garmin-personal-api",
       name: resolvedFullName,
-      weight: weightKg2,
+      weight: weightKg,
       icu_resting_hr: latestRhr,
       ftp: derivedBikeFtp,
       eFtp: derivedBikeFtp,
@@ -2846,109 +3597,80 @@ async function fetchDirectGarminProfileAndWellness(session, daysToFetch = 28) {
     session.lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
     return { rawProfile: rawProfile2, wellnessRows: wellnessRows2, activities: rawActivitiesList };
   }
-  const [socialProfile, personalInfo, userSettings, latestFtp, latestLthr] = await Promise.all([
-    fetchGarminJson(
-      "/userprofile-service/socialProfile",
+  const nowSec = Math.floor(Date.now() / 1e3);
+  const startEpochSec = nowSec - Math.min(daysToFetch, 30) * 86400;
+  const [userIdInfo, dailiesData, sleepsData, hrvData, actsData] = await Promise.all([
+    fetchGarminPartnerApiJson("/wellness-api/rest/user/id", session).catch(
+      () => null
+    ),
+    fetchGarminPartnerApiJson(
+      `/wellness-api/rest/dailies?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
       session
     ).catch(() => null),
-    fetchGarminJson(
-      "/userprofile-service/userprofile/personal-information",
+    fetchGarminPartnerApiJson(
+      `/wellness-api/rest/sleeps?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
       session
     ).catch(() => null),
-    fetchGarminJson(
-      "/userprofile-service/userprofile/user-settings",
+    fetchGarminPartnerApiJson(
+      `/wellness-api/rest/hrv?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
       session
     ).catch(() => null),
-    fetchGarminJson(
-      "/biometric-service/biometric/powerToWeight/latest",
-      session
-    ).catch(() => null),
-    fetchGarminJson(
-      "/biometric-service/biometric/lactateThreshold/latest",
+    fetchGarminPartnerApiJson(
+      `/wellness-api/rest/activities?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
       session
     ).catch(() => null)
   ]);
-  const userData = userSettings?.userData || {};
-  const bioInfo = personalInfo?.biometricProfile || {};
-  const rawWeightGrams = Number(
-    userData.weight ?? bioInfo.weight ?? personalInfo?.weight ?? 0
-  );
-  const weightKg = rawWeightGrams > 1e3 ? Number((rawWeightGrams / 1e3).toFixed(1)) : rawWeightGrams >= 35 && rawWeightGrams <= 180 ? Number(rawWeightGrams.toFixed(1)) : void 0;
-  const ftp = Number(
-    latestFtp?.functionalThresholdPower ?? userData.ftp ?? bioInfo.functionalThresholdPower ?? 0
-  );
-  const lthrBpm = Number(
-    latestLthr?.heartRate ?? latestLthr?.lactateThresholdHeartRate ?? userData.lactateThresholdHeartRate ?? 0
-  );
-  const maxHr = Number(userData.maxHeartRate ?? bioInfo.maxHeartRate ?? 0);
-  const restingHr = Number(
-    userData.restingHeartRate ?? bioInfo.restingHeartRate ?? 0
-  );
-  const vo2MaxCycling = Number(
-    userData.vo2MaxCycling ?? userData.vo2Max ?? 0
-  );
-  const vo2MaxRunning = Number(
-    userData.vo2MaxRunning ?? userData.vo2Max ?? 0
-  );
-  const name = socialProfile?.fullName || personalInfo?.userInfo?.fullName || socialProfile?.displayName || session.fullName || session.displayName;
-  if (name) {
-    session.fullName = name;
-    session.displayName = socialProfile?.displayName || name;
+  if (userIdInfo?.userId) {
+    session.garminUserId = String(userIdInfo.userId);
   }
-  const today = /* @__PURE__ */ new Date();
-  const dateStrings = [];
-  for (let i = Math.min(daysToFetch, 14) - 1; i >= 0; i--) {
-    const d = new Date(today.getTime() - i * 86400 * 1e3);
-    dateStrings.push(d.toISOString().slice(0, 10));
+  const wellnessMap = /* @__PURE__ */ new Map();
+  const ensurePartnerDay = (d) => {
+    const dateStr = String(d || "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+    if (!wellnessMap.has(dateStr)) wellnessMap.set(dateStr, { id: dateStr });
+    return wellnessMap.get(dateStr);
+  };
+  for (const d of Array.isArray(dailiesData) ? dailiesData : []) {
+    const row = ensurePartnerDay(d?.calendarDate || d?.date || d?.startTimeLocal);
+    if (!row) continue;
+    const rhr = Number(d?.restingHeartRate ?? d?.minHeartRate ?? 0);
+    if (rhr >= 30 && rhr <= 110) row.restingHR = rhr;
+    if (Number(d?.totalSteps) > 0) row.steps = Number(d.totalSteps);
   }
-  const wellnessRows = [];
-  for (const dateStr of dateStrings) {
-    const [sleepData, hrvData] = await Promise.all([
-      fetchGarminJson(
-        `/wellness-service/wellness/dailySleepData?date=${dateStr}&nonSleepBufferMinutes=60`,
-        session
-      ).catch(() => null),
-      fetchGarminJson(
-        `/hrv-service/hrv/${dateStr}`,
-        session
-      ).catch(() => null)
-    ]);
-    const sleepDto = sleepData?.dailySleepDTO;
-    const hrvSummary = hrvData?.hrvSummary;
-    if (sleepDto || hrvSummary) {
-      wellnessRows.push({
-        id: dateStr,
-        weight: weightKg,
-        restingHR: sleepData?.restingHeartRate ?? sleepDto?.restingHeartRate ?? (restingHr > 30 ? restingHr : void 0),
-        hrv: hrvSummary?.lastNightAvg ?? sleepData?.avgOvernightHrv ?? void 0,
-        sleepSecs: sleepDto?.sleepTimeSeconds ?? void 0,
-        sleepScore: sleepDto?.sleepScores?.overall?.value ?? sleepDto?.overallSleepScore?.value ?? void 0,
-        vo2max: vo2MaxCycling > 20 ? vo2MaxCycling : vo2MaxRunning > 20 ? vo2MaxRunning : void 0
-      });
-    }
+  for (const s of Array.isArray(sleepsData) ? sleepsData : []) {
+    const row = ensurePartnerDay(s?.calendarDate || s?.date);
+    if (!row) continue;
+    const dur = Number(s?.durationInSeconds ?? s?.sleepTimeSeconds ?? 0);
+    if (dur > 0) row.sleepSecs = dur;
+    const score = Number(s?.overallSleepScore?.value ?? s?.sleepScores?.overall?.value ?? s?.sleepScore ?? 0);
+    if (score > 0) row.sleepScore = score;
   }
+  for (const h of Array.isArray(hrvData) ? hrvData : []) {
+    const row = ensurePartnerDay(h?.calendarDate || h?.date);
+    if (!row) continue;
+    const hrvVal = Number(h?.lastNightAvg ?? h?.weeklyAvg ?? h?.hrvValue ?? 0);
+    if (hrvVal > 0) row.hrv = hrvVal;
+    if (Number(h?.weeklyAvg) > 0) row.hrvBaseline7d = Number(h.weeklyAvg);
+    if (h?.status) row.garminHrvStatus = String(h.status);
+  }
+  const wellnessRows = Array.from(wellnessMap.values()).sort(
+    (a, b) => String(a.id).localeCompare(String(b.id))
+  );
   const rawProfile = {
-    id: socialProfile?.profileId || session.email || "garmin-direct",
-    name,
-    weight: weightKg,
-    icu_resting_hr: restingHr > 30 ? restingHr : void 0,
-    vo2max: vo2MaxCycling > 20 ? vo2MaxCycling : void 0,
+    id: session.garminUserId || "garmin-partner-oauth",
+    name: session.fullName || session.displayName || "Garmin Athlete",
+    icu_resting_hr: wellnessRows[wellnessRows.length - 1]?.restingHR,
     sportSettings: [
-      {
-        types: ["Ride", "VirtualRide"],
-        ftp: ftp > 60 ? ftp : void 0,
-        lthr: lthrBpm > 110 ? lthrBpm : void 0,
-        max_hr: maxHr > 130 ? maxHr : void 0
-      },
-      {
-        types: ["Run", "VirtualRun"],
-        lthr: lthrBpm > 110 ? lthrBpm : void 0,
-        max_hr: maxHr > 130 ? maxHr : void 0
-      }
+      { types: ["Ride", "VirtualRide"] },
+      { types: ["Run", "VirtualRun"] }
     ]
   };
   session.lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
-  return { rawProfile, wellnessRows, activities: [] };
+  return {
+    rawProfile,
+    wellnessRows,
+    activities: Array.isArray(actsData) ? actsData : []
+  };
 }
 function getEnvGarminPersonalApiKey() {
   if (process.env.ALLOW_DEV_ENV_CREDENTIALS !== "true") {
@@ -3116,7 +3838,7 @@ var GARMIN_SESSION_DIR = "/tmp/thresh-garmin";
 function hasExplicitCredentialHeader(req) {
   if (!req) return false;
   return Boolean(
-    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-intervals-access-token"] || "").trim() || String(req.headers["x-wahoo-access-token"] || "").trim() || String(req.headers["x-polar-access-token"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim() || String(req.headers["x-garmin-oauth1-token"] || "").trim()
+    String(req.headers["x-strava-refresh-token"] || "").trim() || String(req.headers["x-strava-access-token"] || "").trim() || String(req.headers["x-intervals-api-key"] || "").trim() || String(req.headers["x-intervals-access-token"] || "").trim() || String(req.headers["x-wahoo-access-token"] || "").trim() || String(req.headers["x-polar-access-token"] || "").trim() || String(req.headers["x-coros-access-token"] || "").trim() || String(req.headers["x-garmin-personal-api-key"] || "").trim() || String(req.headers["x-garmin-bearer-token"] || "").trim()
   );
 }
 function isAuthenticatedRequest(req) {
@@ -3151,9 +3873,9 @@ function resolveSessionScopeKey(req) {
   if (cookieVault?.sid) {
     return cookieVault.sid.slice(0, 24);
   }
-  const rawCredential = (String(activeReq.headers["x-garmin-personal-api-key"] || "").trim() || String(activeReq.headers["x-strava-refresh-token"] || "").trim() || String(activeReq.headers["x-strava-access-token"] || "").trim() || String(activeReq.headers["x-intervals-api-key"] || "").trim()).trim();
+  const rawCredential = (String(activeReq.headers["x-garmin-personal-api-key"] || "").trim() || String(activeReq.headers["x-coros-access-token"] || "").trim() || String(activeReq.headers["x-strava-refresh-token"] || "").trim() || String(activeReq.headers["x-strava-access-token"] || "").trim() || String(activeReq.headers["x-intervals-api-key"] || "").trim()).trim();
   if (!rawCredential) return null;
-  return crypto4.createHash("sha256").update(rawCredential).digest("hex").slice(0, 24);
+  return crypto3.createHash("sha256").update(rawCredential).digest("hex").slice(0, 24);
 }
 function getGarminScopeKey(req) {
   return resolveSessionScopeKey(req) || "unauthenticated";
@@ -3166,23 +3888,37 @@ function getActiveGarminSession(req) {
   const scopeKey = resolveSessionScopeKey(activeReq);
   const stored = scopeKey ? loadGarminSession(GARMIN_SESSION_DIR, scopeKey) : null;
   const cookieVault = readCompactVaultFromCookie(activeReq);
-  const cookiePersonalKey = cookieVault && (!scopeKey || cookieVault.sid?.slice(0, 24) === scopeKey) ? String(cookieVault.garminPersonalApiKey || "").trim() : "";
+  const cookieMatchesScope = Boolean(
+    cookieVault && (!scopeKey || cookieVault.sid?.slice(0, 24) === scopeKey)
+  );
+  const cookiePersonalKey = cookieMatchesScope ? String(cookieVault?.garminPersonalApiKey || "").trim() : "";
+  const cookieOAuthAccessToken = cookieMatchesScope ? String(cookieVault?.garminOAuthAccessToken || "").trim() : "";
+  const cookieOAuthRefreshToken = cookieMatchesScope ? String(cookieVault?.garminOAuthRefreshToken || "").trim() : "";
+  const cookieOAuthExpiresAt = cookieMatchesScope ? Number(cookieVault?.garminOAuthExpiresAt || 0) || void 0 : void 0;
   const headerPersonalKey = activeReq ? String(activeReq.headers["x-garmin-personal-api-key"] || "").trim() : "";
   const headerBearer = activeReq ? String(activeReq.headers["x-garmin-bearer-token"] || "").trim() : "";
-  const headerOauth1 = activeReq ? String(activeReq.headers["x-garmin-oauth1-token"] || "").trim() : "";
-  const headerOauth1Secret = activeReq ? String(activeReq.headers["x-garmin-oauth1-secret"] || "").trim() : "";
-  if (stored && (stored.personalApiKey || stored.oauth2AccessToken || stored.oauth1Token)) {
+  if (stored && (stored.personalApiKey || stored.garminOAuthAccessToken || stored.oauth2AccessToken)) {
     if (headerPersonalKey && !stored.personalApiKey) {
       stored.personalApiKey = headerPersonalKey;
     }
+    if (cookieOAuthAccessToken && !stored.garminOAuthAccessToken) {
+      stored.garminOAuthAccessToken = cookieOAuthAccessToken;
+    }
+    if (cookieOAuthRefreshToken && !stored.garminOAuthRefreshToken) {
+      stored.garminOAuthRefreshToken = cookieOAuthRefreshToken;
+    }
+    if (cookieOAuthExpiresAt && !stored.garminOAuthExpiresAt) {
+      stored.garminOAuthExpiresAt = cookieOAuthExpiresAt;
+    }
     return stored;
   }
-  if (cookiePersonalKey || headerPersonalKey || headerBearer || headerOauth1 && headerOauth1Secret) {
+  if (cookiePersonalKey || cookieOAuthAccessToken || headerPersonalKey || headerBearer) {
     return {
       personalApiKey: cookiePersonalKey || headerPersonalKey || void 0,
-      oauth2AccessToken: headerBearer || void 0,
-      oauth1Token: headerOauth1 || void 0,
-      oauth1TokenSecret: headerOauth1Secret || void 0
+      garminOAuthAccessToken: cookieOAuthAccessToken || void 0,
+      garminOAuthRefreshToken: cookieOAuthRefreshToken || void 0,
+      garminOAuthExpiresAt: cookieOAuthExpiresAt,
+      oauth2AccessToken: headerBearer || void 0
     };
   }
   if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
@@ -3198,7 +3934,7 @@ function getActiveGarminSession(req) {
   return null;
 }
 function getScopedPlannedEventsFile(req, explicitApiKey) {
-  const scopeKey = explicitApiKey ? crypto4.createHash("sha256").update(explicitApiKey.trim()).digest("hex").slice(0, 24) : resolveSessionScopeKey(req);
+  const scopeKey = explicitApiKey ? crypto3.createHash("sha256").update(explicitApiKey.trim()).digest("hex").slice(0, 24) : resolveSessionScopeKey(req);
   if (!scopeKey) return null;
   return `/tmp/thresh-planned-events-${scopeKey}.json`;
 }
@@ -3247,6 +3983,13 @@ function createDefaultRuntimeSessionStore(seed = {}) {
     polarAthleteName: seed.polarAthleteName || "",
     polarExpiresAt: seed.polarExpiresAt || 0,
     polarScope: seed.polarScope || "",
+    corosClientId: seed.corosClientId || process.env.COROS_CLIENT_ID || "",
+    corosClientSecret: seed.corosClientSecret || process.env.COROS_CLIENT_SECRET || "",
+    corosAccessToken: seed.corosAccessToken || "",
+    corosRefreshToken: seed.corosRefreshToken || "",
+    corosExpiresAt: seed.corosExpiresAt || 0,
+    corosAthleteId: seed.corosAthleteId || "",
+    corosAthleteName: seed.corosAthleteName || "",
     stravaClientId: seed.stravaClientId || process.env.STRAVA_CLIENT_ID || "",
     stravaClientSecret: seed.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || "",
     stravaAccessToken: seed.stravaAccessToken || "",
@@ -3335,7 +4078,12 @@ function getScopedRuntimeStore(req) {
         polarUserId: loaded.polarUserId || cookieVault.polarUserId || "",
         polarAthleteName: loaded.polarAthleteName || cookieVault.polarAthleteName || "",
         polarExpiresAt: loaded.polarExpiresAt || cookieVault.polarExpiresAt || 0,
-        polarScope: loaded.polarScope || cookieVault.polarScope || ""
+        polarScope: loaded.polarScope || cookieVault.polarScope || "",
+        corosAccessToken: loaded.corosAccessToken || cookieVault.corosAccessToken || "",
+        corosRefreshToken: loaded.corosRefreshToken || cookieVault.corosRefreshToken || "",
+        corosExpiresAt: loaded.corosExpiresAt || cookieVault.corosExpiresAt || 0,
+        corosAthleteId: loaded.corosAthleteId || cookieVault.corosAthleteId || "",
+        corosAthleteName: loaded.corosAthleteName || cookieVault.corosAthleteName || ""
       };
     }
     const hydrated = createDefaultRuntimeSessionStore(loaded);
@@ -3399,10 +4147,16 @@ function mergeRuntimeStoreCredentials(target, source) {
   if (!target.stravaSyncPolicy && source.stravaSyncPolicy) target.stravaSyncPolicy = source.stravaSyncPolicy;
   if (!target.intervalsApiKey && source.intervalsApiKey) target.intervalsApiKey = source.intervalsApiKey;
   if (!target.intervalsAccessToken && source.intervalsAccessToken) target.intervalsAccessToken = source.intervalsAccessToken;
+  if (!target.intervalsScope && source.intervalsScope) target.intervalsScope = source.intervalsScope;
   if (!target.intervalsAthleteName && source.intervalsAthleteName) target.intervalsAthleteName = source.intervalsAthleteName;
   if (!target.wahooAccessToken && source.wahooAccessToken) target.wahooAccessToken = source.wahooAccessToken;
   if (!target.wahooRefreshToken && source.wahooRefreshToken) target.wahooRefreshToken = source.wahooRefreshToken;
   if (!target.polarAccessToken && source.polarAccessToken) target.polarAccessToken = source.polarAccessToken;
+  if (!target.corosAccessToken && source.corosAccessToken) target.corosAccessToken = source.corosAccessToken;
+  if (!target.corosRefreshToken && source.corosRefreshToken) target.corosRefreshToken = source.corosRefreshToken;
+  if (!target.corosExpiresAt && source.corosExpiresAt) target.corosExpiresAt = source.corosExpiresAt;
+  if (!target.corosAthleteId && source.corosAthleteId) target.corosAthleteId = source.corosAthleteId;
+  if (!target.corosAthleteName && source.corosAthleteName) target.corosAthleteName = source.corosAthleteName;
   if ((!target.gearItems || target.gearItems.length === 0) && source.gearItems?.length) target.gearItems = source.gearItems;
   if (!target.athleteProfile && source.athleteProfile) target.athleteProfile = source.athleteProfile;
   if (!target.geminiApiKey && source.geminiApiKey) target.geminiApiKey = source.geminiApiKey;
@@ -3442,7 +4196,15 @@ function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
     polarAthleteName: store.polarAthleteName || void 0,
     polarExpiresAt: store.polarExpiresAt || void 0,
     polarScope: store.polarScope || void 0,
-    garminPersonalApiKey: garminSess?.personalApiKey || void 0
+    garminPersonalApiKey: garminSess?.personalApiKey || void 0,
+    garminOAuthAccessToken: garminSess?.garminOAuthAccessToken || void 0,
+    garminOAuthRefreshToken: garminSess?.garminOAuthRefreshToken || void 0,
+    garminOAuthExpiresAt: garminSess?.garminOAuthExpiresAt || void 0,
+    corosAccessToken: store.corosAccessToken || void 0,
+    corosRefreshToken: store.corosRefreshToken || void 0,
+    corosExpiresAt: store.corosExpiresAt || void 0,
+    corosAthleteId: store.corosAthleteId || void 0,
+    corosAthleteName: store.corosAthleteName || void 0
   };
   let header = buildEncryptedVaultCookieHeader(compact, isSecure);
   if (!header) {
@@ -3459,12 +4221,20 @@ function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
         stravaSyncPolicy: compact.stravaSyncPolicy,
         intervalsApiKey: compact.intervalsApiKey,
         intervalsAccessToken: compact.intervalsAccessToken,
+        intervalsScope: compact.intervalsScope,
         intervalsAthleteId: compact.intervalsAthleteId,
         wahooAccessToken: compact.wahooAccessToken,
         wahooRefreshToken: compact.wahooRefreshToken,
         wahooExpiresAt: compact.wahooExpiresAt,
         polarAccessToken: compact.polarAccessToken,
-        garminPersonalApiKey: compact.garminPersonalApiKey
+        garminPersonalApiKey: compact.garminPersonalApiKey,
+        garminOAuthAccessToken: compact.garminOAuthAccessToken,
+        garminOAuthRefreshToken: compact.garminOAuthRefreshToken,
+        garminOAuthExpiresAt: compact.garminOAuthExpiresAt,
+        corosAccessToken: compact.corosAccessToken,
+        corosRefreshToken: compact.corosRefreshToken,
+        corosExpiresAt: compact.corosExpiresAt,
+        corosAthleteId: compact.corosAthleteId
       },
       isSecure
     );
@@ -4023,238 +4793,6 @@ Cooldown
   };
 }
 
-// src/physiology/trackSpeedReserveEngine.ts
-var clamp = (val, min, max) => Math.max(min, Math.min(max, val));
-var round1 = (val) => Number(val.toFixed(1));
-var round2 = (val) => Number(val.toFixed(2));
-var round3 = (val) => Number(val.toFixed(3));
-function vo2AtVelocityMpm(vMpm) {
-  const safeV = Math.max(50, vMpm);
-  return -4.6 + 0.182258 * safeV + 104e-6 * safeV * safeV;
-}
-function pctVo2MaxAtDurationMins(tMins) {
-  const t = Math.max(0.5, tMins);
-  return 0.8 + 0.1894393 * Math.exp(-0.012778 * t) + 0.2989558 * Math.exp(-0.1932605 * t);
-}
-function solveVelocityMpmForTargetVo2(targetVo2) {
-  const a = 104e-6;
-  const b = 0.182258;
-  const c = -(4.6 + Math.max(8, targetVo2));
-  const discriminant = Math.max(0, b * b - 4 * a * c);
-  return (-b + Math.sqrt(discriminant)) / (2 * a);
-}
-function solveTrackPaceSecsPerKmForPctVdot(vdotAer, pctVo2, clampRange = [95, 540]) {
-  const safeVdot = clamp(vdotAer || 50, 20, 92);
-  const vMpm = solveVelocityMpmForTargetVo2(safeVdot * pctVo2);
-  const rawPaceSecsPerKm = 6e4 / Math.max(80, vMpm);
-  return round1(clamp(rawPaceSecsPerKm, clampRange[0], clampRange[1]));
-}
-function computeRawMarkVdot(distanceMeters, durationSecs) {
-  if (!Number.isFinite(distanceMeters) || !Number.isFinite(durationSecs)) return 50;
-  if (distanceMeters < 150 || durationSecs < 15) return 50;
-  const tMins = Math.max(0.75, durationSecs / 60);
-  const vMpm = distanceMeters / tMins;
-  const raw = vo2AtVelocityMpm(vMpm) / Math.max(0.55, pctVo2MaxAtDurationMins(tMins));
-  return round2(clamp(raw, 22, 92));
-}
-function buildSplitRow(code, name, pctVdotAer, paceSecsPerKm) {
-  const safePace = Math.max(95, paceSecsPerKm);
-  const speedMps = 1e3 / safePace;
-  return {
-    code,
-    name,
-    pctVdotAer: round3(pctVdotAer),
-    paceSecsPerKm: round1(safePace),
-    speedMps: round3(speedMps),
-    splitsSecs: {
-      m200: round1(safePace * 200 / 1e3),
-      m300: round1(safePace * 300 / 1e3),
-      m400: round1(safePace * 400 / 1e3),
-      m600: round1(safePace * 600 / 1e3),
-      m800: round1(safePace * 800 / 1e3),
-      m1000: round1(safePace),
-      m1200: round1(safePace * 1200 / 1e3),
-      m1600: round1(safePace * 1600 / 1e3)
-    }
-  };
-}
-function solveCriticalSpeedAndDPrimeOls(marks) {
-  const valid = marks.filter(
-    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 550 && m.distanceMeters <= 1e4 && m.durationSecs >= 45
-  );
-  if (valid.length < 2) return null;
-  const bestByBucket = /* @__PURE__ */ new Map();
-  for (const m of valid) {
-    const bucket = Math.round(m.distanceMeters / 50) * 50;
-    const existing = bestByBucket.get(bucket);
-    if (!existing || m.durationSecs < existing.durationSecs) {
-      bestByBucket.set(bucket, m);
-    }
-  }
-  const allDistinct = Array.from(bestByBucket.values()).sort(
-    (a, b) => a.distanceMeters - b.distanceMeters
-  );
-  const trackSevere = allDistinct.filter(
-    (m) => m.distanceMeters >= 600 && m.distanceMeters <= 5e3
-  );
-  const pickPool = (pool, minDistSpan, minTimeSpan) => {
-    if (pool.length < 2) return false;
-    const dSpan = pool[pool.length - 1].distanceMeters - pool[0].distanceMeters;
-    const tSpan = Math.max(...pool.map((p) => p.durationSecs)) - Math.min(...pool.map((p) => p.durationSecs));
-    return dSpan >= minDistSpan && tSpan >= minTimeSpan;
-  };
-  const chosen = pickPool(trackSevere, 600, 45) ? trackSevere : pickPool(allDistinct, 500, 35) ? allDistinct : null;
-  if (!chosen) return null;
-  const n = chosen.length;
-  const meanT = chosen.reduce((acc, m) => acc + m.durationSecs, 0) / n;
-  const meanD = chosen.reduce((acc, m) => acc + m.distanceMeters, 0) / n;
-  let num = 0;
-  let den = 0;
-  for (const m of chosen) {
-    const dt = m.durationSecs - meanT;
-    const dd = m.distanceMeters - meanD;
-    num += dt * dd;
-    den += dt * dt;
-  }
-  if (den <= 1e-6) return null;
-  const rawCs = num / den;
-  const csMps = round3(clamp(rawCs, 2.5, 6.8));
-  const rawDPrime = meanD - csMps * meanT;
-  const dPrimeMeters = Math.round(clamp(rawDPrime, 110, 420));
-  return { csMps, dPrimeMeters, usedMarksCount: n };
-}
-function classifySpeedReservePhenotype(srr, dPrimeMeters, override) {
-  if (override && override !== "AUTO") return override;
-  if (srr >= 1.58 || dPrimeMeters > 235) return "SPEED";
-  if (srr < 1.48 || dPrimeMeters < 205) return "ENDURANCE";
-  return "HYBRID";
-}
-function buildTrackSpeedReserveProfile(input = {}) {
-  const {
-    marks = [],
-    thresholdPaceSecsPerKm,
-    maxSprintSpeedMps,
-    flying30mSecs,
-    phenotypeOverride = "AUTO"
-  } = input;
-  const validMarks = marks.filter(
-    (m) => Number.isFinite(m.distanceMeters) && Number.isFinite(m.durationSecs) && m.distanceMeters >= 200 && m.durationSecs >= 20
-  ).sort((a, b) => a.distanceMeters - b.distanceMeters);
-  const vdotRawBest = validMarks.length > 0 ? Math.max(...validMarks.map((m) => computeRawMarkVdot(m.distanceMeters, m.durationSecs))) : thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0 ? round2(
-    clamp(
-      vo2AtVelocityMpm(6e4 / clamp(thresholdPaceSecsPerKm, 130, 460)) / 0.88,
-      22,
-      90
-    )
-  ) : 50;
-  const ols = solveCriticalSpeedAndDPrimeOls(validMarks);
-  let modelSource = "PROFILE_THRESHOLD_FALLBACK";
-  let csMps = 3.85;
-  let dPrimeMeters = 215;
-  let vdotAer = 50;
-  if (ols) {
-    modelSource = "MULTI_MARK_CS_DPRIME";
-    csMps = ols.csMps;
-    dPrimeMeters = ols.dPrimeMeters;
-    vdotAer = round2(clamp(vo2AtVelocityMpm(csMps * 60) / 0.9215, 22, 90));
-  } else if (validMarks.length > 0) {
-    modelSource = "SINGLE_MARK_SCALED";
-    const primary = [...validMarks].reverse().find((m) => m.distanceMeters >= 600) ?? validMarks[validMarks.length - 1];
-    const rawVdot = computeRawMarkVdot(primary.distanceMeters, primary.durationSecs);
-    let alpha = 1;
-    if (primary.distanceMeters <= 900) {
-      alpha = 0.945;
-    } else if (primary.distanceMeters <= 1650) {
-      alpha = phenotypeOverride === "SPEED" ? 0.96 : phenotypeOverride === "ENDURANCE" ? 0.99 : 0.975;
-    }
-    vdotAer = round2(clamp(rawVdot * alpha, 22, 90));
-    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
-    const dPrimePrior = phenotypeOverride === "SPEED" ? 265 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
-    if (primary.distanceMeters <= 1650) {
-      const impliedD = clamp(primary.distanceMeters - csMps * primary.durationSecs, 140, 320);
-      dPrimeMeters = Math.round(0.5 * dPrimePrior + 0.5 * impliedD);
-    } else {
-      dPrimeMeters = dPrimePrior;
-    }
-  } else {
-    modelSource = "PROFILE_THRESHOLD_FALLBACK";
-    const safeThresh = clamp(thresholdPaceSecsPerKm || 255, 130, 460);
-    vdotAer = round2(clamp(vo2AtVelocityMpm(6e4 / safeThresh) / 0.88, 22, 90));
-    csMps = round3(clamp(solveVelocityMpmForTargetVo2(0.9215 * vdotAer) / 60, 2.5, 6.8));
-    dPrimeMeters = phenotypeOverride === "SPEED" ? 260 : phenotypeOverride === "ENDURANCE" ? 180 : 215;
-  }
-  const masMps = round3(solveVelocityMpmForTargetVo2(vdotAer) / 60);
-  let mssMps;
-  if (typeof maxSprintSpeedMps === "number" && maxSprintSpeedMps >= 4.5) {
-    mssMps = clamp(maxSprintSpeedMps, 4.5, 11.2);
-  } else if (typeof flying30mSecs === "number" && flying30mSecs >= 2.6 && flying30mSecs <= 8) {
-    mssMps = clamp(30 / flying30mSecs, 4.5, 11.2);
-  } else {
-    const mssFromDPrime = masMps * (1.26 + 118e-5 * dPrimeMeters);
-    const mark400 = validMarks.find(
-      (m) => m.distanceMeters >= 350 && m.distanceMeters <= 450
-    );
-    const mark800 = validMarks.find(
-      (m) => m.distanceMeters >= 750 && m.distanceMeters <= 850
-    );
-    const est400 = mark400 ? mark400.distanceMeters / mark400.durationSecs * 1.11 : 0;
-    const est800 = mark800 ? mark800.distanceMeters / mark800.durationSecs * 1.23 : 0;
-    mssMps = clamp(Math.max(mssFromDPrime, est400, est800), 4.5, 11.2);
-  }
-  mssMps = round3(mssMps);
-  const asrMps = round2(Math.max(1.2, mssMps - masMps));
-  const srr = round3(mssMps / Math.max(2, masMps));
-  const phenotype = classifySpeedReservePhenotype(srr, dPrimeMeters, phenotypeOverride);
-  const paceE = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.7, [175, 540]);
-  const paceSubT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.86, [140, 430]);
-  const paceT = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.88, [140, 430]);
-  const paceCv = round1(clamp(1e3 / csMps, 135, 420));
-  const paceI = solveTrackPaceSecsPerKmForPctVdot(vdotAer, 0.98, [125, 390]);
-  const t1550 = (1550 - dPrimeMeters) / csMps;
-  const pace1550Hyperbolic = Math.max(185, t1550) / 1550 * 1e3;
-  const rawPaceR = modelSource === "PROFILE_THRESHOLD_FALLBACK" ? Math.min(paceI - 15, pace1550Hyperbolic) : Math.min(paceI - 6, pace1550Hyperbolic);
-  const paceR = round1(clamp(rawPaceR, 110, 360));
-  const t800Eff = (800 - 0.8 * dPrimeMeters) / csMps;
-  const v800Eff = 800 / Math.max(92, t800Eff);
-  const vFr = Math.max(v800Eff, masMps + 0.35 * asrMps, 1e3 / Math.max(105, paceR - 10));
-  const paceFr = round1(clamp(1e3 / vFr, 95, 330));
-  const zones = {
-    E: buildSplitRow("E", "Easy / Recovery", 0.7, paceE),
-    SUB_T: buildSplitRow("SUB_T", "Norwegian Sub-Threshold", 0.86, paceSubT),
-    T: buildSplitRow("T", "Lactate Threshold", 0.88, paceT),
-    CV: buildSplitRow("CV", "Critical Velocity (CS)", 0.9215, paceCv),
-    I: buildSplitRow("I", "VO2max Interval", 0.98, paceI),
-    R: buildSplitRow("R", "Mile / 1500m Repetition", 1.07, paceR),
-    FR: buildSplitRow("FR", "800m / Fast Repetition", 1.18, paceFr)
-  };
-  return {
-    modelSource,
-    csMps,
-    criticalPaceSecsPerKm: paceCv,
-    dPrimeMeters,
-    vdotAer,
-    vdotRawBest,
-    masMps,
-    mssMps,
-    asrMps,
-    srr,
-    phenotype,
-    thresholdPaceSecsPerKm: paceT,
-    zones
-  };
-}
-function solve400mRacePaceSecsPerKm(profile) {
-  const t400Eff = Math.max(
-    43,
-    (400 - 0.62 * profile.dPrimeMeters) / Math.max(2, profile.csMps)
-  );
-  const v400Hyper = 400 / t400Eff;
-  const v400Asr = profile.masMps + 0.55 * profile.asrMps;
-  const vMinFasterThan800 = 1e3 / Math.max(85, profile.zones.FR.paceSecsPerKm - 14);
-  const v400 = Math.max(v400Hyper, v400Asr, vMinFasterThan800);
-  return round1(clamp(1e3 / v400, 95, 290));
-}
-
 // src/physiology/trackProgressionAndKalmanEngine.ts
 var clamp2 = (val, min, max) => Math.max(min, Math.min(max, val));
 var round12 = (val) => Number(val.toFixed(1));
@@ -4791,6 +5329,580 @@ vaultAndPhysiologyRouter.post("/api/physiology/debrief", (req, res) => {
 // server/routers/athleteStateRouter.ts
 import express2 from "express";
 
+// server/authService.ts
+import crypto4 from "crypto";
+function hashKey(val) {
+  return crypto4.createHash("sha256").update(String(val ?? "").toLowerCase().trim()).digest("hex").slice(0, 32);
+}
+async function saveUser(user) {
+  user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await saveTenantVaultAsync(`user_${user.id}`, user);
+  if (user.email) {
+    await saveTenantVaultAsync(`auth_email_${hashKey(user.email)}`, { userId: user.id });
+  }
+  for (const p of user.authProviders) {
+    const provKey = `auth_prov_${p.provider}_${hashKey(p.providerId)}`;
+    await saveTenantVaultAsync(provKey, { userId: user.id });
+  }
+}
+async function getUserById(userId) {
+  if (!userId) return null;
+  const cleanId = String(userId).trim();
+  const user = await loadTenantVaultAsync(`user_${cleanId}`, null);
+  return user;
+}
+async function getUserByEmail(email) {
+  if (!email) return null;
+  const indexDoc = await loadTenantVaultAsync(
+    `auth_email_${hashKey(email)}`,
+    null
+  );
+  if (!indexDoc?.userId) return null;
+  return getUserById(indexDoc.userId);
+}
+async function getUserByProvider(provider, providerId) {
+  if (!provider || !providerId) return null;
+  const provKey = `auth_prov_${provider}_${hashKey(providerId)}`;
+  const indexDoc = await loadTenantVaultAsync(provKey, null);
+  if (!indexDoc?.userId) return null;
+  return getUserById(indexDoc.userId);
+}
+async function findOrCreateUser(provider, providerId, profile) {
+  let user = await getUserByProvider(provider, providerId);
+  if (user) {
+    let changed = false;
+    if (profile.name && (!user.name || user.name === "MeetReady Athlete")) {
+      user.name = profile.name;
+      changed = true;
+    }
+    if (profile.picture && !user.picture) {
+      user.picture = profile.picture;
+      changed = true;
+    }
+    if (profile.email && !user.email) {
+      user.email = profile.email.toLowerCase().trim();
+      changed = true;
+    }
+    if (changed) {
+      await saveUser(user);
+    }
+    return user;
+  }
+  const cleanEmail = (profile.email || "").toLowerCase().trim();
+  if (cleanEmail) {
+    user = await getUserByEmail(cleanEmail);
+    if (user) {
+      const exists = user.authProviders.some(
+        (p) => p.provider === provider && p.providerId === providerId
+      );
+      if (!exists) {
+        user.authProviders.push({
+          provider,
+          providerId,
+          email: cleanEmail,
+          name: profile.name,
+          linkedAt: (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+      if (profile.picture && !user.picture) user.picture = profile.picture;
+      await saveUser(user);
+      return user;
+    }
+  }
+  const newUserId = `usr_${crypto4.randomBytes(8).toString("hex")}`;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const newUser = {
+    id: newUserId,
+    email: cleanEmail,
+    name: profile.name?.trim() || (cleanEmail ? cleanEmail.split("@")[0] : "MeetReady Athlete"),
+    picture: profile.picture,
+    role: "athlete",
+    createdAt: now,
+    updatedAt: now,
+    authProviders: [
+      {
+        provider,
+        providerId,
+        email: cleanEmail || void 0,
+        name: profile.name,
+        linkedAt: now
+      }
+    ],
+    passkeys: [],
+    connectedServices: []
+  };
+  if (provider === "strava") {
+    newUser.connectedServices.push({
+      service: "strava",
+      connectedAt: now,
+      status: "CONNECTED",
+      athleteId: providerId,
+      athleteName: profile.name
+    });
+  }
+  await saveUser(newUser);
+  return newUser;
+}
+async function linkProviderToUser(userId, provider, providerId, profile) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+  const existing = user.authProviders.find(
+    (p) => p.provider === provider && p.providerId === providerId
+  );
+  if (!existing) {
+    user.authProviders.push({
+      provider,
+      providerId,
+      email: profile?.email,
+      name: profile?.name,
+      linkedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    await saveUser(user);
+  }
+  return user;
+}
+async function unlinkProviderFromUser(userId, provider) {
+  const user = await getUserById(userId);
+  if (!user) return { ok: false, error: "User not found" };
+  if (user.authProviders.length <= 1) {
+    return {
+      ok: false,
+      error: "Cannot remove your last remaining login method."
+    };
+  }
+  const removedProviders = user.authProviders.filter((p) => p.provider === provider);
+  user.authProviders = user.authProviders.filter((p) => p.provider !== provider);
+  await saveUser(user);
+  for (const removed of removedProviders) {
+    await deleteTenantVault(`auth_prov_${removed.provider}_${hashKey(removed.providerId)}`);
+  }
+  return { ok: true };
+}
+async function updateUserPrimaryEmail(userId, newEmail) {
+  const cleanNewEmail = String(newEmail || "").trim().toLowerCase();
+  if (!cleanNewEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
+    return { ok: false, error: "Please enter a valid email address." };
+  }
+  const user = await getUserById(userId);
+  if (!user) return { ok: false, error: "User not found." };
+  const existingOwner = await getUserByEmail(cleanNewEmail);
+  if (existingOwner && existingOwner.id !== user.id) {
+    return {
+      ok: false,
+      error: "That email is already linked to another MeetReady account."
+    };
+  }
+  const oldEmail = (user.email || "").trim().toLowerCase();
+  if (oldEmail && oldEmail !== cleanNewEmail) {
+    await deleteTenantVault(`auth_email_${hashKey(oldEmail)}`);
+  }
+  const existingMagicLinks = user.authProviders.filter((p) => p.provider === "magic_link");
+  user.authProviders = user.authProviders.filter((p) => p.provider !== "magic_link");
+  for (const ml of existingMagicLinks) {
+    if (ml.providerId && ml.providerId.toLowerCase() !== cleanNewEmail) {
+      await deleteTenantVault(`auth_prov_magic_link_${hashKey(ml.providerId)}`);
+    }
+  }
+  user.authProviders.push({
+    provider: "magic_link",
+    providerId: cleanNewEmail,
+    email: cleanNewEmail,
+    name: user.name,
+    linkedAt: (/* @__PURE__ */ new Date()).toISOString()
+  });
+  user.email = cleanNewEmail;
+  await saveUser(user);
+  return { ok: true, user, oldEmail: oldEmail || void 0 };
+}
+function hashAuthLookupKey(val) {
+  return hashKey(val);
+}
+async function updateUserBirthMonthYear(userId, birthMonthYear) {
+  const clean = String(birthMonthYear || "").trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(clean)) return null;
+  const user = await getUserById(userId);
+  if (!user) return null;
+  if (user.birthMonthYear !== clean) {
+    user.birthMonthYear = clean;
+    await saveUser(user);
+  }
+  return user;
+}
+async function connectServiceToUser(userId, service, serviceAthleteId, athleteName) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+  const existingIdx = user.connectedServices.findIndex((s) => s.service === service);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  if (existingIdx >= 0) {
+    user.connectedServices[existingIdx] = {
+      ...user.connectedServices[existingIdx],
+      status: "CONNECTED",
+      athleteId: serviceAthleteId || user.connectedServices[existingIdx].athleteId,
+      athleteName: athleteName || user.connectedServices[existingIdx].athleteName,
+      connectedAt: now
+    };
+  } else {
+    user.connectedServices.push({
+      service,
+      status: "CONNECTED",
+      athleteId: serviceAthleteId,
+      athleteName,
+      connectedAt: now
+    });
+  }
+  await saveUser(user);
+  return user;
+}
+async function disconnectServiceFromUser(userId, service) {
+  const user = await getUserById(userId);
+  if (!user) return null;
+  const existingIdx = user.connectedServices.findIndex((s) => s.service === service);
+  if (existingIdx >= 0) {
+    user.connectedServices[existingIdx].status = "DISCONNECTED";
+    await saveUser(user);
+  }
+  return user;
+}
+var MAGIC_LINK_TTL_MS = 15 * 60 * 1e3;
+async function createMagicLinkToken(email, pendingJoin) {
+  const cleanEmail = email.toLowerCase().trim();
+  const rawToken = crypto4.randomBytes(32).toString("hex");
+  const tokenHash = crypto4.createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = Date.now() + MAGIC_LINK_TTL_MS;
+  await saveTenantVaultAsync(`magic_link_${tokenHash}`, {
+    email: cleanEmail,
+    expiresAt,
+    ...pendingJoin?.joinCode || pendingJoin?.slug || pendingJoin?.inviteToken ? { pendingJoin } : {}
+  });
+  return { token: rawToken, expiresAt };
+}
+async function peekMagicLinkPayload(rawToken) {
+  if (!rawToken || typeof rawToken !== "string") return null;
+  const tokenHash = crypto4.createHash("sha256").update(rawToken.trim()).digest("hex");
+  const record = await loadTenantVaultAsync(`magic_link_${tokenHash}`, null);
+  if (!record || !record.email || !record.expiresAt) {
+    return null;
+  }
+  if (Date.now() > record.expiresAt) {
+    await saveTenantVaultAsync(`magic_link_${tokenHash}`, null);
+    return null;
+  }
+  return { email: record.email, pendingJoin: record.pendingJoin };
+}
+async function verifyMagicLinkPayload(rawToken) {
+  if (!rawToken || typeof rawToken !== "string") return null;
+  const tokenHash = crypto4.createHash("sha256").update(rawToken.trim()).digest("hex");
+  const vaultKey = `magic_link_${tokenHash}`;
+  return withVaultLock(vaultKey, async () => {
+    const record = await loadTenantVaultAsync(vaultKey, null);
+    if (!record || !record.email || !record.expiresAt) {
+      return null;
+    }
+    await saveTenantVaultAsync(vaultKey, null);
+    if (Date.now() > record.expiresAt) {
+      return null;
+    }
+    return { email: record.email, pendingJoin: record.pendingJoin };
+  });
+}
+async function sendMagicLinkEmail(email, verifyUrl) {
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  const safeVerifyUrl = escapeHtml(verifyUrl);
+  if (resendApiKey) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: (process.env.AUTH_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "MeetReady <auth@meetready.app>").trim(),
+          to: [email],
+          subject: "Sign in to MeetReady",
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
+              <h2 style="color: #C8FF00; margin-top: 0;">Sign in to MeetReady</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your MeetReady endurance training cockpit. This link expires in 15 minutes.</p>
+              <div style="margin: 24px 0;">
+                <a href="${safeVerifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to MeetReady</a>
+              </div>
+              <p style="font-size: 12px; color: #64748B;">If you didn't request this email, you can safely ignore it.</p>
+            </div>
+          `
+        }),
+        signal: AbortSignal.timeout(8e3)
+      });
+      if (res.ok) {
+        return { sent: true };
+      }
+      console.warn("[MeetReady Auth] Resend email send failed:", await res.text());
+    } catch (err) {
+      console.error("[MeetReady Auth] Failed sending email via Resend:", err);
+    }
+  }
+  if (isProductionDeployment()) {
+    return {
+      sent: false,
+      error: "Email delivery service is temporarily unavailable. Please try Google, Passkey, or Strava."
+    };
+  }
+  return {
+    sent: true,
+    devMode: true,
+    previewUrl: verifyUrl
+  };
+}
+async function createPendingEmailChange(userId, newEmail) {
+  const cleanNewEmail = String(newEmail || "").trim().toLowerCase();
+  if (!cleanNewEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
+    return { ok: false, error: "Please enter a valid email address." };
+  }
+  const user = await getUserById(userId);
+  if (!user) return { ok: false, error: "User not found." };
+  const existingOwner = await getUserByEmail(cleanNewEmail);
+  if (existingOwner && existingOwner.id !== user.id) {
+    return {
+      ok: false,
+      error: "That email is already linked to another MeetReady account."
+    };
+  }
+  const code = String(crypto4.randomInt(1e5, 1e6));
+  const codeHash = crypto4.createHash("sha256").update(code).digest("hex");
+  await saveTenantVaultAsync(`email_change_${user.id}`, {
+    newEmail: cleanNewEmail,
+    codeHash,
+    expiresAt: Date.now() + 15 * 60 * 1e3,
+    attempts: 0
+  });
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+  if (resendApiKey) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: (process.env.AUTH_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "MeetReady <auth@meetready.app>").trim(),
+          to: [cleanNewEmail],
+          subject: "Verify your new MeetReady email address",
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
+              <h2 style="color: #C8FF00; margin-top: 0;">Confirm Email Change</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Enter this 6-digit verification code in MeetReady to confirm moving your primary login email to <strong>${escapeHtml(cleanNewEmail)}</strong>:</p>
+              <div style="margin: 20px 0; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 0.2em; color: #C8FF00;">${escapeHtml(code)}</div>
+              <p style="font-size: 12px; color: #64748B;">This code expires in 15 minutes. If you did not request this change, you can ignore this email.</p>
+            </div>
+          `
+        }),
+        signal: AbortSignal.timeout(8e3)
+      });
+      if (res.ok) {
+        return { ok: true };
+      }
+      console.warn("[MeetReady Auth] Resend email-change dispatch failed:", await res.text());
+    } catch (err) {
+      console.error("[MeetReady Auth] Failed sending email-change code via Resend:", err);
+    }
+  }
+  if (isProductionDeployment()) {
+    await saveTenantVaultAsync(`email_change_${user.id}`, null);
+    return {
+      ok: false,
+      error: "Email verification service is unavailable right now. Please try again shortly."
+    };
+  }
+  return { ok: true, devMode: true, devCode: code };
+}
+async function verifyAndCommitEmailChange(userId, rawCode, expectedNewEmail) {
+  const cleanCode = String(rawCode || "").trim();
+  if (!/^\d{6}$/.test(cleanCode)) {
+    return { ok: false, error: "Please enter the 6-digit verification code sent to your new email." };
+  }
+  const vaultKey = `email_change_${userId}`;
+  return withVaultLock(vaultKey, async () => {
+    const rec = await loadTenantVaultAsync(vaultKey, null);
+    if (!rec || !rec.newEmail || !rec.codeHash || !rec.expiresAt) {
+      return { ok: false, error: "No pending email verification request found. Request a new code." };
+    }
+    if (Date.now() > rec.expiresAt) {
+      await saveTenantVaultAsync(vaultKey, null);
+      return { ok: false, error: "Verification code has expired. Please request a new code." };
+    }
+    if (expectedNewEmail && expectedNewEmail.trim().toLowerCase() !== rec.newEmail) {
+      return { ok: false, error: "Verification code was issued for a different email address." };
+    }
+    if (rec.attempts >= 5) {
+      await saveTenantVaultAsync(vaultKey, null);
+      return { ok: false, error: "Too many invalid attempts. Please request a new verification code." };
+    }
+    const incomingHash = crypto4.createHash("sha256").update(cleanCode).digest("hex");
+    if (!timingSafeStringEqual(incomingHash, rec.codeHash)) {
+      rec.attempts += 1;
+      await saveTenantVaultAsync(vaultKey, rec);
+      return { ok: false, error: "Invalid verification code." };
+    }
+    await saveTenantVaultAsync(vaultKey, null);
+    const updated = await updateUserPrimaryEmail(userId, rec.newEmail);
+    if (!updated.ok || !updated.user) {
+      return { ok: false, error: updated.error || "Could not update email." };
+    }
+    return {
+      ok: true,
+      user: updated.user,
+      oldEmail: updated.oldEmail,
+      newEmail: rec.newEmail
+    };
+  });
+}
+function issuePasskeyChallengeToken(payload) {
+  const data = JSON.stringify({
+    ...payload,
+    jti: crypto4.randomBytes(12).toString("hex"),
+    exp: Date.now() + 5 * 60 * 1e3
+    // 5 min TTL
+  });
+  const b64 = Buffer.from(data, "utf8").toString("base64url");
+  const sig = crypto4.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
+  return `${b64}.${sig}`;
+}
+function verifyPasskeyChallengeToken(token) {
+  if (!token) return null;
+  const [b64, sig] = token.split(".");
+  if (!b64 || !sig) return null;
+  const expectedSig = crypto4.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
+  if (!timingSafeStringEqual(sig, expectedSig)) return null;
+  try {
+    const claims = JSON.parse(Buffer.from(b64, "base64url").toString("utf8"));
+    if (!claims.exp || Date.now() > claims.exp) return null;
+    return claims;
+  } catch {
+    return null;
+  }
+}
+
+// server/coppaGuard.ts
+var COPPA_UNDER_13_ERROR = "MeetReady accounts require athletes to be 13 or older (COPPA). Coaches can still time under-13 athletes watchlessly using Trackside Stopwatch without an athlete login.";
+var MINOR_DOB_DOWNGRADE_ERROR = "Minor birth date cannot be altered to an adult date directly.";
+function parseOptionalBirthYear(raw, nowYear) {
+  if (raw === void 0 || raw === null) {
+    return { provided: false, valid: true };
+  }
+  if (typeof raw === "string" && !raw.trim()) {
+    return { provided: false, valid: true };
+  }
+  const num = typeof raw === "number" ? raw : Number(String(raw).trim());
+  if (!Number.isFinite(num) || !Number.isInteger(num) || num < 1920 || num > nowYear + 1) {
+    return { provided: true, valid: false };
+  }
+  return { provided: true, valid: true, value: num };
+}
+function validateCoppaAgeInput(input) {
+  const refDate = input.now instanceof Date ? input.now : input.now !== void 0 ? new Date(input.now) : /* @__PURE__ */ new Date();
+  const safeNow = Number.isNaN(refDate.getTime()) ? /* @__PURE__ */ new Date() : refDate;
+  const nowYear = safeNow.getUTCFullYear();
+  const existingTier = input.existingBirthMonthYear ? resolveAthleteAgeTier({ birthMonthYear: input.existingBirthMonthYear, now: safeNow }) : null;
+  const hasRawBmy = input.birthMonthYear !== void 0 && input.birthMonthYear !== null && String(input.birthMonthYear).trim() !== "";
+  let normalizedBmy;
+  if (hasRawBmy) {
+    normalizedBmy = normalizeBirthMonthYear(String(input.birthMonthYear));
+    if (!normalizedBmy) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "Valid YYYY-MM birth month-year required.",
+        isUnder13: false,
+        isMinorU18: Boolean(existingTier?.isMinorU18),
+        ageTier: existingTier?.ageTier || "UNKNOWN"
+      };
+    }
+  }
+  const parsedYear = parseOptionalBirthYear(input.birthYear, nowYear);
+  if (parsedYear.provided && !parsedYear.valid) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: "Valid 4-digit birth year required.",
+      isUnder13: false,
+      isMinorU18: Boolean(existingTier?.isMinorU18),
+      ageTier: existingTier?.ageTier || "UNKNOWN"
+    };
+  }
+  if (normalizedBmy && parsedYear.value !== void 0) {
+    const bmyYear = Number(normalizedBmy.slice(0, 4));
+    if (bmyYear !== parsedYear.value) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "Birth year must match YYYY-MM birth month-year.",
+        isUnder13: false,
+        isMinorU18: Boolean(existingTier?.isMinorU18),
+        ageTier: existingTier?.ageTier || "UNKNOWN"
+      };
+    }
+  }
+  if (!normalizedBmy && parsedYear.value === void 0) {
+    if (input.required) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "Valid YYYY-MM birth month-year required.",
+        isUnder13: false,
+        isMinorU18: Boolean(existingTier?.isMinorU18),
+        ageTier: existingTier?.ageTier || "UNKNOWN"
+      };
+    }
+    return {
+      ok: true,
+      birthMonthYear: existingTier?.birthMonthYear,
+      birthYear: existingTier?.birthYear,
+      isUnder13: Boolean(existingTier?.isUnder13),
+      isMinorU18: Boolean(existingTier?.isMinorU18),
+      ageTier: existingTier?.ageTier || "UNKNOWN"
+    };
+  }
+  const effectiveBmy = normalizedBmy ?? (parsedYear.value !== void 0 ? `${parsedYear.value}-12` : void 0);
+  const incomingTier = resolveAthleteAgeTier({
+    birthMonthYear: effectiveBmy,
+    birthYear: parsedYear.value,
+    now: safeNow
+  });
+  if (incomingTier.isUnder13 || incomingTier.ageTier === "U13_COPPA") {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: COPPA_UNDER_13_ERROR,
+      birthMonthYear: effectiveBmy,
+      birthYear: incomingTier.birthYear,
+      isUnder13: true,
+      isMinorU18: true,
+      ageTier: "U13_COPPA"
+    };
+  }
+  if (existingTier?.isMinorU18 && incomingTier.ageTier === "ADULT_18_PLUS") {
+    return {
+      ok: false,
+      statusCode: 403,
+      error: MINOR_DOB_DOWNGRADE_ERROR,
+      birthMonthYear: existingTier.birthMonthYear,
+      birthYear: existingTier.birthYear,
+      isUnder13: false,
+      isMinorU18: true,
+      ageTier: existingTier.ageTier
+    };
+  }
+  return {
+    ok: true,
+    birthMonthYear: effectiveBmy,
+    birthYear: incomingTier.birthYear,
+    isUnder13: false,
+    isMinorU18: incomingTier.isMinorU18,
+    ageTier: incomingTier.ageTier
+  };
+}
+
 // src/utils/workoutScheduleUtils.ts
 function sanitizeScheduledTime(raw) {
   if (typeof raw !== "string") return void 0;
@@ -4808,6 +5920,14 @@ function sanitizePracticeVenueCategory(raw) {
     return raw;
   }
   return void 0;
+}
+function formatPracticeTime12h(hhmm) {
+  const clean = sanitizeScheduledTime(hhmm);
+  if (!clean) return null;
+  const [hh, mm] = clean.split(":").map(Number);
+  const period = hh >= 12 ? "PM" : "AM";
+  const h12 = hh % 12 === 0 ? 12 : hh % 12;
+  return `${h12}:${String(mm).padStart(2, "0")} ${period}`;
 }
 
 // server/routers/athleteStateRouter.ts
@@ -4935,6 +6055,9 @@ function sanitizeAthleteCloudState(raw, existing) {
         picked[key] = input.athleteProfile[key];
       }
     }
+    if (!picked.birthMonthYear && base.athleteProfile?.birthMonthYear) {
+      picked.birthMonthYear = base.athleteProfile.birthMonthYear;
+    }
     if (Object.keys(picked).length > 0) {
       athleteProfile = picked;
     }
@@ -5055,7 +6178,27 @@ athleteStateRouter.put("/api/athlete-state", async (req, res) => {
       res.status(401).json({ error: "Authentication required to persist athlete cloud state." });
       return;
     }
-    const saved = await saveAthleteCloudState(req, req.body || {});
+    const patch = req.body || {};
+    const existingState = await loadAthleteCloudState(req);
+    const claims = getVerifiedSessionClaims(req);
+    const existingUser = claims?.sub?.startsWith("usr_") ? await getUserById(claims.sub).catch(() => null) : null;
+    const existingBirthMonthYear = existingUser?.birthMonthYear || existingState?.athleteProfile?.birthMonthYear;
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: patch.athleteProfile?.birthMonthYear,
+      existingBirthMonthYear
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+      return;
+    }
+    const normalizedPatch = patch.athleteProfile && ageCheck.birthMonthYear ? {
+      ...patch,
+      athleteProfile: {
+        ...patch.athleteProfile,
+        birthMonthYear: ageCheck.birthMonthYear
+      }
+    } : patch;
+    const saved = await saveAthleteCloudState(req, normalizedPatch);
     res.json({ ok: true, authenticated: true, state: saved });
   } catch (err) {
     res.status(500).json({
@@ -5066,6 +6209,405 @@ athleteStateRouter.put("/api/athlete-state", async (req, res) => {
 
 // server/routers/webhooksAndExportRouter.ts
 import { Router } from "express";
+
+// server/corosConnectService.ts
+var COROS_API_BASE = (process.env.COROS_API_BASE || "https://open.coros.com").replace(/\/+$/, "");
+function getEffectiveCorosClientConfig(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const headerClientId = String(activeReq?.headers["x-coros-client-id"] || "").trim();
+  const headerClientSecret = String(activeReq?.headers["x-coros-client-secret"] || "").trim();
+  const clientId = (headerClientId || process.env.COROS_CLIENT_ID || "").trim();
+  const clientSecret = (headerClientSecret || process.env.COROS_CLIENT_SECRET || "").trim();
+  return { clientId, clientSecret };
+}
+function getEffectiveCorosTokens(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const store = getScopedRuntimeStore(activeReq);
+  const headerToken = String(activeReq?.headers["x-coros-access-token"] || "").trim();
+  const accessToken = (headerToken || store.corosAccessToken || "").trim();
+  const refreshToken = (store.corosRefreshToken || "").trim();
+  const expiresAt = store.corosExpiresAt || 0;
+  const athleteId = store.corosAthleteId || "";
+  const athleteName = store.corosAthleteName || "";
+  return { accessToken, refreshToken, expiresAt, athleteId, athleteName };
+}
+async function ensureValidCorosAccessToken(req, forceRefresh = false) {
+  const activeReq = req ?? requestContext.getStore();
+  const store = getScopedRuntimeStore(activeReq);
+  const { clientId, clientSecret } = getEffectiveCorosClientConfig(activeReq);
+  const { accessToken, refreshToken, expiresAt } = getEffectiveCorosTokens(activeReq);
+  if (!accessToken && !refreshToken) {
+    return "";
+  }
+  const nowSecs = Math.floor(Date.now() / 1e3);
+  const needsRefresh = forceRefresh || !accessToken || expiresAt > 0 && nowSecs >= expiresAt - 300;
+  if (needsRefresh && clientId && clientSecret && refreshToken) {
+    try {
+      const resp = await fetch(`${COROS_API_BASE}/oauth2/accesstoken`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json"
+        },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken
+        }).toString()
+      });
+      if (resp.ok) {
+        const raw = await resp.json();
+        const tokenPayload = raw.data || raw;
+        if (tokenPayload.access_token) {
+          store.corosAccessToken = tokenPayload.access_token;
+          if (tokenPayload.refresh_token) store.corosRefreshToken = tokenPayload.refresh_token;
+          if (tokenPayload.expires_in) {
+            store.corosExpiresAt = Math.floor(Date.now() / 1e3) + Number(tokenPayload.expires_in);
+          }
+          if (activeReq) {
+            activeReq.headers["x-coros-access-token"] = tokenPayload.access_token;
+          }
+          await saveSessionCacheAsync(activeReq);
+          return tokenPayload.access_token;
+        }
+      }
+    } catch {
+    }
+  }
+  return accessToken;
+}
+function mapCorosSportText(raw) {
+  const modeNum = Number(raw.mode);
+  const subModeNum = Number(raw.subMode);
+  if (modeNum === 100) {
+    if (subModeNum === 2) return { rawSportType: "trail_running", isIndoorHint: false };
+    if (subModeNum === 3) return { rawSportType: "track_running", isIndoorHint: false };
+    if (subModeNum === 1) return { rawSportType: "treadmill", isIndoorHint: true };
+    return { rawSportType: "running", isIndoorHint: false };
+  }
+  if (modeNum === 101) return { rawSportType: "treadmill", isIndoorHint: true };
+  if (modeNum === 102) return { rawSportType: "trail_running", isIndoorHint: false };
+  if (modeNum === 103) return { rawSportType: "track_running", isIndoorHint: false };
+  if (modeNum === 200) return { rawSportType: "cycling", isIndoorHint: false };
+  if (modeNum === 201) return { rawSportType: "indoor_cycling", isIndoorHint: true };
+  if (modeNum === 300) return { rawSportType: "pool_swimming", isIndoorHint: true };
+  if (modeNum === 301) return { rawSportType: "open_water_swimming", isIndoorHint: false };
+  if (modeNum === 400) return { rawSportType: "strength_training", isIndoorHint: true };
+  const text = String(raw.sportType || raw.mode || raw.name || raw.title || "running").trim();
+  const lower = text.toLowerCase();
+  return {
+    rawSportType: text,
+    isIndoorHint: /indoor|treadmill|trainer|pool|strength|gym/i.test(lower)
+  };
+}
+function normalizeCorosWorkout(raw, opts = {}) {
+  const rawId = String(raw.labelId ?? raw.workoutId ?? raw.id ?? Date.now());
+  const { rawSportType, isIndoorHint } = mapCorosSportText(raw);
+  const name = String(raw.name || raw.title || "COROS Workout").trim();
+  const classified = classifyMultiSportActivity(rawSportType, name, {
+    trainer: isIndoorHint,
+    hasGps: !isIndoorHint
+  });
+  const movingTimeSecs = Math.max(
+    1,
+    Math.round(Number(raw.movingTimeSecs ?? raw.totalTime ?? raw.duration ?? 0))
+  );
+  const distanceMeters = Math.max(0, Math.round(Number(raw.distanceMeters ?? raw.distance ?? 0)));
+  const elevationGainMeters = Math.max(
+    0,
+    Math.round(Number(raw.elevationGain ?? raw.ascent ?? 0))
+  );
+  const avgHr = Math.max(0, Math.round(Number(raw.avgHr ?? 0)));
+  const maxHr = Math.max(avgHr, Math.round(Number(raw.maxHr ?? 0)));
+  const avgPower = Number(raw.avgPower) > 0 ? Math.round(Number(raw.avgPower)) : void 0;
+  const normalizedPower = Number(raw.normalizedPower) > 0 ? Math.round(Number(raw.normalizedPower)) : avgPower;
+  const avgCadence = Number(raw.avgCadence) > 0 ? Math.round(Number(raw.avgCadence)) : void 0;
+  const avgPaceSecsPerKm = classified.sportCategory === "Running" && distanceMeters > 0 && movingTimeSecs > 0 ? Math.round(movingTimeSecs / distanceMeters * 1e3) : void 0;
+  const hasRealPower = classified.sportCategory === "Cycling" && Boolean(normalizedPower && normalizedPower > 0);
+  const loadRes = computeStravaActivityLoadV2({
+    sportCategory: classified.sportCategory,
+    rawSportType,
+    name,
+    environment: classified.environment,
+    movingTimeSecs,
+    distanceMeters,
+    elevationGainMeters,
+    normalizedPower,
+    avgPower,
+    hasRealDeviceWatts: hasRealPower,
+    avgHr,
+    maxHr,
+    avgPaceSecsPerKm,
+    calibratedFtp: Math.max(120, Number(opts.ftpWatts || 250)),
+    calibratedBikeLthr: Math.max(135, Number(opts.lthrBpm || 163)),
+    calibratedRunLthr: Math.max(140, Number(opts.lthrBpm || 168)),
+    calibratedThresholdPaceSecsPerKm: Math.max(120, Number(opts.thresholdPaceSecsPerKm || 245)),
+    restingHr: Math.max(38, Math.min(78, Number(opts.restingHr || 52)))
+  });
+  const explicitCorosLoad = Number(raw.trainingLoad ?? raw.tl ?? 0);
+  const trainingLoad = loadRes.trainingLoad > 0 ? loadRes.trainingLoad : Math.max(1, Math.round(explicitCorosLoad));
+  let efficiencyFactor = 0;
+  if (hasRealPower && normalizedPower && avgHr > 0) {
+    efficiencyFactor = Number((normalizedPower / avgHr).toFixed(2));
+  } else if (classified.sportCategory === "Running" && distanceMeters > 0 && avgHr > 0) {
+    const speedMPerMin = distanceMeters / (movingTimeSecs / 60);
+    efficiencyFactor = Number((speedMPerMin / avgHr).toFixed(2));
+  }
+  let startDateUtc = raw.startDateUtc;
+  let startDateLocal = raw.startDateLocal;
+  if (!startDateUtc && raw.startTime !== void 0) {
+    if (typeof raw.startTime === "number" && Number.isFinite(raw.startTime)) {
+      const ms = raw.startTime > 1e12 ? raw.startTime : raw.startTime * 1e3;
+      startDateUtc = new Date(ms).toISOString();
+    } else if (typeof raw.startTime === "string" && raw.startTime.trim()) {
+      const num = Number(raw.startTime);
+      if (Number.isFinite(num) && num > 1e8) {
+        startDateUtc = new Date(num > 1e12 ? num : num * 1e3).toISOString();
+      } else {
+        startDateLocal = raw.startTime.trim();
+      }
+    }
+  }
+  const parsedOffset = typeof raw.timezone === "number" && Number.isFinite(raw.timezone) ? Math.round(raw.timezone * (Math.abs(raw.timezone) <= 14 ? 60 : 1)) : parseClientTzOffsetMins(raw.timezone) ?? opts.clientTzOffsetMins;
+  const timestamps = normalizeActivityTimestamps({
+    startDateLocal,
+    startDateUtc,
+    timeZoneOffsetMins: parsedOffset,
+    fallbackBrowserTz: true
+  });
+  return {
+    id: `coros-${rawId}`,
+    corosId: rawId,
+    startDateLocal: timestamps.startDateLocal,
+    ...timestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: timestamps.startDateUtcMs } : {},
+    name,
+    sportCategory: classified.sportCategory,
+    rawSportType,
+    environment: classified.environment,
+    subType: classified.subType,
+    movingTimeSecs,
+    distanceMeters,
+    elevationGainMeters,
+    avgPower,
+    normalizedPower,
+    deviceWatts: classified.sportCategory === "Cycling" ? hasRealPower : void 0,
+    intensityFactor: loadRes.intensityFactor,
+    trainingLoad,
+    loadModelVersion: STRAVA_LOAD_MODEL_VERSION,
+    avgHr,
+    maxHr,
+    avgCadence,
+    avgPaceSecsPerKm,
+    gapPaceSecsPerKm: avgPaceSecsPerKm,
+    aerobicDecouplingPct: 0,
+    efficiencyFactor,
+    firstHalfEf: 0,
+    secondHalfEf: 0,
+    calories: raw.calories != null ? Math.round(Number(raw.calories)) : void 0,
+    deviceName: raw.deviceName || raw.device || "COROS Watch",
+    zoneSecs: { hr: [0, 0, 0, 0, 0, 0, 0] },
+    segmentEfforts: [],
+    stravaPrCount: 0,
+    sourceBadges: ["COROS"]
+  };
+}
+function buildCorosSingleStage(opts) {
+  const {
+    stageOrder,
+    label,
+    stageType,
+    durationSecs,
+    distanceMeters,
+    isRunning,
+    targetPctFtp = 75,
+    targetWatts,
+    targetMinWatts,
+    targetMaxWatts,
+    targetPaceSecsPerKm,
+    ftpWatts,
+    thresholdPaceSecsPerKm,
+    hrCeilingBpm
+  } = opts;
+  const hasDistance = typeof distanceMeters === "number" && distanceMeters > 0;
+  const targetType = hasDistance ? "distance" : "time";
+  const targetValue = hasDistance ? Math.round(distanceMeters) : Math.max(5, Math.round(durationSecs));
+  if (stageType === "recovery") {
+    return {
+      stageOrder,
+      stageType,
+      label,
+      targetType,
+      targetValue,
+      intensityType: hrCeilingBpm ? "hr" : "none",
+      ...hrCeilingBpm ? { intensityLow: Math.max(90, hrCeilingBpm - 20), intensityHigh: hrCeilingBpm } : {}
+    };
+  }
+  if (isRunning) {
+    const resolvedPace = targetPaceSecsPerKm && targetPaceSecsPerKm > 60 ? targetPaceSecsPerKm : Math.round(thresholdPaceSecsPerKm / Math.max(0.4, targetPctFtp / 100));
+    return {
+      stageOrder,
+      stageType,
+      label,
+      targetType,
+      targetValue,
+      intensityType: "pace",
+      intensityLow: Math.round(resolvedPace * 0.98),
+      intensityHigh: Math.round(resolvedPace * 1.02)
+    };
+  }
+  const centerWatts = Number(targetWatts) > 0 ? Math.round(Number(targetWatts)) : Math.round(targetPctFtp / 100 * ftpWatts);
+  return {
+    stageOrder,
+    stageType,
+    label,
+    targetType,
+    targetValue,
+    intensityType: "power",
+    intensityLow: Number(targetMinWatts) > 0 ? Math.round(Number(targetMinWatts)) : Math.max(40, Math.round(centerWatts * 0.96)),
+    intensityHigh: Number(targetMaxWatts) > 0 ? Math.round(Number(targetMaxWatts)) : Math.round(centerWatts * 1.04)
+  };
+}
+function buildCorosWorkoutPayload(input) {
+  const isRunning = String(input.sportCategory).toLowerCase().includes("run");
+  const ftpWatts = Math.max(100, Number(input.ftpWatts || 250));
+  const thresholdPace = Math.max(95, Number(input.thresholdPaceSecsPerKm || 245));
+  const syntax = String(input.workoutSyntax || "").trim();
+  const astNodes = syntax ? parseStructuredTrackWorkout(syntax, thresholdPace) : [];
+  let estimatedDurationSecs = 0;
+  let estimatedDistanceMeters = 0;
+  let hasTrackDistance = false;
+  let stages = [];
+  const mapKind = (kind) => {
+    if (kind === "warmup") return "warmup";
+    if (kind === "cooldown") return "cooldown";
+    if (kind === "rest" || kind === "recovery") return "recovery";
+    return "work";
+  };
+  if (astNodes.length > 0) {
+    stages = astNodes.map((node, idx) => {
+      if (node.type === "step") {
+        const s = node.step;
+        const durSecs = Math.max(5, Math.round(s.durationSecs || s.durationMins * 60 || 60));
+        estimatedDurationSecs += durSecs;
+        if (s.distanceMeters) {
+          estimatedDistanceMeters += Math.round(s.distanceMeters);
+          hasTrackDistance = true;
+        }
+        return buildCorosSingleStage({
+          stageOrder: idx + 1,
+          label: s.label,
+          stageType: mapKind(s.stepKind),
+          durationSecs: durSecs,
+          distanceMeters: s.distanceMeters,
+          isRunning,
+          targetPctFtp: s.intensityPct || 75,
+          targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+          ftpWatts,
+          thresholdPaceSecsPerKm: thresholdPace
+        });
+      }
+      const childStages = node.steps.map((inner, innerIdx) => {
+        const durSecs = Math.max(5, Math.round(inner.durationSecs || inner.durationMins * 60 || 60));
+        estimatedDurationSecs += durSecs * node.repeatCount;
+        if (inner.distanceMeters) {
+          estimatedDistanceMeters += Math.round(inner.distanceMeters) * node.repeatCount;
+          hasTrackDistance = true;
+        }
+        return buildCorosSingleStage({
+          stageOrder: innerIdx + 1,
+          label: inner.label,
+          stageType: mapKind(inner.stepKind),
+          durationSecs: durSecs,
+          distanceMeters: inner.distanceMeters,
+          isRunning,
+          targetPctFtp: inner.intensityPct || 75,
+          targetPaceSecsPerKm: inner.targetPaceSecsPerKm,
+          ftpWatts,
+          thresholdPaceSecsPerKm: thresholdPace
+        });
+      });
+      return {
+        stageOrder: idx + 1,
+        stageType: "repeat",
+        label: node.label,
+        targetType: "time",
+        targetValue: node.repeatCount,
+        intensityType: "none",
+        repeatCount: node.repeatCount,
+        childStages
+      };
+    });
+  } else {
+    const rawSteps = Array.isArray(input.steps) && input.steps.length > 0 ? input.steps : [{ label: input.name || "Main Set", durationSecs: 1800, targetPctFtp: 75, stepType: "interval" }];
+    const total = rawSteps.length;
+    stages = rawSteps.map((s, idx) => {
+      const pct = Number(s.targetPctFtp || 75);
+      const inferredKind = s.stepType ? mapKind(s.stepType) : idx === 0 && total > 1 ? "warmup" : idx === total - 1 && total > 1 ? "cooldown" : pct <= 60 ? "recovery" : "work";
+      const durSecs = Math.max(5, Math.round(s.durationSecs || 60));
+      estimatedDurationSecs += durSecs;
+      if (s.distanceMeters) {
+        estimatedDistanceMeters += Math.round(s.distanceMeters);
+        hasTrackDistance = true;
+      }
+      return buildCorosSingleStage({
+        stageOrder: idx + 1,
+        label: String(s.label || `Step ${idx + 1}`),
+        stageType: inferredKind,
+        durationSecs: durSecs,
+        distanceMeters: s.distanceMeters,
+        isRunning,
+        targetPctFtp: pct,
+        targetWatts: s.targetWatts,
+        targetMinWatts: s.targetMinWatts,
+        targetMaxWatts: s.targetMaxWatts,
+        targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+        ftpWatts,
+        thresholdPaceSecsPerKm: thresholdPace,
+        hrCeilingBpm: s.hrCeilingBpm
+      });
+    });
+  }
+  return {
+    name: input.name.slice(0, 64),
+    sportType: isRunning ? hasTrackDistance ? 103 : 100 : 200,
+    subSportType: isRunning ? hasTrackDistance ? "TrackRun" : "Run" : "Cycling",
+    planDate: input.date.slice(0, 10),
+    description: (input.description || "Prescribed by MeetReady").slice(0, 500),
+    estimatedDurationSecs,
+    estimatedDistanceMeters,
+    stages
+  };
+}
+async function pushWorkoutToCorosConnect(opts) {
+  const payload = buildCorosWorkoutPayload(opts.input);
+  const resp = await fetch(`${COROS_API_BASE}/v2/coros/workout/create`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify({
+      ...opts.openId ? { openId: opts.openId } : {},
+      ...payload
+    })
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`COROS workout push failed (${resp.status}): ${errText.slice(0, 180)}`);
+  }
+  const parsed = await resp.json().catch(() => ({}));
+  if (parsed.result && parsed.result !== "0000" && parsed.result !== "0") {
+    throw new Error(`COROS API error (${parsed.result}): ${parsed.message || "Unknown error"}`);
+  }
+  const workoutId = parsed.data?.workoutId ?? parsed.data?.id ?? parsed.workoutId ?? parsed.id;
+  return {
+    pushed: true,
+    workoutId,
+    message: `Pushed "${opts.input.name}" directly to your COROS Training Calendar (${payload.planDate}).`
+  };
+}
 
 // src/physiology/mmpCurves.ts
 var CANONICAL_MMP_DURATIONS = [
@@ -5551,411 +7093,6 @@ function generateVerifiedRacePassport(input) {
     equivalentMarathonSecs,
     splits
   };
-}
-
-// src/utils/workoutParser.ts
-var INTERVALS_EFFORT_ZONES = [
-  {
-    zone: 1,
-    code: "Z1",
-    name: "Recovery",
-    color: "#94A3B8",
-    inkClass: "text-slate-700 dark:text-slate-200",
-    heightPct: 28
-  },
-  {
-    zone: 2,
-    code: "Z2",
-    name: "Endurance",
-    color: "#0D9488",
-    inkClass: "ap-ink-teal",
-    heightPct: 44
-  },
-  {
-    zone: 3,
-    code: "Z3",
-    name: "Tempo / Sweet Spot",
-    color: "#D97706",
-    inkClass: "ap-ink-amber",
-    heightPct: 62
-  },
-  {
-    zone: 4,
-    code: "Z4",
-    name: "Threshold",
-    color: "#EA580C",
-    inkClass: "ap-ink-vermilion",
-    heightPct: 78
-  },
-  {
-    zone: 5,
-    code: "Z5",
-    name: "VO2max",
-    color: "#DC2626",
-    inkClass: "ap-ink-rose",
-    heightPct: 92
-  },
-  {
-    zone: 6,
-    code: "Z6+",
-    name: "Anaerobic / Sprint",
-    color: "#7C3AED",
-    inkClass: "ap-ink-violet",
-    heightPct: 100
-  }
-];
-function getIntervalsZoneFromIntensityPct(intensityPct) {
-  if (intensityPct < 56) return INTERVALS_EFFORT_ZONES[0];
-  if (intensityPct <= 75) return INTERVALS_EFFORT_ZONES[1];
-  if (intensityPct <= 90) return INTERVALS_EFFORT_ZONES[2];
-  if (intensityPct <= 105) return INTERVALS_EFFORT_ZONES[3];
-  if (intensityPct <= 120) return INTERVALS_EFFORT_ZONES[4];
-  return INTERVALS_EFFORT_ZONES[5];
-}
-function parseClockOrSecondsToken(token) {
-  const trimmed = token.trim();
-  const minSecMatch = trimmed.match(/^(\d{1,2}):(\d{2}(?:\.\d+)?)$/);
-  if (minSecMatch) {
-    return Number(minSecMatch[1]) * 60 + Number(minSecMatch[2]);
-  }
-  const secMatch = trimmed.match(/^(\d+(?:\.\d+)?)\s*s?$/i);
-  if (secMatch) {
-    return Number(secMatch[1]);
-  }
-  return null;
-}
-function extractDistanceMeters(cleanLine, isRepeatWork = false) {
-  const distPart = cleanLine.replace(/(?:\b(?:at|@)\b).*$/i, "").trim();
-  const source = distPart.length > 0 ? distPart : cleanLine;
-  const kmMatch = source.match(/\b(\d+(?:\.\d+)?)\s*km\b/i);
-  if (kmMatch) return Math.round(Number(kmMatch[1]) * 1e3);
-  const miMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:mi|mile|miles)\b/i);
-  if (miMatch) return Math.round(Number(miMatch[1]) * 1609.34);
-  const metersWordMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
-  if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
-  const hasExplicitMinutesHint = /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|cooldown|cool-down|steady|progression)\b|\d+\s*%/i.test(
-    source
-  );
-  const mTokens = Array.from(source.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
-  for (const tok of mTokens) {
-    const val = Number(tok[1]);
-    if (val >= 100) return val;
-    if (val >= 10 && val <= 99 && !hasExplicitMinutesHint) {
-      if (/\b(sprint|stride|fly|flys|flies|accel|acceleration|block|blocks|start|starts|wicket|wickets|hurdle|hurdles|hill|walk|jog|float)\b/i.test(
-        source
-      )) {
-        return val;
-      }
-      if (val >= 30 && /\b(rec|recovery)\b/i.test(source)) {
-        return val;
-      }
-      if (isRepeatWork) {
-        return val;
-      }
-    }
-  }
-  return void 0;
-}
-function resolveNamedTrackPaceSecsPerKm(cleanLine, thresholdPaceSecsPerKm) {
-  const sr = buildTrackSpeedReserveProfile({ thresholdPaceSecsPerKm });
-  if (/\bwarm\s*-?\s*up\b|\bcool\s*-?\s*down\b/i.test(cleanLine)) {
-    return { paceSecsPerKm: sr.zones.E.paceSecsPerKm, forceIntensityPct: 55 };
-  }
-  if (/\b(?:walk|standing|recovery)\b/i.test(cleanLine) && !/\bjog\b/i.test(cleanLine)) {
-    return { forceIntensityPct: 48 };
-  }
-  if (/\b400\s*m?\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
-    const pace = solve400mRacePaceSecsPerKm(sr);
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  if (/\b800\s*m?\s*(?:race\s*)?(?:pace|effort)\b|\bFR\b|fast\s*rep/i.test(cleanLine)) {
-    const pace = sr.zones.FR.paceSecsPerKm;
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  if (/\b(?:1600\s*m?|1500\s*m?|1\s*mile|mile)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
-    const pace = sr.zones.R.paceSecsPerKm;
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  if (/\b(?:3200\s*m?|3000\s*m?|3k|2\s*mile|2\s*mi)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
-    const pace = Number(((sr.zones.I.paceSecsPerKm + sr.zones.R.paceSecsPerKm) / 2).toFixed(1));
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  if (/\b(?:5000\s*m?|5k)\s*(?:race\s*)?(?:pace|effort)\b/i.test(cleanLine)) {
-    const pace = sr.zones.I.paceSecsPerKm;
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  if (/\b(?:10k|cv|critical\s*velocity)\b/i.test(cleanLine)) {
-    const pace = sr.zones.CV.paceSecsPerKm;
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  if (/\b(?:threshold|lt2)\b/i.test(cleanLine)) {
-    const pace = sr.zones.T.paceSecsPerKm;
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  if (/\b(?:sub-?t|sub-?threshold)\b/i.test(cleanLine)) {
-    const pace = sr.zones.SUB_T.paceSecsPerKm;
-    return { paceSecsPerKm: pace, forceIntensityPct: Math.round(thresholdPaceSecsPerKm / pace * 100) };
-  }
-  return {};
-}
-function extractExplicitIntensityPct(cleanLine) {
-  const rangeMatch = cleanLine.match(/(\d{2,3})\s*-\s*(\d{2,3})\s*%/);
-  if (rangeMatch) {
-    return Math.round((Number(rangeMatch[1]) + Number(rangeMatch[2])) / 2);
-  }
-  const pctMatch = cleanLine.match(/(\d{2,3})\s*%/);
-  if (pctMatch) {
-    return Number(pctMatch[1]);
-  }
-  return void 0;
-}
-function extractTargetPaceSecsPerKm(cleanLine, distanceMeters) {
-  const unitPaceMatch = cleanLine.match(
-    /(?:@|at)\s*(\d{1,2}:\d{2}(?:\.\d+)?|\d+(?:\.\d+)?s?)\s*\/\s*(km|mi|400m|200m|800m)\b/i
-  );
-  if (unitPaceMatch) {
-    const secs = parseClockOrSecondsToken(unitPaceMatch[1]);
-    if (secs && secs > 5) {
-      const unit = unitPaceMatch[2].toLowerCase();
-      if (unit === "km") return { paceSecsPerKm: Number(secs.toFixed(1)) };
-      if (unit === "mi") return { paceSecsPerKm: Number((secs / 1.60934).toFixed(1)) };
-      if (unit === "400m") return { paceSecsPerKm: Number((secs * 2.5).toFixed(1)) };
-      if (unit === "200m") return { paceSecsPerKm: Number((secs * 5).toFixed(1)) };
-      if (unit === "800m") return { paceSecsPerKm: Number((secs * 1.25).toFixed(1)) };
-    }
-  }
-  const repTargetMatch = cleanLine.match(
-    /(?:@|at)\s*(\d{1,2}:\d{2}(?:\.\d+)?|\d+(?:\.\d+)?\s*s)\b/i
-  );
-  if (repTargetMatch && distanceMeters && distanceMeters > 0) {
-    const splitSecs = parseClockOrSecondsToken(repTargetMatch[1]);
-    if (splitSecs && splitSecs > 4) {
-      const paceSecsPerKm = Number((splitSecs / distanceMeters * 1e3).toFixed(1));
-      return { paceSecsPerKm, repSplitSecs: splitSecs };
-    }
-  }
-  return {};
-}
-function inferStepKind(cleanLine, explicitKind) {
-  if (explicitKind) return explicitKind;
-  if (/\bwarm\s*-?\s*up\b/i.test(cleanLine)) return "warmup";
-  if (/\bcool\s*-?\s*down\b/i.test(cleanLine)) return "cooldown";
-  if (/\b(?:jog|walk|rest|recovery|float|standing)\b/i.test(cleanLine)) return "rest";
-  return "work";
-}
-function parseSingleWorkoutLine(cleanLine, thresholdPaceSecsPerKm = 250, explicitKind, isRepeatWork = false) {
-  const distanceMeters = extractDistanceMeters(cleanLine, isRepeatWork);
-  const explicitPct = extractExplicitIntensityPct(cleanLine);
-  const { paceSecsPerKm: parsedTargetPace, repSplitSecs } = extractTargetPaceSecsPerKm(
-    cleanLine,
-    distanceMeters
-  );
-  const stepKind = inferStepKind(cleanLine, explicitKind);
-  const namedPace = explicitPct === void 0 && !parsedTargetPace ? resolveNamedTrackPaceSecsPerKm(cleanLine, thresholdPaceSecsPerKm) : {};
-  let intensityPct = explicitPct ?? namedPace.forceIntensityPct ?? 65;
-  if (explicitPct === void 0 && namedPace.forceIntensityPct === void 0) {
-    if (parsedTargetPace && parsedTargetPace > 60) {
-      intensityPct = Math.round(thresholdPaceSecsPerKm / parsedTargetPace * 100);
-    } else if (/\bFR\b|fast\s*rep|800m\s*(?:race|pace|effort)/i.test(cleanLine)) {
-      intensityPct = 122;
-    } else if (/\bR\b|repetition|fast/i.test(cleanLine)) {
-      intensityPct = 114;
-    } else if (/\bsub-?t\b|sub-?threshold/i.test(cleanLine)) {
-      intensityPct = 94;
-    } else if (/\bcv\b|critical/i.test(cleanLine)) {
-      intensityPct = 102;
-    } else if (/z1|recovery|easy|warm\s*-?\s*up|cool\s*-?\s*down|jog|float|walk/i.test(cleanLine)) {
-      intensityPct = 55;
-    } else if (/z2|endurance|aerobic/i.test(cleanLine)) {
-      intensityPct = 68;
-    } else if (/z3|tempo|sweet\s*spot/i.test(cleanLine)) {
-      intensityPct = 86;
-    } else if (/z4|threshold|ftp|\bT\b/i.test(cleanLine)) {
-      intensityPct = 98;
-    } else if (/z5|vo2|\bI\b/i.test(cleanLine)) {
-      intensityPct = 110;
-    } else if (/z6|sprint|anaerobic|fly|flys|flies|blocks?|starts?|accel/i.test(cleanLine) || distanceMeters !== void 0 && distanceMeters < 100 && stepKind === "work") {
-      intensityPct = 135;
-    }
-  }
-  const effectiveTargetPace = parsedTargetPace ?? namedPace.paceSecsPerKm ?? (distanceMeters ? Number((thresholdPaceSecsPerKm * 100 / Math.max(40, intensityPct)).toFixed(1)) : void 0);
-  let durationSecs = 600;
-  const hrMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:h|hr|hrs)\b/i);
-  const secMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:s|sec|secs)\b/i);
-  const minMatch = cleanLine.match(/\b(\d+(?:\.\d+)?)\s*(?:min|mins)\b/i);
-  const bareMinMatch = !distanceMeters ? cleanLine.match(/\b(\d+(?:\.\d+)?)\s*m\b/i) : null;
-  if (hrMatch) {
-    durationSecs = Math.round(Number(hrMatch[1]) * 3600);
-  } else if (distanceMeters) {
-    if (repSplitSecs && repSplitSecs > 4) {
-      durationSecs = Number(repSplitSecs.toFixed(1));
-    } else if (effectiveTargetPace) {
-      durationSecs = Number((distanceMeters / 1e3 * effectiveTargetPace).toFixed(1));
-    }
-  } else if (minMatch) {
-    durationSecs = Math.round(Number(minMatch[1]) * 60);
-  } else if (secMatch && !/@\s*\d+(?:\.\d+)?s\b/.test(cleanLine)) {
-    durationSecs = Number(secMatch[1]);
-  } else if (bareMinMatch) {
-    durationSecs = Math.round(Number(bareMinMatch[1]) * 60);
-  }
-  const durationMins = durationSecs >= 60 && durationSecs % 60 === 0 ? durationSecs / 60 : Math.max(0.25, Number((durationSecs / 60).toFixed(2)));
-  const zoneMeta = getIntervalsZoneFromIntensityPct(intensityPct);
-  return {
-    label: cleanLine,
-    durationMins,
-    durationSecs,
-    distanceMeters,
-    intensityPct,
-    targetPaceSecsPerKm: effectiveTargetPace,
-    zone: zoneMeta.zone,
-    zoneCode: zoneMeta.code,
-    zoneColor: zoneMeta.color,
-    stepKind
-  };
-}
-function splitTopLevelClauses(line) {
-  const parts = [];
-  let buf = "";
-  let depth = 0;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === "(") depth += 1;
-    else if (ch === ")" && depth > 0) depth -= 1;
-    if (depth === 0 && (ch === "+" || ch === ",")) {
-      const trimmed = buf.trim();
-      if (trimmed) parts.push(trimmed);
-      buf = "";
-      continue;
-    }
-    buf += ch;
-  }
-  const tail = buf.trim();
-  if (tail) parts.push(tail);
-  return parts;
-}
-function normalizeInputLines(syntax) {
-  const out = [];
-  for (const raw of syntax.split("\n")) {
-    const line = raw.trim();
-    if (!line) {
-      out.push("");
-      continue;
-    }
-    if (line.startsWith("-")) {
-      out.push(line);
-      continue;
-    }
-    if (line.includes("+") || line.includes(",")) {
-      const clauses = splitTopLevelClauses(line);
-      if (clauses.length > 1 && clauses.some(
-        (c) => /^(?:\d{1,2}\s*[x×]|\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)|warm\s*-?\s*up|cool\s*-?\s*down)/i.test(
-          c
-        )
-      )) {
-        for (const c of clauses) {
-          out.push(c.startsWith("-") ? c : `- ${c}`);
-        }
-        continue;
-      }
-    }
-    out.push(line);
-  }
-  return out;
-}
-function parseStructuredTrackWorkout(syntax, thresholdPaceSecsPerKm = 250) {
-  if (!syntax || !syntax.trim()) return [];
-  const rawLines = normalizeInputLines(syntax);
-  const nodes = [];
-  let currentRepeat = null;
-  const flushRepeat = () => {
-    if (currentRepeat && currentRepeat.steps.length > 0) {
-      nodes.push({
-        type: "repeat",
-        repeatCount: currentRepeat.repeatCount,
-        label: currentRepeat.label,
-        steps: currentRepeat.steps
-      });
-    }
-    currentRepeat = null;
-  };
-  for (const line of rawLines) {
-    if (!line) {
-      flushRepeat();
-      continue;
-    }
-    const looksLikeStandaloneStep = !line.startsWith("-") && (/^(\d{1,2})\s*[x×]\s*\d+/i.test(line) || /^\d+(?:\.\d+)?\s*(?:mi|mile|miles|km|m|min|mins|s|sec|secs)\b/i.test(line));
-    if (!line.startsWith("-") && !looksLikeStandaloneStep) {
-      const headerRepeatMatch = line.match(
-        /^(?:main\s+set\s+|set\s*\d*\s*:?\s*|repeat\s+)?(\d{1,2})\s*[x×]\b[:\s-]*(.*)$/i
-      );
-      if (headerRepeatMatch) {
-        flushRepeat();
-        const count = Math.max(2, Number(headerRepeatMatch[1]));
-        const suffix = headerRepeatMatch[2]?.trim();
-        currentRepeat = {
-          repeatCount: count,
-          label: suffix ? `${count}x ${suffix}` : `Repeat ${count}x`,
-          steps: []
-        };
-      } else {
-        flushRepeat();
-      }
-      continue;
-    }
-    const clean = line.replace(/^-+\s*/, "").trim();
-    if (!clean) continue;
-    const inlineRepeatMatch = clean.match(/^(\d{1,2})\s*[x×](?:\s+|(?=\d))(.+)$/i);
-    if (inlineRepeatMatch) {
-      flushRepeat();
-      const count = Math.max(1, Number(inlineRepeatMatch[1]));
-      const remainder = inlineRepeatMatch[2].trim();
-      let mainPart = remainder;
-      let restPart = null;
-      const parenRestMatch = remainder.match(
-        /\(([^)]*(?:rest|jog|rec|float|walk|standing)[^)]*)\)\s*$/i
-      );
-      const withRestMatch = remainder.match(/\bw\/\s*(.+)$/i);
-      if (parenRestMatch) {
-        restPart = parenRestMatch[1].trim();
-        mainPart = remainder.slice(0, parenRestMatch.index).trim();
-      } else if (withRestMatch) {
-        restPart = withRestMatch[1].trim();
-        mainPart = remainder.slice(0, withRestMatch.index).trim();
-      }
-      const workStep = parseSingleWorkoutLine(mainPart, thresholdPaceSecsPerKm, "work", true);
-      const groupSteps = [workStep];
-      if (restPart) {
-        groupSteps.push(parseSingleWorkoutLine(restPart, thresholdPaceSecsPerKm, "rest", false));
-      }
-      nodes.push({
-        type: "repeat",
-        repeatCount: count,
-        label: `${count}x ${mainPart.slice(0, 14)}`.trim(),
-        steps: groupSteps
-      });
-      continue;
-    }
-    const inferredKind = inferStepKind(clean);
-    const step = parseSingleWorkoutLine(
-      clean,
-      thresholdPaceSecsPerKm,
-      void 0,
-      Boolean(currentRepeat && inferredKind === "work")
-    );
-    if (currentRepeat) {
-      if (step.stepKind === "cooldown" || step.stepKind === "warmup") {
-        flushRepeat();
-        nodes.push({ type: "step", step });
-      } else {
-        currentRepeat.steps.push(step);
-      }
-    } else {
-      nodes.push({ type: "step", step });
-    }
-  }
-  flushRepeat();
-  return nodes;
 }
 
 // src/utils/fitWorkoutEncoder.ts
@@ -6591,6 +7728,24 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
     ...ergDataLines,
     "[END COURSE DATA]"
   ].join("\n");
+  const corosWorkoutJson = buildCorosWorkoutPayload({
+    date: String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10),
+    name: title,
+    sportCategory: sport,
+    description: typeof body.description === "string" ? body.description : intervalsIcuText,
+    workoutSyntax,
+    ftpWatts: ftp,
+    thresholdPaceSecsPerKm,
+    steps: normalizedSteps.map((st) => ({
+      label: st.label,
+      durationSecs: st.durationSecs,
+      distanceMeters: st.distanceMeters,
+      targetPctFtp: st.targetPctFtp,
+      targetWatts: st.targetWatts,
+      targetPaceSecsPerKm: st.targetPaceSecsPerKm,
+      stepType: st.stepKind === "rest" ? "recovery" : st.stepKind === "work" ? "interval" : st.stepKind
+    }))
+  });
   res.status(200).json({
     ok: true,
     title,
@@ -6599,6 +7754,7 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
     intervalsIcuText,
     appleWorkoutKitJson,
     garminTrainingApiJson,
+    corosWorkoutJson,
     zwoXml: zwoLines.join("\n"),
     ergText
   });
@@ -6650,7 +7806,7 @@ webhooksAndExportRouter.post("/api/physiology/race-passport", (req, res) => {
 import express3 from "express";
 
 // server/teamFieldAndDailyOpsService.ts
-import crypto9 from "crypto";
+import crypto12 from "crypto";
 
 // src/physiology/fieldEventsEngine.ts
 var FIELD_EVENT_CATALOG = [
@@ -8054,7 +9210,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     let projectedSnapshot;
     if (m.liveSnapshot && !isParentFollower) {
       const rawWatch = m.liveSnapshot.safeSportWatch;
-      const projectedSafeSportWatch = !rawWatch ? void 0 : isSelf ? rawWatch : isCoach ? {
+      const projectedSafeSportWatch = !rawWatch ? void 0 : isSelf || myMembership.role === "ATHLETIC_TRAINER" ? rawWatch : isCoach ? {
         trafficLight: rawWatch.trafficLight,
         coachSafeSummaryLabel: rawWatch.coachSafeSummaryLabel
       } : void 0;
@@ -8283,6 +9439,34 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     ...isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks },
     ...typeof doc.fieldMarkLogsTotalCount === "number" && !isParentFollower ? { fieldMarkLogsTotalCount: doc.fieldMarkLogsTotalCount } : {},
     ...isStaffViewer && !isParentFollower ? { meetDayPackets: doc.meetDayPackets || [] } : {},
+    ...Array.isArray(doc.injuryCases) ? {
+      injuryCases: doc.injuryCases.filter((c) => {
+        if (isStaffViewer) return true;
+        if (isParentFollower) {
+          return Boolean(
+            linkedChildMembershipIds && linkedChildMembershipIds.has(c.membershipId)
+          );
+        }
+        return c.membershipId === myMembership.membershipId;
+      }).map((c) => {
+        if (myMembership.role === "ATHLETIC_TRAINER") return c;
+        const { privateClinicalNotes: _dropClinical, ...coachSafe } = c;
+        return coachSafe;
+      })
+    } : {},
+    ...canManageTeamGovernanceRole(myMembership.role) && doc.billing ? (() => {
+      const {
+        stripeCustomerId: _stripeCust,
+        stripeSubscriptionId: _stripeSub,
+        ...safeBilling
+      } = doc.billing;
+      return {
+        billing: {
+          ...safeBilling,
+          stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY?.trim())
+        }
+      };
+    })() : {},
     teamMessages: visibleTeamMessages,
     messagingPolicy: resolvedMessagingPolicy
   };
@@ -8398,463 +9582,7 @@ async function autoLinkPendingTeamInvitesByEmail(params) {
 }
 
 // server/teamEmailAndOtpService.ts
-import crypto7 from "crypto";
-
-// server/authService.ts
 import crypto6 from "crypto";
-function hashKey(val) {
-  return crypto6.createHash("sha256").update(String(val ?? "").toLowerCase().trim()).digest("hex").slice(0, 32);
-}
-async function saveUser(user) {
-  user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveTenantVaultAsync(`user_${user.id}`, user);
-  if (user.email) {
-    await saveTenantVaultAsync(`auth_email_${hashKey(user.email)}`, { userId: user.id });
-  }
-  for (const p of user.authProviders) {
-    const provKey = `auth_prov_${p.provider}_${hashKey(p.providerId)}`;
-    await saveTenantVaultAsync(provKey, { userId: user.id });
-  }
-}
-async function getUserById(userId) {
-  if (!userId) return null;
-  const cleanId = String(userId).trim();
-  const user = await loadTenantVaultAsync(`user_${cleanId}`, null);
-  return user;
-}
-async function getUserByEmail(email) {
-  if (!email) return null;
-  const indexDoc = await loadTenantVaultAsync(
-    `auth_email_${hashKey(email)}`,
-    null
-  );
-  if (!indexDoc?.userId) return null;
-  return getUserById(indexDoc.userId);
-}
-async function getUserByProvider(provider, providerId) {
-  if (!provider || !providerId) return null;
-  const provKey = `auth_prov_${provider}_${hashKey(providerId)}`;
-  const indexDoc = await loadTenantVaultAsync(provKey, null);
-  if (!indexDoc?.userId) return null;
-  return getUserById(indexDoc.userId);
-}
-async function findOrCreateUser(provider, providerId, profile) {
-  let user = await getUserByProvider(provider, providerId);
-  if (user) {
-    let changed = false;
-    if (profile.name && (!user.name || user.name === "MeetReady Athlete")) {
-      user.name = profile.name;
-      changed = true;
-    }
-    if (profile.picture && !user.picture) {
-      user.picture = profile.picture;
-      changed = true;
-    }
-    if (profile.email && !user.email) {
-      user.email = profile.email.toLowerCase().trim();
-      changed = true;
-    }
-    if (changed) {
-      await saveUser(user);
-    }
-    return user;
-  }
-  const cleanEmail = (profile.email || "").toLowerCase().trim();
-  if (cleanEmail) {
-    user = await getUserByEmail(cleanEmail);
-    if (user) {
-      const exists = user.authProviders.some(
-        (p) => p.provider === provider && p.providerId === providerId
-      );
-      if (!exists) {
-        user.authProviders.push({
-          provider,
-          providerId,
-          email: cleanEmail,
-          name: profile.name,
-          linkedAt: (/* @__PURE__ */ new Date()).toISOString()
-        });
-      }
-      if (profile.picture && !user.picture) user.picture = profile.picture;
-      await saveUser(user);
-      return user;
-    }
-  }
-  const newUserId = `usr_${crypto6.randomBytes(8).toString("hex")}`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const newUser = {
-    id: newUserId,
-    email: cleanEmail,
-    name: profile.name?.trim() || (cleanEmail ? cleanEmail.split("@")[0] : "MeetReady Athlete"),
-    picture: profile.picture,
-    role: "athlete",
-    createdAt: now,
-    updatedAt: now,
-    authProviders: [
-      {
-        provider,
-        providerId,
-        email: cleanEmail || void 0,
-        name: profile.name,
-        linkedAt: now
-      }
-    ],
-    passkeys: [],
-    connectedServices: []
-  };
-  if (provider === "strava") {
-    newUser.connectedServices.push({
-      service: "strava",
-      connectedAt: now,
-      status: "CONNECTED",
-      athleteId: providerId,
-      athleteName: profile.name
-    });
-  }
-  await saveUser(newUser);
-  return newUser;
-}
-async function linkProviderToUser(userId, provider, providerId, profile) {
-  const user = await getUserById(userId);
-  if (!user) return null;
-  const existing = user.authProviders.find(
-    (p) => p.provider === provider && p.providerId === providerId
-  );
-  if (!existing) {
-    user.authProviders.push({
-      provider,
-      providerId,
-      email: profile?.email,
-      name: profile?.name,
-      linkedAt: (/* @__PURE__ */ new Date()).toISOString()
-    });
-    await saveUser(user);
-  }
-  return user;
-}
-async function unlinkProviderFromUser(userId, provider) {
-  const user = await getUserById(userId);
-  if (!user) return { ok: false, error: "User not found" };
-  if (user.authProviders.length <= 1) {
-    return {
-      ok: false,
-      error: "Cannot remove your last remaining login method."
-    };
-  }
-  const removedProviders = user.authProviders.filter((p) => p.provider === provider);
-  user.authProviders = user.authProviders.filter((p) => p.provider !== provider);
-  await saveUser(user);
-  for (const removed of removedProviders) {
-    await deleteTenantVault(`auth_prov_${removed.provider}_${hashKey(removed.providerId)}`);
-  }
-  return { ok: true };
-}
-async function updateUserPrimaryEmail(userId, newEmail) {
-  const cleanNewEmail = String(newEmail || "").trim().toLowerCase();
-  if (!cleanNewEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
-    return { ok: false, error: "Please enter a valid email address." };
-  }
-  const user = await getUserById(userId);
-  if (!user) return { ok: false, error: "User not found." };
-  const existingOwner = await getUserByEmail(cleanNewEmail);
-  if (existingOwner && existingOwner.id !== user.id) {
-    return {
-      ok: false,
-      error: "That email is already linked to another MeetReady account."
-    };
-  }
-  const oldEmail = (user.email || "").trim().toLowerCase();
-  if (oldEmail && oldEmail !== cleanNewEmail) {
-    await deleteTenantVault(`auth_email_${hashKey(oldEmail)}`);
-  }
-  const existingMagicLinks = user.authProviders.filter((p) => p.provider === "magic_link");
-  user.authProviders = user.authProviders.filter((p) => p.provider !== "magic_link");
-  for (const ml of existingMagicLinks) {
-    if (ml.providerId && ml.providerId.toLowerCase() !== cleanNewEmail) {
-      await deleteTenantVault(`auth_prov_magic_link_${hashKey(ml.providerId)}`);
-    }
-  }
-  user.authProviders.push({
-    provider: "magic_link",
-    providerId: cleanNewEmail,
-    email: cleanNewEmail,
-    name: user.name,
-    linkedAt: (/* @__PURE__ */ new Date()).toISOString()
-  });
-  user.email = cleanNewEmail;
-  await saveUser(user);
-  return { ok: true, user, oldEmail: oldEmail || void 0 };
-}
-function hashAuthLookupKey(val) {
-  return hashKey(val);
-}
-async function updateUserBirthMonthYear(userId, birthMonthYear) {
-  const clean = String(birthMonthYear || "").trim();
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(clean)) return null;
-  const user = await getUserById(userId);
-  if (!user) return null;
-  if (user.birthMonthYear !== clean) {
-    user.birthMonthYear = clean;
-    await saveUser(user);
-  }
-  return user;
-}
-async function connectServiceToUser(userId, service, serviceAthleteId, athleteName) {
-  const user = await getUserById(userId);
-  if (!user) return null;
-  const existingIdx = user.connectedServices.findIndex((s) => s.service === service);
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  if (existingIdx >= 0) {
-    user.connectedServices[existingIdx] = {
-      ...user.connectedServices[existingIdx],
-      status: "CONNECTED",
-      athleteId: serviceAthleteId || user.connectedServices[existingIdx].athleteId,
-      athleteName: athleteName || user.connectedServices[existingIdx].athleteName,
-      connectedAt: now
-    };
-  } else {
-    user.connectedServices.push({
-      service,
-      status: "CONNECTED",
-      athleteId: serviceAthleteId,
-      athleteName,
-      connectedAt: now
-    });
-  }
-  await saveUser(user);
-  return user;
-}
-async function disconnectServiceFromUser(userId, service) {
-  const user = await getUserById(userId);
-  if (!user) return null;
-  const existingIdx = user.connectedServices.findIndex((s) => s.service === service);
-  if (existingIdx >= 0) {
-    user.connectedServices[existingIdx].status = "DISCONNECTED";
-    await saveUser(user);
-  }
-  return user;
-}
-var MAGIC_LINK_TTL_MS = 15 * 60 * 1e3;
-async function createMagicLinkToken(email, pendingJoin) {
-  const cleanEmail = email.toLowerCase().trim();
-  const rawToken = crypto6.randomBytes(32).toString("hex");
-  const tokenHash = crypto6.createHash("sha256").update(rawToken).digest("hex");
-  const expiresAt = Date.now() + MAGIC_LINK_TTL_MS;
-  await saveTenantVaultAsync(`magic_link_${tokenHash}`, {
-    email: cleanEmail,
-    expiresAt,
-    ...pendingJoin?.joinCode || pendingJoin?.slug || pendingJoin?.inviteToken ? { pendingJoin } : {}
-  });
-  return { token: rawToken, expiresAt };
-}
-async function peekMagicLinkPayload(rawToken) {
-  if (!rawToken || typeof rawToken !== "string") return null;
-  const tokenHash = crypto6.createHash("sha256").update(rawToken.trim()).digest("hex");
-  const record = await loadTenantVaultAsync(`magic_link_${tokenHash}`, null);
-  if (!record || !record.email || !record.expiresAt) {
-    return null;
-  }
-  if (Date.now() > record.expiresAt) {
-    await saveTenantVaultAsync(`magic_link_${tokenHash}`, null);
-    return null;
-  }
-  return { email: record.email, pendingJoin: record.pendingJoin };
-}
-async function verifyMagicLinkPayload(rawToken) {
-  if (!rawToken || typeof rawToken !== "string") return null;
-  const tokenHash = crypto6.createHash("sha256").update(rawToken.trim()).digest("hex");
-  const vaultKey = `magic_link_${tokenHash}`;
-  return withVaultLock(vaultKey, async () => {
-    const record = await loadTenantVaultAsync(vaultKey, null);
-    if (!record || !record.email || !record.expiresAt) {
-      return null;
-    }
-    await saveTenantVaultAsync(vaultKey, null);
-    if (Date.now() > record.expiresAt) {
-      return null;
-    }
-    return { email: record.email, pendingJoin: record.pendingJoin };
-  });
-}
-async function sendMagicLinkEmail(email, verifyUrl) {
-  const resendApiKey = process.env.RESEND_API_KEY?.trim();
-  const safeVerifyUrl = escapeHtml(verifyUrl);
-  if (resendApiKey) {
-    try {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: (process.env.AUTH_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "MeetReady <auth@meetready.app>").trim(),
-          to: [email],
-          subject: "Sign in to MeetReady",
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
-              <h2 style="color: #C8FF00; margin-top: 0;">Sign in to MeetReady</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Click the secure link below to sign in to your MeetReady endurance training cockpit. This link expires in 15 minutes.</p>
-              <div style="margin: 24px 0;">
-                <a href="${safeVerifyUrl}" style="background: #C8FF00; color: #0E1612; font-weight: 700; text-decoration: none; padding: 12px 24px; border-radius: 12px; display: inline-block; font-size: 14px;">Sign In to MeetReady</a>
-              </div>
-              <p style="font-size: 12px; color: #64748B;">If you didn't request this email, you can safely ignore it.</p>
-            </div>
-          `
-        }),
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (res.ok) {
-        return { sent: true };
-      }
-      console.warn("[MeetReady Auth] Resend email send failed:", await res.text());
-    } catch (err) {
-      console.error("[MeetReady Auth] Failed sending email via Resend:", err);
-    }
-  }
-  if (isProductionDeployment()) {
-    return {
-      sent: false,
-      error: "Email delivery service is temporarily unavailable. Please try Google, Passkey, or Strava."
-    };
-  }
-  return {
-    sent: true,
-    devMode: true,
-    previewUrl: verifyUrl
-  };
-}
-async function createPendingEmailChange(userId, newEmail) {
-  const cleanNewEmail = String(newEmail || "").trim().toLowerCase();
-  if (!cleanNewEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanNewEmail)) {
-    return { ok: false, error: "Please enter a valid email address." };
-  }
-  const user = await getUserById(userId);
-  if (!user) return { ok: false, error: "User not found." };
-  const existingOwner = await getUserByEmail(cleanNewEmail);
-  if (existingOwner && existingOwner.id !== user.id) {
-    return {
-      ok: false,
-      error: "That email is already linked to another MeetReady account."
-    };
-  }
-  const code = String(crypto6.randomInt(1e5, 1e6));
-  const codeHash = crypto6.createHash("sha256").update(code).digest("hex");
-  await saveTenantVaultAsync(`email_change_${user.id}`, {
-    newEmail: cleanNewEmail,
-    codeHash,
-    expiresAt: Date.now() + 15 * 60 * 1e3,
-    attempts: 0
-  });
-  const resendApiKey = process.env.RESEND_API_KEY?.trim();
-  if (resendApiKey) {
-    try {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          from: (process.env.AUTH_EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "MeetReady <auth@meetready.app>").trim(),
-          to: [cleanNewEmail],
-          subject: "Verify your new MeetReady email address",
-          html: `
-            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; background: #0E1612; color: #E2E8F0; border-radius: 16px;">
-              <h2 style="color: #C8FF00; margin-top: 0;">Confirm Email Change</h2>
-              <p style="font-size: 14px; line-height: 1.6; color: #94A3B8;">Enter this 6-digit verification code in MeetReady to confirm moving your primary login email to <strong>${escapeHtml(cleanNewEmail)}</strong>:</p>
-              <div style="margin: 20px 0; font-family: monospace; font-size: 28px; font-weight: 800; letter-spacing: 0.2em; color: #C8FF00;">${escapeHtml(code)}</div>
-              <p style="font-size: 12px; color: #64748B;">This code expires in 15 minutes. If you did not request this change, you can ignore this email.</p>
-            </div>
-          `
-        }),
-        signal: AbortSignal.timeout(8e3)
-      });
-      if (res.ok) {
-        return { ok: true };
-      }
-      console.warn("[MeetReady Auth] Resend email-change dispatch failed:", await res.text());
-    } catch (err) {
-      console.error("[MeetReady Auth] Failed sending email-change code via Resend:", err);
-    }
-  }
-  if (isProductionDeployment()) {
-    await saveTenantVaultAsync(`email_change_${user.id}`, null);
-    return {
-      ok: false,
-      error: "Email verification service is unavailable right now. Please try again shortly."
-    };
-  }
-  return { ok: true, devMode: true, devCode: code };
-}
-async function verifyAndCommitEmailChange(userId, rawCode, expectedNewEmail) {
-  const cleanCode = String(rawCode || "").trim();
-  if (!/^\d{6}$/.test(cleanCode)) {
-    return { ok: false, error: "Please enter the 6-digit verification code sent to your new email." };
-  }
-  const vaultKey = `email_change_${userId}`;
-  return withVaultLock(vaultKey, async () => {
-    const rec = await loadTenantVaultAsync(vaultKey, null);
-    if (!rec || !rec.newEmail || !rec.codeHash || !rec.expiresAt) {
-      return { ok: false, error: "No pending email verification request found. Request a new code." };
-    }
-    if (Date.now() > rec.expiresAt) {
-      await saveTenantVaultAsync(vaultKey, null);
-      return { ok: false, error: "Verification code has expired. Please request a new code." };
-    }
-    if (expectedNewEmail && expectedNewEmail.trim().toLowerCase() !== rec.newEmail) {
-      return { ok: false, error: "Verification code was issued for a different email address." };
-    }
-    if (rec.attempts >= 5) {
-      await saveTenantVaultAsync(vaultKey, null);
-      return { ok: false, error: "Too many invalid attempts. Please request a new verification code." };
-    }
-    const incomingHash = crypto6.createHash("sha256").update(cleanCode).digest("hex");
-    if (!timingSafeStringEqual(incomingHash, rec.codeHash)) {
-      rec.attempts += 1;
-      await saveTenantVaultAsync(vaultKey, rec);
-      return { ok: false, error: "Invalid verification code." };
-    }
-    await saveTenantVaultAsync(vaultKey, null);
-    const updated = await updateUserPrimaryEmail(userId, rec.newEmail);
-    if (!updated.ok || !updated.user) {
-      return { ok: false, error: updated.error || "Could not update email." };
-    }
-    return {
-      ok: true,
-      user: updated.user,
-      oldEmail: updated.oldEmail,
-      newEmail: rec.newEmail
-    };
-  });
-}
-function issuePasskeyChallengeToken(payload) {
-  const data = JSON.stringify({
-    ...payload,
-    jti: crypto6.randomBytes(12).toString("hex"),
-    exp: Date.now() + 5 * 60 * 1e3
-    // 5 min TTL
-  });
-  const b64 = Buffer.from(data, "utf8").toString("base64url");
-  const sig = crypto6.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
-  return `${b64}.${sig}`;
-}
-function verifyPasskeyChallengeToken(token) {
-  if (!token) return null;
-  const [b64, sig] = token.split(".");
-  if (!b64 || !sig) return null;
-  const expectedSig = crypto6.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
-  if (!timingSafeStringEqual(sig, expectedSig)) return null;
-  try {
-    const claims = JSON.parse(Buffer.from(b64, "base64url").toString("utf8"));
-    if (!claims.exp || Date.now() > claims.exp) return null;
-    return claims;
-  } catch {
-    return null;
-  }
-}
-
-// server/teamEmailAndOtpService.ts
 async function withBoundedTimeout(promise, timeoutMs = 8e3, label = "notification") {
   let timer;
   try {
@@ -8873,7 +9601,7 @@ async function withBoundedTimeout(promise, timeoutMs = 8e3, label = "notificatio
   }
 }
 function emailOtpVaultKey(email) {
-  const hash = crypto7.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
+  const hash = crypto6.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
   return `email_otp_${hash}`;
 }
 function isResendConfigured() {
@@ -9051,17 +9779,37 @@ function buildParentConsentEmailContent(params) {
   ].join("\n");
   return { subject, html, text };
 }
-async function requestEmailOtpCode(rawEmail) {
+async function requestEmailOtpCode(rawEmail, options) {
   const email = String(rawEmail || "").trim().toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { ok: false, deliveryStatus: "FAILED", error: "Enter a valid email address." };
+    return {
+      ok: false,
+      deliveryStatus: "FAILED",
+      statusCode: 400,
+      error: "Enter a valid email address."
+    };
   }
-  const code = String(crypto7.randomInt(1e5, 999999));
+  const existingUser = await getUserByEmail(email);
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: options?.birthMonthYear,
+    birthYear: options?.birthYear,
+    existingBirthMonthYear: existingUser?.birthMonthYear
+  });
+  if (!ageCheck.ok) {
+    return {
+      ok: false,
+      deliveryStatus: "FAILED",
+      statusCode: ageCheck.statusCode || 400,
+      error: ageCheck.error
+    };
+  }
+  const code = String(crypto6.randomInt(1e5, 999999));
   const record = {
     email,
     codeHash: hashToken(`${email}:${code}`),
     expiresAt: Date.now() + 10 * 60 * 1e3,
-    attempts: 0
+    attempts: 0,
+    ...ageCheck.birthMonthYear ? { pendingBirthMonthYear: ageCheck.birthMonthYear } : {}
   };
   const otpKey = emailOtpVaultKey(email);
   await withVaultLock(otpKey, async () => {
@@ -9094,39 +9842,75 @@ async function requestEmailOtpCode(rawEmail) {
     ...res.error ? { error: res.error } : {}
   };
 }
-async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid) {
+async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid, options) {
   const email = String(rawEmail || "").trim().toLowerCase();
   const code = String(rawCode || "").replace(/\D/g, "");
   if (!email || code.length !== 6) {
-    return { ok: false, error: "Enter the 6-digit verification code." };
+    return { ok: false, statusCode: 400, error: "Enter the 6-digit verification code." };
+  }
+  const existingUser = await getUserByEmail(email);
+  const preAgeCheck = validateCoppaAgeInput({
+    birthMonthYear: options?.birthMonthYear,
+    birthYear: options?.birthYear,
+    existingBirthMonthYear: existingUser?.birthMonthYear
+  });
+  if (!preAgeCheck.ok) {
+    return {
+      ok: false,
+      statusCode: preAgeCheck.statusCode || 400,
+      error: preAgeCheck.error
+    };
   }
   const key = emailOtpVaultKey(email);
   const otpCheck = await withVaultLock(key, async () => {
     const stored = await loadTenantVaultAsync(key, null);
     if (!stored || Date.now() > stored.expiresAt) {
-      return { ok: false, error: "Verification code expired. Request a fresh code." };
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "Verification code expired. Request a fresh code."
+      };
     }
     if (stored.attempts >= 5) {
-      return { ok: false, error: "Too many attempts. Request a fresh code." };
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "Too many attempts. Request a fresh code."
+      };
     }
     const candidateHash = hashToken(`${email}:${code}`);
     const a = Buffer.from(candidateHash);
     const b = Buffer.from(stored.codeHash);
-    if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) {
+    if (a.length !== b.length || !crypto6.timingSafeEqual(a, b)) {
       stored.attempts += 1;
       await saveTenantVaultAsync(key, stored);
-      return { ok: false, error: "Incorrect 6-digit code." };
+      return { ok: false, statusCode: 400, error: "Incorrect 6-digit code." };
+    }
+    const finalAgeCheck = validateCoppaAgeInput({
+      birthMonthYear: options?.birthMonthYear ?? stored.pendingBirthMonthYear,
+      birthYear: options?.birthYear,
+      existingBirthMonthYear: existingUser?.birthMonthYear
+    });
+    if (!finalAgeCheck.ok) {
+      return {
+        ok: false,
+        statusCode: finalAgeCheck.statusCode || 400,
+        error: finalAgeCheck.error
+      };
     }
     await saveTenantVaultAsync(key, { ...stored, expiresAt: 0 });
-    return { ok: true };
+    return { ok: true, birthMonthYear: finalAgeCheck.birthMonthYear };
   });
   if (!otpCheck.ok) {
-    return { ok: false, error: otpCheck.error };
+    return { ok: false, statusCode: otpCheck.statusCode, error: otpCheck.error };
   }
-  const otpUser = await findOrCreateUser("magic_link", email, {
+  let otpUser = await findOrCreateUser("magic_link", email, {
     email,
     name: email.split("@")[0]
   });
+  if (otpCheck.birthMonthYear && !otpUser.birthMonthYear) {
+    otpUser = await updateUserBirthMonthYear(otpUser.id, otpCheck.birthMonthYear) || otpUser;
+  }
   const canonicalOtpSid = deriveUserSessionSid(otpUser.id);
   const account = await withVaultLock(EMAIL_DIRECTORY_KEY, async () => {
     const emailDir = await loadTenantVaultAsync(EMAIL_DIRECTORY_KEY, {
@@ -9165,7 +9949,7 @@ async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid) {
 }
 
 // server/pushNotificationService.ts
-import crypto8 from "crypto";
+import crypto7 from "crypto";
 import { generateVAPIDKeys, sendNotification } from "web-push";
 var VAPID_VAULT_KEY = "thresh_vapid_keys_v1";
 var cachedVapidKeys = null;
@@ -9240,7 +10024,7 @@ async function saveUserPushSubscription(params) {
     const existing = await loadTenantVaultAsync(key, []);
     const prior = existing.find((s) => s.endpoint === cleanEndpoint);
     const entry = {
-      id: prior?.id || `psub_${crypto8.randomBytes(6).toString("hex")}`,
+      id: prior?.id || `psub_${crypto7.randomBytes(6).toString("hex")}`,
       userSid: params.userSid,
       endpoint: cleanEndpoint,
       keys: { p256dh, auth },
@@ -9428,967 +10212,8 @@ async function dispatchTeamPushNotifications(params) {
   });
 }
 
-// server/teamFieldAndDailyOpsService.ts
-var VALID_ATTENDANCE_STATUSES = /* @__PURE__ */ new Set([
-  "PRESENT",
-  "LATE",
-  "EXCUSED",
-  "ABSENT",
-  "INJURED_MODIFIED"
-]);
-var VALID_ANNOUNCEMENT_CATEGORIES = /* @__PURE__ */ new Set([
-  "WEATHER",
-  "SCHEDULE_CHANGE",
-  "MEET_LOGISTICS",
-  "GENERAL"
-]);
-var VALID_FIELD_EVENT_CODES = /* @__PURE__ */ new Set([
-  "LJ",
-  "TJ",
-  "HJ",
-  "PV",
-  "SP",
-  "DISCUS",
-  "JAVELIN",
-  "HAMMER",
-  "PENT",
-  "HEPT",
-  "DEC"
-]);
-async function recordTeamAttendanceBatch(params) {
-  const cleanDate = String(params.date || "").trim().slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
-    return { ok: false, recordedCount: 0, error: "Valid YYYY-MM-DD attendance date required." };
-  }
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, recordedCount: 0, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
-      return { ok: false, recordedCount: 0, error: "Coach or Athletic Trainer permissions required." };
-    }
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    doc.attendanceByDate = doc.attendanceByDate || {};
-    const dayBucket = {
-      ...doc.attendanceByDate[cleanDate] || {}
-    };
-    let recordedCount = 0;
-    for (const rawEntry of (params.entries || []).slice(0, 450)) {
-      const memId = String(rawEntry.membershipId || "").trim();
-      const status = String(rawEntry.status || "").trim().toUpperCase();
-      if (!memId || !VALID_ATTENDANCE_STATUSES.has(status)) continue;
-      const targetMem = doc.memberships.find(
-        (m) => m.membershipId === memId && m.status !== "REVOKED"
-      );
-      if (!targetMem) continue;
-      dayBucket[memId] = {
-        date: cleanDate,
-        membershipId: memId,
-        status,
-        ...rawEntry.note ? { note: String(rawEntry.note).trim().slice(0, 140) } : {},
-        updatedAt: nowIso,
-        updatedBySid: params.callerSid
-      };
-      recordedCount += 1;
-    }
-    doc.attendanceByDate[cleanDate] = dayBucket;
-    const allDates = Object.keys(doc.attendanceByDate).sort();
-    if (allDates.length > 45) {
-      for (const oldKey of allDates.slice(0, allDates.length - 45)) {
-        delete doc.attendanceByDate[oldKey];
-      }
-    }
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "ATTENDANCE_RECORDED",
-      targetId: cleanDate,
-      metadata: { recordedCount }
-    });
-    return {
-      ok: true,
-      recordedCount,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function postTeamAnnouncement(params) {
-  const cleanTitle = String(params.title || "").trim().slice(0, 120);
-  const cleanBody = String(params.body || "").trim().slice(0, 600);
-  if (!cleanTitle || !cleanBody) {
-    return { ok: false, error: "Announcement title and message body are required." };
-  }
-  const catRaw = String(params.category || "GENERAL").toUpperCase();
-  const category = VALID_ANNOUNCEMENT_CATEGORIES.has(catRaw) ? catRaw : "GENERAL";
-  let pendingPushPayload = null;
-  const lockedResult = await withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
-      return { ok: false, error: "Coach or admin permissions required." };
-    }
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const targetGroups = sanitizeTargetEventGroups(params.targetEventGroups);
-    const announcement = {
-      id: `ann_${crypto9.randomBytes(6).toString("hex")}`,
-      teamId: doc.brand.teamId,
-      title: cleanTitle,
-      body: cleanBody,
-      category,
-      ...targetGroups && targetGroups.length > 0 ? { targetEventGroups: targetGroups } : {},
-      publishToParentHub: params.publishToParentHub !== false,
-      authorName: callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
-      createdAt: nowIso
-    };
-    doc.announcements = [announcement, ...doc.announcements || []].slice(0, 30);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    pendingPushPayload = {
-      teamId: params.teamId,
-      senderSid: params.callerSid,
-      senderName: announcement.authorName,
-      kind: "ANNOUNCEMENT",
-      announcementCategory: category,
-      eventGroup: targetGroups && targetGroups.length === 1 ? targetGroups[0] : void 0,
-      bodyText: `${cleanTitle} \u2014 ${cleanBody}`,
-      isEmergency: category === "WEATHER"
-    };
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "ANNOUNCEMENT_POSTED",
-      targetId: announcement.id,
-      metadata: {
-        category: announcement.category,
-        publishToParentHub: announcement.publishToParentHub
-      }
-    });
-    return {
-      ok: true,
-      announcement,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-  if (lockedResult.ok && pendingPushPayload) {
-    const pushToSend = pendingPushPayload;
-    await Promise.allSettled([
-      withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "announcement-push")
-    ]);
-  }
-  return lockedResult;
-}
-async function deleteTeamAnnouncement(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
-      return { ok: false, error: "Coach or admin permissions required." };
-    }
-    const beforeCount = (doc.announcements || []).length;
-    doc.announcements = (doc.announcements || []).filter((a) => a.id !== params.announcementId);
-    if (doc.announcements.length === beforeCount) {
-      return { ok: false, error: "Announcement not found." };
-    }
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "ANNOUNCEMENT_DELETED",
-      targetId: params.announcementId,
-      metadata: {}
-    });
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-var VALID_FIELD_ATTEMPT_OUTCOMES = /* @__PURE__ */ new Set([
-  "MARK",
-  "FOUL",
-  "PASS",
-  "CLEAR",
-  "MISS"
-]);
-function teamFieldLogsVaultKey(teamId) {
-  return `team_field_logs_${sanitizeTenantId(teamId).slice(0, 48)}`;
-}
-function sanitizeClientBatchId(raw) {
-  if (typeof raw !== "string") return void 0;
-  const cleaned = raw.trim().replace(/[^a-zA-Z0-9_.:-]/g, "").slice(0, 72);
-  return cleaned || void 0;
-}
-function sanitizeFieldAttempts(rawAttempts) {
-  if (!Array.isArray(rawAttempts)) return [];
-  const out = [];
-  for (let i = 0; i < Math.min(24, rawAttempts.length); i += 1) {
-    const raw = rawAttempts[i];
-    if (!raw || typeof raw !== "object") continue;
-    const item = raw;
-    const outcome = String(item.outcome || "").toUpperCase();
-    if (!VALID_FIELD_ATTEMPT_OUTCOMES.has(outcome)) continue;
-    const attemptNumber = typeof item.attemptNumber === "number" && Number.isFinite(item.attemptNumber) ? Math.max(1, Math.min(24, Math.round(item.attemptNumber))) : i + 1;
-    const markMeters = typeof item.markMeters === "number" && Number.isFinite(item.markMeters) && item.markMeters >= 0.3 && item.markMeters <= 110 ? Number(item.markMeters.toFixed(3)) : void 0;
-    const barHeightMeters = typeof item.barHeightMeters === "number" && Number.isFinite(item.barHeightMeters) && item.barHeightMeters >= 0.3 && item.barHeightMeters <= 10 ? Number(item.barHeightMeters.toFixed(3)) : void 0;
-    const windMps = typeof item.windMps === "number" && Number.isFinite(item.windMps) && item.windMps >= -20 && item.windMps <= 20 ? Number(item.windMps.toFixed(2)) : void 0;
-    const round = item.round === "PRELIM" || item.round === "FINAL" ? item.round : void 0;
-    const note = typeof item.note === "string" && item.note.trim() ? item.note.trim().slice(0, 120) : void 0;
-    out.push({
-      attemptNumber,
-      outcome,
-      ...markMeters !== void 0 ? { markMeters } : {},
-      ...barHeightMeters !== void 0 ? { barHeightMeters } : {},
-      ...windMps !== void 0 ? { windMps } : {},
-      ...round ? { round } : {},
-      ...note ? { note } : {}
-    });
-  }
-  return out;
-}
-async function loadFullTeamFieldMarksArchive(teamId, inlineFallback) {
-  const vaulted = await loadTenantVaultAsync(
-    teamFieldLogsVaultKey(teamId),
-    null
-  );
-  const inline = Array.isArray(inlineFallback) ? inlineFallback : [];
-  if (!Array.isArray(vaulted)) {
-    return [...inline];
-  }
-  if (inline.length === 0) {
-    return [...vaulted];
-  }
-  const seenIds = new Set(vaulted.map((r) => r.id));
-  const extraInline = inline.filter((r) => r && r.id && !seenIds.has(r.id));
-  return extraInline.length > 0 ? [...extraInline, ...vaulted] : [...vaulted];
-}
-async function listTeamFieldMarks(params) {
-  const limit = Math.max(1, Math.min(200, Math.floor(params.limit ?? 100)));
-  const offset = Math.max(0, Math.floor(params.offset ?? 0));
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) {
-    return { ok: false, logs: [], totalCount: 0, limit, offset, error: "Team not found." };
-  }
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem || callerMem.role === "PARENT_FOLLOWER") {
-    return {
-      ok: false,
-      logs: [],
-      totalCount: 0,
-      limit,
-      offset,
-      error: "Coach or athlete team membership required."
-    };
-  }
-  const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
-  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
-  const requestedCode = params.eventCode ? String(params.eventCode).toUpperCase() : void 0;
-  const filterByCode = requestedCode && VALID_FIELD_EVENT_CODES.has(requestedCode) ? requestedCode : void 0;
-  const visible = archive.filter((log) => {
-    if (!isStaff && log.membershipId !== callerMem.membershipId) return false;
-    if (filterByCode && log.eventCode !== filterByCode) return false;
-    return true;
-  });
-  return {
-    ok: true,
-    logs: visible.slice(offset, offset + limit),
-    totalCount: visible.length,
-    limit,
-    offset
-  };
-}
-async function recordTeamFieldMarks(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, recordedCount: 0, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
-      return { ok: false, recordedCount: 0, error: "Coach permissions required." };
-    }
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
-    const existingBatchKeys = /* @__PURE__ */ new Set();
-    for (const existing of archive) {
-      if (!existing.clientBatchId) continue;
-      const who = existing.membershipId || `name:${existing.athleteName.toLowerCase()}`;
-      existingBatchKeys.add(`${existing.clientBatchId}|${existing.eventCode}|${who}`);
-    }
-    const topBatchId = sanitizeClientBatchId(params.clientBatchId);
-    let recordedCount = 0;
-    for (const rawEntry of (params.entries || []).slice(0, 120)) {
-      const code = String(rawEntry.eventCode || "").toUpperCase();
-      if (!VALID_FIELD_EVENT_CODES.has(code)) continue;
-      const spec = getFieldEventSpec(code);
-      const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(String(rawEntry.date || "")) ? String(rawEntry.date).slice(0, 10) : nowIso.slice(0, 10);
-      const cleanAttempts = sanitizeFieldAttempts(rawEntry.attempts);
-      const summary = summarizeFieldSeries(code, cleanAttempts, rawEntry.rpe);
-      const targetMem = rawEntry.membershipId ? doc.memberships.find(
-        (m) => m.membershipId === rawEntry.membershipId && m.status !== "REVOKED"
-      ) : void 0;
-      const athleteName = String(
-        targetMem?.invitedName || rawEntry.athleteName || "Team Athlete"
-      ).trim().slice(0, 64);
-      const entryBatchId = sanitizeClientBatchId(rawEntry.clientBatchId) || topBatchId;
-      if (entryBatchId) {
-        const who = targetMem ? targetMem.membershipId : `name:${athleteName.toLowerCase()}`;
-        const batchKey = `${entryBatchId}|${code}|${who}`;
-        if (existingBatchKeys.has(batchKey)) {
-          continue;
-        }
-      }
-      const bestMarkMeters = summary.bestMarkMeters !== null ? summary.bestMarkMeters : typeof rawEntry.bestMarkMeters === "number" && Number.isFinite(rawEntry.bestMarkMeters) && rawEntry.bestMarkMeters > 0 ? Number(rawEntry.bestMarkMeters.toFixed(3)) : void 0;
-      const bestWindLegalMeters = summary.bestWindLegalMeters !== null ? summary.bestWindLegalMeters : typeof rawEntry.bestWindLegalMeters === "number" && Number.isFinite(rawEntry.bestWindLegalMeters) && rawEntry.bestWindLegalMeters > 0 ? Number(rawEntry.bestWindLegalMeters.toFixed(3)) : void 0;
-      const bestMarkWindMps = summary.bestMarkWindMps !== void 0 ? summary.bestMarkWindMps : typeof rawEntry.bestMarkWindMps === "number" && Number.isFinite(rawEntry.bestMarkWindMps) ? Number(rawEntry.bestMarkWindMps.toFixed(2)) : void 0;
-      const isWindAidedBest = bestMarkMeters !== void 0 ? summary.bestMarkMeters !== null ? summary.isWindAidedBest : Boolean(rawEntry.isWindAidedBest) : void 0;
-      const isNoHeight = summary.isNoHeight !== void 0 ? summary.isNoHeight : typeof rawEntry.isNoHeight === "boolean" ? rawEntry.isNoHeight : void 0;
-      const missesAtClearingHeight = summary.missesAtClearingHeight !== void 0 ? summary.missesAtClearingHeight : typeof rawEntry.missesAtClearingHeight === "number" && Number.isFinite(rawEntry.missesAtClearingHeight) ? Math.max(0, Math.round(rawEntry.missesAtClearingHeight)) : void 0;
-      const totalVerticalMisses = summary.totalVerticalMisses !== void 0 ? summary.totalVerticalMisses : typeof rawEntry.totalVerticalMisses === "number" && Number.isFinite(rawEntry.totalVerticalMisses) ? Math.max(0, Math.round(rawEntry.totalVerticalMisses)) : void 0;
-      const flightName = typeof rawEntry.flightName === "string" && rawEntry.flightName.trim() ? rawEntry.flightName.trim().slice(0, 48) : void 0;
-      const placeRank = typeof rawEntry.placeRank === "number" && Number.isFinite(rawEntry.placeRank) && rawEntry.placeRank >= 1 ? Math.round(rawEntry.placeRank) : void 0;
-      const advancedToFinals = typeof rawEntry.advancedToFinals === "boolean" ? rawEntry.advancedToFinals : void 0;
-      const recordId = `fld_${crypto9.randomBytes(6).toString("hex")}`;
-      const record = {
-        id: recordId,
-        teamId: doc.brand.teamId,
-        ...targetMem ? { membershipId: targetMem.membershipId } : {},
-        athleteName,
-        date: cleanDate,
-        eventCode: code,
-        eventGroup: spec.eventGroup,
-        isCompetition: Boolean(rawEntry.isCompetition),
-        meetOrPracticeTitle: String(rawEntry.meetOrPracticeTitle || "").trim().slice(0, 100) || `${spec.label} ${rawEntry.isCompetition ? "Competition" : "Practice Sheet"}`,
-        ...flightName ? { flightName } : {},
-        ...rawEntry.implementSpec ? { implementSpec: String(rawEntry.implementSpec).trim().slice(0, 64) } : {},
-        ...rawEntry.poleSpec ? { poleSpec: String(rawEntry.poleSpec).trim().slice(0, 64) } : {},
-        ...typeof rawEntry.approachSteps === "number" && Number.isFinite(rawEntry.approachSteps) ? { approachSteps: Math.max(1, Math.min(30, Math.round(rawEntry.approachSteps))) } : {},
-        attempts: cleanAttempts,
-        ...bestMarkMeters !== void 0 ? { bestMarkMeters } : {},
-        ...bestWindLegalMeters !== void 0 ? { bestWindLegalMeters } : {},
-        ...bestMarkWindMps !== void 0 ? { bestMarkWindMps } : {},
-        ...isWindAidedBest ? { isWindAidedBest: true } : {},
-        ...isNoHeight ? { isNoHeight: true } : {},
-        ...missesAtClearingHeight !== void 0 ? { missesAtClearingHeight } : {},
-        ...totalVerticalMisses !== void 0 ? { totalVerticalMisses } : {},
-        ...placeRank !== void 0 ? { placeRank } : {},
-        ...advancedToFinals !== void 0 ? { advancedToFinals } : {},
-        ...typeof rawEntry.multiPoints === "number" && Number.isFinite(rawEntry.multiPoints) ? { multiPoints: Math.round(rawEntry.multiPoints) } : {},
-        ...typeof rawEntry.rpe === "number" && Number.isFinite(rawEntry.rpe) ? { rpe: Math.max(1, Math.min(10, rawEntry.rpe)) } : {},
-        ...entryBatchId ? { clientBatchId: entryBatchId } : {},
-        createdAt: nowIso
-      };
-      archive.unshift(record);
-      recordedCount += 1;
-      if (targetMem) {
-        const bestLabel = bestMarkMeters !== void 0 ? `${bestMarkMeters.toFixed(2)}m` : `${summary.totalContacts} attempts`;
-        const mirroredAct = {
-          id: recordId,
-          startDateLocal: `${cleanDate}T15:30:00`,
-          name: `${spec.shortLabel}: ${bestLabel}${rawEntry.isCompetition ? " (Meet)" : ""}`,
-          sportCategory: "Running",
-          environment: "OUTDOOR",
-          subType: "Track",
-          movingTimeSecs: 1800,
-          distanceMeters: 0,
-          elevationGainMeters: 0,
-          trainingLoad: summary.estimatedLoadTss,
-          avgHr: 0,
-          maxHr: 0,
-          aerobicDecouplingPct: 0,
-          efficiencyFactor: 0,
-          firstHalfEf: 0,
-          secondHalfEf: 0,
-          zoneSecs: { hr: [0, 0, 0, 0, 0, 0, 0] },
-          sourceBadges: [],
-          stravaPrCount: 0,
-          segmentEfforts: [],
-          isCompetitionDay: Boolean(rawEntry.isCompetition),
-          deviceName: "MeetReady Trackside Field Sheet"
-        };
-        targetMem.coachRecordedActivities = [
-          mirroredAct,
-          ...targetMem.coachRecordedActivities || []
-        ].slice(0, 80);
-      }
-    }
-    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), archive);
-    doc.fieldMarkLogs = archive.slice(0, 150);
-    doc.fieldMarkLogsTotalCount = archive.length;
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "FIELD_MARKS_RECORDED",
-      metadata: {
-        recordedCount,
-        totalArchiveCount: archive.length,
-        ...topBatchId ? { clientBatchId: topBatchId } : {}
-      }
-    });
-    return {
-      ok: true,
-      recordedCount,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-var VALID_COACH_STAFF_ROLES = /* @__PURE__ */ new Set([
-  "HEAD_COACH",
-  "ASSISTANT_COACH",
-  "ATHLETIC_TRAINER",
-  "ORG_ADMIN"
-]);
-function filterValidAssignedAthleteIds(memberships, rawIds) {
-  if (!Array.isArray(rawIds)) return void 0;
-  const athleteIds = new Set(
-    memberships.filter((m) => m.role === "ATHLETE" && m.status !== "REVOKED").map((m) => m.membershipId)
-  );
-  const cleaned = [];
-  for (const id of rawIds) {
-    const trimmed = String(id || "").trim();
-    if (trimmed && athleteIds.has(trimmed) && !cleaned.includes(trimmed)) {
-      cleaned.push(trimmed);
-    }
-  }
-  return cleaned;
-}
-async function updateAssistantCoachEventGroups(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
-      return { ok: false, error: "Head Coach or Org Admin permissions required." };
-    }
-    const target = doc.memberships.find(
-      (m) => m.membershipId === params.membershipId && m.status !== "REVOKED"
-    );
-    if (!target) return { ok: false, error: "Staff member not found." };
-    const cleanGroups = sanitizeTargetEventGroups(params.coachEventGroups) || [];
-    target.coachEventGroups = cleanGroups.length > 0 ? cleanGroups : void 0;
-    if (params.coachSpecialtyTitle !== void 0) {
-      const cleanTitle = String(params.coachSpecialtyTitle || "").trim().slice(0, 60);
-      target.coachSpecialtyTitle = cleanTitle || void 0;
-    }
-    if (params.assignedAthleteMembershipIds !== void 0) {
-      const validIds = filterValidAssignedAthleteIds(
-        doc.memberships,
-        params.assignedAthleteMembershipIds
-      );
-      target.assignedAthleteMembershipIds = validIds && validIds.length > 0 ? validIds : void 0;
-    }
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "COACH_GROUPS_UPDATED",
-      targetId: target.membershipId,
-      metadata: {
-        coachEventGroups: cleanGroups,
-        coachSpecialtyTitle: target.coachSpecialtyTitle,
-        assignedAthleteCount: target.assignedAthleteMembershipIds?.length ?? 0
-      }
-    });
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function inviteTeamCoachingStaff(params) {
-  const cleanName = String(params.staffName || "").trim().slice(0, 64);
-  if (!cleanName) {
-    return { ok: false, error: "Coach or staff name is required." };
-  }
-  const cleanEmail = params.staffEmail ? String(params.staffEmail).trim().toLowerCase() : "";
-  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-    return { ok: false, error: "Please enter a valid coach email address." };
-  }
-  const role = params.role && VALID_COACH_STAFF_ROLES.has(params.role) ? params.role : "ASSISTANT_COACH";
-  const cleanSpecialty = String(params.coachSpecialtyTitle || "").trim().slice(0, 60);
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
-      return { ok: false, error: "Head Coach or Org Admin permissions required." };
-    }
-    if (cleanEmail) {
-      const duplicate = doc.memberships.find(
-        (m) => m.status !== "REVOKED" && m.invitedEmail?.toLowerCase() === cleanEmail
-      );
-      if (duplicate) {
-        return {
-          ok: false,
-          error: "A team or coaching staff member with that email already exists on this roster."
-        };
-      }
-    }
-    const cleanGroups = sanitizeTargetEventGroups(params.coachEventGroups) || [];
-    const validAthleteIds = filterValidAssignedAthleteIds(
-      doc.memberships,
-      params.assignedAthleteMembershipIds
-    );
-    const rawInviteToken = crypto9.randomBytes(16).toString("base64url");
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
-    const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
-    let emailStatus = "READY_MANUAL_LINK";
-    if (cleanEmail && isResendConfigured()) {
-      const roleLabel = cleanSpecialty || role.replace(/_/g, " ");
-      const sendRes = await sendEmailViaResend({
-        to: cleanEmail,
-        subject: `Coaching staff invite: ${doc.brand.name} (${roleLabel}) on MeetReady`,
-        html: `<p>Hi <strong>${escapeHtml(cleanName)}</strong>,</p><p>You have been invited to join <strong>${escapeHtml(doc.brand.name)}</strong> on MeetReady as <strong>${escapeHtml(roleLabel)}</strong>.</p><p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;padding:12px 20px;background:#C8FF00;color:#111318;font-weight:700;text-decoration:none;border-radius:10px;">Accept Coach Invite</a></p><p style="font-size:12px;color:#64748B;">Or paste team code: <strong>${escapeHtml(doc.brand.joinCode)}</strong></p>`,
-        text: `Hi ${cleanName}, you are invited to join ${doc.brand.name} on MeetReady as ${roleLabel}. Accept here: ${inviteUrl} (Team code: ${doc.brand.joinCode})`
-      });
-      emailStatus = sendRes.status;
-    }
-    const newMem = {
-      membershipId: `mem_coach_${crypto9.randomBytes(6).toString("hex")}`,
-      teamId: doc.brand.teamId,
-      role,
-      squadGroup: "Coaching Staff",
-      ...cleanGroups.length > 0 ? { coachEventGroups: cleanGroups } : {},
-      ...cleanSpecialty ? { coachSpecialtyTitle: cleanSpecialty } : {},
-      ...validAthleteIds && validAthleteIds.length > 0 ? { assignedAthleteMembershipIds: validAthleteIds } : {},
-      sharingTier: "FULL_STREAMS",
-      invitedName: cleanName,
-      ...cleanEmail ? { invitedEmail: cleanEmail } : {},
-      isMinorU18: false,
-      parentConsentStatus: "NOT_REQUIRED",
-      status: "INVITED",
-      emailDeliveryStatus: emailStatus,
-      magicJoinUrl: inviteUrl,
-      rawInviteToken,
-      inviteTokenHash: hashToken(rawInviteToken),
-      invitedAt: nowIso
-    };
-    doc.memberships.push(newMem);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "COACHING_STAFF_INVITED",
-      targetId: newMem.membershipId,
-      metadata: {
-        role,
-        coachSpecialtyTitle: cleanSpecialty || void 0,
-        coachEventGroups: cleanGroups,
-        assignedAthleteCount: validAthleteIds?.length ?? 0
-      }
-    });
-    const summary = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
-    const projectedMember = summary?.memberships.find((m) => m.membershipId === newMem.membershipId);
-    return {
-      ok: true,
-      member: projectedMember,
-      inviteUrl,
-      emailStatus,
-      team: summary
-    };
-  });
-}
-
-// server/teamMessagingService.ts
-import crypto10 from "crypto";
-function escapeHtml2(raw) {
-  return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function defaultPolicyForDoc(doc) {
-  return {
-    athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
-    quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
-    quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
-    requireGuardianCcForMinors: Boolean(
-      doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
-    )
-  };
-}
-function isWithinQuietHours2(hour, startHour, endHour) {
-  if (typeof hour !== "number" || !Number.isFinite(hour) || hour < 0 || hour > 23) return false;
-  if (startHour === endHour) return false;
-  if (startHour > endHour) {
-    return hour >= startHour || hour < endHour;
-  }
-  return hour >= startHour && hour < endHour;
-}
-var ALLOWED_CHANNEL_SCOPES = /* @__PURE__ */ new Set([
-  "ALL_TEAM",
-  "EVENT_GROUP",
-  "DIRECT_TRANSPARENT",
-  "COACHES_STAFF"
-]);
-async function postTeamMessage(params) {
-  if (!ALLOWED_CHANNEL_SCOPES.has(params.channelScope)) {
-    return { ok: false, status: 400, error: "Invalid team message channel scope." };
-  }
-  let pendingGuardianEmail = null;
-  let pendingPushPayload = null;
-  const lockedResult = await withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-    );
-    if (!callerMem) {
-      return { ok: false, status: 403, error: "Active team membership is required to send messages." };
-    }
-    const cleanBody = String(params.body || "").trim().slice(0, 800);
-    if (!cleanBody) {
-      return { ok: false, status: 400, error: "Message body is required." };
-    }
-    const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
-    const isParentFollower = callerMem.role === "PARENT_FOLLOWER";
-    const effectiveEmergencyOverride = isStaff && params.isEmergencyOverride === true;
-    const policy = defaultPolicyForDoc(doc);
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    if (params.channelScope === "COACHES_STAFF" && !isStaff) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff."
-      };
-    }
-    if (isParentFollower && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP" || params.channelScope === "COACHES_STAFF")) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Parents may view announcements or message coaching staff transparently regarding their linked athlete."
-      };
-    }
-    if (callerMem.role === "ATHLETE" && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP") && !policy.athleteRepliesEnabled) {
-      return {
-        ok: false,
-        status: 403,
-        error: "This team channel is currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
-      };
-    }
-    let channelId = "team:all";
-    let resolvedEventGroup;
-    let targetMembershipId;
-    let targetAthleteName;
-    let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
-    if (params.channelScope === "COACHES_STAFF") {
-      channelId = "staff:only";
-      guardianCcApplied = false;
-    } else if (params.channelScope === "EVENT_GROUP") {
-      resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
-      channelId = `group:${resolvedEventGroup}`;
-    } else if (params.channelScope === "DIRECT_TRANSPARENT") {
-      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
-      if (isParentFollower && !callerParentEmail) {
-        return {
-          ok: false,
-          status: 403,
-          error: "Parents may only message coaches in the transparent thread of their linked child athlete."
-        };
-      }
-      const targetMem = callerMem.role === "ATHLETE" ? callerMem : doc.memberships.find(
-        (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED" && m.role === "ATHLETE"
-      );
-      if (!targetMem) {
-        return {
-          ok: false,
-          status: 404,
-          error: "Select a valid athlete on the roster for a transparent SafeSport message."
-        };
-      }
-      if (isParentFollower) {
-        const targetParentEmail = targetMem.parentGuardianEmail?.trim().toLowerCase();
-        if (!callerParentEmail || !targetParentEmail || callerParentEmail !== targetParentEmail) {
-          return {
-            ok: false,
-            status: 403,
-            error: "Parents may only message coaches in the transparent thread of their linked child athlete."
-          };
-        }
-      }
-      const ageResolved = resolveAthleteAgeTier({
-        birthMonthYear: targetMem.birthMonthYear,
-        birthYear: targetMem.birthYear,
-        orgType: doc.brand.orgType,
-        graduationYear: targetMem.graduationYear
-      });
-      const targetIsProtectedMinor = Boolean(
-        (ageResolved.ageTier === "UNKNOWN" ? targetMem.isMinorU18 : ageResolved.isMinorU18) || doc.brand.orgType === "HIGH_SCHOOL"
-      );
-      if ((targetIsProtectedMinor || policy.requireGuardianCcForMinors) && (params.privateDirectToMinor === true || params.guardianCc === false)) {
-        return {
-          ok: false,
-          status: 403,
-          error: "SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian CC and coaching staff oversight are mandatory."
-        };
-      }
-      channelId = `dm:${targetMem.membershipId}`;
-      targetMembershipId = targetMem.membershipId;
-      targetAthleteName = targetMem.invitedName;
-      guardianCcApplied = Boolean(
-        targetIsProtectedMinor || doc.brand.enableParentGuardianCc || targetMem.parentGuardianEmail
-      );
-      if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
-        pendingGuardianEmail = {
-          to: targetMem.parentGuardianEmail,
-          subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
-          html: `<p><strong>${escapeHtml2(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml2(callerMem.role)}) sent a team message to ${escapeHtml2(targetMem.invitedName)}:</p><blockquote>${escapeHtml2(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
-          text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`
-        };
-      }
-    }
-    const quietHoursActive = isWithinQuietHours2(
-      params.clientLocalHour,
-      policy.quietHoursStartHour,
-      policy.quietHoursEndHour
-    );
-    const record = {
-      id: `msg_${crypto10.randomBytes(6).toString("hex")}`,
-      teamId: doc.brand.teamId,
-      channelId,
-      channelScope: params.channelScope,
-      ...resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {},
-      ...targetMembershipId ? { targetMembershipId } : {},
-      ...targetAthleteName ? { targetAthleteName } : {},
-      senderSid: params.callerSid,
-      senderMembershipId: callerMem.membershipId,
-      senderName: callerMem.invitedName || doc.brand.coachDisplayName,
-      senderRole: callerMem.role,
-      body: cleanBody,
-      createdAt: nowIso,
-      guardianCcApplied,
-      ...pendingGuardianEmail ? { guardianEmailNotified: false } : {},
-      secondAdultVisible: true,
-      ...quietHoursActive && !effectiveEmergencyOverride ? { sentDuringQuietHours: true } : {},
-      ...effectiveEmergencyOverride ? { isEmergencyOverride: true } : {},
-      acknowledgedByMembershipIds: [callerMem.membershipId]
-    };
-    doc.teamMessages = [record, ...doc.teamMessages || []].slice(0, 500);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    pendingPushPayload = {
-      teamId: params.teamId,
-      senderSid: params.callerSid,
-      senderName: record.senderName,
-      kind: "TEAM_MESSAGE",
-      channelScope: params.channelScope,
-      eventGroup: resolvedEventGroup,
-      targetMembershipId,
-      bodyText: cleanBody,
-      clientLocalHour: params.clientLocalHour,
-      isEmergency: effectiveEmergencyOverride
-    };
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "TEAM_MESSAGE_SENT",
-      targetId: targetMembershipId || channelId,
-      metadata: {
-        channelScope: params.channelScope,
-        guardianCcApplied,
-        secondAdultVisible: true,
-        sentDuringQuietHours: Boolean(record.sentDuringQuietHours),
-        isEmergencyOverride: Boolean(record.isEmergencyOverride)
-      }
-    });
-    return {
-      ok: true,
-      message: record,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-  if (!lockedResult.ok) {
-    return lockedResult;
-  }
-  const emailToSend = pendingGuardianEmail;
-  const pushToSend = pendingPushPayload;
-  const [emailOutcome] = await Promise.allSettled([
-    emailToSend ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "guardian-dm-email") : Promise.resolve(null),
-    pushToSend ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "team-message-push") : Promise.resolve(null)
-  ]);
-  const emailDelivered = Boolean(emailToSend) && emailOutcome.status === "fulfilled" && emailOutcome.value !== null && emailOutcome.value.delivered === true;
-  if (emailDelivered) {
-    const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
-      const freshDoc = await loadTeamDocRaw(params.teamId);
-      if (!freshDoc) return null;
-      const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
-      if (targetMsg) {
-        targetMsg.guardianEmailNotified = true;
-        freshDoc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-        await saveTeamDocRaw(params.teamId, freshDoc);
-      }
-      return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
-    });
-    lockedResult.message.guardianEmailNotified = true;
-    if (refreshedTeam) {
-      lockedResult.team = refreshedTeam;
-    }
-  }
-  return lockedResult;
-}
-async function acknowledgeTeamMessage(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
-    if (!projected) return { ok: false, status: 403, error: "Membership required." };
-    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
-    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
-    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
-    if (!target) return { ok: false, status: 404, error: "Message not found." };
-    const existingAcks = new Set(target.acknowledgedByMembershipIds || []);
-    existingAcks.add(projected.myMembershipId);
-    target.acknowledgedByMembershipIds = Array.from(existingAcks);
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function flagTeamMessageForReview(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
-    if (!projected) return { ok: false, status: 403, error: "Membership required." };
-    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
-    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
-    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
-    if (!target) return { ok: false, status: 404, error: "Message not found." };
-    const cleanReason = String(params.reason || "Flagged for athletic administrator review").trim().slice(0, 200);
-    target.flaggedForAdminReview = true;
-    target.flaggedReason = cleanReason;
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "TEAM_MESSAGE_FLAGGED",
-      targetId: target.id,
-      metadata: {
-        channelId: target.channelId,
-        reason: cleanReason
-      }
-    });
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function updateTeamMessagingPolicy(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Only Head Coaches or Athletic Admins may change team messaging rules."
-      };
-    }
-    const current = defaultPolicyForDoc(doc);
-    doc.messagingPolicy = {
-      athleteRepliesEnabled: typeof params.athleteRepliesEnabled === "boolean" ? params.athleteRepliesEnabled : current.athleteRepliesEnabled,
-      quietHoursStartHour: typeof params.quietHoursStartHour === "number" && params.quietHoursStartHour >= 0 && params.quietHoursStartHour <= 23 ? Math.round(params.quietHoursStartHour) : current.quietHoursStartHour,
-      quietHoursEndHour: typeof params.quietHoursEndHour === "number" && params.quietHoursEndHour >= 0 && params.quietHoursEndHour <= 23 ? Math.round(params.quietHoursEndHour) : current.quietHoursEndHour,
-      requireGuardianCcForMinors: Boolean(
-        doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || current.requireGuardianCcForMinors
-      )
-    };
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "TEAM_MESSAGING_POLICY_UPDATED",
-      targetId: params.teamId,
-      metadata: doc.messagingPolicy
-    });
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-
-// server/teamLifecycleService.ts
-import crypto13 from "crypto";
-
-// server/athleteArchiveHelper.ts
-async function archiveCoachActivitiesForMember(member, activities) {
-  if (!Array.isArray(activities) || activities.length === 0) return;
-  const targetVaultKeys = /* @__PURE__ */ new Set();
-  let resolvedUserId = member.userId?.trim();
-  if (!resolvedUserId && member.invitedEmail) {
-    const matchedUser = await getUserByEmail(member.invitedEmail).catch(() => null);
-    if (matchedUser?.id) resolvedUserId = matchedUser.id;
-  }
-  if (resolvedUserId?.startsWith("usr_")) {
-    const cleanUsr = resolvedUserId.replace(/[^0-9a-zA-Z_-]/g, "");
-    if (cleanUsr) targetVaultKeys.add(`athlete_state_user_${cleanUsr}`);
-  }
-  if (member.stravaAthleteId) {
-    const cleanStrava = String(member.stravaAthleteId).trim().replace(/[^0-9a-zA-Z_-]/g, "");
-    if (cleanStrava) targetVaultKeys.add(`athlete_state_strava_${cleanStrava}`);
-  }
-  if (member.userSid) {
-    const cleanSid = String(member.userSid).trim().replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 32);
-    if (cleanSid) targetVaultKeys.add(`athlete_state_sid_${cleanSid}`);
-  }
-  if (targetVaultKeys.size === 0) return;
-  const compactIncoming = activities.map((act) => ({
-    ...act,
-    streams: void 0
-  }));
-  for (const vaultKey of targetVaultKeys) {
-    await withVaultLock(vaultKey, async () => {
-      const existing = await loadTenantVaultAsync(
-        vaultKey,
-        null
-      );
-      const prevArchived = Array.isArray(existing?.coachArchivedActivities) ? existing.coachArchivedActivities : [];
-      const mergedMap = /* @__PURE__ */ new Map();
-      for (const item of [...compactIncoming, ...prevArchived]) {
-        if (item?.id && !mergedMap.has(item.id)) {
-          mergedMap.set(item.id, item);
-        }
-      }
-      const nextArchived = Array.from(mergedMap.values()).sort((a, b) => String(b.startDateLocal || "").localeCompare(String(a.startDateLocal || ""))).slice(0, 150);
-      const sanitized = sanitizeAthleteCloudState(
-        { coachArchivedActivities: nextArchived },
-        existing
-      );
-      await saveTenantVaultAsync(vaultKey, sanitized);
-    });
-  }
-}
-
-// server/teamService.ts
-import crypto12 from "crypto";
+// server/athleticSyncService.ts
+import crypto11 from "crypto";
 
 // src/utils/officialRaceSynthesizer.ts
 var OFFICIAL_RACE_EVENTS = [
@@ -11214,8 +11039,104 @@ function isDuplicateExternalFieldLog(existing, candidate) {
   return existing.bestMarkMeters === candidate.bestMarkMeters;
 }
 
+// server/athleteArchiveHelper.ts
+async function archiveCoachActivitiesForMember(member, activities) {
+  if (!Array.isArray(activities) || activities.length === 0) return;
+  const targetVaultKeys = /* @__PURE__ */ new Set();
+  let resolvedUserId = member.userId?.trim();
+  if (!resolvedUserId && member.invitedEmail) {
+    const matchedUser = await getUserByEmail(member.invitedEmail).catch(() => null);
+    if (matchedUser?.id) resolvedUserId = matchedUser.id;
+  }
+  if (resolvedUserId?.startsWith("usr_")) {
+    const cleanUsr = resolvedUserId.replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanUsr) targetVaultKeys.add(`athlete_state_user_${cleanUsr}`);
+  }
+  if (member.stravaAthleteId) {
+    const cleanStrava = String(member.stravaAthleteId).trim().replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanStrava) targetVaultKeys.add(`athlete_state_strava_${cleanStrava}`);
+  }
+  if (member.userSid) {
+    const cleanSid = String(member.userSid).trim().replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 32);
+    if (cleanSid) targetVaultKeys.add(`athlete_state_sid_${cleanSid}`);
+  }
+  if (targetVaultKeys.size === 0) return;
+  const compactIncoming = activities.map((act) => ({
+    ...act,
+    streams: void 0
+  }));
+  for (const vaultKey of targetVaultKeys) {
+    await withVaultLock(vaultKey, async () => {
+      const existing = await loadTenantVaultAsync(
+        vaultKey,
+        null
+      );
+      const prevArchived = Array.isArray(existing?.coachArchivedActivities) ? existing.coachArchivedActivities : [];
+      const mergedMap = /* @__PURE__ */ new Map();
+      for (const item of [...compactIncoming, ...prevArchived]) {
+        if (item?.id && !mergedMap.has(item.id)) {
+          mergedMap.set(item.id, item);
+        }
+      }
+      const nextArchived = Array.from(mergedMap.values()).sort((a, b) => String(b.startDateLocal || "").localeCompare(String(a.startDateLocal || ""))).slice(0, 150);
+      const sanitized = sanitizeAthleteCloudState(
+        { coachArchivedActivities: nextArchived },
+        existing
+      );
+      await saveTenantVaultAsync(vaultKey, sanitized);
+    });
+  }
+}
+
+// server/athleticFieldSyncHelper.ts
+import crypto8 from "node:crypto";
+function applyParsedExternalFieldMarksToDoc(params) {
+  const baseLogs = Array.isArray(params.existingLogs) ? [...params.existingLogs] : Array.isArray(params.doc.fieldMarkLogs) ? [...params.doc.fieldMarkLogs] : [];
+  const mergedLogs = [...baseLogs];
+  const addedRecords = [];
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  for (const item of params.matchedFieldItems || []) {
+    const row = item?.row;
+    if (!row || !row.isFieldEvent) continue;
+    const normName = normalizeAthleteMatchKey(row.athleteName);
+    const fallbackMem = !item.mem && !item.membershipId ? (params.doc.memberships || []).find(
+      (m) => m.status !== "REVOKED" && m.role !== "PARENT_FOLLOWER" && (row.externalAthleteId && m.externalAthleteId === row.externalAthleteId || Boolean(normName) && normalizeAthleteMatchKey(m.invitedName) === normName)
+    ) : void 0;
+    const membershipId = item.mem?.membershipId || item.membershipId || fallbackMem?.membershipId;
+    const athleteName = item.mem?.invitedName || item.matchedAthleteName || item.athleteName || fallbackMem?.invitedName || row.athleteName;
+    const eventCode = row.fieldEventCode || "LJ";
+    const candidate = buildExternalFieldEventLogRecord({
+      row,
+      teamId: params.doc.brand.teamId,
+      membershipId,
+      athleteName,
+      nowIso,
+      idSuffix: crypto8.randomBytes(4).toString("hex")
+    });
+    const isDup = mergedLogs.some(
+      (existing) => isDuplicateExternalFieldLog(existing, candidate)
+    );
+    if (isDup) continue;
+    if (fallbackMem && !fallbackMem.eventGroup) {
+      fallbackMem.eventGroup = getFieldEventSpec(eventCode).eventGroup;
+    }
+    mergedLogs.unshift(candidate);
+    addedRecords.push(candidate);
+  }
+  params.doc.fieldMarkLogs = mergedLogs;
+  params.doc.fieldMarkLogsTotalCount = mergedLogs.length;
+  return {
+    addedRecords,
+    mergedLogs,
+    addedCount: addedRecords.length
+  };
+}
+
+// server/teamService.ts
+import crypto10 from "crypto";
+
 // server/teamWorkoutAndGovernanceService.ts
-import crypto11 from "crypto";
+import crypto9 from "crypto";
 
 // src/physiology/safeSportPatternWatchEngine.ts
 var DAY_MS = 864e5;
@@ -11481,6 +11402,38 @@ function evaluateSafeSportPatternWatch(params) {
   };
 }
 
+// src/physiology/injuryHubEngine.ts
+var ALL_INJURY_BODY_REGIONS = [
+  "SHIN",
+  "ACHILLES",
+  "ANKLE",
+  "FOOT",
+  "KNEE",
+  "HAMSTRING",
+  "QUAD",
+  "GROIN",
+  "HIP",
+  "BACK",
+  "SHOULDER",
+  "ELBOW",
+  "OTHER"
+];
+var VALID_PAIN_AREA_SET = new Set(
+  ALL_INJURY_BODY_REGIONS
+);
+function normalizePainArea(raw) {
+  if (typeof raw !== "string") return void 0;
+  const upper = raw.trim().toUpperCase();
+  return VALID_PAIN_AREA_SET.has(upper) ? upper : void 0;
+}
+function stripClinicalNotesForRole(cases, role) {
+  if (role === "ATHLETIC_TRAINER") return cases;
+  return cases.map((c) => {
+    const { privateClinicalNotes: _drop, ...coachSafe } = c;
+    return coachSafe;
+  });
+}
+
 // server/teamWorkoutAndGovernanceService.ts
 async function updateTeamMemberEventGroup(params) {
   return withTeamRowLock(params.teamId, async () => {
@@ -11529,7 +11482,7 @@ async function broadcastWorkoutToTeamSquad(params) {
     const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
     const meetingNotes = params.meetingNotes ? String(params.meetingNotes).trim().slice(0, 240) : void 0;
     const workout = {
-      broadcastId: `bw_${crypto11.randomBytes(6).toString("hex")}`,
+      broadcastId: `bw_${crypto9.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup,
       ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -11600,7 +11553,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
       const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
       const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : void 0;
       return {
-        broadcastId: `bw_${crypto11.randomBytes(6).toString("hex")}`,
+        broadcastId: `bw_${crypto9.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         targetSquadGroup,
         ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -11942,7 +11895,7 @@ async function syncAthleteSnapshotAcrossTeams(params) {
         mem.invitedName = params.athleteName.trim().slice(0, 64);
       }
       const sanitizedCheckIns = quarantineMinorPendingConsent || hidePrivateWellness ? void 0 : Array.isArray(params.snapshot.sessionCheckIns) ? params.snapshot.sessionCheckIns.slice(0, 28).map((c) => {
-        const validArea = c?.painArea === "KNEE" || c?.painArea === "SHIN" || c?.painArea === "ACHILLES" || c?.painArea === "HAMSTRING" || c?.painArea === "HIP" || c?.painArea === "FOOT" || c?.painArea === "BACK" || c?.painArea === "OTHER" ? c.painArea : void 0;
+        const validArea = normalizePainArea(c?.painArea);
         const validLegFeel = c?.legFeel === "FRESH" || c?.legFeel === "NORMAL" || c?.legFeel === "HEAVY" ? c.legFeel : void 0;
         const validRitualSlot = c?.ritualSlot === "MORNING" || c?.ritualSlot === "POST_SESSION" || c?.ritualSlot === "TONIGHT" ? c.ritualSlot : void 0;
         const rawSleepTarget = Number(c?.sleepTargetHours);
@@ -12018,7 +11971,7 @@ Team: ${doc.brand.name}`
             deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
           }
           const alertRecord = {
-            id: `gsa_${crypto11.randomBytes(6).toString("hex")}`,
+            id: `gsa_${crypto9.randomBytes(6).toString("hex")}`,
             teamId: doc.brand.teamId,
             targetMembershipId: mem.membershipId,
             athleteName: mem.invitedName,
@@ -12087,7 +12040,7 @@ Team: ${doc.brand.name}`
       deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
     }
     const alertRecord = {
-      id: `gsa_${crypto11.randomBytes(6).toString("hex")}`,
+      id: `gsa_${crypto9.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: target.membershipId,
       athleteName: target.invitedName,
@@ -12149,9 +12102,9 @@ async function saveTeamWorkoutLibraryTemplate(params) {
     }
     const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "SWIMMING" || params.template.category === "TRIATHLON" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto11.randomBytes(6).toString("hex")}`;
+    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto9.randomBytes(6).toString("hex")}`;
     const record = {
-      id: id || `wlib_${crypto11.randomBytes(6).toString("hex")}`,
+      id: id || `wlib_${crypto9.randomBytes(6).toString("hex")}`,
       name: cleanName,
       category: validCat,
       sportCategory: params.template.sportCategory || "Running",
@@ -12267,7 +12220,7 @@ async function postTeamWorkoutComment(params) {
       targetIsProtectedMinor || doc.brand.enableParentGuardianCc && targetMem.parentGuardianEmail
     );
     const comment = {
-      id: `cmt_${crypto11.randomBytes(6).toString("hex")}`,
+      id: `cmt_${crypto9.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: targetMem.membershipId,
       targetAthleteName: targetMem.invitedName,
@@ -12466,13 +12419,13 @@ async function createTeamForCoach(params) {
   const cleanShort = String(params.shortName || "").trim().slice(0, 22) || cleanName.split(/\s+/).slice(0, 2).join(" ").toUpperCase().slice(0, 14);
   let slug = slugifyTeamName(cleanName);
   if (dir.bySlug[slug]) {
-    slug = `${slug}-${crypto12.randomInt(10, 99)}`;
+    slug = `${slug}-${crypto10.randomInt(10, 99)}`;
   }
   let joinCode = generateTeamJoinCode(cleanShort);
   if (dir.byJoinCode[joinCode]) {
-    joinCode = generateTeamJoinCode(cleanShort, crypto12.randomInt(10, 99));
+    joinCode = generateTeamJoinCode(cleanShort, crypto10.randomInt(10, 99));
   }
-  const teamId = `tm_${crypto12.randomBytes(8).toString("hex")}`;
+  const teamId = `tm_${crypto10.randomBytes(8).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const defaultSafeSportShield = typeof params.defaultSafeSportShield === "boolean" ? params.defaultSafeSportShield : orgDefaults.defaultSafeSportShield;
   const enableParentGuardianCc = typeof params.enableParentGuardianCc === "boolean" ? params.enableParentGuardianCc : orgDefaults.enableParentGuardianCc;
@@ -12499,7 +12452,7 @@ async function createTeamForCoach(params) {
   const cleanCoachEventGroups = sanitizeTargetEventGroups(params.coachEventGroups);
   const coachAttribution = sanitizeCoachAttribution(params.attribution);
   const coachMembership = {
-    membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
     teamId,
     userSid: params.callerSid,
     role: "HEAD_COACH",
@@ -12644,8 +12597,8 @@ async function bulkCreateAndSendInvites(params) {
       )) {
         continue;
       }
-      const rawToken = crypto12.randomBytes(12).toString("base64url");
-      const membershipId = `mem_${crypto12.randomBytes(6).toString("hex")}`;
+      const rawToken = crypto10.randomBytes(12).toString("base64url");
+      const membershipId = `mem_${crypto10.randomBytes(6).toString("hex")}`;
       const emailParam = cleanEmail ? `&email=${encodeURIComponent(cleanEmail)}` : "";
       const magicJoinUrl = `${cleanOrigin}/join/${latestDoc.brand.slug}?t=${rawToken}${emailParam}`;
       const parentCc = latestDoc.brand.enableParentGuardianCc && row.parentGuardianEmail ? row.parentGuardianEmail.trim().toLowerCase() : void 0;
@@ -12771,7 +12724,7 @@ async function resendPendingTeamInvites(params) {
       continue;
     }
     if (!m.rawInviteToken) {
-      m.rawInviteToken = crypto12.randomBytes(12).toString("base64url");
+      m.rawInviteToken = crypto10.randomBytes(12).toString("base64url");
       m.inviteTokenHash = hashToken(m.rawInviteToken);
     }
     const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : "";
@@ -12945,7 +12898,7 @@ async function claimTeamJoinInvite(params) {
     const resolvedSharingTier = isStaffInvite ? "FULL_STREAMS" : isDeferredMinorParentEmail ? "LOAD_ONLY" : params.sharingTier || "SUMMARY_ONLY";
     if (!mem) {
       mem = {
-        membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         stravaAthleteId: cleanStravaId,
@@ -13012,7 +12965,7 @@ async function claimTeamJoinInvite(params) {
     if (mem.isMinorU18 && mem.parentGuardianEmail) {
       let rawConsentToken = "";
       if (!mem.parentConsentTokenHash) {
-        rawConsentToken = crypto12.randomBytes(16).toString("base64url");
+        rawConsentToken = crypto10.randomBytes(16).toString("base64url");
         mem.parentConsentTokenHash = hashToken(rawConsentToken);
         mem.parentConsentToken = void 0;
       }
@@ -13159,7 +13112,1933 @@ async function acknowledgeParentConsent(token) {
   return { ok: false, error: "Invalid or expired parent consent link." };
 }
 
+// server/athleticSyncService.ts
+function assertCoachMembership(doc, callerSid) {
+  const mem = doc.memberships.find(
+    (m) => m.userSid === callerSid && m.status !== "REVOKED"
+  );
+  if (!mem || mem.role !== "HEAD_COACH" && mem.role !== "ASSISTANT_COACH") {
+    return null;
+  }
+  return mem;
+}
+function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
+  const existingKeySet = new Set(
+    (doc.broadcastWorkouts || []).map(
+      (bw) => `${bw.date}|${normalizeAthleteMatchKey(bw.name)}`
+    )
+  );
+  let added = 0;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const additions = [];
+  for (const meet of meets.slice(0, 60)) {
+    const cleanName = String(meet.name || "").trim().slice(0, 100);
+    const cleanDate = String(meet.date || "").slice(0, 10);
+    if (!cleanName || !/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) continue;
+    const dedupeKey = `${cleanDate}|${normalizeAthleteMatchKey(cleanName)}`;
+    if (existingKeySet.has(dedupeKey)) continue;
+    existingKeySet.add(dedupeKey);
+    const estDist = meet.distanceMeters || 5e3;
+    const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
+    additions.push({
+      broadcastId: `meet_${crypto11.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      targetSquadGroup: "ALL",
+      date: cleanDate,
+      name: cleanName,
+      sportCategory: "Running",
+      plannedDurationSecs: 5400,
+      plannedLoad: estLoad,
+      workoutSyntax: estDist >= 4e3 ? `Warmup 20m Z1
+Main: ${cleanName}
+Cooldown 15m Z1` : `Warmup 25m
+Race: ${cleanName}
+Cooldown 15m`,
+      description: meet.description || `Synced ${sourceLabel === "TFRRS" ? "TFRRS" : "Athletic.net"} meet schedule event.`,
+      ...meet.scheduledTime ? { scheduledTime: meet.scheduledTime } : {},
+      locationName: meet.locationName,
+      locationCategory: meet.locationCategory || "XC_COURSE",
+      planBlockId: `ext-sched-${sourceLabel.toLowerCase()}`,
+      planBlockName: sourceLabel === "TFRRS" ? "TFRRS Meet Schedule" : "Athletic.net Meet Schedule",
+      isOfficialMeet: true,
+      externalSource: meet.externalSource || sourceLabel,
+      pushedByCoachName: doc.brand.coachDisplayName,
+      createdAt: nowIso
+    });
+    added += 1;
+  }
+  if (additions.length > 0) {
+    doc.broadcastWorkouts = [...additions, ...doc.broadcastWorkouts || []].slice(0, 400);
+  }
+  return added;
+}
+async function updateTeamExternalSyncConfig(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc || !assertCoachMembership(doc, params.callerSid)) return null;
+  let mergedConfig = { ...params.config || {} };
+  if (params.teamUrl) {
+    const parsed = parseExternalTeamUrl(params.teamUrl);
+    if (parsed) {
+      mergedConfig = {
+        ...mergedConfig,
+        platform: parsed.platform,
+        ...parsed.platform === "ATHLETIC_NET" ? {
+          athleticNetSchoolId: parsed.athleticNetSchoolId,
+          athleticNetSportSlug: parsed.athleticNetSportSlug,
+          athleticNetUrl: parsed.canonicalUrl
+        } : {
+          tfrrsTeamUrl: parsed.canonicalUrl,
+          tfrrsTeamCode: parsed.tfrrsTeamCode
+        },
+        ...parsed.inferredTeamName && !mergedConfig.teamFilterKeyword ? { teamFilterKeyword: parsed.inferredTeamName.replace(/\s+high\s+school$/i, "") } : {}
+      };
+    }
+  }
+  doc.brand.externalSync = sanitizeExternalSyncConfig(
+    mergedConfig,
+    doc.brand.externalSync
+  );
+  doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+  await saveTeamDocRaw(params.teamId, doc);
+  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+}
+async function syncTeamIcsCalendar(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+    return {
+      ok: false,
+      summary: null,
+      addedMeetsCount: 0,
+      parsedMeetsCount: 0,
+      note: "Coach permissions required to sync team schedule."
+    };
+  }
+  let resolvedIcsText = String(params.icsText || "").trim();
+  const normalizedUrl = params.icsUrl ? normalizeWebcalUrl(params.icsUrl) : "";
+  if (!resolvedIcsText && normalizedUrl) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6500);
+      const resp = await assertSafeExternalFetch(
+        normalizedUrl,
+        {
+          headers: {
+            "User-Agent": "MeetReady-CalendarSync/2.1 (+https://meetready.app)",
+            Accept: "text/calendar, text/plain, */*;q=0.8"
+          },
+          signal: controller.signal
+        },
+        2
+      );
+      clearTimeout(timer);
+      if (!resp) {
+        return {
+          ok: false,
+          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+          addedMeetsCount: 0,
+          parsedMeetsCount: 0,
+          note: "Blocked unsafe or private network calendar URL."
+        };
+      }
+      const body = await resp.text();
+      if (!resp.ok || /just a moment|cf-mitigated|enable javascript and cookies/i.test(body)) {
+        return {
+          ok: false,
+          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+          addedMeetsCount: 0,
+          parsedMeetsCount: 0,
+          cloudflareBlocked: true,
+          note: "Athletic.net / remote firewall blocked direct server fetch (HTTP " + resp.status + '). Click "Download calendar" (.ics) in your browser and upload or paste it below.'
+        };
+      }
+      resolvedIcsText = body;
+    } catch {
+      return {
+        ok: false,
+        summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+        addedMeetsCount: 0,
+        parsedMeetsCount: 0,
+        cloudflareBlocked: true,
+        note: "Unable to fetch remote .ics URL from server; download the .ics file in your browser and drop or paste it below."
+      };
+    }
+  }
+  if (!resolvedIcsText || !resolvedIcsText.includes("VEVENT")) {
+    return {
+      ok: false,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      addedMeetsCount: 0,
+      parsedMeetsCount: 0,
+      note: "No VEVENT calendar entries found in the provided .ics feed."
+    };
+  }
+  const extSource = doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
+  const meets = parseIcsCalendarToMeets(resolvedIcsText, extSource);
+  const addedCount = upsertMeetEventsOnDoc(doc, meets, extSource);
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  doc.brand.externalSync = sanitizeExternalSyncConfig(
+    {
+      ...normalizedUrl ? { icsCalendarUrl: normalizedUrl } : {},
+      lastSyncedAt: nowIso
+    },
+    doc.brand.externalSync
+  );
+  doc.updatedAt = nowIso;
+  await saveTeamDocRaw(params.teamId, doc);
+  return {
+    ok: true,
+    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    addedMeetsCount: addedCount,
+    parsedMeetsCount: meets.length,
+    note: addedCount > 0 ? `Added ${addedCount} meets from .ics calendar.` : `Checked ${meets.length} meets (all already up to date).`
+  };
+}
+function findOrCreateExternalMembership(doc, candidate) {
+  const normKey = normalizeAthleteMatchKey(candidate.name);
+  const existing = doc.memberships.find((m) => {
+    if (m.status === "REVOKED" || m.role === "PARENT_FOLLOWER") return false;
+    if (candidate.externalAthleteId && m.externalAthleteId && m.externalAthleteId === candidate.externalAthleteId) {
+      return true;
+    }
+    return Boolean(normKey) && normalizeAthleteMatchKey(m.invitedName) === normKey;
+  });
+  const safeSportOn = Boolean(
+    doc.brand.defaultSafeSportShield || candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
+  );
+  const calibrated = candidate.seedMarkOrFtp ? calibrateThresholdsFromSeedMark(
+    candidate.seedMarkOrFtp,
+    doc.brand.primarySport,
+    "mi"
+  ) : void 0;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const cleanCandidateUrl = candidate.externalProfileUrl && isSafeHttpsUrl(candidate.externalProfileUrl.trim()) ? candidate.externalProfileUrl.trim() : void 0;
+  if (existing) {
+    existing.externalSource = existing.externalSource || candidate.externalSource;
+    if (candidate.externalAthleteId) existing.externalAthleteId = candidate.externalAthleteId;
+    if (cleanCandidateUrl) existing.externalProfileUrl = cleanCandidateUrl;
+    if (candidate.graduationYear) existing.graduationYear = candidate.graduationYear;
+    if (candidate.genderDivision) existing.genderDivision = candidate.genderDivision;
+    if (candidate.seedMarkOrFtp && !existing.seedMarkOrFtp) {
+      existing.seedMarkOrFtp = candidate.seedMarkOrFtp;
+    }
+    if (!existing.eventGroup && (candidate.eventGroup || candidate.seedMarkOrFtp)) {
+      const inferred = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
+      if (inferred) existing.eventGroup = inferred;
+    }
+    if (calibrated && (!existing.liveSnapshot || !existing.liveSnapshot.thresholdPaceSecsPerKm)) {
+      existing.liveSnapshot = {
+        updatedAt: nowIso,
+        hasConnectedWatch: Boolean(existing.liveSnapshot?.hasConnectedWatch),
+        verdictLabel: existing.liveSnapshot?.verdictLabel || "Synced Roster",
+        readinessScore: existing.liveSnapshot?.readinessScore || 0,
+        ctl: existing.liveSnapshot?.ctl || 0,
+        atl: existing.liveSnapshot?.atl || 0,
+        tsb: existing.liveSnapshot?.tsb || 0,
+        acuteLoad7d: existing.liveSnapshot?.acuteLoad7d || 0,
+        lowAerobicPct: existing.liveSnapshot?.lowAerobicPct || 0,
+        highAerobicPct: existing.liveSnapshot?.highAerobicPct || 0,
+        neuromuscularPct: existing.liveSnapshot?.neuromuscularPct || 0,
+        caraHours7d: existing.liveSnapshot?.caraHours7d || 0,
+        ...existing.liveSnapshot || {},
+        thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
+        safeSportHideWeight: safeSportOn
+      };
+    }
+    return { mem: existing, created: false };
+  }
+  const isMinorImport = Boolean(
+    candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
+  );
+  const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
+  const rawToken = crypto11.randomBytes(12).toString("base64url");
+  const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
+  const createdMem = {
+    membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
+    teamId: doc.brand.teamId,
+    role: "ATHLETE",
+    squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
+    ...resolvedCreatedGroup ? { eventGroup: resolvedCreatedGroup } : {},
+    invitedName: String(candidate.name || "Team Athlete").trim().slice(0, 64),
+    graduationYear: candidate.graduationYear,
+    isMinorU18: isMinorImport,
+    parentConsentStatus: isMinorImport ? "PENDING" : "NOT_REQUIRED",
+    seedMarkOrFtp: candidate.seedMarkOrFtp,
+    externalSource: candidate.externalSource,
+    externalAthleteId: candidate.externalAthleteId,
+    externalProfileUrl: cleanCandidateUrl,
+    genderDivision: candidate.genderDivision,
+    status: "INVITED",
+    emailDeliveryStatus: "READY_MANUAL_LINK",
+    rawInviteToken: rawToken,
+    inviteTokenHash: crypto11.createHash("sha256").update(rawToken).digest("hex"),
+    invitedAt: nowIso,
+    liveSnapshot: {
+      updatedAt: nowIso,
+      hasConnectedWatch: false,
+      verdictLabel: `${candidate.externalSource === "TFRRS" ? "TFRRS" : "Athletic.net"} Synced`,
+      readinessScore: 0,
+      ctl: 0,
+      atl: 0,
+      tsb: 0,
+      acuteLoad7d: 0,
+      lowAerobicPct: 0,
+      highAerobicPct: 0,
+      neuromuscularPct: 0,
+      caraHours7d: 0,
+      thresholdPaceSecsPerKm: calibrated?.thresholdPaceSecsPerKm || 245,
+      safeSportHideWeight: safeSportOn
+    }
+  };
+  doc.memberships.push(createdMem);
+  return { mem: createdMem, created: true };
+}
+async function applyExternalTeamSyncBatch(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+    return {
+      summary: null,
+      addedAthletes: 0,
+      updatedAthletes: 0,
+      addedMeets: 0,
+      recordedResults: 0
+    };
+  }
+  let addedAthletes = 0;
+  let updatedAthletes = 0;
+  let addedMeets = 0;
+  let recordedResults = 0;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  for (const ath of (params.athletes || []).slice(0, 400)) {
+    const res = findOrCreateExternalMembership(doc, ath);
+    if (res.created) addedAthletes += 1;
+    else updatedAthletes += 1;
+  }
+  if (Array.isArray(params.meets) && params.meets.length > 0) {
+    const extSource = params.externalSyncPatch?.platform === "TFRRS" || doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
+    addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
+  }
+  const matchedFieldItems = [];
+  for (const row of (params.results || []).slice(0, 200)) {
+    const { mem, created } = findOrCreateExternalMembership(doc, {
+      name: row.athleteName,
+      squadGroup: row.squadGroup,
+      graduationYear: row.graduationYear,
+      genderDivision: row.genderDivision,
+      seedMarkOrFtp: row.isFieldEvent ? row.displayFieldMark || row.displayFatTime : row.displayFatTime,
+      externalSource: row.externalSource,
+      externalAthleteId: row.externalAthleteId,
+      externalProfileUrl: row.externalProfileUrl,
+      isMinorU18: doc.brand.orgType === "HIGH_SCHOOL"
+    });
+    if (created) addedAthletes += 1;
+    if (row.isFieldEvent) {
+      matchedFieldItems.push({ row, mem });
+      continue;
+    }
+    const existingActs = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
+    const duplicate = existingActs.some(
+      (a) => a.startDateLocal?.slice(0, 10) === row.date && a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters && Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
+    );
+    if (duplicate) continue;
+    const activity = synthesizeOfficialRaceActivity({
+      id: `ext-meet-${crypto11.randomBytes(5).toString("hex")}`,
+      date: row.date,
+      meetName: row.meetName,
+      eventLabel: row.eventLabel,
+      eventDistanceMeters: row.eventDistanceMeters,
+      fatTimeSecs: row.fatTimeSecs,
+      displayFatTime: row.displayFatTime || formatFatTime(row.fatTimeSecs),
+      platform: row.platform,
+      trackType: row.trackType,
+      placeFinish: row.placeFinish,
+      lapSplitDistanceMeters: row.eventDistanceMeters <= 400 ? 200 : row.eventDistanceMeters >= 3e3 ? 1e3 : 400,
+      lapSplitsSecs: [],
+      includeWarmupCooldown: false,
+      sourceUrl: row.externalProfileUrl || row.sourceUrl,
+      startDateLocalIso: `${row.date}T09:00:00`
+    });
+    mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
+    if (!mem.seedMarkOrFtp) {
+      mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
+    }
+    if (mem.userSid || mem.stravaAthleteId || mem.invitedEmail) {
+      await archiveCoachActivitiesForMember(mem, [activity]).catch(() => void 0);
+    }
+    recordedResults += 1;
+  }
+  if (matchedFieldItems.length > 0) {
+    const existingFieldLogs = await loadFullTeamFieldMarksArchive(
+      params.teamId,
+      doc.fieldMarkLogs
+    );
+    const fieldRes = applyParsedExternalFieldMarksToDoc({
+      doc,
+      existingLogs: existingFieldLogs,
+      matchedFieldItems
+    });
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), fieldRes.mergedLogs);
+    doc.fieldMarkLogs = fieldRes.mergedLogs.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = fieldRes.mergedLogs.length;
+    recordedResults += fieldRes.addedCount;
+  }
+  doc.brand.externalSync = sanitizeExternalSyncConfig(
+    {
+      ...params.externalSyncPatch || {},
+      lastSyncedAt: nowIso
+    },
+    doc.brand.externalSync
+  );
+  doc.updatedAt = nowIso;
+  await saveTeamDocRaw(params.teamId, doc);
+  return {
+    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    addedAthletes,
+    updatedAthletes,
+    addedMeets,
+    recordedResults
+  };
+}
+async function getPublicTeamHubBySlugOrCode(slugOrCode) {
+  const doc = await findTeamDocumentByCodeOrSlug(slugOrCode);
+  if (!doc || !doc.brand.externalSync?.enablePublicParentHub) {
+    return {
+      found: false,
+      error: "Team Hub not found or public parent access is turned off.",
+      upcomingMeets: [],
+      recentSchedule: [],
+      rosterLeaderboard: [],
+      fieldLeaderboard: [],
+      stats: { athleteCount: 0, meetCount: 0, officialResultCount: 0, fieldPrCount: 0 }
+    };
+  }
+  const todayIso = getLocalDateIso();
+  const fullFieldLogs = await loadFullTeamFieldMarksArchive(
+    doc.brand.teamId,
+    doc.fieldMarkLogs
+  );
+  const { fieldPrsByMembershipId, fieldLeaderboard } = buildPublicFieldLeaderboardFromLogs({
+    orgType: doc.brand.orgType,
+    memberships: doc.memberships,
+    fieldLogs: fullFieldLogs
+  });
+  const meetItems = (doc.broadcastWorkouts || []).filter((bw) => bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name)).filter((bw) => !bw.targetMembershipIds || bw.targetMembershipIds.length === 0).map((bw) => ({
+    id: bw.broadcastId,
+    date: bw.date,
+    name: bw.name,
+    ...bw.scheduledTime ? { scheduledTime: bw.scheduledTime } : {},
+    ...bw.locationName ? { locationName: bw.locationName } : {},
+    ...bw.locationCategory ? { locationCategory: bw.locationCategory } : {},
+    ...bw.description ? { description: bw.description } : {},
+    ...bw.externalSource ? { externalSource: bw.externalSource } : {}
+  })).sort((a, b) => a.date.localeCompare(b.date));
+  const upcomingMeets = meetItems.filter((m) => m.date >= todayIso);
+  const recentSchedule = meetItems.filter((m) => m.date < todayIso).reverse();
+  let officialResultCount = 0;
+  const rosterLeaderboard = doc.memberships.filter((m) => m.status !== "REVOKED" && m.role === "ATHLETE").map((m) => {
+    const officialResults = (m.coachRecordedActivities || []).filter((a) => Boolean(a.officialRaceData)).map((a) => {
+      const r = a.officialRaceData;
+      return {
+        date: a.startDateLocal.slice(0, 10),
+        meetName: r.meetName,
+        eventLabel: r.eventLabel,
+        eventDistanceMeters: r.eventDistanceMeters,
+        displayFatTime: r.displayFatTime,
+        fatTimeSecs: r.fatTimeSecs,
+        ...r.placeFinish ? { placeFinish: r.placeFinish } : {},
+        vdotScore: r.vdotScore,
+        platform: r.platform,
+        trackType: r.trackType,
+        ...r.sourceUrl ? { sourceUrl: r.sourceUrl } : {}
+      };
+    }).sort((a, b) => b.date.localeCompare(a.date));
+    officialResultCount += officialResults.length;
+    const displayName = formatPublicSafeSportDisplayName({
+      invitedName: m.invitedName,
+      externalSource: m.externalSource,
+      isMinorU18: m.isMinorU18,
+      parentConsentStatus: m.parentConsentStatus,
+      orgType: doc.brand.orgType
+    });
+    const memberFieldPrs = fieldPrsByMembershipId.get(m.membershipId);
+    return {
+      membershipId: m.membershipId,
+      name: displayName,
+      squadGroup: m.squadGroup,
+      ...m.eventGroup ? { eventGroup: m.eventGroup } : {},
+      ...m.graduationYear ? { graduationYear: m.graduationYear } : {},
+      ...m.genderDivision ? { genderDivision: m.genderDivision } : {},
+      ...m.seedMarkOrFtp ? { seedMarkOrFtp: m.seedMarkOrFtp } : {},
+      ...m.externalSource ? { externalSource: m.externalSource } : {},
+      ...m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {},
+      ...m.externalProfileUrl && isSafeHttpsUrl(m.externalProfileUrl.trim()) ? { externalProfileUrl: m.externalProfileUrl.trim() } : {},
+      officialResults,
+      ...memberFieldPrs && memberFieldPrs.length > 0 ? { fieldPrs: memberFieldPrs } : {}
+    };
+  });
+  const safePublicExternalSync = projectSafePublicExternalSync(doc.brand.externalSync);
+  return {
+    found: true,
+    brand: {
+      teamId: doc.brand.teamId,
+      slug: doc.brand.slug,
+      name: doc.brand.name,
+      shortName: doc.brand.shortName,
+      ...doc.brand.mascotOrMotto ? { mascotOrMotto: doc.brand.mascotOrMotto } : {},
+      orgType: doc.brand.orgType,
+      primarySport: doc.brand.primarySport,
+      ...doc.brand.logoDataUrl ? { logoDataUrl: doc.brand.logoDataUrl } : {},
+      primaryHex: doc.brand.primaryHex,
+      secondaryHex: doc.brand.secondaryHex,
+      defaultSafeSportShield: doc.brand.defaultSafeSportShield,
+      coachDisplayName: doc.brand.coachDisplayName,
+      ...safePublicExternalSync ? { externalSync: safePublicExternalSync } : {}
+    },
+    upcomingMeets,
+    recentSchedule,
+    rosterLeaderboard,
+    fieldLeaderboard,
+    announcements: (doc.announcements || []).filter((a) => a.publishToParentHub).slice(0, 6).map((a) => ({
+      id: a.id,
+      title: a.title,
+      body: a.body,
+      category: a.category,
+      createdAt: a.createdAt
+    })),
+    stats: {
+      athleteCount: rosterLeaderboard.length,
+      meetCount: meetItems.length,
+      officialResultCount,
+      fieldPrCount: fieldLeaderboard.length
+    }
+  };
+}
+async function followTeamAsParentOrFan(params) {
+  const initialDoc = await findTeamDocumentByCodeOrSlug(params.codeOrSlug);
+  if (!initialDoc) {
+    return { ok: false, error: "Team not found for this code or URL." };
+  }
+  return withTeamRowLock(initialDoc.brand.teamId, async () => {
+    const doc = await loadTeamDocRaw(initialDoc.brand.teamId) || initialDoc;
+    if (!doc.brand.externalSync?.enablePublicParentHub) {
+      return { ok: false, error: "Public parent/supporter following is disabled for this team." };
+    }
+    const cleanVerifiedEmail = params.verifiedEmail?.trim().toLowerCase();
+    let mem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!mem) {
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      mem = {
+        membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
+        teamId: doc.brand.teamId,
+        userSid: params.callerSid,
+        role: "PARENT_FOLLOWER",
+        squadGroup: "Parents & Supporters",
+        invitedName: String(params.followerName || "").trim().slice(0, 48) || "Parent / Supporter",
+        ...cleanVerifiedEmail ? { invitedEmail: cleanVerifiedEmail } : {},
+        isMinorU18: false,
+        parentConsentStatus: "NOT_REQUIRED",
+        status: "ACTIVE",
+        invitedAt: nowIso,
+        openedAt: nowIso,
+        joinedAt: nowIso
+      };
+      doc.memberships.push(mem);
+      doc.updatedAt = nowIso;
+      await saveTeamDocRaw(doc.brand.teamId, doc);
+    } else if (cleanVerifiedEmail && mem.invitedEmail !== cleanVerifiedEmail) {
+      mem.invitedEmail = cleanVerifiedEmail;
+      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await saveTeamDocRaw(doc.brand.teamId, doc);
+    }
+    await addTeamToUserIndex(params.callerSid, doc.brand.teamId, mem.invitedName, cleanVerifiedEmail);
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+function escapeIcsText(raw) {
+  return String(raw || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,").trim();
+}
+function foldIcsLine(line) {
+  if (line.length <= 75) return line;
+  const chunks = [line.slice(0, 75)];
+  let idx = 75;
+  while (idx < line.length) {
+    chunks.push(` ${line.slice(idx, idx + 74)}`);
+    idx += 74;
+  }
+  return chunks.join("\r\n");
+}
+function formatIcsUtcTimestamp(date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+function nextIcsDateYmd(isoDate) {
+  const parsed = /* @__PURE__ */ new Date(`${isoDate.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoDate.slice(0, 10).replace(/-/g, "");
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10).replace(/-/g, "");
+}
+function buildPublicTeamCalendarIcs(payload) {
+  const teamName = payload.brand?.name || "MeetReady Team";
+  const shortName = payload.brand?.shortName || teamName;
+  const dtStamp = formatIcsUtcTimestamp(/* @__PURE__ */ new Date());
+  const seenIds = /* @__PURE__ */ new Set();
+  const combinedMeets = [...payload.upcomingMeets || [], ...payload.recentSchedule || []].filter((m) => {
+    if (!m?.id || !/^\d{4}-\d{2}-\d{2}$/.test(m.date || "")) return false;
+    if (seenIds.has(m.id)) return false;
+    seenIds.add(m.id);
+    return true;
+  }).sort((a, b) => a.date.localeCompare(b.date));
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//MeetReady//Parent Hub Live Calendar//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escapeIcsText(`${teamName} Meet Schedule`)}`,
+    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
+    "X-PUBLISHED-TTL:PT6H"
+  ];
+  for (const meet of combinedMeets) {
+    const startYmd = meet.date.replace(/-/g, "");
+    const endYmd = nextIcsDateYmd(meet.date);
+    const uidSafe = String(meet.id).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80);
+    const descParts = [
+      meet.scheduledTime ? `Scheduled time: ${formatPracticeTime12h(meet.scheduledTime)}` : "",
+      meet.description || "",
+      payload.brand?.slug ? `Public Team Hub: https://meetready.app/team/${payload.brand.slug}` : ""
+    ].filter(Boolean);
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:meetready-${uidSafe}@meetready.app`,
+      `DTSTAMP:${dtStamp}`,
+      `DTSTART;VALUE=DATE:${startYmd}`,
+      `DTEND;VALUE=DATE:${endYmd}`,
+      `SUMMARY:${escapeIcsText(`${shortName} \xB7 ${meet.name}`)}`,
+      ...meet.locationName ? [`LOCATION:${escapeIcsText(meet.locationName)}`] : [],
+      ...descParts.length > 0 ? [`DESCRIPTION:${escapeIcsText(descParts.join(" \xB7 "))}`] : [],
+      "END:VEVENT"
+    );
+  }
+  lines.push("END:VCALENDAR");
+  return `${lines.map(foldIcsLine).join("\r\n")}\r
+`;
+}
+function parentEmailSubsVaultKey(teamId) {
+  return `team_parent_email_subs_${sanitizeTenantId(teamId).slice(0, 40)}`;
+}
+var VALID_PARENT_EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+async function subscribeParentEmailToPublicHub(params) {
+  const cleanEmail = String(params.email || "").trim().toLowerCase().slice(0, 160);
+  if (!cleanEmail || !VALID_PARENT_EMAIL_RE.test(cleanEmail)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      emailConfigured: isResendConfigured(),
+      emailSent: false,
+      error: "Please enter a valid email address."
+    };
+  }
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (!doc || !doc.brand.externalSync?.enablePublicParentHub) {
+    return {
+      ok: false,
+      statusCode: 404,
+      emailConfigured: isResendConfigured(),
+      emailSent: false,
+      error: "Team Hub not found or public parent updates are disabled."
+    };
+  }
+  const rawConfirmToken = crypto11.randomBytes(24).toString("base64url");
+  const rawUnsubToken = crypto11.randomBytes(24).toString("base64url");
+  const confirmHash = hashToken(rawConfirmToken);
+  const unsubHash = hashToken(rawUnsubToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+  const lockOutcome = await withVaultLock(vaultKey, async () => {
+    const existingList = await loadTenantVaultAsync(
+      vaultKey,
+      []
+    );
+    const existing = existingList.find((r) => r.email === cleanEmail);
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    if (existing && existing.status === "CONFIRMED") {
+      return { alreadyConfirmed: true };
+    }
+    const updatedRecord = {
+      id: existing?.id || `psub_${crypto11.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      email: cleanEmail,
+      status: "PENDING",
+      confirmTokenHash: confirmHash,
+      unsubscribeTokenHashes: [unsubHash, ...existing?.unsubscribeTokenHashes || []].slice(0, 6),
+      createdAt: existing?.createdAt || nowIso
+    };
+    const nextList = [
+      updatedRecord,
+      ...existingList.filter((r) => r.email !== cleanEmail)
+    ].slice(0, 500);
+    await saveTenantVaultAsync(vaultKey, nextList);
+    return { alreadyConfirmed: false };
+  });
+  if (lockOutcome.alreadyConfirmed) {
+    return {
+      ok: true,
+      statusCode: 200,
+      status: "ALREADY_CONFIRMED",
+      emailConfigured: isResendConfigured(),
+      emailSent: false,
+      message: `${cleanEmail} is already confirmed for ${doc.brand.shortName} schedule updates.`
+    };
+  }
+  const resendConfigured = isResendConfigured();
+  if (!resendConfigured) {
+    return {
+      ok: true,
+      statusCode: 200,
+      status: "PENDING_UNCONFIGURED_EMAIL",
+      emailConfigured: false,
+      emailSent: false,
+      message: "Subscription saved. Email dispatch is not configured on this server yet \u2014 use Calendar Subscribe (.ics / Webcal) above for instant schedule updates."
+    };
+  }
+  const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+  const slugEnc = encodeURIComponent(doc.brand.slug);
+  const confirmUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/subscribe/confirm?token=${encodeURIComponent(
+    rawConfirmToken
+  )}`;
+  const unsubscribeUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
+    rawUnsubToken
+  )}`;
+  const safeTeamName = escapeHtml(doc.brand.name);
+  const safeConfirm = escapeHtml(confirmUrl);
+  const safeUnsub = escapeHtml(unsubscribeUrl);
+  const sendRes = await sendEmailViaResend({
+    to: cleanEmail,
+    subject: `Confirm Parent Hub Updates for ${doc.brand.name} on MeetReady`,
+    html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">MeetReady Safe-Sport Parent Hub</div><h1 style="font-size:20px;margin:8px 0 12px;">Confirm Schedule &amp; Weather Updates</h1><p style="font-size:14px;line-height:1.5;color:#2C2A26;">Tap below to receive public meet schedule shifts, weather alerts, and official competition summaries for <strong>${safeTeamName}</strong>. Zero private athlete biometrics or student emails are ever included.</p><div style="margin:22px 0;text-align:center;"><a href="${safeConfirm}" style="display:inline-block;background:#B83A24;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:10px;">Confirm Email Updates</a></div><p style="font-size:12px;color:#57544D;">Didn&apos;t request this? <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe immediately</a>.</p></div></body></html>`,
+    text: [
+      `Confirm MeetReady Parent Hub updates for ${doc.brand.name}:`,
+      confirmUrl,
+      ``,
+      `Strict Zero-PII Policy: Public meet schedules, weather notices & official team summaries only.`,
+      `Unsubscribe: ${unsubscribeUrl}`
+    ].join("\n")
+  });
+  return {
+    ok: true,
+    statusCode: 200,
+    status: "PENDING_CONFIRMATION",
+    emailConfigured: true,
+    emailSent: sendRes.delivered,
+    message: sendRes.delivered ? `Confirmation link sent to ${cleanEmail}. Check your inbox to activate updates.` : `Subscription saved, but email delivery failed (${sendRes.error || "retry shortly"}).`
+  };
+}
+async function confirmParentEmailSubscription(params) {
+  const cleanToken = String(params.token || "").trim();
+  if (!cleanToken) {
+    return { ok: false, statusCode: 400, error: "Missing confirmation token." };
+  }
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (!doc || !doc.brand.externalSync?.enablePublicParentHub) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: "Team Hub not found or public parent access is disabled."
+    };
+  }
+  const targetHash = hashToken(cleanToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+  return withVaultLock(vaultKey, async () => {
+    const records = await loadTenantVaultAsync(
+      vaultKey,
+      []
+    );
+    const match = records.find(
+      (r) => r.confirmTokenHash && timingSafeStringEqual(r.confirmTokenHash, targetHash)
+    );
+    if (!match) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "Invalid or already-used confirmation token."
+      };
+    }
+    const alreadyConfirmed = match.status === "CONFIRMED";
+    match.status = "CONFIRMED";
+    match.confirmedAt = match.confirmedAt || (/* @__PURE__ */ new Date()).toISOString();
+    delete match.confirmTokenHash;
+    await saveTenantVaultAsync(vaultKey, records);
+    return {
+      ok: true,
+      statusCode: 200,
+      teamName: doc.brand.name,
+      slug: doc.brand.slug,
+      alreadyConfirmed
+    };
+  });
+}
+async function unsubscribeParentEmailSubscription(params) {
+  const cleanToken = String(params.token || "").trim();
+  if (!cleanToken) {
+    return { ok: false, statusCode: 400, error: "Missing unsubscribe token." };
+  }
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (!doc) {
+    return { ok: false, statusCode: 404, error: "Team Hub not found." };
+  }
+  const targetHash = hashToken(cleanToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+  return withVaultLock(vaultKey, async () => {
+    const records = await loadTenantVaultAsync(
+      vaultKey,
+      []
+    );
+    const match = records.find(
+      (r) => (r.unsubscribeTokenHashes || []).some((h) => timingSafeStringEqual(h, targetHash))
+    );
+    if (!match) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "Invalid or expired unsubscribe token."
+      };
+    }
+    match.status = "UNSUBSCRIBED";
+    match.unsubscribedAt = (/* @__PURE__ */ new Date()).toISOString();
+    delete match.confirmTokenHash;
+    await saveTenantVaultAsync(vaultKey, records);
+    return {
+      ok: true,
+      statusCode: 200,
+      teamName: doc.brand.name,
+      slug: doc.brand.slug
+    };
+  });
+}
+async function dispatchParentHubAnnouncementEmails(params) {
+  if (!isResendConfigured()) {
+    return { sentCount: 0 };
+  }
+  const vaultKey = parentEmailSubsVaultKey(params.teamId);
+  const dispatchTargets = [];
+  await withVaultLock(vaultKey, async () => {
+    const records = await loadTenantVaultAsync(
+      vaultKey,
+      []
+    );
+    const confirmed = records.filter((r) => r.status === "CONFIRMED").slice(0, 50);
+    if (confirmed.length === 0) return;
+    for (const rec of confirmed) {
+      const rawUnsubToken = crypto11.randomBytes(24).toString("base64url");
+      rec.unsubscribeTokenHashes = [
+        hashToken(rawUnsubToken),
+        ...rec.unsubscribeTokenHashes || []
+      ].slice(0, 6);
+      dispatchTargets.push({ email: rec.email, rawUnsubToken });
+    }
+    await saveTenantVaultAsync(vaultKey, records);
+  });
+  if (dispatchTargets.length === 0) {
+    return { sentCount: 0 };
+  }
+  const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+  const slugEnc = encodeURIComponent(params.teamSlug);
+  const hubUrl = `${cleanOrigin}/team/${slugEnc}`;
+  const safeTeam = escapeHtml(params.teamName);
+  const safeCat = escapeHtml(params.category);
+  const safeTitle = escapeHtml(params.title);
+  const safeBody = escapeHtml(params.body);
+  const safeHubUrl = escapeHtml(hubUrl);
+  const results = await Promise.allSettled(
+    dispatchTargets.map(async (target) => {
+      const unsubUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
+        target.rawUnsubToken
+      )}`;
+      const safeUnsub = escapeHtml(unsubUrl);
+      return sendEmailViaResend({
+        to: target.email,
+        subject: `[${params.teamName}] ${params.title}`,
+        html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">${safeTeam} \xB7 ${safeCat}</div><h1 style="font-size:19px;margin:8px 0 10px;">${safeTitle}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 18px;">${safeBody}</p><a href="${safeHubUrl}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Open Public Team Hub</a><p style="margin-top:20px;font-size:12px;color:#57544D;">Public team notice only \xB7 <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe</a></p></div></body></html>`,
+        text: `${params.teamName} [${params.category}]
+${params.title}
+
+${params.body}
+
+Public Team Hub: ${hubUrl}
+Unsubscribe: ${unsubUrl}`
+      });
+    })
+  );
+  let sentCount = 0;
+  for (const r of results) {
+    if (r.status === "fulfilled" && r.value.delivered) {
+      sentCount += 1;
+    }
+  }
+  return { sentCount };
+}
+
+// server/teamFieldAndDailyOpsService.ts
+var VALID_ATTENDANCE_STATUSES = /* @__PURE__ */ new Set([
+  "PRESENT",
+  "LATE",
+  "EXCUSED",
+  "ABSENT",
+  "INJURED_MODIFIED"
+]);
+var VALID_ANNOUNCEMENT_CATEGORIES = /* @__PURE__ */ new Set([
+  "WEATHER",
+  "SCHEDULE_CHANGE",
+  "MEET_LOGISTICS",
+  "GENERAL"
+]);
+var VALID_FIELD_EVENT_CODES = /* @__PURE__ */ new Set([
+  "LJ",
+  "TJ",
+  "HJ",
+  "PV",
+  "SP",
+  "DISCUS",
+  "JAVELIN",
+  "HAMMER",
+  "PENT",
+  "HEPT",
+  "DEC"
+]);
+async function recordTeamAttendanceBatch(params) {
+  const cleanDate = String(params.date || "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    return { ok: false, recordedCount: 0, error: "Valid YYYY-MM-DD attendance date required." };
+  }
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, recordedCount: 0, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+      return { ok: false, recordedCount: 0, error: "Coach or Athletic Trainer permissions required." };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    doc.attendanceByDate = doc.attendanceByDate || {};
+    const dayBucket = {
+      ...doc.attendanceByDate[cleanDate] || {}
+    };
+    let recordedCount = 0;
+    for (const rawEntry of (params.entries || []).slice(0, 450)) {
+      const memId = String(rawEntry.membershipId || "").trim();
+      const status = String(rawEntry.status || "").trim().toUpperCase();
+      if (!memId || !VALID_ATTENDANCE_STATUSES.has(status)) continue;
+      const targetMem = doc.memberships.find(
+        (m) => m.membershipId === memId && m.status !== "REVOKED"
+      );
+      if (!targetMem) continue;
+      dayBucket[memId] = {
+        date: cleanDate,
+        membershipId: memId,
+        status,
+        ...rawEntry.note ? { note: String(rawEntry.note).trim().slice(0, 140) } : {},
+        updatedAt: nowIso,
+        updatedBySid: params.callerSid
+      };
+      recordedCount += 1;
+    }
+    doc.attendanceByDate[cleanDate] = dayBucket;
+    const allDates = Object.keys(doc.attendanceByDate).sort();
+    if (allDates.length > 45) {
+      for (const oldKey of allDates.slice(0, allDates.length - 45)) {
+        delete doc.attendanceByDate[oldKey];
+      }
+    }
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "ATTENDANCE_RECORDED",
+      targetId: cleanDate,
+      metadata: { recordedCount }
+    });
+    return {
+      ok: true,
+      recordedCount,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function postTeamAnnouncement(params) {
+  const cleanTitle = String(params.title || "").trim().slice(0, 120);
+  const cleanBody = String(params.body || "").trim().slice(0, 600);
+  if (!cleanTitle || !cleanBody) {
+    return { ok: false, error: "Announcement title and message body are required." };
+  }
+  const catRaw = String(params.category || "GENERAL").toUpperCase();
+  const category = VALID_ANNOUNCEMENT_CATEGORIES.has(catRaw) ? catRaw : "GENERAL";
+  let pendingPushPayload = null;
+  let pendingParentEmailPayload = null;
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return { ok: false, error: "Coach or admin permissions required." };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const targetGroups = sanitizeTargetEventGroups(params.targetEventGroups);
+    const announcement = {
+      id: `ann_${crypto12.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      title: cleanTitle,
+      body: cleanBody,
+      category,
+      ...targetGroups && targetGroups.length > 0 ? { targetEventGroups: targetGroups } : {},
+      publishToParentHub: params.publishToParentHub !== false,
+      authorName: callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
+      createdAt: nowIso
+    };
+    doc.announcements = [announcement, ...doc.announcements || []].slice(0, 30);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    pendingPushPayload = {
+      teamId: params.teamId,
+      senderSid: params.callerSid,
+      senderName: announcement.authorName,
+      kind: "ANNOUNCEMENT",
+      announcementCategory: category,
+      eventGroup: targetGroups && targetGroups.length === 1 ? targetGroups[0] : void 0,
+      bodyText: `${cleanTitle} \u2014 ${cleanBody}`,
+      isEmergency: category === "WEATHER"
+    };
+    if (params.publishToParentHub === true && announcement.publishToParentHub && doc.brand.externalSync?.enablePublicParentHub) {
+      pendingParentEmailPayload = {
+        teamId: params.teamId,
+        teamName: doc.brand.name,
+        teamSlug: doc.brand.slug,
+        category: announcement.category,
+        title: announcement.title,
+        body: announcement.body,
+        originUrl: params.originUrl
+      };
+    }
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "ANNOUNCEMENT_POSTED",
+      targetId: announcement.id,
+      metadata: {
+        category: announcement.category,
+        publishToParentHub: announcement.publishToParentHub
+      }
+    });
+    return {
+      ok: true,
+      announcement,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+  if (lockedResult.ok) {
+    const fanoutTasks = [];
+    if (pendingPushPayload) {
+      const pushToSend = pendingPushPayload;
+      fanoutTasks.push(
+        withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "announcement-push")
+      );
+    }
+    if (pendingParentEmailPayload) {
+      const emailPayload = pendingParentEmailPayload;
+      fanoutTasks.push(
+        withBoundedTimeout(
+          dispatchParentHubAnnouncementEmails(emailPayload),
+          8e3,
+          "parent-hub-email-fanout"
+        )
+      );
+    }
+    if (fanoutTasks.length > 0) {
+      await Promise.allSettled(fanoutTasks);
+    }
+  }
+  return lockedResult;
+}
+async function deleteTeamAnnouncement(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return { ok: false, error: "Coach or admin permissions required." };
+    }
+    const beforeCount = (doc.announcements || []).length;
+    doc.announcements = (doc.announcements || []).filter((a) => a.id !== params.announcementId);
+    if (doc.announcements.length === beforeCount) {
+      return { ok: false, error: "Announcement not found." };
+    }
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "ANNOUNCEMENT_DELETED",
+      targetId: params.announcementId,
+      metadata: {}
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+var VALID_FIELD_ATTEMPT_OUTCOMES = /* @__PURE__ */ new Set([
+  "MARK",
+  "FOUL",
+  "PASS",
+  "CLEAR",
+  "MISS"
+]);
+function teamFieldLogsVaultKey(teamId) {
+  return `team_field_logs_${sanitizeTenantId(teamId).slice(0, 48)}`;
+}
+function sanitizeClientBatchId(raw) {
+  if (typeof raw !== "string") return void 0;
+  const cleaned = raw.trim().replace(/[^a-zA-Z0-9_.:-]/g, "").slice(0, 72);
+  return cleaned || void 0;
+}
+function sanitizeFieldAttempts(rawAttempts) {
+  if (!Array.isArray(rawAttempts)) return [];
+  const out = [];
+  for (let i = 0; i < Math.min(24, rawAttempts.length); i += 1) {
+    const raw = rawAttempts[i];
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw;
+    const outcome = String(item.outcome || "").toUpperCase();
+    if (!VALID_FIELD_ATTEMPT_OUTCOMES.has(outcome)) continue;
+    const attemptNumber = typeof item.attemptNumber === "number" && Number.isFinite(item.attemptNumber) ? Math.max(1, Math.min(24, Math.round(item.attemptNumber))) : i + 1;
+    const markMeters = typeof item.markMeters === "number" && Number.isFinite(item.markMeters) && item.markMeters >= 0.3 && item.markMeters <= 110 ? Number(item.markMeters.toFixed(3)) : void 0;
+    const barHeightMeters = typeof item.barHeightMeters === "number" && Number.isFinite(item.barHeightMeters) && item.barHeightMeters >= 0.3 && item.barHeightMeters <= 10 ? Number(item.barHeightMeters.toFixed(3)) : void 0;
+    const windMps = typeof item.windMps === "number" && Number.isFinite(item.windMps) && item.windMps >= -20 && item.windMps <= 20 ? Number(item.windMps.toFixed(2)) : void 0;
+    const round = item.round === "PRELIM" || item.round === "FINAL" ? item.round : void 0;
+    const note = typeof item.note === "string" && item.note.trim() ? item.note.trim().slice(0, 120) : void 0;
+    out.push({
+      attemptNumber,
+      outcome,
+      ...markMeters !== void 0 ? { markMeters } : {},
+      ...barHeightMeters !== void 0 ? { barHeightMeters } : {},
+      ...windMps !== void 0 ? { windMps } : {},
+      ...round ? { round } : {},
+      ...note ? { note } : {}
+    });
+  }
+  return out;
+}
+async function loadFullTeamFieldMarksArchive(teamId, inlineFallback) {
+  const vaulted = await loadTenantVaultAsync(
+    teamFieldLogsVaultKey(teamId),
+    null
+  );
+  const inline = Array.isArray(inlineFallback) ? inlineFallback : [];
+  if (!Array.isArray(vaulted)) {
+    return [...inline];
+  }
+  if (inline.length === 0) {
+    return [...vaulted];
+  }
+  const seenIds = new Set(vaulted.map((r) => r.id));
+  const extraInline = inline.filter((r) => r && r.id && !seenIds.has(r.id));
+  return extraInline.length > 0 ? [...extraInline, ...vaulted] : [...vaulted];
+}
+async function listTeamFieldMarks(params) {
+  const limit = Math.max(1, Math.min(200, Math.floor(params.limit ?? 100)));
+  const offset = Math.max(0, Math.floor(params.offset ?? 0));
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) {
+    return { ok: false, logs: [], totalCount: 0, limit, offset, error: "Team not found." };
+  }
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || callerMem.role === "PARENT_FOLLOWER") {
+    return {
+      ok: false,
+      logs: [],
+      totalCount: 0,
+      limit,
+      offset,
+      error: "Coach or athlete team membership required."
+    };
+  }
+  const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const requestedCode = params.eventCode ? String(params.eventCode).toUpperCase() : void 0;
+  const filterByCode = requestedCode && VALID_FIELD_EVENT_CODES.has(requestedCode) ? requestedCode : void 0;
+  const visible = archive.filter((log) => {
+    if (!isStaff && log.membershipId !== callerMem.membershipId) return false;
+    if (filterByCode && log.eventCode !== filterByCode) return false;
+    return true;
+  });
+  return {
+    ok: true,
+    logs: visible.slice(offset, offset + limit),
+    totalCount: visible.length,
+    limit,
+    offset
+  };
+}
+async function recordTeamFieldMarks(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, recordedCount: 0, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return { ok: false, recordedCount: 0, error: "Coach permissions required." };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const archive = await loadFullTeamFieldMarksArchive(params.teamId, doc.fieldMarkLogs);
+    const existingBatchKeys = /* @__PURE__ */ new Set();
+    for (const existing of archive) {
+      if (!existing.clientBatchId) continue;
+      const who = existing.membershipId || `name:${existing.athleteName.toLowerCase()}`;
+      existingBatchKeys.add(`${existing.clientBatchId}|${existing.eventCode}|${who}`);
+    }
+    const topBatchId = sanitizeClientBatchId(params.clientBatchId);
+    let recordedCount = 0;
+    for (const rawEntry of (params.entries || []).slice(0, 120)) {
+      const code = String(rawEntry.eventCode || "").toUpperCase();
+      if (!VALID_FIELD_EVENT_CODES.has(code)) continue;
+      const spec = getFieldEventSpec(code);
+      const cleanDate = /^\d{4}-\d{2}-\d{2}$/.test(String(rawEntry.date || "")) ? String(rawEntry.date).slice(0, 10) : nowIso.slice(0, 10);
+      const cleanAttempts = sanitizeFieldAttempts(rawEntry.attempts);
+      const summary = summarizeFieldSeries(code, cleanAttempts, rawEntry.rpe);
+      const targetMem = rawEntry.membershipId ? doc.memberships.find(
+        (m) => m.membershipId === rawEntry.membershipId && m.status !== "REVOKED"
+      ) : void 0;
+      const athleteName = String(
+        targetMem?.invitedName || rawEntry.athleteName || "Team Athlete"
+      ).trim().slice(0, 64);
+      const entryBatchId = sanitizeClientBatchId(rawEntry.clientBatchId) || topBatchId;
+      if (entryBatchId) {
+        const who = targetMem ? targetMem.membershipId : `name:${athleteName.toLowerCase()}`;
+        const batchKey = `${entryBatchId}|${code}|${who}`;
+        if (existingBatchKeys.has(batchKey)) {
+          continue;
+        }
+      }
+      const bestMarkMeters = summary.bestMarkMeters !== null ? summary.bestMarkMeters : typeof rawEntry.bestMarkMeters === "number" && Number.isFinite(rawEntry.bestMarkMeters) && rawEntry.bestMarkMeters > 0 ? Number(rawEntry.bestMarkMeters.toFixed(3)) : void 0;
+      const bestWindLegalMeters = summary.bestWindLegalMeters !== null ? summary.bestWindLegalMeters : typeof rawEntry.bestWindLegalMeters === "number" && Number.isFinite(rawEntry.bestWindLegalMeters) && rawEntry.bestWindLegalMeters > 0 ? Number(rawEntry.bestWindLegalMeters.toFixed(3)) : void 0;
+      const bestMarkWindMps = summary.bestMarkWindMps !== void 0 ? summary.bestMarkWindMps : typeof rawEntry.bestMarkWindMps === "number" && Number.isFinite(rawEntry.bestMarkWindMps) ? Number(rawEntry.bestMarkWindMps.toFixed(2)) : void 0;
+      const isWindAidedBest = bestMarkMeters !== void 0 ? summary.bestMarkMeters !== null ? summary.isWindAidedBest : Boolean(rawEntry.isWindAidedBest) : void 0;
+      const isNoHeight = summary.isNoHeight !== void 0 ? summary.isNoHeight : typeof rawEntry.isNoHeight === "boolean" ? rawEntry.isNoHeight : void 0;
+      const missesAtClearingHeight = summary.missesAtClearingHeight !== void 0 ? summary.missesAtClearingHeight : typeof rawEntry.missesAtClearingHeight === "number" && Number.isFinite(rawEntry.missesAtClearingHeight) ? Math.max(0, Math.round(rawEntry.missesAtClearingHeight)) : void 0;
+      const totalVerticalMisses = summary.totalVerticalMisses !== void 0 ? summary.totalVerticalMisses : typeof rawEntry.totalVerticalMisses === "number" && Number.isFinite(rawEntry.totalVerticalMisses) ? Math.max(0, Math.round(rawEntry.totalVerticalMisses)) : void 0;
+      const flightName = typeof rawEntry.flightName === "string" && rawEntry.flightName.trim() ? rawEntry.flightName.trim().slice(0, 48) : void 0;
+      const placeRank = typeof rawEntry.placeRank === "number" && Number.isFinite(rawEntry.placeRank) && rawEntry.placeRank >= 1 ? Math.round(rawEntry.placeRank) : void 0;
+      const advancedToFinals = typeof rawEntry.advancedToFinals === "boolean" ? rawEntry.advancedToFinals : void 0;
+      const recordId = `fld_${crypto12.randomBytes(6).toString("hex")}`;
+      const record = {
+        id: recordId,
+        teamId: doc.brand.teamId,
+        ...targetMem ? { membershipId: targetMem.membershipId } : {},
+        athleteName,
+        date: cleanDate,
+        eventCode: code,
+        eventGroup: spec.eventGroup,
+        isCompetition: Boolean(rawEntry.isCompetition),
+        meetOrPracticeTitle: String(rawEntry.meetOrPracticeTitle || "").trim().slice(0, 100) || `${spec.label} ${rawEntry.isCompetition ? "Competition" : "Practice Sheet"}`,
+        ...flightName ? { flightName } : {},
+        ...rawEntry.implementSpec ? { implementSpec: String(rawEntry.implementSpec).trim().slice(0, 64) } : {},
+        ...rawEntry.poleSpec ? { poleSpec: String(rawEntry.poleSpec).trim().slice(0, 64) } : {},
+        ...typeof rawEntry.approachSteps === "number" && Number.isFinite(rawEntry.approachSteps) ? { approachSteps: Math.max(1, Math.min(30, Math.round(rawEntry.approachSteps))) } : {},
+        attempts: cleanAttempts,
+        ...bestMarkMeters !== void 0 ? { bestMarkMeters } : {},
+        ...bestWindLegalMeters !== void 0 ? { bestWindLegalMeters } : {},
+        ...bestMarkWindMps !== void 0 ? { bestMarkWindMps } : {},
+        ...isWindAidedBest ? { isWindAidedBest: true } : {},
+        ...isNoHeight ? { isNoHeight: true } : {},
+        ...missesAtClearingHeight !== void 0 ? { missesAtClearingHeight } : {},
+        ...totalVerticalMisses !== void 0 ? { totalVerticalMisses } : {},
+        ...placeRank !== void 0 ? { placeRank } : {},
+        ...advancedToFinals !== void 0 ? { advancedToFinals } : {},
+        ...typeof rawEntry.multiPoints === "number" && Number.isFinite(rawEntry.multiPoints) ? { multiPoints: Math.round(rawEntry.multiPoints) } : {},
+        ...typeof rawEntry.rpe === "number" && Number.isFinite(rawEntry.rpe) ? { rpe: Math.max(1, Math.min(10, rawEntry.rpe)) } : {},
+        ...entryBatchId ? { clientBatchId: entryBatchId } : {},
+        createdAt: nowIso
+      };
+      archive.unshift(record);
+      recordedCount += 1;
+      if (targetMem) {
+        const bestLabel = bestMarkMeters !== void 0 ? `${bestMarkMeters.toFixed(2)}m` : `${summary.totalContacts} attempts`;
+        const mirroredAct = {
+          id: recordId,
+          startDateLocal: `${cleanDate}T15:30:00`,
+          name: `${spec.shortLabel}: ${bestLabel}${rawEntry.isCompetition ? " (Meet)" : ""}`,
+          sportCategory: "Running",
+          environment: "OUTDOOR",
+          subType: "Track",
+          movingTimeSecs: 1800,
+          distanceMeters: 0,
+          elevationGainMeters: 0,
+          trainingLoad: summary.estimatedLoadTss,
+          avgHr: 0,
+          maxHr: 0,
+          aerobicDecouplingPct: 0,
+          efficiencyFactor: 0,
+          firstHalfEf: 0,
+          secondHalfEf: 0,
+          zoneSecs: { hr: [0, 0, 0, 0, 0, 0, 0] },
+          sourceBadges: [],
+          stravaPrCount: 0,
+          segmentEfforts: [],
+          isCompetitionDay: Boolean(rawEntry.isCompetition),
+          deviceName: "MeetReady Trackside Field Sheet"
+        };
+        targetMem.coachRecordedActivities = [
+          mirroredAct,
+          ...targetMem.coachRecordedActivities || []
+        ].slice(0, 80);
+      }
+    }
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), archive);
+    doc.fieldMarkLogs = archive.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = archive.length;
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "FIELD_MARKS_RECORDED",
+      metadata: {
+        recordedCount,
+        totalArchiveCount: archive.length,
+        ...topBatchId ? { clientBatchId: topBatchId } : {}
+      }
+    });
+    return {
+      ok: true,
+      recordedCount,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+var VALID_COACH_STAFF_ROLES = /* @__PURE__ */ new Set([
+  "HEAD_COACH",
+  "ASSISTANT_COACH",
+  "ATHLETIC_TRAINER",
+  "ORG_ADMIN"
+]);
+function filterValidAssignedAthleteIds(memberships, rawIds) {
+  if (!Array.isArray(rawIds)) return void 0;
+  const athleteIds = new Set(
+    memberships.filter((m) => m.role === "ATHLETE" && m.status !== "REVOKED").map((m) => m.membershipId)
+  );
+  const cleaned = [];
+  for (const id of rawIds) {
+    const trimmed = String(id || "").trim();
+    if (trimmed && athleteIds.has(trimmed) && !cleaned.includes(trimmed)) {
+      cleaned.push(trimmed);
+    }
+  }
+  return cleaned;
+}
+async function updateAssistantCoachEventGroups(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+      return { ok: false, error: "Head Coach or Org Admin permissions required." };
+    }
+    const target = doc.memberships.find(
+      (m) => m.membershipId === params.membershipId && m.status !== "REVOKED"
+    );
+    if (!target) return { ok: false, error: "Staff member not found." };
+    const cleanGroups = sanitizeTargetEventGroups(params.coachEventGroups) || [];
+    target.coachEventGroups = cleanGroups.length > 0 ? cleanGroups : void 0;
+    if (params.coachSpecialtyTitle !== void 0) {
+      const cleanTitle = String(params.coachSpecialtyTitle || "").trim().slice(0, 60);
+      target.coachSpecialtyTitle = cleanTitle || void 0;
+    }
+    if (params.assignedAthleteMembershipIds !== void 0) {
+      const validIds = filterValidAssignedAthleteIds(
+        doc.memberships,
+        params.assignedAthleteMembershipIds
+      );
+      target.assignedAthleteMembershipIds = validIds && validIds.length > 0 ? validIds : void 0;
+    }
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "COACH_GROUPS_UPDATED",
+      targetId: target.membershipId,
+      metadata: {
+        coachEventGroups: cleanGroups,
+        coachSpecialtyTitle: target.coachSpecialtyTitle,
+        assignedAthleteCount: target.assignedAthleteMembershipIds?.length ?? 0
+      }
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function inviteTeamCoachingStaff(params) {
+  const cleanName = String(params.staffName || "").trim().slice(0, 64);
+  if (!cleanName) {
+    return { ok: false, error: "Coach or staff name is required." };
+  }
+  const cleanEmail = params.staffEmail ? String(params.staffEmail).trim().toLowerCase() : "";
+  if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+    return { ok: false, error: "Please enter a valid coach email address." };
+  }
+  const role = params.role && VALID_COACH_STAFF_ROLES.has(params.role) ? params.role : "ASSISTANT_COACH";
+  const cleanSpecialty = String(params.coachSpecialtyTitle || "").trim().slice(0, 60);
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+      return { ok: false, error: "Head Coach or Org Admin permissions required." };
+    }
+    if (cleanEmail) {
+      const duplicate = doc.memberships.find(
+        (m) => m.status !== "REVOKED" && m.invitedEmail?.toLowerCase() === cleanEmail
+      );
+      if (duplicate) {
+        return {
+          ok: false,
+          error: "A team or coaching staff member with that email already exists on this roster."
+        };
+      }
+    }
+    const cleanGroups = sanitizeTargetEventGroups(params.coachEventGroups) || [];
+    const validAthleteIds = filterValidAssignedAthleteIds(
+      doc.memberships,
+      params.assignedAthleteMembershipIds
+    );
+    const rawInviteToken = crypto12.randomBytes(16).toString("base64url");
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
+    const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
+    let emailStatus = "READY_MANUAL_LINK";
+    if (cleanEmail && isResendConfigured()) {
+      const roleLabel = cleanSpecialty || role.replace(/_/g, " ");
+      const sendRes = await sendEmailViaResend({
+        to: cleanEmail,
+        subject: `Coaching staff invite: ${doc.brand.name} (${roleLabel}) on MeetReady`,
+        html: `<p>Hi <strong>${escapeHtml(cleanName)}</strong>,</p><p>You have been invited to join <strong>${escapeHtml(doc.brand.name)}</strong> on MeetReady as <strong>${escapeHtml(roleLabel)}</strong>.</p><p><a href="${escapeHtml(inviteUrl)}" style="display:inline-block;padding:12px 20px;background:#C8FF00;color:#111318;font-weight:700;text-decoration:none;border-radius:10px;">Accept Coach Invite</a></p><p style="font-size:12px;color:#64748B;">Or paste team code: <strong>${escapeHtml(doc.brand.joinCode)}</strong></p>`,
+        text: `Hi ${cleanName}, you are invited to join ${doc.brand.name} on MeetReady as ${roleLabel}. Accept here: ${inviteUrl} (Team code: ${doc.brand.joinCode})`
+      });
+      emailStatus = sendRes.status;
+    }
+    const newMem = {
+      membershipId: `mem_coach_${crypto12.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      role,
+      squadGroup: "Coaching Staff",
+      ...cleanGroups.length > 0 ? { coachEventGroups: cleanGroups } : {},
+      ...cleanSpecialty ? { coachSpecialtyTitle: cleanSpecialty } : {},
+      ...validAthleteIds && validAthleteIds.length > 0 ? { assignedAthleteMembershipIds: validAthleteIds } : {},
+      sharingTier: "FULL_STREAMS",
+      invitedName: cleanName,
+      ...cleanEmail ? { invitedEmail: cleanEmail } : {},
+      isMinorU18: false,
+      parentConsentStatus: "NOT_REQUIRED",
+      status: "INVITED",
+      emailDeliveryStatus: emailStatus,
+      magicJoinUrl: inviteUrl,
+      rawInviteToken,
+      inviteTokenHash: hashToken(rawInviteToken),
+      invitedAt: nowIso
+    };
+    doc.memberships.push(newMem);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "COACHING_STAFF_INVITED",
+      targetId: newMem.membershipId,
+      metadata: {
+        role,
+        coachSpecialtyTitle: cleanSpecialty || void 0,
+        coachEventGroups: cleanGroups,
+        assignedAthleteCount: validAthleteIds?.length ?? 0
+      }
+    });
+    const summary = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    const projectedMember = summary?.memberships.find((m) => m.membershipId === newMem.membershipId);
+    return {
+      ok: true,
+      member: projectedMember,
+      inviteUrl,
+      emailStatus,
+      team: summary
+    };
+  });
+}
+
+// server/teamMessagingService.ts
+import crypto13 from "crypto";
+function escapeHtml3(raw) {
+  return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function defaultPolicyForDoc(doc) {
+  return {
+    athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+    quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
+    requireGuardianCcForMinors: Boolean(
+      doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
+    )
+  };
+}
+function isWithinQuietHours2(hour, startHour, endHour) {
+  if (typeof hour !== "number" || !Number.isFinite(hour) || hour < 0 || hour > 23) return false;
+  if (startHour === endHour) return false;
+  if (startHour > endHour) {
+    return hour >= startHour || hour < endHour;
+  }
+  return hour >= startHour && hour < endHour;
+}
+var ALLOWED_CHANNEL_SCOPES = /* @__PURE__ */ new Set([
+  "ALL_TEAM",
+  "EVENT_GROUP",
+  "DIRECT_TRANSPARENT",
+  "COACHES_STAFF"
+]);
+async function postTeamMessage(params) {
+  if (!ALLOWED_CHANNEL_SCOPES.has(params.channelScope)) {
+    return { ok: false, status: 400, error: "Invalid team message channel scope." };
+  }
+  let pendingGuardianEmail = null;
+  let pendingPushPayload = null;
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: "Active team membership is required to send messages." };
+    }
+    const cleanBody = String(params.body || "").trim().slice(0, 800);
+    if (!cleanBody) {
+      return { ok: false, status: 400, error: "Message body is required." };
+    }
+    const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+    const isParentFollower = callerMem.role === "PARENT_FOLLOWER";
+    const effectiveEmergencyOverride = isStaff && params.isEmergencyOverride === true;
+    const policy = defaultPolicyForDoc(doc);
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    if (params.channelScope === "COACHES_STAFF" && !isStaff) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff."
+      };
+    }
+    if (isParentFollower && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP" || params.channelScope === "COACHES_STAFF")) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Parents may view announcements or message coaching staff transparently regarding their linked athlete."
+      };
+    }
+    if (callerMem.role === "ATHLETE" && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP") && !policy.athleteRepliesEnabled) {
+      return {
+        ok: false,
+        status: 403,
+        error: "This team channel is currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
+      };
+    }
+    let channelId = "team:all";
+    let resolvedEventGroup;
+    let targetMembershipId;
+    let targetAthleteName;
+    let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
+    if (params.channelScope === "COACHES_STAFF") {
+      channelId = "staff:only";
+      guardianCcApplied = false;
+    } else if (params.channelScope === "EVENT_GROUP") {
+      resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
+      channelId = `group:${resolvedEventGroup}`;
+    } else if (params.channelScope === "DIRECT_TRANSPARENT") {
+      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
+      if (isParentFollower && !callerParentEmail) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Parents may only message coaches in the transparent thread of their linked child athlete."
+        };
+      }
+      const targetMem = callerMem.role === "ATHLETE" ? callerMem : doc.memberships.find(
+        (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED" && m.role === "ATHLETE"
+      );
+      if (!targetMem) {
+        return {
+          ok: false,
+          status: 404,
+          error: "Select a valid athlete on the roster for a transparent SafeSport message."
+        };
+      }
+      if (isParentFollower) {
+        const targetParentEmail = targetMem.parentGuardianEmail?.trim().toLowerCase();
+        if (!callerParentEmail || !targetParentEmail || callerParentEmail !== targetParentEmail) {
+          return {
+            ok: false,
+            status: 403,
+            error: "Parents may only message coaches in the transparent thread of their linked child athlete."
+          };
+        }
+      }
+      const ageResolved = resolveAthleteAgeTier({
+        birthMonthYear: targetMem.birthMonthYear,
+        birthYear: targetMem.birthYear,
+        orgType: doc.brand.orgType,
+        graduationYear: targetMem.graduationYear
+      });
+      const targetIsProtectedMinor = Boolean(
+        (ageResolved.ageTier === "UNKNOWN" ? targetMem.isMinorU18 : ageResolved.isMinorU18) || doc.brand.orgType === "HIGH_SCHOOL"
+      );
+      if ((targetIsProtectedMinor || policy.requireGuardianCcForMinors) && (params.privateDirectToMinor === true || params.guardianCc === false)) {
+        return {
+          ok: false,
+          status: 403,
+          error: "SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian CC and coaching staff oversight are mandatory."
+        };
+      }
+      channelId = `dm:${targetMem.membershipId}`;
+      targetMembershipId = targetMem.membershipId;
+      targetAthleteName = targetMem.invitedName;
+      guardianCcApplied = Boolean(
+        targetIsProtectedMinor || doc.brand.enableParentGuardianCc || targetMem.parentGuardianEmail
+      );
+      if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
+        pendingGuardianEmail = {
+          to: targetMem.parentGuardianEmail,
+          subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
+          html: `<p><strong>${escapeHtml3(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml3(callerMem.role)}) sent a team message to ${escapeHtml3(targetMem.invitedName)}:</p><blockquote>${escapeHtml3(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
+          text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`
+        };
+      }
+    }
+    const quietHoursActive = isWithinQuietHours2(
+      params.clientLocalHour,
+      policy.quietHoursStartHour,
+      policy.quietHoursEndHour
+    );
+    const record = {
+      id: `msg_${crypto13.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      channelId,
+      channelScope: params.channelScope,
+      ...resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {},
+      ...targetMembershipId ? { targetMembershipId } : {},
+      ...targetAthleteName ? { targetAthleteName } : {},
+      senderSid: params.callerSid,
+      senderMembershipId: callerMem.membershipId,
+      senderName: callerMem.invitedName || doc.brand.coachDisplayName,
+      senderRole: callerMem.role,
+      body: cleanBody,
+      createdAt: nowIso,
+      guardianCcApplied,
+      ...pendingGuardianEmail ? { guardianEmailNotified: false } : {},
+      secondAdultVisible: true,
+      ...quietHoursActive && !effectiveEmergencyOverride ? { sentDuringQuietHours: true } : {},
+      ...effectiveEmergencyOverride ? { isEmergencyOverride: true } : {},
+      acknowledgedByMembershipIds: [callerMem.membershipId]
+    };
+    doc.teamMessages = [record, ...doc.teamMessages || []].slice(0, 500);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    pendingPushPayload = {
+      teamId: params.teamId,
+      senderSid: params.callerSid,
+      senderName: record.senderName,
+      kind: "TEAM_MESSAGE",
+      channelScope: params.channelScope,
+      eventGroup: resolvedEventGroup,
+      targetMembershipId,
+      bodyText: cleanBody,
+      clientLocalHour: params.clientLocalHour,
+      isEmergency: effectiveEmergencyOverride
+    };
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGE_SENT",
+      targetId: targetMembershipId || channelId,
+      metadata: {
+        channelScope: params.channelScope,
+        guardianCcApplied,
+        secondAdultVisible: true,
+        sentDuringQuietHours: Boolean(record.sentDuringQuietHours),
+        isEmergencyOverride: Boolean(record.isEmergencyOverride)
+      }
+    });
+    return {
+      ok: true,
+      message: record,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+  if (!lockedResult.ok) {
+    return lockedResult;
+  }
+  const emailToSend = pendingGuardianEmail;
+  const pushToSend = pendingPushPayload;
+  const [emailOutcome] = await Promise.allSettled([
+    emailToSend ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "guardian-dm-email") : Promise.resolve(null),
+    pushToSend ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "team-message-push") : Promise.resolve(null)
+  ]);
+  const emailDelivered = Boolean(emailToSend) && emailOutcome.status === "fulfilled" && emailOutcome.value !== null && emailOutcome.value.delivered === true;
+  if (emailDelivered) {
+    const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
+      const freshDoc = await loadTeamDocRaw(params.teamId);
+      if (!freshDoc) return null;
+      const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
+      if (targetMsg) {
+        targetMsg.guardianEmailNotified = true;
+        freshDoc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        await saveTeamDocRaw(params.teamId, freshDoc);
+      }
+      return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
+    });
+    lockedResult.message.guardianEmailNotified = true;
+    if (refreshedTeam) {
+      lockedResult.team = refreshedTeam;
+    }
+  }
+  return lockedResult;
+}
+async function acknowledgeTeamMessage(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    if (!projected) return { ok: false, status: 403, error: "Membership required." };
+    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
+    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
+    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
+    if (!target) return { ok: false, status: 404, error: "Message not found." };
+    const existingAcks = new Set(target.acknowledgedByMembershipIds || []);
+    existingAcks.add(projected.myMembershipId);
+    target.acknowledgedByMembershipIds = Array.from(existingAcks);
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function flagTeamMessageForReview(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    if (!projected) return { ok: false, status: 403, error: "Membership required." };
+    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
+    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
+    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
+    if (!target) return { ok: false, status: 404, error: "Message not found." };
+    const cleanReason = String(params.reason || "Flagged for athletic administrator review").trim().slice(0, 200);
+    target.flaggedForAdminReview = true;
+    target.flaggedReason = cleanReason;
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGE_FLAGGED",
+      targetId: target.id,
+      metadata: {
+        channelId: target.channelId,
+        reason: cleanReason
+      }
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function updateTeamMessagingPolicy(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only Head Coaches or Athletic Admins may change team messaging rules."
+      };
+    }
+    const current = defaultPolicyForDoc(doc);
+    doc.messagingPolicy = {
+      athleteRepliesEnabled: typeof params.athleteRepliesEnabled === "boolean" ? params.athleteRepliesEnabled : current.athleteRepliesEnabled,
+      quietHoursStartHour: typeof params.quietHoursStartHour === "number" && params.quietHoursStartHour >= 0 && params.quietHoursStartHour <= 23 ? Math.round(params.quietHoursStartHour) : current.quietHoursStartHour,
+      quietHoursEndHour: typeof params.quietHoursEndHour === "number" && params.quietHoursEndHour >= 0 && params.quietHoursEndHour <= 23 ? Math.round(params.quietHoursEndHour) : current.quietHoursEndHour,
+      requireGuardianCcForMinors: Boolean(
+        doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || current.requireGuardianCcForMinors
+      )
+    };
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGING_POLICY_UPDATED",
+      targetId: params.teamId,
+      metadata: doc.messagingPolicy
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+
+// server/rateLimiter.ts
+var memoryRateLimitStore = /* @__PURE__ */ new Map();
+var MAX_MEMORY_RATE_LIMIT_KEYS = 4e3;
+function getClientRateLimitIp(req) {
+  const forwarded = req.headers["x-vercel-forwarded-for"] || req.headers["x-forwarded-for"];
+  const firstForwarded = Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === "string" ? forwarded.split(",")[0] : "";
+  const candidate = (firstForwarded || req.ip || req.socket?.remoteAddress || "local").trim();
+  return candidate.replace(/[^a-zA-Z0-9.:_-]/g, "").slice(0, 64) || "local";
+}
+function checkMemoryRateLimitSync(key, limit = 20, windowMs = 6e4) {
+  const cleanKey = String(key || "").trim().slice(0, 180) || "default";
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const safeWindowMs = Math.max(1e3, Math.floor(windowMs));
+  const now = Date.now();
+  if (memoryRateLimitStore.size > MAX_MEMORY_RATE_LIMIT_KEYS) {
+    for (const [k, rec] of memoryRateLimitStore.entries()) {
+      if (rec.resetAt <= now) {
+        memoryRateLimitStore.delete(k);
+      }
+    }
+    while (memoryRateLimitStore.size >= MAX_MEMORY_RATE_LIMIT_KEYS) {
+      const oldest = memoryRateLimitStore.keys().next().value;
+      if (oldest === void 0) break;
+      memoryRateLimitStore.delete(oldest);
+    }
+  }
+  const record = memoryRateLimitStore.get(cleanKey);
+  if (!record || record.resetAt <= now) {
+    memoryRateLimitStore.set(cleanKey, { count: 1, resetAt: now + safeWindowMs });
+    return {
+      allowed: true,
+      retryAfterSecs: 0,
+      remaining: Math.max(0, safeLimit - 1),
+      backend: "MEMORY"
+    };
+  }
+  if (record.count >= safeLimit) {
+    return {
+      allowed: false,
+      retryAfterSecs: Math.max(1, Math.ceil((record.resetAt - now) / 1e3)),
+      remaining: 0,
+      backend: "MEMORY"
+    };
+  }
+  record.count += 1;
+  return {
+    allowed: true,
+    retryAfterSecs: 0,
+    remaining: Math.max(0, safeLimit - record.count),
+    backend: "MEMORY"
+  };
+}
+async function tryUpstashRateLimitAsync(key, limit, windowMs) {
+  const restUrl = (process.env.UPSTASH_REDIS_REST_URL || "").trim().replace(/\/+$/, "");
+  const restToken = (process.env.UPSTASH_REDIS_REST_TOKEN || "").trim();
+  if (!restUrl || !restToken) return null;
+  const redisKey = `mr:rl:${key}`;
+  try {
+    const resp = await fetch(`${restUrl}/pipeline`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${restToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify([
+        ["INCR", redisKey],
+        ["PTTL", redisKey]
+      ]),
+      signal: AbortSignal.timeout(1500)
+    });
+    if (!resp.ok) {
+      return null;
+    }
+    const rows = await resp.json();
+    if (!Array.isArray(rows) || rows.length < 2 || rows[0]?.error) {
+      return null;
+    }
+    const count = Number(rows[0]?.result);
+    let ttlMs = Number(rows[1]?.result);
+    if (!Number.isFinite(count) || count <= 0) {
+      return null;
+    }
+    if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
+      ttlMs = windowMs;
+      await fetch(`${restUrl}/pexpire/${encodeURIComponent(redisKey)}/${windowMs}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${restToken}` },
+        signal: AbortSignal.timeout(1e3)
+      }).catch(() => void 0);
+    }
+    const allowed = count <= limit;
+    return {
+      allowed,
+      retryAfterSecs: allowed ? 0 : Math.max(1, Math.ceil(ttlMs / 1e3)),
+      remaining: Math.max(0, limit - count),
+      backend: "UPSTASH_REDIS"
+    };
+  } catch (err) {
+    warnServerFallback("rate-limit:upstash-fallback", err);
+    return null;
+  }
+}
+async function checkDistributedRateLimitAsync(key, limit = 20, windowMs = 6e4) {
+  const cleanKey = String(key || "").trim().slice(0, 180) || "default";
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const safeWindowMs = Math.max(1e3, Math.floor(windowMs));
+  const upstashRes = await tryUpstashRateLimitAsync(cleanKey, safeLimit, safeWindowMs);
+  if (upstashRes) {
+    return upstashRes;
+  }
+  const pgRes = await consumeRateLimitPostgresAsync(cleanKey, safeLimit, safeWindowMs);
+  if (pgRes) {
+    return {
+      ...pgRes,
+      backend: "POSTGRES"
+    };
+  }
+  return checkMemoryRateLimitSync(cleanKey, safeLimit, safeWindowMs);
+}
+
 // server/teamLifecycleService.ts
+import crypto14 from "crypto";
 function sanitizeMemberPublicNameForDeletion(m) {
   m.userSid = void 0;
   m.stravaAthleteId = void 0;
@@ -13171,6 +15050,145 @@ function sanitizeMemberPublicNameForDeletion(m) {
   m.liveSnapshot = void 0;
   m.rawInviteToken = void 0;
   m.inviteTokenHash = void 0;
+  m.birthMonthYear = void 0;
+  m.birthYear = void 0;
+  m.graduationYear = void 0;
+  m.seedMarkOrFtp = void 0;
+  m.externalAthleteId = void 0;
+  m.externalProfileUrl = void 0;
+  m.genderDivision = void 0;
+}
+function scrubMemberFromTeamDocument(params) {
+  const { doc, targetMembershipIds, targetSids, replacementName } = params;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  for (const m of doc.memberships) {
+    const isTarget = targetMembershipIds.has(m.membershipId) || (m.userSid ? targetSids.has(m.userSid) : false);
+    if (isTarget) {
+      targetMembershipIds.add(m.membershipId);
+      if (m.userSid) targetSids.add(m.userSid);
+      m.status = "REVOKED";
+      m.leftAt = nowIso;
+      m.invitedName = replacementName;
+      sanitizeMemberPublicNameForDeletion(m);
+      m.coachRecordedActivities = void 0;
+    } else if (Array.isArray(m.assignedAthleteMembershipIds)) {
+      m.assignedAthleteMembershipIds = m.assignedAthleteMembershipIds.filter(
+        (id) => !targetMembershipIds.has(id)
+      );
+    }
+  }
+  for (const bw of doc.broadcastWorkouts || []) {
+    if (Array.isArray(bw.targetMembershipIds)) {
+      bw.targetMembershipIds = bw.targetMembershipIds.filter(
+        (id) => !targetMembershipIds.has(id)
+      );
+    }
+    if (bw.athleteOverrides) {
+      for (const memId of targetMembershipIds) {
+        delete bw.athleteOverrides[memId];
+      }
+    }
+  }
+  if (Array.isArray(doc.workoutComments)) {
+    doc.workoutComments = doc.workoutComments.filter(
+      (c) => !targetMembershipIds.has(c.targetMembershipId) && !targetSids.has(c.authorSid)
+    );
+  }
+  if (Array.isArray(doc.guardianSafetyAlerts)) {
+    doc.guardianSafetyAlerts = doc.guardianSafetyAlerts.filter(
+      (a) => !targetMembershipIds.has(a.targetMembershipId)
+    );
+  }
+  if (doc.attendanceByDate && typeof doc.attendanceByDate === "object") {
+    for (const dateKey of Object.keys(doc.attendanceByDate)) {
+      const dayMap = doc.attendanceByDate[dateKey];
+      if (!dayMap || typeof dayMap !== "object") continue;
+      for (const key of Object.keys(dayMap)) {
+        const rec = dayMap[key];
+        if (targetMembershipIds.has(key) || rec?.membershipId && targetMembershipIds.has(rec.membershipId)) {
+          delete dayMap[key];
+        }
+      }
+      if (Object.keys(dayMap).length === 0) {
+        delete doc.attendanceByDate[dateKey];
+      }
+    }
+  }
+  if (Array.isArray(doc.fieldMarkLogs)) {
+    doc.fieldMarkLogs = doc.fieldMarkLogs.filter(
+      (log) => !log.membershipId || !targetMembershipIds.has(log.membershipId)
+    );
+  }
+  if (Array.isArray(doc.meetDayPackets)) {
+    for (const pkt of doc.meetDayPackets) {
+      if (Array.isArray(pkt.entries)) {
+        pkt.entries = pkt.entries.filter(
+          (entry) => !entry.membershipId || !targetMembershipIds.has(entry.membershipId)
+        );
+      }
+    }
+  }
+  if (Array.isArray(doc.injuryCases)) {
+    doc.injuryCases = doc.injuryCases.filter(
+      (c) => !targetMembershipIds.has(c.membershipId)
+    );
+  }
+  if (Array.isArray(doc.teamMessages)) {
+    doc.teamMessages = doc.teamMessages.filter(
+      (msg) => !targetSids.has(msg.senderSid) && !targetMembershipIds.has(msg.senderMembershipId) && (!msg.targetMembershipId || !targetMembershipIds.has(msg.targetMembershipId))
+    ).map(
+      (msg) => Array.isArray(msg.acknowledgedByMembershipIds) ? {
+        ...msg,
+        acknowledgedByMembershipIds: msg.acknowledgedByMembershipIds.filter(
+          (id) => !targetMembershipIds.has(id)
+        )
+      } : msg
+    );
+  }
+  doc.updatedAt = nowIso;
+}
+async function scrubMemberSidecarVaultsAndPostgres(params) {
+  const { teamId, targetMembershipIds, targetSids, emails } = params;
+  let updatedFieldLogCount;
+  const fieldKey = teamFieldLogsVaultKey(teamId);
+  await withVaultLock(fieldKey, async () => {
+    const existingLogs = await loadTenantVaultAsync(fieldKey, null);
+    if (Array.isArray(existingLogs)) {
+      const filtered = existingLogs.filter(
+        (log) => !log.membershipId || !targetMembershipIds.has(log.membershipId)
+      );
+      updatedFieldLogCount = filtered.length;
+      if (filtered.length !== existingLogs.length) {
+        await saveTenantVaultAsync(fieldKey, filtered);
+      }
+    }
+  });
+  const auditKey = `audit_log_${sanitizeTenantId(teamId).slice(0, 40)}`;
+  await withVaultLock(auditKey, async () => {
+    const entries = await loadTenantVaultAsync(auditKey, []);
+    let changed = false;
+    const scrubbed = entries.map((entry) => {
+      const matchesTarget = entry.targetId ? targetMembershipIds.has(entry.targetId) : false;
+      const matchesActor = targetSids.has(entry.actorSid);
+      if (!matchesTarget && !matchesActor) return entry;
+      changed = true;
+      return {
+        ...entry,
+        ...matchesActor ? { actorSid: "deleted_user" } : {},
+        metadata: { redacted: true }
+      };
+    });
+    if (changed) {
+      await saveTenantVaultAsync(auditKey, scrubbed);
+    }
+  });
+  await deleteMemberPostgresRowsAsync({
+    teamId,
+    membershipIds: Array.from(targetMembershipIds),
+    userSids: Array.from(targetSids),
+    emails
+  });
+  return updatedFieldLogCount;
 }
 async function leaveOrGraduateTeam(params) {
   const archiveQueue = [];
@@ -13622,19 +15640,33 @@ async function declineAndPurgeParentConsent(token) {
       const mem = freshDoc.memberships.find((m) => matchesToken(m));
       if (!mem) return;
       detachedSid = mem.userSid;
-      mem.status = "REVOKED";
-      mem.leftAt = (/* @__PURE__ */ new Date()).toISOString();
-      mem.invitedName = "Withdrawn Minor";
-      sanitizeMemberPublicNameForDeletion(mem);
-      mem.coachRecordedActivities = void 0;
-      freshDoc.updatedAt = mem.leftAt;
+      const targetMembershipIds = /* @__PURE__ */ new Set([mem.membershipId]);
+      const targetSids = new Set(mem.userSid ? [mem.userSid] : []);
+      const emails = mem.invitedEmail ? [mem.invitedEmail] : [];
+      scrubMemberFromTeamDocument({
+        doc: freshDoc,
+        targetMembershipIds,
+        targetSids,
+        replacementName: "Withdrawn Minor"
+      });
+      const updatedFieldCount = await scrubMemberSidecarVaultsAndPostgres({
+        teamId,
+        targetMembershipIds,
+        targetSids,
+        emails
+      });
+      if (typeof updatedFieldCount === "number") {
+        freshDoc.fieldMarkLogsTotalCount = updatedFieldCount;
+      } else if (Array.isArray(freshDoc.fieldMarkLogs)) {
+        freshDoc.fieldMarkLogsTotalCount = freshDoc.fieldMarkLogs.length;
+      }
       await saveTeamDocRaw(teamId, freshDoc);
       await appendAuditLogAsync({
         teamId,
         actorSid: "guardian",
         action: "PARENT_CONSENT_DECLINED",
         targetId: mem.membershipId,
-        metadata: { originalName: athleteName }
+        metadata: { consentOutcome: "DECLINED_AND_PURGED" }
       });
     });
     if (detachedSid) {
@@ -13667,7 +15699,7 @@ async function issueOrResendParentConsentLink(params) {
     if (cleanIncomingEmail) {
       mem.parentGuardianEmail = cleanIncomingEmail;
     }
-    const rawConsentToken = crypto13.randomBytes(16).toString("base64url");
+    const rawConsentToken = crypto14.randomBytes(16).toString("base64url");
     mem.parentConsentTokenHash = hashToken(rawConsentToken);
     mem.parentConsentToken = void 0;
     if (mem.parentConsentStatus !== "ACKNOWLEDGED") {
@@ -13718,28 +15750,7 @@ async function issueOrResendParentConsentLink(params) {
 
 // server/routers/teamRouter.ts
 var teamRouter = express3.Router();
-var emailOtpRateStore = /* @__PURE__ */ new Map();
-function checkEmailOtpRateLimit(key, limit, windowMs = 10 * 60 * 1e3) {
-  const now = Date.now();
-  if (emailOtpRateStore.size > 2e3) {
-    for (const [k, v] of emailOtpRateStore.entries()) {
-      if (now > v.resetAt) emailOtpRateStore.delete(k);
-    }
-  }
-  const existing = emailOtpRateStore.get(key);
-  if (!existing || now > existing.resetAt) {
-    emailOtpRateStore.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (existing.count >= limit) {
-    return false;
-  }
-  existing.count += 1;
-  return true;
-}
-function getClientRateLimitIp(req) {
-  return String(req.headers["x-vercel-forwarded-for"] || req.ip || "local").split(",")[0].trim() || "local";
-}
+var OTP_RATE_WINDOW_MS = 10 * 60 * 1e3;
 function resolveRequestOrigin(req) {
   return resolveTrustedRequestOrigin(req);
 }
@@ -13747,16 +15758,26 @@ teamRouter.post("/api/auth/email/send-otp", async (req, res) => {
   try {
     const email = String(req.body?.email || "").trim().toLowerCase();
     const clientIp = getClientRateLimitIp(req);
-    if (!checkEmailOtpRateLimit(`otp_send_ip:${clientIp}`, 10) || email && !checkEmailOtpRateLimit(`otp_send_em:${email}`, 5)) {
+    const ipRate = await checkDistributedRateLimitAsync(
+      `otp_send_ip:${clientIp}`,
+      10,
+      OTP_RATE_WINDOW_MS
+    );
+    const emailRate = email ? await checkDistributedRateLimitAsync(`otp_send_em:${email}`, 5, OTP_RATE_WINDOW_MS) : { allowed: true, retryAfterSecs: 0 };
+    if (!ipRate.allowed || !emailRate.allowed) {
       res.status(429).json({
         ok: false,
-        error: "Too many verification code requests. Please wait a few minutes and try again."
+        error: "Too many verification code requests. Please wait a few minutes and try again.",
+        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs)
       });
       return;
     }
-    const result = await requestEmailOtpCode(email);
+    const result = await requestEmailOtpCode(email, {
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear
+    });
     if (!result.ok) {
-      res.status(400).json({ ok: false, error: result.error || "Unable to send OTP." });
+      res.status(result.statusCode || 400).json({ ok: false, error: result.error || "Unable to send OTP." });
       return;
     }
     res.json({
@@ -13777,21 +15798,31 @@ teamRouter.post("/api/auth/email/verify-otp", async (req, res) => {
     const email = String(req.body?.email || "").trim().toLowerCase();
     const code = String(req.body?.code || "").trim();
     const clientIp = getClientRateLimitIp(req);
-    if (!checkEmailOtpRateLimit(`otp_verify_ip:${clientIp}`, 20) || email && !checkEmailOtpRateLimit(`otp_verify_em:${email}`, 10)) {
+    const ipRate = await checkDistributedRateLimitAsync(
+      `otp_verify_ip:${clientIp}`,
+      20,
+      OTP_RATE_WINDOW_MS
+    );
+    const emailRate = email ? await checkDistributedRateLimitAsync(`otp_verify_em:${email}`, 10, OTP_RATE_WINDOW_MS) : { allowed: true, retryAfterSecs: 0 };
+    if (!ipRate.allowed || !emailRate.allowed) {
       res.status(429).json({
         ok: false,
-        error: "Too many verification attempts. Please wait a few minutes and try again."
+        error: "Too many verification attempts. Please wait a few minutes and try again.",
+        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs)
       });
       return;
     }
     const currentClaims = getVerifiedSessionClaims(req);
     const verifiedPreferredSid = currentClaims && isCanonicalAuthenticatedClaims(currentClaims) ? currentClaims.sid : void 0;
-    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid);
+    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid, {
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear
+    });
     if (!result.ok || !result.sid) {
-      res.status(400).json({ ok: false, error: result.error || "Invalid code." });
+      res.status(result.statusCode || 400).json({ ok: false, error: result.error || "Invalid code." });
       return;
     }
-    const sessionToken = setSessionCookie(
+    setSessionCookie(
       req,
       res,
       result.userId || `usr_${result.sid}`,
@@ -13802,7 +15833,6 @@ teamRouter.post("/api/auth/email/verify-otp", async (req, res) => {
     const teams = await listTeamsForUser(result.sid, originUrl);
     res.json({
       ok: true,
-      sessionToken,
       email: result.email,
       displayName: result.displayName,
       teams
@@ -15475,7 +17505,7 @@ teamRouter.post("/api/push/test", async (req, res) => {
 import express4 from "express";
 
 // server/teamMeetDayOpsService.ts
-import crypto14 from "crypto";
+import crypto15 from "crypto";
 function sanitizeMeetDayPacketEntry(raw, idx) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const obj = raw;
@@ -15492,7 +17522,7 @@ function sanitizeMeetDayPacketEntry(raw, idx) {
   const relayTeamCode = typeof obj.relayTeamCode === "string" && obj.relayTeamCode.trim() ? obj.relayTeamCode.trim().toUpperCase().slice(0, 4) : void 0;
   const rawLeg = typeof obj.relayLegOrder === "number" && Number.isInteger(obj.relayLegOrder) ? obj.relayLegOrder : void 0;
   const relayLegOrder = rawLeg === 1 || rawLeg === 2 || rawLeg === 3 || rawLeg === 4 ? rawLeg : void 0;
-  const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 64) : `entry_${idx}_${crypto14.randomBytes(4).toString("hex")}`;
+  const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 64) : `entry_${idx}_${crypto15.randomBytes(4).toString("hex")}`;
   return {
     id,
     athleteName,
@@ -15541,7 +17571,7 @@ async function saveMeetDayPacket(params) {
     if (clean) entries.push(clean);
   }
   const requestedPacketId = typeof params.packet?.packetId === "string" ? params.packet.packetId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : "";
-  const packetId = requestedPacketId || `mdp_${crypto14.randomBytes(6).toString("hex")}`;
+  const packetId = requestedPacketId || `mdp_${crypto15.randomBytes(6).toString("hex")}`;
   return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) {
@@ -15756,606 +17786,985 @@ teamMeetDayRouter.delete(
   }
 );
 
-// server/routers/teamSyncRouter.ts
-import crypto17 from "crypto";
+// server/routers/teamInjuryRouter.ts
 import express5 from "express";
 
-// server/athleticSyncService.ts
+// server/teamInjuryService.ts
 import crypto16 from "crypto";
-
-// server/athleticFieldSyncHelper.ts
-import crypto15 from "node:crypto";
-function applyParsedExternalFieldMarksToDoc(params) {
-  const baseLogs = Array.isArray(params.existingLogs) ? [...params.existingLogs] : Array.isArray(params.doc.fieldMarkLogs) ? [...params.doc.fieldMarkLogs] : [];
-  const mergedLogs = [...baseLogs];
-  const addedRecords = [];
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  for (const item of params.matchedFieldItems || []) {
-    const row = item?.row;
-    if (!row || !row.isFieldEvent) continue;
-    const normName = normalizeAthleteMatchKey(row.athleteName);
-    const fallbackMem = !item.mem && !item.membershipId ? (params.doc.memberships || []).find(
-      (m) => m.status !== "REVOKED" && m.role !== "PARENT_FOLLOWER" && (row.externalAthleteId && m.externalAthleteId === row.externalAthleteId || Boolean(normName) && normalizeAthleteMatchKey(m.invitedName) === normName)
-    ) : void 0;
-    const membershipId = item.mem?.membershipId || item.membershipId || fallbackMem?.membershipId;
-    const athleteName = item.mem?.invitedName || item.matchedAthleteName || item.athleteName || fallbackMem?.invitedName || row.athleteName;
-    const eventCode = row.fieldEventCode || "LJ";
-    const candidate = buildExternalFieldEventLogRecord({
-      row,
-      teamId: params.doc.brand.teamId,
-      membershipId,
-      athleteName,
-      nowIso,
-      idSuffix: crypto15.randomBytes(4).toString("hex")
-    });
-    const isDup = mergedLogs.some(
-      (existing) => isDuplicateExternalFieldLog(existing, candidate)
-    );
-    if (isDup) continue;
-    if (fallbackMem && !fallbackMem.eventGroup) {
-      fallbackMem.eventGroup = getFieldEventSpec(eventCode).eventGroup;
-    }
-    mergedLogs.unshift(candidate);
-    addedRecords.push(candidate);
+var VALID_RTP_STAGES = /* @__PURE__ */ new Set([
+  "OUT",
+  "MODIFIED",
+  "LIMITED",
+  "CLEARED"
+]);
+var VALID_SEVERITIES = /* @__PURE__ */ new Set([
+  "LOW",
+  "MODERATE",
+  "HIGH"
+]);
+function syncAthleteStatusFromInjuryCases(member, cases) {
+  if (member.status === "REVOKED" || member.status === "ALUMNI") {
+    return;
   }
-  params.doc.fieldMarkLogs = mergedLogs;
-  params.doc.fieldMarkLogsTotalCount = mergedLogs.length;
-  return {
-    addedRecords,
-    mergedLogs,
-    addedCount: addedRecords.length
-  };
-}
-
-// server/athleticSyncService.ts
-function assertCoachMembership(doc, callerSid) {
-  const mem = doc.memberships.find(
-    (m) => m.userSid === callerSid && m.status !== "REVOKED"
+  const activeCases = cases.filter((c) => c.membershipId === member.membershipId);
+  if (activeCases.length === 0) return;
+  const hasOutOrModified = activeCases.some(
+    (c) => c.rtpStage === "OUT" || c.rtpStage === "MODIFIED"
   );
-  if (!mem || mem.role !== "HEAD_COACH" && mem.role !== "ASSISTANT_COACH") {
-    return null;
+  if (hasOutOrModified) {
+    member.status = "INJURED";
+    return;
   }
-  return mem;
+  const hasClearedOnly = activeCases.every((c) => c.rtpStage === "CLEARED");
+  if (hasClearedOnly && member.status === "INJURED") {
+    member.status = "ACTIVE";
+  }
 }
-function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
-  const existingKeySet = new Set(
-    (doc.broadcastWorkouts || []).map(
-      (bw) => `${bw.date}|${normalizeAthleteMatchKey(bw.name)}`
-    )
-  );
-  let added = 0;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const additions = [];
-  for (const meet of meets.slice(0, 60)) {
-    const cleanName = String(meet.name || "").trim().slice(0, 100);
-    const cleanDate = String(meet.date || "").slice(0, 10);
-    if (!cleanName || !/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) continue;
-    const dedupeKey = `${cleanDate}|${normalizeAthleteMatchKey(cleanName)}`;
-    if (existingKeySet.has(dedupeKey)) continue;
-    existingKeySet.add(dedupeKey);
-    const estDist = meet.distanceMeters || 5e3;
-    const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
-    additions.push({
-      broadcastId: `meet_${crypto16.randomBytes(6).toString("hex")}`,
-      teamId: doc.brand.teamId,
-      targetSquadGroup: "ALL",
-      date: cleanDate,
-      name: cleanName,
-      sportCategory: "Running",
-      plannedDurationSecs: 5400,
-      plannedLoad: estLoad,
-      workoutSyntax: estDist >= 4e3 ? `Warmup 20m Z1
-Main: ${cleanName}
-Cooldown 15m Z1` : `Warmup 25m
-Race: ${cleanName}
-Cooldown 15m`,
-      description: meet.description || `Synced ${sourceLabel === "TFRRS" ? "TFRRS" : "Athletic.net"} meet schedule event.`,
-      ...meet.scheduledTime ? { scheduledTime: meet.scheduledTime } : {},
-      locationName: meet.locationName,
-      locationCategory: meet.locationCategory || "XC_COURSE",
-      planBlockId: `ext-sched-${sourceLabel.toLowerCase()}`,
-      planBlockName: sourceLabel === "TFRRS" ? "TFRRS Meet Schedule" : "Athletic.net Meet Schedule",
-      isOfficialMeet: true,
-      externalSource: meet.externalSource || sourceLabel,
-      pushedByCoachName: doc.brand.coachDisplayName,
-      createdAt: nowIso
-    });
-    added += 1;
-  }
-  if (additions.length > 0) {
-    doc.broadcastWorkouts = [...additions, ...doc.broadcastWorkouts || []].slice(0, 400);
-  }
-  return added;
-}
-async function updateTeamExternalSyncConfig(params) {
+async function listTeamInjuryCases(params) {
   const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) return null;
-  let mergedConfig = { ...params.config || {} };
-  if (params.teamUrl) {
-    const parsed = parseExternalTeamUrl(params.teamUrl);
-    if (parsed) {
-      mergedConfig = {
-        ...mergedConfig,
-        platform: parsed.platform,
-        ...parsed.platform === "ATHLETIC_NET" ? {
-          athleticNetSchoolId: parsed.athleticNetSchoolId,
-          athleticNetSportSlug: parsed.athleticNetSportSlug,
-          athleticNetUrl: parsed.canonicalUrl
-        } : {
-          tfrrsTeamUrl: parsed.canonicalUrl,
-          tfrrsTeamCode: parsed.tfrrsTeamCode
-        },
-        ...parsed.inferredTeamName && !mergedConfig.teamFilterKeyword ? { teamFilterKeyword: parsed.inferredTeamName.replace(/\s+high\s+school$/i, "") } : {}
-      };
-    }
+  if (!doc) {
+    return { ok: false, status: 404, error: "Team not found." };
   }
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    mergedConfig,
-    doc.brand.externalSync
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
   );
-  doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveTeamDocRaw(params.teamId, doc);
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
-}
-async function syncTeamIcsCalendar(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
     return {
       ok: false,
-      summary: null,
-      addedMeetsCount: 0,
-      parsedMeetsCount: 0,
-      note: "Coach permissions required to sync team schedule."
+      status: 403,
+      error: "Coach, Athletic Trainer, or Org Admin permissions required."
     };
   }
-  let resolvedIcsText = String(params.icsText || "").trim();
-  const normalizedUrl = params.icsUrl ? normalizeWebcalUrl(params.icsUrl) : "";
-  if (!resolvedIcsText && normalizedUrl) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6500);
-      const resp = await assertSafeExternalFetch(
-        normalizedUrl,
-        {
-          headers: {
-            "User-Agent": "MeetReady-CalendarSync/2.1 (+https://meetready.app)",
-            Accept: "text/calendar, text/plain, */*;q=0.8"
-          },
-          signal: controller.signal
-        },
-        2
-      );
-      clearTimeout(timer);
-      if (!resp) {
-        return {
-          ok: false,
-          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-          addedMeetsCount: 0,
-          parsedMeetsCount: 0,
-          note: "Blocked unsafe or private network calendar URL."
-        };
-      }
-      const body = await resp.text();
-      if (!resp.ok || /just a moment|cf-mitigated|enable javascript and cookies/i.test(body)) {
-        return {
-          ok: false,
-          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-          addedMeetsCount: 0,
-          parsedMeetsCount: 0,
-          cloudflareBlocked: true,
-          note: "Athletic.net / remote firewall blocked direct server fetch (HTTP " + resp.status + '). Click "Download calendar" (.ics) in your browser and upload or paste it below.'
-        };
-      }
-      resolvedIcsText = body;
-    } catch {
+  const cases = stripClinicalNotesForRole(doc.injuryCases || [], callerMem.role);
+  return { ok: true, cases };
+}
+async function upsertTeamInjuryCase(params) {
+  const membershipId = String(params.input?.membershipId || "").trim();
+  if (!membershipId) {
+    return { ok: false, status: 400, error: "Athlete membershipId is required." };
+  }
+  const bodyRegion = normalizePainArea(params.input?.bodyRegion);
+  if (!bodyRegion) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Valid 13-region bodyRegion is required."
+    };
+  }
+  const rawStage = String(params.input?.rtpStage || "").trim().toUpperCase();
+  if (!VALID_RTP_STAGES.has(rawStage)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "rtpStage must be OUT, MODIFIED, LIMITED, or CLEARED."
+    };
+  }
+  const rawSeverity = String(params.input?.severity || "MODERATE").trim().toUpperCase();
+  if (!VALID_SEVERITIES.has(rawSeverity)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "severity must be LOW, MODERATE, or HIGH."
+    };
+  }
+  const restrictions = String(params.input?.restrictions || "").trim().slice(0, 320);
+  const coachGuidance = String(params.input?.coachGuidance || "").trim().slice(0, 400);
+  const rawTargetDate = String(params.input?.targetReturnDate || "").trim().slice(0, 10);
+  const targetReturnDate = /^\d{4}-\d{2}-\d{2}$/.test(rawTargetDate) ? rawTargetDate : void 0;
+  const requestedId = typeof params.input?.id === "string" ? params.input.id.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : "";
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, status: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
       return {
         ok: false,
-        summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-        addedMeetsCount: 0,
-        parsedMeetsCount: 0,
-        cloudflareBlocked: true,
-        note: "Unable to fetch remote .ics URL from server; download the .ics file in your browser and drop or paste it below."
+        status: 403,
+        error: "Coach, Athletic Trainer, or Org Admin permissions required."
       };
     }
-  }
-  if (!resolvedIcsText || !resolvedIcsText.includes("VEVENT")) {
-    return {
-      ok: false,
-      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-      addedMeetsCount: 0,
-      parsedMeetsCount: 0,
-      note: "No VEVENT calendar entries found in the provided .ics feed."
-    };
-  }
-  const extSource = doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
-  const meets = parseIcsCalendarToMeets(resolvedIcsText, extSource);
-  const addedCount = upsertMeetEventsOnDoc(doc, meets, extSource);
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    {
-      ...normalizedUrl ? { icsCalendarUrl: normalizedUrl } : {},
-      lastSyncedAt: nowIso
-    },
-    doc.brand.externalSync
-  );
-  doc.updatedAt = nowIso;
-  await saveTeamDocRaw(params.teamId, doc);
-  return {
-    ok: true,
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-    addedMeetsCount: addedCount,
-    parsedMeetsCount: meets.length,
-    note: addedCount > 0 ? `Added ${addedCount} meets from .ics calendar.` : `Checked ${meets.length} meets (all already up to date).`
-  };
-}
-function findOrCreateExternalMembership(doc, candidate) {
-  const normKey = normalizeAthleteMatchKey(candidate.name);
-  const existing = doc.memberships.find((m) => {
-    if (m.status === "REVOKED" || m.role === "PARENT_FOLLOWER") return false;
-    if (candidate.externalAthleteId && m.externalAthleteId && m.externalAthleteId === candidate.externalAthleteId) {
-      return true;
-    }
-    return Boolean(normKey) && normalizeAthleteMatchKey(m.invitedName) === normKey;
-  });
-  const safeSportOn = Boolean(
-    doc.brand.defaultSafeSportShield || candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
-  );
-  const calibrated = candidate.seedMarkOrFtp ? calibrateThresholdsFromSeedMark(
-    candidate.seedMarkOrFtp,
-    doc.brand.primarySport,
-    "mi"
-  ) : void 0;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const cleanCandidateUrl = candidate.externalProfileUrl && isSafeHttpsUrl(candidate.externalProfileUrl.trim()) ? candidate.externalProfileUrl.trim() : void 0;
-  if (existing) {
-    existing.externalSource = existing.externalSource || candidate.externalSource;
-    if (candidate.externalAthleteId) existing.externalAthleteId = candidate.externalAthleteId;
-    if (cleanCandidateUrl) existing.externalProfileUrl = cleanCandidateUrl;
-    if (candidate.graduationYear) existing.graduationYear = candidate.graduationYear;
-    if (candidate.genderDivision) existing.genderDivision = candidate.genderDivision;
-    if (candidate.seedMarkOrFtp && !existing.seedMarkOrFtp) {
-      existing.seedMarkOrFtp = candidate.seedMarkOrFtp;
-    }
-    if (!existing.eventGroup && (candidate.eventGroup || candidate.seedMarkOrFtp)) {
-      const inferred = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
-      if (inferred) existing.eventGroup = inferred;
-    }
-    if (calibrated && (!existing.liveSnapshot || !existing.liveSnapshot.thresholdPaceSecsPerKm)) {
-      existing.liveSnapshot = {
-        updatedAt: nowIso,
-        hasConnectedWatch: Boolean(existing.liveSnapshot?.hasConnectedWatch),
-        verdictLabel: existing.liveSnapshot?.verdictLabel || "Synced Roster",
-        readinessScore: existing.liveSnapshot?.readinessScore || 0,
-        ctl: existing.liveSnapshot?.ctl || 0,
-        atl: existing.liveSnapshot?.atl || 0,
-        tsb: existing.liveSnapshot?.tsb || 0,
-        acuteLoad7d: existing.liveSnapshot?.acuteLoad7d || 0,
-        lowAerobicPct: existing.liveSnapshot?.lowAerobicPct || 0,
-        highAerobicPct: existing.liveSnapshot?.highAerobicPct || 0,
-        neuromuscularPct: existing.liveSnapshot?.neuromuscularPct || 0,
-        caraHours7d: existing.liveSnapshot?.caraHours7d || 0,
-        ...existing.liveSnapshot || {},
-        thresholdPaceSecsPerKm: calibrated.thresholdPaceSecsPerKm,
-        safeSportHideWeight: safeSportOn
-      };
-    }
-    return { mem: existing, created: false };
-  }
-  const isMinorImport = Boolean(
-    candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
-  );
-  const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-  const rawToken = crypto16.randomBytes(12).toString("base64url");
-  const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
-  const createdMem = {
-    membershipId: `mem_${crypto16.randomBytes(6).toString("hex")}`,
-    teamId: doc.brand.teamId,
-    role: "ATHLETE",
-    squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
-    ...resolvedCreatedGroup ? { eventGroup: resolvedCreatedGroup } : {},
-    invitedName: String(candidate.name || "Team Athlete").trim().slice(0, 64),
-    graduationYear: candidate.graduationYear,
-    isMinorU18: isMinorImport,
-    parentConsentStatus: isMinorImport ? "PENDING" : "NOT_REQUIRED",
-    seedMarkOrFtp: candidate.seedMarkOrFtp,
-    externalSource: candidate.externalSource,
-    externalAthleteId: candidate.externalAthleteId,
-    externalProfileUrl: cleanCandidateUrl,
-    genderDivision: candidate.genderDivision,
-    status: "INVITED",
-    emailDeliveryStatus: "READY_MANUAL_LINK",
-    rawInviteToken: rawToken,
-    inviteTokenHash: crypto16.createHash("sha256").update(rawToken).digest("hex"),
-    invitedAt: nowIso,
-    liveSnapshot: {
-      updatedAt: nowIso,
-      hasConnectedWatch: false,
-      verdictLabel: `${candidate.externalSource === "TFRRS" ? "TFRRS" : "Athletic.net"} Synced`,
-      readinessScore: 0,
-      ctl: 0,
-      atl: 0,
-      tsb: 0,
-      acuteLoad7d: 0,
-      lowAerobicPct: 0,
-      highAerobicPct: 0,
-      neuromuscularPct: 0,
-      caraHours7d: 0,
-      thresholdPaceSecsPerKm: calibrated?.thresholdPaceSecsPerKm || 245,
-      safeSportHideWeight: safeSportOn
-    }
-  };
-  doc.memberships.push(createdMem);
-  return { mem: createdMem, created: true };
-}
-async function applyExternalTeamSyncBatch(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
-    return {
-      summary: null,
-      addedAthletes: 0,
-      updatedAthletes: 0,
-      addedMeets: 0,
-      recordedResults: 0
-    };
-  }
-  let addedAthletes = 0;
-  let updatedAthletes = 0;
-  let addedMeets = 0;
-  let recordedResults = 0;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  for (const ath of (params.athletes || []).slice(0, 400)) {
-    const res = findOrCreateExternalMembership(doc, ath);
-    if (res.created) addedAthletes += 1;
-    else updatedAthletes += 1;
-  }
-  if (Array.isArray(params.meets) && params.meets.length > 0) {
-    const extSource = params.externalSyncPatch?.platform === "TFRRS" || doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
-    addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
-  }
-  const matchedFieldItems = [];
-  for (const row of (params.results || []).slice(0, 200)) {
-    const { mem, created } = findOrCreateExternalMembership(doc, {
-      name: row.athleteName,
-      squadGroup: row.squadGroup,
-      graduationYear: row.graduationYear,
-      genderDivision: row.genderDivision,
-      seedMarkOrFtp: row.isFieldEvent ? row.displayFieldMark || row.displayFatTime : row.displayFatTime,
-      externalSource: row.externalSource,
-      externalAthleteId: row.externalAthleteId,
-      externalProfileUrl: row.externalProfileUrl,
-      isMinorU18: doc.brand.orgType === "HIGH_SCHOOL"
-    });
-    if (created) addedAthletes += 1;
-    if (row.isFieldEvent) {
-      matchedFieldItems.push({ row, mem });
-      continue;
-    }
-    const existingActs = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
-    const duplicate = existingActs.some(
-      (a) => a.startDateLocal?.slice(0, 10) === row.date && a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters && Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
+    const targetMem = doc.memberships.find(
+      (m) => m.membershipId === membershipId && m.status !== "REVOKED"
     );
-    if (duplicate) continue;
-    const activity = synthesizeOfficialRaceActivity({
-      id: `ext-meet-${crypto16.randomBytes(5).toString("hex")}`,
-      date: row.date,
-      meetName: row.meetName,
-      eventLabel: row.eventLabel,
-      eventDistanceMeters: row.eventDistanceMeters,
-      fatTimeSecs: row.fatTimeSecs,
-      displayFatTime: row.displayFatTime || formatFatTime(row.fatTimeSecs),
-      platform: row.platform,
-      trackType: row.trackType,
-      placeFinish: row.placeFinish,
-      lapSplitDistanceMeters: row.eventDistanceMeters <= 400 ? 200 : row.eventDistanceMeters >= 3e3 ? 1e3 : 400,
-      lapSplitsSecs: [],
-      includeWarmupCooldown: false,
-      sourceUrl: row.externalProfileUrl || row.sourceUrl,
-      startDateLocalIso: `${row.date}T09:00:00`
-    });
-    mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
-    if (!mem.seedMarkOrFtp) {
-      mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
+    if (!targetMem) {
+      return { ok: false, status: 404, error: "Athlete membership not found on this team." };
     }
-    if (mem.userSid || mem.stravaAthleteId || mem.invitedEmail) {
-      await archiveCoachActivitiesForMember(mem, [activity]).catch(() => void 0);
-    }
-    recordedResults += 1;
-  }
-  if (matchedFieldItems.length > 0) {
-    const existingFieldLogs = await loadFullTeamFieldMarksArchive(
-      params.teamId,
-      doc.fieldMarkLogs
-    );
-    const fieldRes = applyParsedExternalFieldMarksToDoc({
-      doc,
-      existingLogs: existingFieldLogs,
-      matchedFieldItems
-    });
-    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), fieldRes.mergedLogs);
-    doc.fieldMarkLogs = fieldRes.mergedLogs.slice(0, 150);
-    doc.fieldMarkLogsTotalCount = fieldRes.mergedLogs.length;
-    recordedResults += fieldRes.addedCount;
-  }
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    {
-      ...params.externalSyncPatch || {},
-      lastSyncedAt: nowIso
-    },
-    doc.brand.externalSync
-  );
-  doc.updatedAt = nowIso;
-  await saveTeamDocRaw(params.teamId, doc);
-  return {
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-    addedAthletes,
-    updatedAthletes,
-    addedMeets,
-    recordedResults
-  };
-}
-async function getPublicTeamHubBySlugOrCode(slugOrCode) {
-  const doc = await findTeamDocumentByCodeOrSlug(slugOrCode);
-  if (!doc || !doc.brand.externalSync?.enablePublicParentHub) {
-    return {
-      found: false,
-      error: "Team Hub not found or public parent access is turned off.",
-      upcomingMeets: [],
-      recentSchedule: [],
-      rosterLeaderboard: [],
-      fieldLeaderboard: [],
-      stats: { athleteCount: 0, meetCount: 0, officialResultCount: 0, fieldPrCount: 0 }
-    };
-  }
-  const todayIso = getLocalDateIso();
-  const fullFieldLogs = await loadFullTeamFieldMarksArchive(
-    doc.brand.teamId,
-    doc.fieldMarkLogs
-  );
-  const { fieldPrsByMembershipId, fieldLeaderboard } = buildPublicFieldLeaderboardFromLogs({
-    orgType: doc.brand.orgType,
-    memberships: doc.memberships,
-    fieldLogs: fullFieldLogs
-  });
-  const meetItems = (doc.broadcastWorkouts || []).filter((bw) => bw.isOfficialMeet || /meet|invitational|finals|dual|champ|xc/i.test(bw.name)).filter((bw) => !bw.targetMembershipIds || bw.targetMembershipIds.length === 0).map((bw) => ({
-    id: bw.broadcastId,
-    date: bw.date,
-    name: bw.name,
-    ...bw.scheduledTime ? { scheduledTime: bw.scheduledTime } : {},
-    ...bw.locationName ? { locationName: bw.locationName } : {},
-    ...bw.locationCategory ? { locationCategory: bw.locationCategory } : {},
-    ...bw.description ? { description: bw.description } : {},
-    ...bw.externalSource ? { externalSource: bw.externalSource } : {}
-  })).sort((a, b) => a.date.localeCompare(b.date));
-  const upcomingMeets = meetItems.filter((m) => m.date >= todayIso);
-  const recentSchedule = meetItems.filter((m) => m.date < todayIso).reverse();
-  let officialResultCount = 0;
-  const rosterLeaderboard = doc.memberships.filter((m) => m.status !== "REVOKED" && m.role === "ATHLETE").map((m) => {
-    const officialResults = (m.coachRecordedActivities || []).filter((a) => Boolean(a.officialRaceData)).map((a) => {
-      const r = a.officialRaceData;
-      return {
-        date: a.startDateLocal.slice(0, 10),
-        meetName: r.meetName,
-        eventLabel: r.eventLabel,
-        eventDistanceMeters: r.eventDistanceMeters,
-        displayFatTime: r.displayFatTime,
-        fatTimeSecs: r.fatTimeSecs,
-        ...r.placeFinish ? { placeFinish: r.placeFinish } : {},
-        vdotScore: r.vdotScore,
-        platform: r.platform,
-        trackType: r.trackType,
-        ...r.sourceUrl ? { sourceUrl: r.sourceUrl } : {}
-      };
-    }).sort((a, b) => b.date.localeCompare(a.date));
-    officialResultCount += officialResults.length;
-    const displayName = formatPublicSafeSportDisplayName({
-      invitedName: m.invitedName,
-      externalSource: m.externalSource,
-      isMinorU18: m.isMinorU18,
-      parentConsentStatus: m.parentConsentStatus,
-      orgType: doc.brand.orgType
-    });
-    const memberFieldPrs = fieldPrsByMembershipId.get(m.membershipId);
-    return {
-      membershipId: m.membershipId,
-      name: displayName,
-      squadGroup: m.squadGroup,
-      ...m.eventGroup ? { eventGroup: m.eventGroup } : {},
-      ...m.graduationYear ? { graduationYear: m.graduationYear } : {},
-      ...m.genderDivision ? { genderDivision: m.genderDivision } : {},
-      ...m.seedMarkOrFtp ? { seedMarkOrFtp: m.seedMarkOrFtp } : {},
-      ...m.externalSource ? { externalSource: m.externalSource } : {},
-      ...m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {},
-      ...m.externalProfileUrl && isSafeHttpsUrl(m.externalProfileUrl.trim()) ? { externalProfileUrl: m.externalProfileUrl.trim() } : {},
-      officialResults,
-      ...memberFieldPrs && memberFieldPrs.length > 0 ? { fieldPrs: memberFieldPrs } : {}
-    };
-  });
-  const safePublicExternalSync = projectSafePublicExternalSync(doc.brand.externalSync);
-  return {
-    found: true,
-    brand: {
+    const existingList = Array.isArray(doc.injuryCases) ? [...doc.injuryCases] : [];
+    const existingCase = requestedId ? existingList.find((c) => c.id === requestedId) : void 0;
+    const isTrainer = callerMem.role === "ATHLETIC_TRAINER";
+    const hasClinicalInput = params.input?.privateClinicalNotes !== void 0;
+    const cleanClinicalInput = hasClinicalInput ? String(params.input?.privateClinicalNotes || "").trim().slice(0, 1200) : void 0;
+    const nextPrivateNotes = isTrainer ? hasClinicalInput ? cleanClinicalInput || void 0 : existingCase?.privateClinicalNotes : existingCase?.privateClinicalNotes;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const savedCase = {
+      id: existingCase?.id || requestedId || `inj_${crypto16.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
-      slug: doc.brand.slug,
-      name: doc.brand.name,
-      shortName: doc.brand.shortName,
-      ...doc.brand.mascotOrMotto ? { mascotOrMotto: doc.brand.mascotOrMotto } : {},
-      orgType: doc.brand.orgType,
-      primarySport: doc.brand.primarySport,
-      ...doc.brand.logoDataUrl ? { logoDataUrl: doc.brand.logoDataUrl } : {},
-      primaryHex: doc.brand.primaryHex,
-      secondaryHex: doc.brand.secondaryHex,
-      defaultSafeSportShield: doc.brand.defaultSafeSportShield,
-      coachDisplayName: doc.brand.coachDisplayName,
-      ...safePublicExternalSync ? { externalSync: safePublicExternalSync } : {}
-    },
-    upcomingMeets,
-    recentSchedule,
-    rosterLeaderboard,
-    fieldLeaderboard,
-    announcements: (doc.announcements || []).filter((a) => a.publishToParentHub).slice(0, 6).map((a) => ({
-      id: a.id,
-      title: a.title,
-      body: a.body,
-      category: a.category,
-      createdAt: a.createdAt
-    })),
-    stats: {
-      athleteCount: rosterLeaderboard.length,
-      meetCount: meetItems.length,
-      officialResultCount,
-      fieldPrCount: fieldLeaderboard.length
+      membershipId: targetMem.membershipId,
+      athleteName: targetMem.invitedName,
+      bodyRegion,
+      severity: rawSeverity,
+      rtpStage: rawStage,
+      restrictions,
+      coachGuidance,
+      ...nextPrivateNotes ? { privateClinicalNotes: nextPrivateNotes } : {},
+      ...targetReturnDate ? { targetReturnDate } : {},
+      createdAt: existingCase?.createdAt || nowIso,
+      updatedAt: nowIso,
+      updatedBySid: params.callerSid,
+      updatedByName: callerMem.invitedName || callerMem.role
+    };
+    doc.injuryCases = [
+      savedCase,
+      ...existingList.filter((c) => c.id !== savedCase.id)
+    ].slice(0, 200);
+    if (rawStage === "OUT" || rawStage === "MODIFIED") {
+      if (targetMem.status !== "REVOKED" && targetMem.status !== "ALUMNI") {
+        targetMem.status = "INJURED";
+      }
+    } else if (rawStage === "CLEARED") {
+      syncAthleteStatusFromInjuryCases(targetMem, doc.injuryCases);
     }
-  };
-}
-async function followTeamAsParentOrFan(params) {
-  const initialDoc = await findTeamDocumentByCodeOrSlug(params.codeOrSlug);
-  if (!initialDoc) {
-    return { ok: false, error: "Team not found for this code or URL." };
-  }
-  return withTeamRowLock(initialDoc.brand.teamId, async () => {
-    const doc = await loadTeamDocRaw(initialDoc.brand.teamId) || initialDoc;
-    if (!doc.brand.externalSync?.enablePublicParentHub) {
-      return { ok: false, error: "Public parent/supporter following is disabled for this team." };
-    }
-    const cleanVerifiedEmail = params.verifiedEmail?.trim().toLowerCase();
-    let mem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!mem) {
-      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-      mem = {
-        membershipId: `mem_${crypto16.randomBytes(6).toString("hex")}`,
-        teamId: doc.brand.teamId,
-        userSid: params.callerSid,
-        role: "PARENT_FOLLOWER",
-        squadGroup: "Parents & Supporters",
-        invitedName: String(params.followerName || "").trim().slice(0, 48) || "Parent / Supporter",
-        ...cleanVerifiedEmail ? { invitedEmail: cleanVerifiedEmail } : {},
-        isMinorU18: false,
-        parentConsentStatus: "NOT_REQUIRED",
-        status: "ACTIVE",
-        invitedAt: nowIso,
-        openedAt: nowIso,
-        joinedAt: nowIso
-      };
-      doc.memberships.push(mem);
-      doc.updatedAt = nowIso;
-      await saveTeamDocRaw(doc.brand.teamId, doc);
-    } else if (cleanVerifiedEmail && mem.invitedEmail !== cleanVerifiedEmail) {
-      mem.invitedEmail = cleanVerifiedEmail;
-      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTeamDocRaw(doc.brand.teamId, doc);
-    }
-    await addTeamToUserIndex(params.callerSid, doc.brand.teamId, mem.invitedName, cleanVerifiedEmail);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "INJURY_CASE_UPDATED",
+      targetId: savedCase.id,
+      metadata: {
+        membershipId: targetMem.membershipId,
+        athleteName: targetMem.invitedName,
+        bodyRegion,
+        severity: rawSeverity,
+        rtpStage: rawStage,
+        isNew: !existingCase,
+        hasClinicalNotes: Boolean(savedCase.privateClinicalNotes)
+      }
+    });
+    const visibleCases = stripClinicalNotesForRole(doc.injuryCases, callerMem.role);
+    const visibleCase = stripClinicalNotesForRole([savedCase], callerMem.role)[0];
     return {
       ok: true,
-      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+      injuryCase: visibleCase,
+      cases: visibleCases,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function deleteTeamInjuryCase(params) {
+  const cleanCaseId = String(params.caseId || "").trim();
+  if (!cleanCaseId) {
+    return { ok: false, status: 400, error: "Injury case ID is required." };
+  }
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, status: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coach, Athletic Trainer, or Org Admin permissions required."
+      };
+    }
+    const existingList = Array.isArray(doc.injuryCases) ? doc.injuryCases : [];
+    const targetCase = existingList.find((c) => c.id === cleanCaseId);
+    if (!targetCase) {
+      return { ok: false, status: 404, error: "Injury case not found." };
+    }
+    doc.injuryCases = existingList.filter((c) => c.id !== cleanCaseId);
+    const targetMem = doc.memberships.find((m) => m.membershipId === targetCase.membershipId);
+    if (targetMem && (targetCase.rtpStage === "OUT" || targetCase.rtpStage === "MODIFIED") && targetMem.status === "INJURED") {
+      const stillOutOrModified = doc.injuryCases.some(
+        (c) => c.membershipId === targetMem.membershipId && (c.rtpStage === "OUT" || c.rtpStage === "MODIFIED")
+      );
+      if (!stillOutOrModified) {
+        targetMem.status = "ACTIVE";
+      }
+    }
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "INJURY_CASE_DELETED",
+      targetId: cleanCaseId,
+      metadata: {
+        membershipId: targetCase.membershipId,
+        bodyRegion: targetCase.bodyRegion
+      }
+    });
+    return {
+      ok: true,
+      cases: stripClinicalNotesForRole(doc.injuryCases, callerMem.role),
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
     };
   });
 }
 
+// server/routers/teamInjuryRouter.ts
+var teamInjuryRouter = express5.Router();
+teamInjuryRouter.get("/api/teams/:teamId/injuries", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const result = await listTeamInjuryCases({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || "")
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to load injury cases."
+      });
+      return;
+    }
+    res.json({ ok: true, cases: result.cases || [] });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading team injury cases."
+    });
+  }
+});
+teamInjuryRouter.post("/api/teams/:teamId/injuries", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const body = req.body || {};
+    const result = await upsertTeamInjuryCase({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      input: {
+        id: body.id,
+        membershipId: body.membershipId,
+        bodyRegion: body.bodyRegion,
+        severity: body.severity,
+        rtpStage: body.rtpStage,
+        restrictions: body.restrictions,
+        coachGuidance: body.coachGuidance,
+        privateClinicalNotes: body.privateClinicalNotes,
+        targetReturnDate: body.targetReturnDate
+      }
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to save injury case."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      case: result.injuryCase,
+      cases: result.cases || [],
+      team: result.team,
+      teams
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed saving injury case."
+    });
+  }
+});
+teamInjuryRouter.delete(
+  "/api/teams/:teamId/injuries/:caseId",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const result = await deleteTeamInjuryCase({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        caseId: String(req.params.caseId || ""),
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to delete injury case."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({
+        ok: true,
+        cases: result.cases || [],
+        team: result.team,
+        teams
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed deleting injury case."
+      });
+    }
+  }
+);
+
+// server/routers/teamBillingRouter.ts
+import express6 from "express";
+
+// server/teamBillingService.ts
+import crypto17 from "crypto";
+var TEAM_BILLING_PLANS = {
+  FREE_FOUNDING: {
+    planCode: "FREE_FOUNDING",
+    label: "Founding Season Pilot",
+    amountUsd: 0,
+    annualLabel: "$0 / Season"
+  },
+  HS_250: {
+    planCode: "HS_250",
+    label: "High School Program",
+    amountUsd: 250,
+    annualLabel: "$250 / yr",
+    stripePriceEnvKey: "STRIPE_PRICE_HS_ANNUAL"
+  },
+  COLLEGIATE_1200: {
+    planCode: "COLLEGIATE_1200",
+    label: "Collegiate / NCAA Program",
+    amountUsd: 1200,
+    annualLabel: "$1,200 / yr",
+    stripePriceEnvKey: "STRIPE_PRICE_COLLEGIATE_ANNUAL"
+  },
+  DISTRICT_2000: {
+    planCode: "DISTRICT_2000",
+    label: "District Multi-School",
+    amountUsd: 2e3,
+    annualLabel: "$2,000 / yr",
+    stripePriceEnvKey: "STRIPE_PRICE_DISTRICT_ANNUAL"
+  }
+};
+function isStripeBillingConfigured() {
+  return Boolean((process.env.STRIPE_SECRET_KEY || "").trim());
+}
+function sanitizeBillingProjection(raw) {
+  const base = raw || {
+    planCode: "FREE_FOUNDING",
+    status: "PILOT",
+    poInvoices: []
+  };
+  const {
+    stripeCustomerId: _dropCust,
+    stripeSubscriptionId: _dropSub,
+    ...safe
+  } = base;
+  return {
+    ...safe,
+    stripeConfigured: isStripeBillingConfigured(),
+    poInvoices: Array.isArray(safe.poInvoices) ? safe.poInvoices : []
+  };
+}
+function isValidPaidPlanCode(raw) {
+  return raw === "HS_250" || raw === "COLLEGIATE_1200" || raw === "DISTRICT_2000";
+}
+var VALID_BILLING_EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+async function getTeamBillingSummary(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) {
+    return { ok: false, status: 404, error: "Team not found." };
+  }
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+  );
+  if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "Head Coach or Org Admin permissions required for team billing."
+    };
+  }
+  return {
+    ok: true,
+    billing: sanitizeBillingProjection(doc.billing)
+  };
+}
+async function issueSchoolPoInvoice(params) {
+  const rawPlan = String(params.planCode || "").trim().toUpperCase();
+  if (!isValidPaidPlanCode(rawPlan)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Select a valid paid annual plan (HS_250, COLLEGIATE_1200, or DISTRICT_2000)."
+    };
+  }
+  const cleanSchool = String(params.schoolOrDistrictName || "").trim().slice(0, 120);
+  if (!cleanSchool) {
+    return { ok: false, status: 400, error: "School or district name is required." };
+  }
+  const cleanEmail = String(params.billingContactEmail || "").trim().toLowerCase().slice(0, 160);
+  if (!cleanEmail || !VALID_BILLING_EMAIL_RE.test(cleanEmail)) {
+    return { ok: false, status: 400, error: "Valid billing contact email is required." };
+  }
+  const cleanPo = String(params.poNumber || "").trim().replace(/[^a-zA-Z0-9._-]/g, "").slice(0, 48);
+  const planSpec = TEAM_BILLING_PLANS[rawPlan];
+  let pendingEmail = null;
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, status: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Head Coach or Org Admin permissions required to issue a School PO invoice."
+      };
+    }
+    const now = /* @__PURE__ */ new Date();
+    const nowIso = now.toISOString();
+    const year = now.getUTCFullYear();
+    const suffix = crypto17.randomInt(1e3, 1e4);
+    const invoiceNumber = `MR-PO-${year}-${suffix}`;
+    const dueDate = new Date(now.getTime() + 30 * 864e5).toISOString().slice(0, 10);
+    const invoice = {
+      invoiceNumber,
+      planCode: rawPlan,
+      amountUsd: planSpec.amountUsd,
+      schoolOrDistrictName: cleanSchool,
+      ...cleanPo ? { poNumber: cleanPo } : {},
+      billingContactEmail: cleanEmail,
+      issuedAt: nowIso,
+      dueDate,
+      status: "ISSUED"
+    };
+    const existingInvoices = Array.isArray(doc.billing?.poInvoices) ? doc.billing.poInvoices : [];
+    doc.billing = {
+      ...doc.billing || {},
+      planCode: rawPlan,
+      status: doc.billing?.status === "ACTIVE_PAID" ? "ACTIVE_PAID" : "PO_ISSUED",
+      schoolOrDistrictName: cleanSchool,
+      billingContactEmail: cleanEmail,
+      ...cleanPo ? { poNumber: cleanPo } : {},
+      poInvoices: [invoice, ...existingInvoices].slice(0, 25),
+      updatedAt: nowIso
+    };
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "BILLING_PO_ISSUED",
+      targetId: invoice.invoiceNumber,
+      metadata: {
+        planCode: rawPlan,
+        amountUsd: planSpec.amountUsd,
+        schoolOrDistrictName: cleanSchool,
+        ...cleanPo ? { poNumber: cleanPo } : {}
+      }
+    });
+    if (isResendConfigured()) {
+      const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+      const safeTeam = escapeHtml(doc.brand.name);
+      const safeSchool = escapeHtml(cleanSchool);
+      const safeInv = escapeHtml(invoice.invoiceNumber);
+      const safePlan = escapeHtml(`${planSpec.label} (${planSpec.annualLabel})`);
+      const safePo = cleanPo ? escapeHtml(cleanPo) : "Pending ASB / District PO #";
+      pendingEmail = {
+        to: cleanEmail,
+        subject: `MeetReady Net-30 School PO Invoice ${invoice.invoiceNumber} \u2014 ${doc.brand.name}`,
+        html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:560px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">MeetReady School &amp; District Billing</div><h1 style="font-size:20px;margin:8px 0 12px;">Net-30 Invoice ${safeInv}</h1><p style="font-size:14px;color:#2C2A26;line-height:1.5;">Issued for <strong>${safeSchool}</strong> (${safeTeam}).</p><div style="background:#F6F3EC;border:1px solid #CFC9BC;border-radius:12px;padding:14px;font-size:13px;line-height:1.6;"><div><strong>Invoice #:</strong> ${safeInv}</div><div><strong>Plan:</strong> ${safePlan}</div><div><strong>Amount Due (Net-30):</strong> $${planSpec.amountUsd} USD</div><div><strong>Due Date:</strong> ${dueDate}</div><div><strong>PO Reference:</strong> ${safePo}</div></div><p style="font-size:12px;color:#57544D;margin-top:16px;">Need our IRS W-9 or CA SDPC NDPA? Visit <a href="${escapeHtml(
+          `${cleanOrigin}/procurement`
+        )}" style="color:#B83A24;">${escapeHtml(`${cleanOrigin}/procurement`)}</a>.</p></div></body></html>`,
+        text: [
+          `MeetReady Net-30 School PO Invoice ${invoice.invoiceNumber}`,
+          `School / District: ${cleanSchool}`,
+          `Team: ${doc.brand.name}`,
+          `Plan: ${planSpec.label} (${planSpec.annualLabel})`,
+          `Amount Due: $${planSpec.amountUsd} USD (Net-30, Due ${dueDate})`,
+          `PO Reference: ${cleanPo || "Pending"}`,
+          `Procurement Pack (W-9 / CA NDPA): ${cleanOrigin}/procurement`
+        ].join("\n")
+      };
+    }
+    return {
+      ok: true,
+      invoice,
+      billing: sanitizeBillingProjection(doc.billing),
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+  if (!lockedResult.ok) {
+    return lockedResult;
+  }
+  let emailStatus = "READY_MANUAL_LINK";
+  if (pendingEmail) {
+    const emailReq = pendingEmail;
+    const [settled] = await Promise.allSettled([
+      withBoundedTimeout(sendEmailViaResend(emailReq), 8e3, "po-invoice-email")
+    ]);
+    if (settled.status === "fulfilled") {
+      emailStatus = settled.value.status;
+    } else {
+      emailStatus = "FAILED";
+    }
+  }
+  return {
+    ...lockedResult,
+    emailStatus
+  };
+}
+async function createStripeCheckoutSession(params) {
+  const rawPlan = String(params.planCode || "").trim().toUpperCase();
+  if (!isValidPaidPlanCode(rawPlan)) {
+    return {
+      ok: false,
+      status: 400,
+      stripeConfigured: isStripeBillingConfigured(),
+      error: "Select a valid paid annual plan (HS_250, COLLEGIATE_1200, or DISTRICT_2000)."
+    };
+  }
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) {
+    return {
+      ok: false,
+      status: 404,
+      stripeConfigured: isStripeBillingConfigured(),
+      error: "Team not found."
+    };
+  }
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+  );
+  if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+    return {
+      ok: false,
+      status: 403,
+      stripeConfigured: isStripeBillingConfigured(),
+      error: "Head Coach or Org Admin permissions required to start team checkout."
+    };
+  }
+  const stripeKey = (process.env.STRIPE_SECRET_KEY || "").trim();
+  if (!stripeKey) {
+    return {
+      ok: true,
+      stripeConfigured: false,
+      fallback: "SCHOOL_PO",
+      message: "Stripe checkout is not configured on this server yet. Generate a Net-30 School PO Invoice instead."
+    };
+  }
+  const planSpec = TEAM_BILLING_PLANS[rawPlan];
+  const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+  const cleanEmail = String(
+    params.billingContactEmail || doc.billing?.billingContactEmail || ""
+  ).trim().toLowerCase();
+  const form = new URLSearchParams();
+  form.set("mode", "subscription");
+  form.set("success_url", `${cleanOrigin}/#coach?billing=success`);
+  form.set("cancel_url", `${cleanOrigin}/#coach?billing=cancelled`);
+  form.set("client_reference_id", doc.brand.teamId);
+  form.set("metadata[teamId]", doc.brand.teamId);
+  form.set("metadata[planCode]", rawPlan);
+  form.set("subscription_data[metadata][teamId]", doc.brand.teamId);
+  form.set("subscription_data[metadata][planCode]", rawPlan);
+  if (cleanEmail && VALID_BILLING_EMAIL_RE.test(cleanEmail)) {
+    form.set("customer_email", cleanEmail);
+  }
+  const configuredPriceId = planSpec.stripePriceEnvKey ? (process.env[planSpec.stripePriceEnvKey] || "").trim() : "";
+  if (configuredPriceId) {
+    form.set("line_items[0][price]", configuredPriceId);
+    form.set("line_items[0][quantity]", "1");
+  } else {
+    form.set("line_items[0][price_data][currency]", "usd");
+    form.set("line_items[0][price_data][unit_amount]", String(planSpec.amountUsd * 100));
+    form.set("line_items[0][price_data][recurring][interval]", "year");
+    form.set(
+      "line_items[0][price_data][product_data][name]",
+      `MeetReady ${planSpec.label} (Annual)`
+    );
+    form.set("line_items[0][quantity]", "1");
+  }
+  try {
+    const resp = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: form.toString(),
+      signal: AbortSignal.timeout(1e4)
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || !data.id || !data.url) {
+      return {
+        ok: false,
+        status: 502,
+        stripeConfigured: true,
+        error: data.error?.message || `Stripe Checkout API returned HTTP ${resp.status}.`
+      };
+    }
+    return {
+      ok: true,
+      stripeConfigured: true,
+      sessionId: data.id,
+      checkoutUrl: data.url
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 502,
+      stripeConfigured: true,
+      error: err instanceof Error ? err.message : "Unable to reach Stripe Checkout API."
+    };
+  }
+}
+function verifyStripeWebhookSignature(params) {
+  const secret = String(params.webhookSecret || "").trim();
+  const header = String(params.signatureHeader || "").trim();
+  if (!secret || !header) {
+    return { valid: false, reason: "Missing Stripe webhook secret or signature header." };
+  }
+  const rawBuffer = Buffer.isBuffer(params.rawBody) ? params.rawBody : Buffer.from(String(params.rawBody || ""), "utf8");
+  if (rawBuffer.length === 0) {
+    return { valid: false, reason: "Empty webhook payload." };
+  }
+  let timestamp = 0;
+  const v1Signatures = [];
+  for (const part of header.split(",")) {
+    const eqIdx = part.indexOf("=");
+    if (eqIdx <= 0) continue;
+    const key = part.slice(0, eqIdx).trim();
+    const val = part.slice(eqIdx + 1).trim();
+    if (key === "t") {
+      const parsed = Number(val);
+      if (Number.isFinite(parsed) && parsed > 0) timestamp = Math.floor(parsed);
+    } else if (key === "v1" && /^[0-9a-f]{64}$/i.test(val)) {
+      v1Signatures.push(val.toLowerCase());
+    }
+  }
+  if (!timestamp || v1Signatures.length === 0) {
+    return { valid: false, reason: "Malformed Stripe-Signature header." };
+  }
+  const tolerance = params.toleranceSecs ?? 300;
+  const nowSecs = params.nowEpochSecs ?? Math.floor(Date.now() / 1e3);
+  if (Math.abs(nowSecs - timestamp) > tolerance) {
+    return {
+      valid: false,
+      timestamp,
+      reason: "Stripe webhook timestamp outside 300s replay tolerance."
+    };
+  }
+  const signedPayload = Buffer.concat([
+    Buffer.from(`${timestamp}.`, "utf8"),
+    rawBuffer
+  ]);
+  const expectedHex = crypto17.createHmac("sha256", secret).update(signedPayload).digest("hex").toLowerCase();
+  const expectedBuf = Buffer.from(expectedHex, "utf8");
+  const matched = v1Signatures.some((sig) => {
+    const sigBuf = Buffer.from(sig, "utf8");
+    if (sigBuf.length !== expectedBuf.length) return false;
+    return crypto17.timingSafeEqual(sigBuf, expectedBuf);
+  });
+  if (!matched) {
+    return { valid: false, timestamp, reason: "Stripe webhook signature mismatch." };
+  }
+  return { valid: true, timestamp };
+}
+var STRIPE_WEBHOOK_STATE_KEY = "stripe_webhook_state_v1";
+async function processStripeWebhookEvent(params) {
+  const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET || "").trim();
+  if (!webhookSecret) {
+    return {
+      ok: false,
+      status: 503,
+      error: "STRIPE_WEBHOOK_SECRET is not configured."
+    };
+  }
+  const sigCheck = verifyStripeWebhookSignature({
+    rawBody: params.rawBody,
+    signatureHeader: params.signatureHeader,
+    webhookSecret,
+    toleranceSecs: 300,
+    nowEpochSecs: params.nowEpochSecs
+  });
+  if (!sigCheck.valid) {
+    return {
+      ok: false,
+      status: 400,
+      error: sigCheck.reason || "Invalid Stripe webhook signature."
+    };
+  }
+  const rawText = Buffer.isBuffer(params.rawBody) ? params.rawBody.toString("utf8") : String(params.rawBody);
+  let event;
+  try {
+    event = JSON.parse(rawText);
+  } catch {
+    return { ok: false, status: 400, error: "Invalid JSON in Stripe webhook body." };
+  }
+  const eventId = String(event.id || "").trim();
+  const eventType = String(event.type || "").trim();
+  if (!eventId || !eventType) {
+    return { ok: false, status: 400, error: "Missing Stripe event id or type." };
+  }
+  const obj = event.data?.object || {};
+  const customerId = typeof obj.customer === "string" ? obj.customer.trim() : void 0;
+  const subscriptionId = typeof obj.subscription === "string" ? obj.subscription.trim() : eventType.startsWith("customer.subscription.") && typeof obj.id === "string" ? obj.id.trim() : void 0;
+  const lockState = await withVaultLock(STRIPE_WEBHOOK_STATE_KEY, async () => {
+    const state = await loadTenantVaultAsync(
+      STRIPE_WEBHOOK_STATE_KEY,
+      {
+        processedEventIds: [],
+        teamByStripeCustomer: {},
+        teamByStripeSubscription: {}
+      }
+    );
+    if (state.processedEventIds.includes(eventId)) {
+      return { duplicate: true, resolvedTeamId: void 0 };
+    }
+    const metaTeamId = obj.metadata?.teamId || obj.subscription_details?.metadata?.teamId || obj.client_reference_id;
+    const resolvedTeamId = (metaTeamId ? String(metaTeamId).trim() : "") || (subscriptionId ? state.teamByStripeSubscription[subscriptionId] : "") || (customerId ? state.teamByStripeCustomer[customerId] : "") || void 0;
+    if (resolvedTeamId) {
+      if (customerId) state.teamByStripeCustomer[customerId] = resolvedTeamId;
+      if (subscriptionId) state.teamByStripeSubscription[subscriptionId] = resolvedTeamId;
+    }
+    state.processedEventIds = [...state.processedEventIds, eventId].slice(-500);
+    await saveTenantVaultAsync(STRIPE_WEBHOOK_STATE_KEY, state);
+    return { duplicate: false, resolvedTeamId };
+  });
+  if (lockState.duplicate) {
+    return {
+      ok: true,
+      status: 200,
+      duplicate: true,
+      eventId,
+      eventType
+    };
+  }
+  const teamId = lockState.resolvedTeamId;
+  if (!teamId) {
+    return { ok: true, status: 200, eventId, eventType };
+  }
+  const metaPlan = obj.metadata?.planCode || obj.subscription_details?.metadata?.planCode;
+  const periodEndEpoch = obj.current_period_end || obj.lines?.data?.[0]?.period?.end || void 0;
+  await withTeamRowLock(teamId, async () => {
+    const doc = await loadTeamDocRaw(teamId);
+    if (!doc) return;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const nextBilling = {
+      ...doc.billing || { planCode: "FREE_FOUNDING", status: "PILOT" },
+      ...isValidPaidPlanCode(metaPlan) ? { planCode: metaPlan } : {},
+      ...customerId ? { stripeCustomerId: customerId } : {},
+      ...subscriptionId ? { stripeSubscriptionId: subscriptionId } : {},
+      updatedAt: nowIso
+    };
+    let auditAction = "BILLING_STRIPE_EVENT";
+    if (eventType === "checkout.session.completed" || eventType === "invoice.paid") {
+      nextBilling.status = "ACTIVE_PAID";
+      const cycleEnd = periodEndEpoch ? new Date(periodEndEpoch * 1e3).toISOString() : new Date(Date.now() + 365 * 864e5).toISOString();
+      nextBilling.billingCycleEndIso = cycleEnd;
+      if (Array.isArray(nextBilling.poInvoices)) {
+        nextBilling.poInvoices = nextBilling.poInvoices.map(
+          (inv) => inv.status === "ISSUED" && (!isValidPaidPlanCode(metaPlan) || inv.planCode === metaPlan) ? { ...inv, status: "PAID", paidAt: nowIso } : inv
+        );
+      }
+      auditAction = eventType === "checkout.session.completed" ? "BILLING_STRIPE_ACTIVATED" : "BILLING_STRIPE_RENEWED";
+    } else if (eventType === "invoice.payment_failed") {
+      nextBilling.status = "PAST_DUE";
+      auditAction = "BILLING_STRIPE_PAST_DUE";
+    } else if (eventType === "customer.subscription.deleted") {
+      nextBilling.status = "RENEWAL_DUE";
+      auditAction = "BILLING_STRIPE_SUB_ENDED";
+    } else {
+      return;
+    }
+    doc.billing = nextBilling;
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(teamId, doc);
+    await appendAuditLogAsync({
+      teamId,
+      actorSid: "stripe_webhook",
+      action: auditAction,
+      targetId: eventId,
+      metadata: {
+        eventType,
+        planCode: nextBilling.planCode,
+        status: nextBilling.status
+      }
+    });
+  });
+  return {
+    ok: true,
+    status: 200,
+    eventId,
+    eventType,
+    teamId
+  };
+}
+
+// server/routers/teamBillingRouter.ts
+var teamBillingRouter = express6.Router();
+teamBillingRouter.get("/api/teams/:teamId/billing", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const result = await getTeamBillingSummary({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || "")
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to load team billing."
+      });
+      return;
+    }
+    res.json({ ok: true, billing: result.billing });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading team billing."
+    });
+  }
+});
+teamBillingRouter.post(
+  "/api/teams/:teamId/billing/po-invoice",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const body = req.body || {};
+      const result = await issueSchoolPoInvoice({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        originUrl,
+        planCode: body.planCode,
+        schoolOrDistrictName: body.schoolOrDistrictName,
+        billingContactEmail: body.billingContactEmail,
+        poNumber: body.poNumber
+      });
+      if (!result.ok) {
+        res.status(result.status || 400).json({
+          ok: false,
+          error: result.error || "Unable to issue School PO invoice."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({
+        ok: true,
+        invoice: result.invoice,
+        emailStatus: result.emailStatus,
+        billing: result.billing,
+        team: result.team,
+        teams
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed issuing School PO invoice."
+      });
+    }
+  }
+);
+teamBillingRouter.post(
+  "/api/teams/:teamId/billing/checkout",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const body = req.body || {};
+      const result = await createStripeCheckoutSession({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        originUrl,
+        planCode: body.planCode,
+        billingContactEmail: body.billingContactEmail
+      });
+      if (!result.ok) {
+        res.status(result.status || 400).json({
+          ok: false,
+          stripeConfigured: result.stripeConfigured,
+          error: result.error || "Unable to start checkout."
+        });
+        return;
+      }
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed creating Stripe checkout session."
+      });
+    }
+  }
+);
+teamBillingRouter.post("/api/billing/stripe/webhook", async (req, res) => {
+  try {
+    const reqWithRaw = req;
+    const rawBody = reqWithRaw.rawBody ? reqWithRaw.rawBody : Buffer.isBuffer(req.body) ? req.body : typeof req.body === "string" ? Buffer.from(req.body, "utf8") : void 0;
+    if (!rawBody || rawBody.length === 0) {
+      res.status(400).json({
+        ok: false,
+        error: "Raw webhook body buffer is required for Stripe signature verification."
+      });
+      return;
+    }
+    const sigHeader = String(req.headers["stripe-signature"] || "");
+    const result = await processStripeWebhookEvent({
+      rawBody,
+      signatureHeader: sigHeader
+    });
+    if (!result.ok) {
+      res.status(result.status).json({
+        ok: false,
+        error: result.error || "Invalid Stripe webhook."
+      });
+      return;
+    }
+    res.status(200).json({
+      received: true,
+      duplicate: Boolean(result.duplicate),
+      eventId: result.eventId,
+      eventType: result.eventType
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Stripe webhook processing error."
+    });
+  }
+});
+
 // server/routers/teamSyncRouter.ts
-var teamSyncRouter = express5.Router();
+import crypto18 from "crypto";
+import express7 from "express";
+var teamSyncRouter = express7.Router();
 function resolveSyncOrigin(req) {
   return resolveTrustedRequestOrigin(req);
 }
@@ -16501,7 +18910,7 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
     let sid = existing?.sid;
     let sessionToken;
     if (!sid) {
-      const anonSid = crypto17.randomBytes(16).toString("hex");
+      const anonSid = crypto18.randomBytes(16).toString("hex");
       sessionToken = setSessionCookie(
         req,
         res,
@@ -16527,7 +18936,6 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
     const teams = await listTeamsForUser(sid, originUrl);
     res.json({
       ok: true,
-      ...sessionToken ? { sessionToken } : {},
       team: result.summary,
       teams
     });
@@ -16538,13 +18946,148 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
     });
   }
 });
+teamSyncRouter.get(
+  "/api/teams/public/:slugOrCode/calendar.ics",
+  async (req, res) => {
+    try {
+      const payload = await getPublicTeamHubBySlugOrCode(
+        String(req.params.slugOrCode || "")
+      );
+      if (!payload.found || !payload.brand) {
+        res.status(404).type("text/plain").send("Public team schedule not found.");
+        return;
+      }
+      const icsBody = buildPublicTeamCalendarIcs(payload);
+      const safeSlug = payload.brand.slug.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) || "team";
+      res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+      res.setHeader("Content-Disposition", `inline; filename="${safeSlug}-schedule.ics"`);
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.status(200).send(icsBody);
+    } catch {
+      res.status(500).type("text/plain").send("Unable to generate calendar feed.");
+    }
+  }
+);
+teamSyncRouter.post(
+  "/api/teams/public/:slugOrCode/subscribe",
+  async (req, res) => {
+    try {
+      const originUrl = resolveSyncOrigin(req);
+      const result = await subscribeParentEmailToPublicHub({
+        slugOrCode: String(req.params.slugOrCode || ""),
+        email: String(req.body?.email || ""),
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(result.statusCode || 400).json({
+          ok: false,
+          error: result.error || "Could not subscribe email."
+        });
+        return;
+      }
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Subscription failed."
+      });
+    }
+  }
+);
+function renderParentHubSubscriptionHtml(params) {
+  const safeHubHref = params.slug ? `/team/${encodeURIComponent(params.slug)}` : "/";
+  const accent = params.ok ? "#1E4D36" : "#B83A24";
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(
+    params.title
+  )}</title></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;color:#121413;padding:40px 16px;margin:0;"><div style="max-width:500px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:28px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent};">MeetReady Parent Hub</div><h1 style="margin:8px 0 10px;font-size:20px;">${escapeHtml(
+    params.heading
+  )}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 20px;">${escapeHtml(
+    params.body
+  )}</p><a href="${safeHubHref}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Back to Team Hub</a></div></body></html>`;
+}
+teamSyncRouter.get(
+  "/api/teams/public/:slugOrCode/subscribe/confirm",
+  async (req, res) => {
+    try {
+      const result = await confirmParentEmailSubscription({
+        slugOrCode: String(req.params.slugOrCode || ""),
+        token: String(req.query?.token || "")
+      });
+      const wantsJson = String(req.headers.accept || "").includes("application/json") && !String(req.headers.accept || "").includes("text/html");
+      if (wantsJson) {
+        res.status(result.statusCode || (result.ok ? 200 : 400)).json(result);
+        return;
+      }
+      if (!result.ok) {
+        res.status(result.statusCode || 400).send(
+          renderParentHubSubscriptionHtml({
+            ok: false,
+            title: "Subscription Link Error \xB7 MeetReady",
+            heading: "Could Not Confirm Subscription",
+            body: result.error || "This confirmation link is invalid or already used."
+          })
+        );
+        return;
+      }
+      res.status(200).send(
+        renderParentHubSubscriptionHtml({
+          ok: true,
+          title: "Subscription Confirmed \xB7 MeetReady",
+          heading: "Parent Hub Updates Confirmed",
+          body: `You are subscribed to public schedule alerts, weather changes, and meet notices for ${result.teamName || "this team"}.`,
+          slug: result.slug
+        })
+      );
+    } catch {
+      res.status(500).send("Unable to confirm subscription.");
+    }
+  }
+);
+teamSyncRouter.get(
+  "/api/teams/public/:slugOrCode/unsubscribe",
+  async (req, res) => {
+    try {
+      const result = await unsubscribeParentEmailSubscription({
+        slugOrCode: String(req.params.slugOrCode || ""),
+        token: String(req.query?.token || "")
+      });
+      const wantsJson = String(req.headers.accept || "").includes("application/json") && !String(req.headers.accept || "").includes("text/html");
+      if (wantsJson) {
+        res.status(result.statusCode || (result.ok ? 200 : 400)).json(result);
+        return;
+      }
+      if (!result.ok) {
+        res.status(result.statusCode || 400).send(
+          renderParentHubSubscriptionHtml({
+            ok: false,
+            title: "Unsubscribe Link Error \xB7 MeetReady",
+            heading: "Unsubscribe Link Not Recognized",
+            body: result.error || "This unsubscribe link could not be verified."
+          })
+        );
+        return;
+      }
+      res.status(200).send(
+        renderParentHubSubscriptionHtml({
+          ok: true,
+          title: "Unsubscribed \xB7 MeetReady",
+          heading: "Email Updates Turned Off",
+          body: `Your email has been unsubscribed from ${result.teamName || "this team"} Parent Hub notifications.`,
+          slug: result.slug
+        })
+      );
+    } catch {
+      res.status(500).send("Unable to unsubscribe.");
+    }
+  }
+);
 
 // server/routers/authRouter.ts
-import express6 from "express";
-import crypto19 from "crypto";
+import express8 from "express";
+import crypto20 from "crypto";
 
 // server/webauthnVerify.ts
-import crypto18 from "crypto";
+import crypto19 from "crypto";
 function readCborLength(buf, addtl, offset) {
   if (addtl < 24) {
     return { length: addtl, nextOffset: offset };
@@ -16655,7 +19198,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 1 || !Buffer.isBuffer(xBuf) || !Buffer.isBuffer(yBuf)) {
       throw new Error("Invalid COSE EC2 P-256 public key parameters.");
     }
-    const pubKey = crypto18.createPublicKey({
+    const pubKey = crypto19.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -16676,7 +19219,7 @@ function coseKeyMapToSpki(coseMap) {
     if (!Buffer.isBuffer(nBuf) || !Buffer.isBuffer(eBuf)) {
       throw new Error("Invalid COSE RSA public key parameters.");
     }
-    const pubKey = crypto18.createPublicKey({
+    const pubKey = crypto19.createPublicKey({
       key: {
         kty: "RSA",
         n: nBuf.toString("base64url"),
@@ -16696,7 +19239,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 6 || !Buffer.isBuffer(xBuf)) {
       throw new Error("Invalid COSE Ed25519 public key parameters.");
     }
-    const pubKey = crypto18.createPublicKey({
+    const pubKey = crypto19.createPublicKey({
       key: {
         kty: "OKP",
         crv: "Ed25519",
@@ -16743,9 +19286,9 @@ function assertRpIdHashAndFlags(authData, expectedRpId, requireAtFlag) {
   if (!Buffer.isBuffer(authData) || authData.length < minLen) {
     throw new Error("Truncated WebAuthn authenticatorData.");
   }
-  const expectedRpHash = crypto18.createHash("sha256").update(expectedRpId).digest();
+  const expectedRpHash = crypto19.createHash("sha256").update(expectedRpId).digest();
   const actualRpHash = authData.subarray(0, 32);
-  if (!crypto18.timingSafeEqual(actualRpHash, expectedRpHash)) {
+  if (!crypto19.timingSafeEqual(actualRpHash, expectedRpHash)) {
     throw new Error("WebAuthn RP ID hash mismatch.");
   }
   const flags = authData.readUInt8(32);
@@ -16848,15 +19391,15 @@ function verifyWebAuthnAssertion(params) {
         error: "Passkey record lacks stored public key."
       };
     }
-    const pubKey = crypto18.createPublicKey({
+    const pubKey = crypto19.createPublicKey({
       key: Buffer.from(params.publicKeySpkiBase64, "base64"),
       format: "der",
       type: "spki"
     });
-    const clientDataHash = crypto18.createHash("sha256").update(clientDataBytes).digest();
+    const clientDataHash = crypto19.createHash("sha256").update(clientDataBytes).digest();
     const signedData = Buffer.concat([authData, clientDataHash]);
     const algDigest = params.coseAlg === -8 ? null : "sha256";
-    const isValidSig = crypto18.verify(algDigest, signedData, pubKey, sigBuf);
+    const isValidSig = crypto19.verify(algDigest, signedData, pubKey, sigBuf);
     if (!isValidSig) {
       return {
         verified: false,
@@ -16898,6 +19441,357 @@ async function consumePasskeyChallengeJti(jti) {
 
 // server/accountLifecycleService.ts
 import fs5 from "fs";
+function collectCandidateIdentityContext(req, user, claimsSid) {
+  const activeStore = getScopedRuntimeStore(req);
+  const candidateSids = /* @__PURE__ */ new Set([claimsSid]);
+  if (user?.id) {
+    candidateSids.add(deriveUserSessionSid(user.id));
+  }
+  const stravaIds = /* @__PURE__ */ new Set();
+  if (activeStore?.stravaAthleteId) {
+    stravaIds.add(String(activeStore.stravaAthleteId));
+  }
+  for (const p of user?.authProviders || []) {
+    if (p.provider === "strava" && p.providerId) stravaIds.add(p.providerId);
+  }
+  for (const s of user?.connectedServices || []) {
+    if (s.service === "strava" && s.athleteId) stravaIds.add(s.athleteId);
+  }
+  for (const stravaId of stravaIds) {
+    candidateSids.add(deriveStravaSessionSid(stravaId));
+  }
+  return { candidateSids, stravaIds };
+}
+async function resolveAuthenticatedUserForRequest(req, sub) {
+  if (sub.startsWith("usr_")) {
+    const found = await getUserById(sub);
+    if (found) return found;
+    const cookies = parseCookies(req.headers.cookie);
+    const backupEnvelope = cookies[USER_VAULT_COOKIE_NAME];
+    if (backupEnvelope) {
+      const restored = decryptJsonFromVault(backupEnvelope);
+      if (restored && restored.id === sub) {
+        return restored;
+      }
+    }
+    return null;
+  }
+  if (sub) {
+    return getUserByProvider("strava", sub);
+  }
+  return null;
+}
+async function buildUserDataExportPayload(req) {
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+    return null;
+  }
+  const user = await resolveAuthenticatedUserForRequest(req, claims.sub);
+  const { candidateSids, stravaIds } = collectCandidateIdentityContext(req, user, claims.sid);
+  const candidateStateKeys = [];
+  if (user?.id) {
+    const cleanUsr = user.id.replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanUsr) candidateStateKeys.push(`athlete_state_user_${cleanUsr}`);
+  }
+  for (const stravaId of stravaIds) {
+    const cleanStrava = stravaId.replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanStrava) candidateStateKeys.push(`athlete_state_strava_${cleanStrava}`);
+  }
+  for (const sid of candidateSids) {
+    const cleanSid = sid.replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanSid) {
+      candidateStateKeys.push(`athlete_state_sid_${cleanSid.slice(0, 32)}`);
+      candidateStateKeys.push(`athlete_state_sid_${cleanSid.slice(0, 24)}`);
+    }
+  }
+  let resolvedState = null;
+  for (const vaultKey of candidateStateKeys) {
+    const env = await loadTenantVaultAsync(vaultKey, null);
+    if (env && (Boolean(env.updatedAt) || env.plannedEvents && env.plannedEvents.length > 0 || env.sessionCheckIns && env.sessionCheckIns.length > 0 || env.coachArchivedActivities && env.coachArchivedActivities.length > 0 || Boolean(env.athleteProfile))) {
+      resolvedState = env;
+      break;
+    }
+  }
+  const teamIdSet = /* @__PURE__ */ new Set();
+  for (const sid of candidateSids) {
+    const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
+      teamIds: [],
+      updatedAt: ""
+    });
+    for (const id of idx.teamIds || []) {
+      teamIdSet.add(id);
+    }
+  }
+  const dir = await loadDirectory();
+  for (const id of dir.allTeamIds || []) {
+    teamIdSet.add(id);
+  }
+  const cleanUserEmail = user?.email?.trim().toLowerCase() || "";
+  const exportedTeams = [];
+  for (const teamId of teamIdSet) {
+    const doc = await loadTeamDocRaw(teamId);
+    if (!doc) continue;
+    const myMem = doc.memberships.find(
+      (m) => m.status !== "REVOKED" && (candidateSids.has(m.userSid || "") || cleanUserEmail && m.invitedEmail?.trim().toLowerCase() === cleanUserEmail)
+    );
+    if (!myMem) continue;
+    const {
+      rawInviteToken: _dropRawInv,
+      inviteTokenHash: _dropInvHash,
+      parentConsentToken: _dropConsentTok,
+      parentConsentTokenHash: _dropConsentHash,
+      liveSnapshot,
+      coachRecordedActivities,
+      ...safeMembership
+    } = myMem;
+    const attendanceRecords = [];
+    if (doc.attendanceByDate && typeof doc.attendanceByDate === "object") {
+      for (const dayMap of Object.values(doc.attendanceByDate)) {
+        if (!dayMap || typeof dayMap !== "object") continue;
+        const entry = dayMap[myMem.membershipId];
+        if (entry) {
+          attendanceRecords.push(entry);
+        }
+      }
+    }
+    const fullFieldLogs = await loadFullTeamFieldMarksArchive(teamId, doc.fieldMarkLogs);
+    const myFieldLogs = fullFieldLogs.filter(
+      (log) => log.membershipId === myMem.membershipId
+    );
+    const myComments = (doc.workoutComments || []).filter(
+      (c) => c.targetMembershipId === myMem.membershipId || candidateSids.has(c.authorSid)
+    );
+    const myMessages = (doc.teamMessages || []).filter(
+      (msg) => candidateSids.has(msg.senderSid) || msg.senderMembershipId === myMem.membershipId || msg.targetMembershipId === myMem.membershipId
+    );
+    const myInjuries = (doc.injuryCases || []).filter((c) => c.membershipId === myMem.membershipId).map((c) => {
+      if (myMem.role === "ATHLETIC_TRAINER") return c;
+      const { privateClinicalNotes: _dropClinical, ...safeCase } = c;
+      return safeCase;
+    });
+    exportedTeams.push({
+      teamId: doc.brand.teamId,
+      teamName: doc.brand.name,
+      slug: doc.brand.slug,
+      orgType: doc.brand.orgType,
+      primarySport: doc.brand.primarySport,
+      membership: safeMembership,
+      ...liveSnapshot ? { liveSnapshot } : {},
+      coachRecordedActivities: Array.isArray(coachRecordedActivities) ? coachRecordedActivities.map((act) => ({ ...act, streams: void 0 })) : [],
+      attendanceRecords,
+      fieldMarkLogs: myFieldLogs,
+      workoutComments: myComments,
+      teamMessages: myMessages,
+      injuryCases: myInjuries
+    });
+  }
+  const athleteState = {
+    updatedAt: resolvedState?.updatedAt || "",
+    ...resolvedState?.distanceUnit ? { distanceUnit: resolvedState.distanceUnit } : {},
+    ...resolvedState?.athleteProfile ? { athleteProfile: resolvedState.athleteProfile } : {},
+    plannedEvents: Array.isArray(resolvedState?.plannedEvents) ? resolvedState.plannedEvents : [],
+    targetGoals: Array.isArray(resolvedState?.targetGoals) ? resolvedState.targetGoals : [],
+    annualMileageGoals: Array.isArray(resolvedState?.annualMileageGoals) ? resolvedState.annualMileageGoals : [],
+    gearItems: Array.isArray(resolvedState?.gearItems) ? resolvedState.gearItems : [],
+    sessionCheckIns: Array.isArray(resolvedState?.sessionCheckIns) ? resolvedState.sessionCheckIns : [],
+    coachArchivedActivities: Array.isArray(resolvedState?.coachArchivedActivities) ? resolvedState.coachArchivedActivities.map((act) => ({ ...act, streams: void 0 })) : []
+  };
+  const totalFieldMarks = exportedTeams.reduce(
+    (sum, t) => sum + t.fieldMarkLogs.length,
+    0
+  );
+  return {
+    schemaVersion: "meetready-export-v1",
+    exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    account: user ? {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      ...user.picture ? { picture: user.picture } : {},
+      ...user.birthMonthYear ? { birthMonthYear: user.birthMonthYear } : {},
+      role: user.role,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+      authProviders: (user.authProviders || []).map((p) => ({
+        provider: p.provider,
+        providerId: p.providerId,
+        ...p.email ? { email: p.email } : {},
+        ...p.name ? { name: p.name } : {},
+        linkedAt: p.linkedAt
+      })),
+      passkeys: (user.passkeys || []).map((pk) => ({
+        id: pk.id,
+        counter: pk.counter,
+        createdAt: pk.createdAt
+      })),
+      connectedServices: (user.connectedServices || []).map((svc) => ({
+        service: svc.service,
+        status: svc.status,
+        ...svc.athleteId ? { athleteId: svc.athleteId } : {},
+        ...svc.athleteName ? { athleteName: svc.athleteName } : {},
+        connectedAt: svc.connectedAt
+      }))
+    } : null,
+    athleteState,
+    teams: exportedTeams,
+    summary: {
+      plannedEventsCount: athleteState.plannedEvents.length,
+      sessionCheckInsCount: athleteState.sessionCheckIns.length,
+      coachArchivedActivitiesCount: athleteState.coachArchivedActivities.length,
+      gearItemsCount: athleteState.gearItems.length,
+      teamMembershipsCount: exportedTeams.length,
+      fieldMarkLogsCount: totalFieldMarks
+    }
+  };
+}
+function escapeCsvCell(value) {
+  const raw = String(value ?? "");
+  const needsFormulaGuard = /^[=+\t\r@]/.test(raw) || /^-/.test(raw) && !/^-\d+(\.\d+)?$/.test(raw);
+  const safe = needsFormulaGuard ? `'${raw}` : raw;
+  return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+function formatUserDataExportCsv(payload) {
+  const rows = [
+    ["record_type", "date", "title_or_name", "category_or_team", "detail", "metric_a", "metric_b"]
+  ];
+  const pushRow = (recordType, date, title, category, detail, metricA = "", metricB = "") => {
+    rows.push([
+      recordType,
+      date,
+      title,
+      category,
+      detail,
+      String(metricA ?? ""),
+      String(metricB ?? "")
+    ]);
+  };
+  if (payload.account) {
+    pushRow(
+      "ACCOUNT",
+      payload.account.createdAt.slice(0, 10),
+      payload.account.name,
+      payload.account.role,
+      payload.account.email || "",
+      payload.account.birthMonthYear || "",
+      payload.account.authProviders.map((p) => p.provider).join("|")
+    );
+  }
+  if (payload.athleteState.athleteProfile) {
+    const prof = payload.athleteState.athleteProfile;
+    pushRow(
+      "PROFILE",
+      payload.athleteState.updatedAt.slice(0, 10),
+      prof.name || "",
+      prof.primarySport || "",
+      payload.athleteState.distanceUnit || "",
+      prof.ftp ?? "",
+      prof.thresholdPaceSecsPerKm ?? ""
+    );
+  }
+  for (const ev of payload.athleteState.plannedEvents) {
+    pushRow(
+      "PLANNED_WORKOUT",
+      ev.date,
+      ev.name,
+      ev.sportCategory,
+      ev.description || ev.workoutSyntax || "",
+      ev.plannedDurationSecs,
+      ev.plannedLoad
+    );
+  }
+  for (const chk of payload.athleteState.sessionCheckIns) {
+    pushRow(
+      "SESSION_CHECKIN",
+      chk.date,
+      chk.workoutName || "Daily Check-In",
+      chk.painArea || "NONE",
+      chk.sorenessNote || "",
+      chk.rpe,
+      chk.legFeel || ""
+    );
+  }
+  for (const goal of payload.athleteState.targetGoals) {
+    pushRow(
+      "GOAL",
+      goal.targetDate || "",
+      goal.title,
+      goal.type,
+      goal.notes || goal.unit || "",
+      goal.targetValue,
+      goal.currentValue ?? ""
+    );
+  }
+  for (const gear of payload.athleteState.gearItems) {
+    pushRow(
+      "GEAR",
+      gear.purchaseDate || "",
+      gear.name,
+      gear.footwearClass || gear.type,
+      gear.brand || "",
+      gear.distanceMeters,
+      gear.maxRecommendedMeters
+    );
+  }
+  for (const act of payload.athleteState.coachArchivedActivities) {
+    pushRow(
+      "COACH_ACTIVITY",
+      (act.startDateLocal || "").slice(0, 10),
+      act.name,
+      act.sportCategory,
+      act.subType || "",
+      act.distanceMeters,
+      act.movingTimeSecs
+    );
+  }
+  for (const team of payload.teams) {
+    pushRow(
+      "TEAM_MEMBERSHIP",
+      (team.membership.joinedAt || team.membership.invitedAt || "").slice(0, 10),
+      team.teamName,
+      team.membership.role,
+      team.membership.squadGroup,
+      team.membership.status,
+      team.membership.sharingTier || ""
+    );
+    for (const act of team.coachRecordedActivities) {
+      pushRow(
+        "TEAM_STOPWATCH_ACTIVITY",
+        (act.startDateLocal || "").slice(0, 10),
+        act.name,
+        team.teamName,
+        act.subType || "",
+        act.distanceMeters,
+        act.movingTimeSecs
+      );
+    }
+    for (const att of team.attendanceRecords) {
+      pushRow("ATTENDANCE", att.date, team.teamName, att.status, att.note || "", "", "");
+    }
+    for (const fm of team.fieldMarkLogs) {
+      pushRow(
+        "FIELD_MARK",
+        fm.date,
+        fm.eventCode,
+        team.teamName,
+        fm.meetOrPracticeTitle,
+        fm.bestMarkMeters ?? "",
+        fm.placeRank ?? ""
+      );
+    }
+    for (const ic of team.injuryCases) {
+      pushRow(
+        "INJURY_CASE",
+        ic.updatedAt.slice(0, 10),
+        ic.bodyRegion,
+        team.teamName,
+        ic.restrictions,
+        ic.rtpStage,
+        ic.severity
+      );
+    }
+  }
+  return rows.map((row) => row.map(escapeCsvCell).join(",")).join("\r\n") + "\r\n";
+}
 async function bestEffortRevokeUpstreamTokens(stravaAccessToken, polarAccessToken, polarUserId) {
   const tasks = [];
   if (stravaAccessToken) {
@@ -16925,28 +19819,10 @@ async function deleteThreshAccountPermanently(req, res) {
     res.status(401).json({ ok: false, error: "Authentication required." });
     return;
   }
-  let user = null;
-  if (claims.sub?.startsWith("usr_")) {
-    user = await getUserById(claims.sub);
-  } else if (claims.sub) {
-    user = await getUserByProvider("strava", claims.sub);
-  }
+  const user = await resolveAuthenticatedUserForRequest(req, claims.sub);
   const activeStore = getScopedRuntimeStore(req);
-  const candidateSids = /* @__PURE__ */ new Set([claims.sid]);
-  if (user?.id) {
-    candidateSids.add(deriveUserSessionSid(user.id));
-  }
-  const stravaIds = /* @__PURE__ */ new Set();
-  if (activeStore?.stravaAthleteId) stravaIds.add(String(activeStore.stravaAthleteId));
-  for (const p of user?.authProviders || []) {
-    if (p.provider === "strava" && p.providerId) stravaIds.add(p.providerId);
-  }
-  for (const s of user?.connectedServices || []) {
-    if (s.service === "strava" && s.athleteId) stravaIds.add(s.athleteId);
-  }
-  for (const sidVal of stravaIds) {
-    candidateSids.add(deriveStravaSessionSid(sidVal));
-  }
+  const { candidateSids, stravaIds } = collectCandidateIdentityContext(req, user, claims.sid);
+  const cleanEmail = user?.email ? user.email.trim().toLowerCase() : "";
   const dirForGuard = await loadDirectory();
   for (const teamId of dirForGuard.allTeamIds || []) {
     const doc = await loadTeamDocRaw(teamId);
@@ -17010,51 +19886,72 @@ async function deleteThreshAccountPermanently(req, res) {
     }
   }
   await bestEffortRevokeUpstreamTokens(stravaAccessToken, polarAccessToken, polarUserId);
-  const deletedTeamIds = [];
+  const affectedTeamIds = new Set(dirForGuard.allTeamIds || []);
   for (const sid of candidateSids) {
     const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
       teamIds: [],
       updatedAt: ""
     });
-    for (const teamId of idx.teamIds) {
-      await withVaultLock(teamDocVaultKey(teamId), async () => {
-        const doc = await loadTeamDocRaw(teamId);
-        if (!doc) return;
-        const myMems = doc.memberships.filter((m) => candidateSids.has(m.userSid || ""));
-        const otherActive = doc.memberships.filter(
-          (m) => !candidateSids.has(m.userSid || "") && m.status !== "REVOKED"
-        );
-        if (myMems.some((m) => m.role === "HEAD_COACH") && otherActive.length === 0) {
-          await deleteTenantVault(teamDocVaultKey(teamId));
-          deletedTeamIds.push(teamId);
-          return;
-        }
-        const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-        for (const m of doc.memberships) {
-          if (candidateSids.has(m.userSid || "")) {
-            m.status = "REVOKED";
-            m.leftAt = nowIso;
-            m.invitedName = "Deleted Athlete";
-            m.userSid = void 0;
-            m.stravaAthleteId = void 0;
-            m.invitedEmail = void 0;
-            m.invitedPhone = void 0;
-            m.parentGuardianEmail = void 0;
-            m.parentConsentToken = void 0;
-            m.parentConsentTokenHash = void 0;
-            m.liveSnapshot = void 0;
-            m.coachRecordedActivities = void 0;
-            m.rawInviteToken = void 0;
-            m.inviteTokenHash = void 0;
-          }
-        }
-        doc.updatedAt = nowIso;
-        await saveTeamDocRaw(teamId, doc);
+    for (const id of idx.teamIds) {
+      affectedTeamIds.add(id);
+    }
+  }
+  const deletedTeamIds = [];
+  for (const teamId of affectedTeamIds) {
+    await withTeamRowLock(teamId, async () => {
+      const doc = await loadTeamDocRaw(teamId);
+      if (!doc) return;
+      const myMems = doc.memberships.filter(
+        (m) => candidateSids.has(m.userSid || "") || cleanEmail && m.invitedEmail?.trim().toLowerCase() === cleanEmail
+      );
+      if (myMems.length === 0) return;
+      const targetMembershipIds = new Set(myMems.map((m) => m.membershipId));
+      const otherActive = doc.memberships.filter(
+        (m) => !targetMembershipIds.has(m.membershipId) && m.status !== "REVOKED"
+      );
+      if (myMems.some((m) => m.role === "HEAD_COACH") && otherActive.length === 0) {
+        const safeId = sanitizeTenantId(teamId);
+        await deleteTenantVault(teamDocVaultKey(teamId));
+        await deleteTenantVault(teamFieldLogsVaultKey(teamId)).catch(() => void 0);
+        await deleteTenantVault(`audit_log_${safeId.slice(0, 40)}`).catch(() => void 0);
+        await deleteTenantVault(`team_parent_email_subs_${safeId.slice(0, 40)}`).catch(() => void 0);
+        await deleteTenantVault(`team_parent_email_subs_${safeId}`).catch(() => void 0);
+        await deleteTeamPostgresRowsAsync(teamId).catch(() => void 0);
+        deletedTeamIds.push(teamId);
+        return;
+      }
+      const targetSids = new Set(candidateSids);
+      scrubMemberFromTeamDocument({
+        doc,
+        targetMembershipIds,
+        targetSids,
+        replacementName: "Deleted Athlete"
       });
+      const updatedFieldCount = await scrubMemberSidecarVaultsAndPostgres({
+        teamId,
+        targetMembershipIds,
+        targetSids,
+        emails: cleanEmail ? [cleanEmail] : []
+      });
+      if (typeof updatedFieldCount === "number") {
+        doc.fieldMarkLogsTotalCount = updatedFieldCount;
+      } else if (Array.isArray(doc.fieldMarkLogs)) {
+        doc.fieldMarkLogsTotalCount = doc.fieldMarkLogs.length;
+      }
+      await saveTeamDocRaw(teamId, doc);
+    });
+    for (const sid of candidateSids) {
       await removeTeamFromUserIndex(sid, teamId).catch(() => void 0);
     }
-    await deleteTenantVault(userTeamsVaultKey(sid));
   }
+  for (const sid of candidateSids) {
+    await deleteTenantVault(userTeamsVaultKey(sid)).catch(() => void 0);
+    await deleteTenantVault(`push_subs_${sanitizeTenantId(sid)}`).catch(() => void 0);
+  }
+  await deleteMemberPostgresRowsAsync({
+    userSids: Array.from(candidateSids),
+    emails: cleanEmail ? [cleanEmail] : []
+  }).catch(() => void 0);
   if (deletedTeamIds.length > 0) {
     await withVaultLock(TEAMS_DIRECTORY_KEY, async () => {
       const dir = await loadDirectory();
@@ -17069,8 +19966,7 @@ async function deleteThreshAccountPermanently(req, res) {
       await saveTenantVaultAsync(TEAMS_DIRECTORY_KEY, dir);
     });
   }
-  if (user?.email) {
-    const cleanEmail = user.email.trim().toLowerCase();
+  if (cleanEmail) {
     await deleteTenantVault(`auth_email_${hashAuthLookupKey(cleanEmail)}`);
     await withVaultLock(EMAIL_DIRECTORY_KEY, async () => {
       const emailDir = await loadTenantVaultAsync(EMAIL_DIRECTORY_KEY, {
@@ -17094,6 +19990,7 @@ async function deleteThreshAccountPermanently(req, res) {
     await deleteTenantVault(`session_${scopeKey}`);
     await deleteTenantVault(`session_${sid}`);
     await clearGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey);
+    await deleteTenantVault(`athlete_state_sid_${sid}`);
     await deleteTenantVault(`athlete_state_sid_${sid.slice(0, 32)}`);
     await deleteTenantVault(`athlete_state_sid_${scopeKey}`);
   }
@@ -17120,25 +20017,24 @@ async function deleteThreshAccountPermanently(req, res) {
 }
 
 // server/routers/authRouter.ts
-var authRouter = express6.Router();
-var magicLinkRateStore = /* @__PURE__ */ new Map();
-function checkMagicLinkRateLimit(key, limit, windowMs = 10 * 60 * 1e3) {
-  const now = Date.now();
-  if (magicLinkRateStore.size > 2e3) {
-    for (const [k, v] of magicLinkRateStore.entries()) {
-      if (now > v.resetAt) magicLinkRateStore.delete(k);
-    }
-  }
-  const existing = magicLinkRateStore.get(key);
-  if (!existing || now > existing.resetAt) {
-    magicLinkRateStore.set(key, { count: 1, resetAt: now + windowMs });
-    return true;
-  }
-  if (existing.count >= limit) {
-    return false;
-  }
-  existing.count += 1;
-  return true;
+var authRouter = express8.Router();
+var PENDING_DOB_TTL_MS = 15 * 60 * 1e3;
+async function savePendingSignupDob(key, birthMonthYear) {
+  if (!birthMonthYear) return;
+  await saveTenantVaultAsync(key, {
+    birthMonthYear,
+    exp: Date.now() + PENDING_DOB_TTL_MS
+  });
+}
+async function consumePendingSignupDob(key) {
+  const stored = await loadTenantVaultAsync(
+    key,
+    null
+  );
+  if (!stored) return void 0;
+  await deleteTenantVault(key).catch(() => void 0);
+  if (stored.exp && Date.now() > stored.exp) return void 0;
+  return stored.birthMonthYear;
 }
 function getRequestHostCandidate(req) {
   return String(req.headers["x-forwarded-host"] || req.get("host") || "").split(",")[0].trim().replace(/[^a-zA-Z0-9.:-]/g, "");
@@ -17319,15 +20215,58 @@ authRouter.get("/api/auth/me", async (req, res) => {
     }
     return res.json({
       authenticated: true,
-      user,
-      sessionToken: issueSessionToken(claims.sub, claims.sid)
+      user
     });
   } catch (err) {
     console.error("[MeetReady Auth] /api/auth/me error:", err);
     return res.status(500).json({ error: "Failed retrieving session state." });
   }
 });
-authRouter.get("/api/auth/google/url", (req, res) => {
+authRouter.get("/api/auth/export", async (req, res) => {
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+    return res.status(401).json({ ok: false, error: "Authentication required to export your data." });
+  }
+  const rl = await checkDistributedRateLimitAsync(`export_u:${claims.sid}`, 20, 10 * 60 * 1e3);
+  if (!rl.allowed) {
+    return res.status(429).json({
+      ok: false,
+      error: "Too many data export requests. Please wait a few minutes and try again.",
+      retryAfterSecs: rl.retryAfterSecs
+    });
+  }
+  const rawFormat = String(req.query.format || "json").trim().toLowerCase();
+  if (rawFormat !== "json" && rawFormat !== "csv") {
+    return res.status(400).json({ ok: false, error: "Unsupported export format. Use json or csv." });
+  }
+  try {
+    const payload = await buildUserDataExportPayload(req);
+    if (!payload) {
+      return res.status(401).json({ ok: false, error: "Authentication required to export your data." });
+    }
+    res.setHeader("Cache-Control", "no-store");
+    if (rawFormat === "csv") {
+      const csvBody = formatUserDataExportCsv(payload);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="meetready-data-export.csv"');
+      return res.status(200).send(csvBody);
+    }
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="meetready-data-export.json"');
+    return res.status(200).send(JSON.stringify(payload, null, 2));
+  } catch (err) {
+    console.error("[MeetReady Auth] /api/auth/export error:", err);
+    return res.status(500).json({ ok: false, error: "Failed building personal data export." });
+  }
+});
+authRouter.get("/api/auth/google/url", async (req, res) => {
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.query.birthMonthYear,
+    birthYear: req.query.birthYear
+  });
+  if (!ageCheck.ok) {
+    return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+  }
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const redirectUri = resolveGoogleCallbackUrl(req);
   if (!clientId) {
@@ -17356,6 +20295,7 @@ authRouter.get("/api/auth/google/url", (req, res) => {
     inviteToken
   });
   setOAuthStateCookie(req, res, nonce);
+  await savePendingSignupDob(`oauth_dob_${nonce}`, ageCheck.birthMonthYear);
   const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   googleAuthUrl.searchParams.set("client_id", clientId);
   googleAuthUrl.searchParams.set("redirect_uri", redirectUri);
@@ -17415,11 +20355,24 @@ authRouter.get("/api/auth/google/callback", async (req, res) => {
       return res.redirect("/?auth_error=google_userinfo_failed");
     }
     const googleUser = await userRes.json();
-    const user = await findOrCreateUser("google", googleUser.sub, {
+    const pendingDob = await consumePendingSignupDob(`oauth_dob_${stateClaims.nonce}`);
+    const existingGoogleUser = await getUserByProvider("google", googleUser.sub) || (googleUser.email ? await getUserByEmail(googleUser.email) : null);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: pendingDob ?? req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+      existingBirthMonthYear: existingGoogleUser?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      return res.redirect(`/?auth_error=${encodeURIComponent(ageCheck.error || "coppa_under_13")}`);
+    }
+    let user = await findOrCreateUser("google", googleUser.sub, {
       email: googleUser.email,
       name: googleUser.name,
       picture: googleUser.picture
     });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear) || user;
+    }
     await finalizeUserAuthentication(req, res, user);
     return res.redirect(buildAuthReturnRedirectUrl(stateClaims));
   } catch (err) {
@@ -17432,11 +20385,23 @@ authRouter.post("/api/auth/magic-link/send", async (req, res) => {
   if (!email || !email.includes("@") || email.length < 5) {
     return res.status(400).json({ error: "Please enter a valid email address." });
   }
-  const clientIp = String(req.headers["x-vercel-forwarded-for"] || req.ip || "local").split(",")[0].trim();
-  if (!checkMagicLinkRateLimit(`ml_ip:${clientIp}`, 10) || !checkMagicLinkRateLimit(`ml_em:${email}`, 5)) {
+  const clientIp = getClientRateLimitIp(req);
+  const ipRate = await checkDistributedRateLimitAsync(`ml_ip:${clientIp}`, 10, 10 * 60 * 1e3);
+  const emailRate = await checkDistributedRateLimitAsync(`ml_em:${email}`, 5, 10 * 60 * 1e3);
+  if (!ipRate.allowed || !emailRate.allowed) {
     return res.status(429).json({
-      error: "Too many sign-in link requests. Please wait a few minutes and try again."
+      error: "Too many sign-in link requests. Please wait a few minutes and try again.",
+      retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs)
     });
+  }
+  const existingMlUser = await getUserByEmail(email);
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.body?.birthMonthYear,
+    birthYear: req.body?.birthYear,
+    existingBirthMonthYear: existingMlUser?.birthMonthYear
+  });
+  if (!ageCheck.ok) {
+    return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
   }
   const joinCode = String(req.body?.joinCode || "").trim().slice(0, 32) || void 0;
   const slug = String(req.body?.slug || "").trim().slice(0, 64) || void 0;
@@ -17444,6 +20409,7 @@ authRouter.post("/api/auth/magic-link/send", async (req, res) => {
   const pendingJoin = joinCode || slug || inviteToken ? { joinCode, slug, inviteToken } : void 0;
   try {
     const { token } = await createMagicLinkToken(email, pendingJoin);
+    await savePendingSignupDob(`magic_link_dob_${hashAuthLookupKey(token)}`, ageCheck.birthMonthYear);
     const baseUrl = getAppBaseUrl(req);
     const verifyUrl = `${baseUrl}/api/auth/magic-link/verify?token=${encodeURIComponent(token)}`;
     const result = await sendMagicLinkEmail(email, verifyUrl);
@@ -17511,10 +20477,23 @@ authRouter.post("/api/auth/magic-link/verify", async (req, res) => {
       return res.redirect(303, "/?auth_error=expired_or_invalid_magic_token");
     }
     const email = verifiedPayload.email;
-    const user = await findOrCreateUser("magic_link", email, {
+    const pendingDob = await consumePendingSignupDob(`magic_link_dob_${hashAuthLookupKey(token)}`);
+    const existingMlUser = await getUserByEmail(email);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: pendingDob ?? req.body?.birthMonthYear ?? req.query.birthMonthYear,
+      birthYear: req.body?.birthYear ?? req.query.birthYear,
+      existingBirthMonthYear: existingMlUser?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      return res.redirect(303, `/?auth_error=${encodeURIComponent(ageCheck.error || "coppa_under_13")}`);
+    }
+    let user = await findOrCreateUser("magic_link", email, {
       email,
       name: email.split("@")[0]
     });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear) || user;
+    }
     await finalizeUserAuthentication(req, res, user);
     return res.redirect(303, buildAuthReturnRedirectUrl(verifiedPayload.pendingJoin || null));
   } catch (err) {
@@ -17523,11 +20502,18 @@ authRouter.post("/api/auth/magic-link/verify", async (req, res) => {
   }
 });
 authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.body?.birthMonthYear,
+    birthYear: req.body?.birthYear
+  });
+  if (!ageCheck.ok) {
+    return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+  }
   const rpId = getRpId(req);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
-  const challenge = crypto19.randomBytes(32).toString("base64url");
-  const userId = crypto19.randomBytes(16).toString("base64url");
+  const challenge = crypto20.randomBytes(32).toString("base64url");
+  const userId = crypto20.randomBytes(16).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "register",
@@ -17588,6 +20574,20 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
   try {
     const cleanEmail = email ? String(email).trim().toLowerCase() : "";
     const activeClaims = getVerifiedSessionClaims(req);
+    let existingCandidate = null;
+    if (isCanonicalAuthenticatedClaims(activeClaims) && activeClaims?.sub?.startsWith("usr_")) {
+      existingCandidate = await getUserById(activeClaims.sub);
+    } else if (cleanEmail) {
+      existingCandidate = await getUserByEmail(cleanEmail);
+    }
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+      existingBirthMonthYear: existingCandidate?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+    }
     let user = null;
     if (isCanonicalAuthenticatedClaims(activeClaims) && activeClaims?.sub?.startsWith("usr_")) {
       user = await getUserById(activeClaims.sub);
@@ -17613,6 +20613,9 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
         name: name ? String(name).trim() : "Passkey Athlete"
       });
     }
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user.birthMonthYear = ageCheck.birthMonthYear;
+    }
     if (!user.passkeys) user.passkeys = [];
     const existingIdx = user.passkeys.findIndex((p) => p.id === verifiedReg.credId);
     const passkeyObj = {
@@ -17628,8 +20631,8 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
       user.passkeys.push(passkeyObj);
     }
     await saveUser(user);
-    const { sessionToken } = await finalizeUserAuthentication(req, res, user);
-    return res.json({ ok: true, user, sessionToken });
+    await finalizeUserAuthentication(req, res, user);
+    return res.json({ ok: true, user });
   } catch (err) {
     console.error("[MeetReady Auth] Passkey registration verification error:", err);
     return res.status(500).json({ error: "Failed completing passkey registration." });
@@ -17637,7 +20640,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
 });
 authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
   const rpId = getRpId(req);
-  const challenge = crypto19.randomBytes(32).toString("base64url");
+  const challenge = crypto20.randomBytes(32).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "auth"
@@ -17692,8 +20695,8 @@ authRouter.post("/api/auth/passkey/auth-verify", async (req, res) => {
       passkey.counter = assertionCheck.newSignCount;
       await saveUser(user);
     }
-    const { sessionToken } = await finalizeUserAuthentication(req, res, user);
-    return res.json({ ok: true, user, sessionToken });
+    await finalizeUserAuthentication(req, res, user);
+    return res.json({ ok: true, user });
   } catch (err) {
     console.error("[MeetReady Auth] Passkey auth verification error:", err);
     return res.status(500).json({ error: "Failed verifying passkey." });
@@ -17707,10 +20710,22 @@ authRouter.post("/api/auth/mock-login", async (req, res) => {
   const name = String(req.body?.name || req.query.name || "Sample Runner").trim();
   const provider = String(req.body?.provider || req.query.provider || "dev_mock");
   try {
-    const user = await findOrCreateUser(provider, email, {
+    const existingMockUser = await getUserByEmail(email);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear ?? req.query.birthMonthYear,
+      birthYear: req.body?.birthYear ?? req.query.birthYear,
+      existingBirthMonthYear: existingMockUser?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      return res.status(ageCheck.statusCode || 400).json({ ok: false, error: ageCheck.error });
+    }
+    let user = await findOrCreateUser(provider, email, {
       email,
       name
     });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear) || user;
+    }
     await finalizeUserAuthentication(req, res, user);
     if (req.method === "GET" || req.query.redirect) {
       return res.redirect("/?auth_just_signed_in=1");
@@ -17729,7 +20744,19 @@ authRouter.get("/api/auth/mock-login", async (req, res) => {
   const name = String(req.query.name || "Sample Runner").trim();
   const provider = String(req.query.provider || "dev_mock");
   try {
-    const user = await findOrCreateUser(provider, email, { email, name });
+    const existingMockUser = await getUserByEmail(email);
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+      existingBirthMonthYear: existingMockUser?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      return res.redirect(`/?auth_error=${encodeURIComponent(ageCheck.error || "coppa_under_13")}`);
+    }
+    let user = await findOrCreateUser(provider, email, { email, name });
+    if (ageCheck.birthMonthYear && !user.birthMonthYear) {
+      user = await updateUserBirthMonthYear(user.id, ageCheck.birthMonthYear) || user;
+    }
     await finalizeUserAuthentication(req, res, user);
     return res.redirect("/?auth_just_signed_in=1");
   } catch (err) {
@@ -17799,42 +20826,33 @@ authRouter.post("/api/auth/change-email", async (req, res) => {
   } catch (err) {
     console.warn("[MeetReady Auth] Team membership email update warning:", err);
   }
-  const { sessionToken } = await finalizeUserAuthentication(req, res, result.user);
-  return res.json({ ok: true, user: result.user, sessionToken });
+  await finalizeUserAuthentication(req, res, result.user);
+  return res.json({ ok: true, user: result.user });
 });
 authRouter.post("/api/auth/birth-month", async (req, res) => {
   const claims = getVerifiedSessionClaims(req);
   if (!claims?.sub?.startsWith("usr_") || !isCanonicalAuthenticatedClaims(claims)) {
     return res.status(401).json({ error: "MeetReady account required." });
   }
-  const birthMonthYear = String(req.body?.birthMonthYear || "").trim();
-  const incomingAge = resolveAthleteAgeTier({ birthMonthYear });
-  if (incomingAge.ageTier === "UNKNOWN") {
-    return res.status(400).json({ error: "Valid YYYY-MM birth month-year required." });
-  }
-  if (incomingAge.isUnder13) {
-    return res.status(400).json({
-      error: "MeetReady accounts require athletes to be 13 or older (COPPA)."
-    });
-  }
   const existingUser = await getUserById(claims.sub);
   if (!existingUser) {
     return res.status(404).json({ error: "Account not found." });
   }
-  if (existingUser.birthMonthYear) {
-    const existingAge = resolveAthleteAgeTier({ birthMonthYear: existingUser.birthMonthYear });
-    if (existingAge.isMinorU18 && incomingAge.ageTier === "ADULT_18_PLUS") {
-      return res.status(403).json({
-        error: "Minor birth date cannot be altered to an adult date directly."
-      });
-    }
+  const ageCheck = validateCoppaAgeInput({
+    birthMonthYear: req.body?.birthMonthYear,
+    birthYear: req.body?.birthYear,
+    existingBirthMonthYear: existingUser.birthMonthYear,
+    required: true
+  });
+  if (!ageCheck.ok || !ageCheck.birthMonthYear) {
+    return res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
   }
-  const updated = await updateUserBirthMonthYear(claims.sub, birthMonthYear);
+  const updated = await updateUserBirthMonthYear(claims.sub, ageCheck.birthMonthYear);
   if (!updated) {
     return res.status(400).json({ error: "Valid YYYY-MM birth month-year required." });
   }
-  const { sessionToken } = await finalizeUserAuthentication(req, res, updated);
-  return res.json({ ok: true, user: updated, sessionToken });
+  await finalizeUserAuthentication(req, res, updated);
+  return res.json({ ok: true, user: updated });
 });
 authRouter.delete("/api/auth/account", async (req, res) => {
   const confirmVal = String(req.body?.confirm || req.query.confirm || "").trim().toUpperCase();
@@ -17848,8 +20866,8 @@ authRouter.delete("/api/auth/account", async (req, res) => {
 });
 
 // server/routers/configRouter.ts
-import { Router as Router6 } from "express";
-import crypto22 from "crypto";
+import { Router as Router8 } from "express";
+import crypto23 from "crypto";
 import fs7 from "fs";
 
 // server/secretManager.ts
@@ -17867,7 +20885,13 @@ var SERVER_OWNED_SECRET_ENV_KEYS = [
   "VITE_MAPBOX_ACCESS_TOKEN",
   "THUNDERFOREST_API_KEY",
   "INTERVALS_API_KEY",
+  "INTERVALS_CLIENT_SECRET",
   "GARMIN_PERSONAL_API_KEY",
+  "GARMIN_CLIENT_SECRET",
+  "COROS_CLIENT_SECRET",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+  "UPSTASH_REDIS_REST_TOKEN",
   "SESSION_SECRET",
   "TOKEN_VAULT_KEY"
 ];
@@ -17913,37 +20937,16 @@ function isAuthorizedForServerAi(req) {
 function isAuthorizedForAi(req) {
   return hasClientByoGeminiKey(req) || isAuthorizedForServerAi(req);
 }
-var aiRateLimitStore = /* @__PURE__ */ new Map();
-function checkAiRateLimit(key, limit = 20, windowMs = 6e4) {
-  const now = Date.now();
-  if (aiRateLimitStore.size > 2e3) {
-    for (const [k, rec] of aiRateLimitStore.entries()) {
-      if (rec.resetAt <= now) {
-        aiRateLimitStore.delete(k);
-      }
-    }
-  }
-  const record = aiRateLimitStore.get(key);
-  if (!record || record.resetAt <= now) {
-    aiRateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, retryAfterSecs: 0 };
-  }
-  if (record.count >= limit) {
-    return {
-      allowed: false,
-      retryAfterSecs: Math.max(1, Math.ceil((record.resetAt - now) / 1e3))
-    };
-  }
-  record.count += 1;
-  return { allowed: true, retryAfterSecs: 0 };
+async function checkAiRateLimitAsync(key, limit = 20, windowMs = 6e4) {
+  const result = await checkDistributedRateLimitAsync(`ai:${key}`, limit, windowMs);
+  return { allowed: result.allowed, retryAfterSecs: result.retryAfterSecs };
 }
 function getClientAiRateLimitKey(req) {
   const scopeKey = resolveSessionScopeKey(req);
   if (scopeKey && scopeKey !== "unauthenticated") {
     return `session:${scopeKey}`;
   }
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress || "unknown";
-  return `ip:${ip}`;
+  return `ip:${getClientRateLimitIp(req)}`;
 }
 
 // server/physiologyEngine.ts
@@ -18247,7 +21250,7 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
 }
 
 // server/oauthHelpers.ts
-import crypto20 from "crypto";
+import crypto21 from "crypto";
 function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
   const verified = getVerifiedSessionClaims(req);
   if (verified?.sid) {
@@ -18260,7 +21263,7 @@ function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
     );
     return { sid: verified.sid, sessionToken: sessionToken2 };
   }
-  const sid = crypto20.randomBytes(16).toString("hex");
+  const sid = crypto21.randomBytes(16).toString("hex");
   const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return { sid, sessionToken };
@@ -18464,10 +21467,16 @@ function resolveWahooCallbackUrl(req) {
 function resolvePolarCallbackUrl(req) {
   return resolveStandardOAuthCallbackUrl(req, "POLAR_REDIRECT_URI", "/auth/polar/callback");
 }
+function resolveGarminCallbackUrl(req) {
+  return resolveStandardOAuthCallbackUrl(req, "GARMIN_REDIRECT_URI", "/auth/garmin/callback");
+}
+function resolveCorosCallbackUrl(req) {
+  return resolveStandardOAuthCallbackUrl(req, "COROS_REDIRECT_URI", "/auth/coros/callback");
+}
 var resolveCallbackUrl = resolveStravaCallbackUrl;
 
 // server/routers/intervalsRouter.ts
-import express8 from "express";
+import express10 from "express";
 
 // server/routers/activitiesRouter.ts
 import { Router as Router2 } from "express";
@@ -18809,8 +21818,8 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 });
 
 // server/routers/stravaRouter.ts
-import express7 from "express";
-import crypto21 from "crypto";
+import express9 from "express";
+import crypto22 from "crypto";
 import fs6 from "fs";
 
 // server/stravaIdUtils.ts
@@ -19616,7 +22625,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = (prevClaims?.sub === canonicalUserId ? prevClaims.sid : void 0) || (opts.expectedUserId === canonicalUserId ? opts.expectedSid : void 0) || deriveUserSessionSid(canonicalUserId);
     sessionSubject = canonicalUserId;
   } else {
-    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto21.randomBytes(16).toString("hex");
+    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto22.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
   if (opts.athleteId) {
@@ -19674,6 +22683,13 @@ async function activateStravaCanonicalScope(req, res, opts) {
     store.polarAthleteName = prevStore.polarAthleteName;
     store.polarExpiresAt = prevStore.polarExpiresAt;
     store.polarScope = prevStore.polarScope;
+  }
+  if (!store.corosAccessToken && prevStore.corosAccessToken) {
+    store.corosAccessToken = prevStore.corosAccessToken;
+    store.corosRefreshToken = prevStore.corosRefreshToken;
+    store.corosExpiresAt = prevStore.corosExpiresAt;
+    store.corosAthleteId = prevStore.corosAthleteId;
+    store.corosAthleteName = prevStore.corosAthleteName;
   }
   if (!store.stravaSyncPolicy && prevStore.stravaSyncPolicy) {
     store.stravaSyncPolicy = prevStore.stravaSyncPolicy;
@@ -19903,8 +22919,37 @@ var stravaCallbackHandler = async (req, res) => {
       } catch {
       }
     }
+    const pendingDobRecord = verifiedState?.nonce ? await loadTenantVaultAsync(
+      `oauth_dob_${verifiedState.nonce}`,
+      null
+    ) : null;
+    if (verifiedState?.nonce && pendingDobRecord) {
+      await deleteTenantVault(`oauth_dob_${verifiedState.nonce}`).catch(() => void 0);
+    }
+    const pendingDob = pendingDobRecord && (!pendingDobRecord.exp || Date.now() <= pendingDobRecord.exp) ? pendingDobRecord.birthMonthYear : void 0;
+    const existingStravaUser = athleteId ? await getUserByProvider("strava", athleteId) : null;
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: pendingDob ?? req.query.birthMonthYear,
+      birthYear: req.query.birthYear,
+      existingBirthMonthYear: existingStravaUser?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      clearOAuthStateCookie(res);
+      const errMsg = ageCheck.error || "MeetReady accounts require athletes to be 13 or older (COPPA).";
+      res.status(ageCheck.statusCode || 400).type("html").send(
+        renderThreshOAuthHtml({
+          title: "Age Requirement \xB7 MeetReady",
+          heading: "Account Eligibility Check",
+          accentColor: "#FB7185",
+          body: escapeHtml(errMsg),
+          ctaLabel: "Return to MeetReady",
+          ctaHref: buildReturnOnboardingUrl(verifiedState, { auth_error: errMsg })
+        })
+      );
+      return;
+    }
     if (!athleteName) athleteName = "Strava Athlete";
-    const { canonicalSid, sessionToken, store, linkedUserId } = await activateStravaCanonicalScope(req, res, {
+    const { canonicalSid, store, linkedUserId } = await activateStravaCanonicalScope(req, res, {
       athleteId,
       athleteName,
       expectedSid: verifiedState?.sid,
@@ -19933,11 +22978,22 @@ var stravaCallbackHandler = async (req, res) => {
     }
     if (athleteId && !linkedUserId) {
       try {
-        await findOrCreateUser("strava", athleteId, {
+        const createdUser = await findOrCreateUser("strava", athleteId, {
           name: !isGenericName(athleteName) ? athleteName : void 0
         });
+        if (ageCheck.birthMonthYear && !createdUser.birthMonthYear) {
+          await updateUserBirthMonthYear(createdUser.id, ageCheck.birthMonthYear);
+        }
       } catch (err) {
         console.warn("[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:", err);
+      }
+    } else if (linkedUserId && ageCheck.birthMonthYear) {
+      try {
+        const linked = await getUserById(linkedUserId);
+        if (linked && !linked.birthMonthYear) {
+          await updateUserBirthMonthYear(linked.id, ageCheck.birthMonthYear);
+        }
+      } catch {
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
@@ -19975,7 +23031,6 @@ var stravaCallbackHandler = async (req, res) => {
       provider: "strava",
       athleteId,
       athleteName,
-      sessionToken,
       hasExistingSyncPolicy,
       hasPendingTeamJoin,
       measurementPreference,
@@ -19995,7 +23050,8 @@ var stravaCallbackHandler = async (req, res) => {
       }
     });
     const successHydrationScript = `try {
-      if (payload.sessionToken) localStorage.setItem('aeropulse_session_token', payload.sessionToken);
+      localStorage.setItem('thresh_session_active_hint', '1');
+      localStorage.removeItem('aeropulse_session_token');
       if (payload.tokens) {
         var prevAthleteId = localStorage.getItem('aeropulse_strava_athlete_id');
         if (prevAthleteId && payload.tokens.athleteId && String(payload.tokens.athleteId) !== prevAthleteId) {
@@ -20080,7 +23136,7 @@ var stravaCallbackHandler = async (req, res) => {
     );
   }
 };
-var stravaRouter = express7.Router();
+var stravaRouter = express9.Router();
 stravaRouter.post("/api/strava/credentials", async (req, res) => {
   const clientId = (req.body?.clientId || "").trim();
   const clientSecret = (req.body?.clientSecret || "").trim();
@@ -20094,8 +23150,8 @@ stravaRouter.post("/api/strava/credentials", async (req, res) => {
   await saveSessionCacheAsync(req, res, sid);
   res.json({ saved: true, clientId });
 });
-async function buildStravaAuthorizeRequest(req, res, clientId) {
-  const { sid, sessionToken } = ensureRequestSession(req, res);
+async function buildStravaAuthorizeRequest(req, res, clientId, pendingBirthMonthYear) {
+  const { sid } = ensureRequestSession(req, res);
   const mode = String(req.query.mode || "cloud").toLowerCase();
   const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
   const prompt = String(req.query.prompt || "auto").toLowerCase() === "force" ? "force" : "auto";
@@ -20117,6 +23173,12 @@ async function buildStravaAuthorizeRequest(req, res, clientId) {
     userId: callerClaims?.sub?.startsWith("usr_") ? callerClaims.sub : void 0
   });
   setOAuthStateCookie(req, res, nonce);
+  if (pendingBirthMonthYear) {
+    await saveTenantVaultAsync(`oauth_dob_${nonce}`, {
+      birthMonthYear: pendingBirthMonthYear,
+      exp: Date.now() + 15 * 60 * 1e3
+    });
+  }
   const redirectUri = mode === "localhost" ? "http://localhost/exchange_token" : await resolveValidatedStravaCallbackUrl(req, clientId);
   const params = new URLSearchParams({
     client_id: clientId,
@@ -20127,11 +23189,19 @@ async function buildStravaAuthorizeRequest(req, res, clientId) {
     state: stateToken
   });
   const authUrl = `https://www.strava.com/oauth/authorize?${params.toString()}`;
-  return { authUrl, redirectUri, stateToken, sessionToken };
+  return { authUrl, redirectUri, stateToken };
 }
 stravaRouter.get(
   ["/api/strava/auth/url", "/api/auth/strava/url"],
   async (req, res) => {
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.query.birthMonthYear,
+      birthYear: req.query.birthYear
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
+      return;
+    }
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
     if (!clientId || !clientSecret) {
       res.status(400).json({
@@ -20139,17 +23209,29 @@ stravaRouter.get(
       });
       return;
     }
-    const { authUrl, redirectUri, stateToken, sessionToken } = await buildStravaAuthorizeRequest(
+    const { authUrl, redirectUri, stateToken } = await buildStravaAuthorizeRequest(
       req,
       res,
-      clientId
+      clientId,
+      ageCheck.birthMonthYear
     );
-    res.json({ url: authUrl, redirectUri, clientId, state: stateToken, sessionToken });
+    res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
   }
 );
 stravaRouter.get(
   ["/api/strava/auth/login", "/api/auth/strava/login"],
   async (req, res) => {
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.query.birthMonthYear,
+      birthYear: req.query.birthYear
+    });
+    if (!ageCheck.ok) {
+      const msg = encodeURIComponent(
+        ageCheck.error || "MeetReady accounts require athletes to be 13 or older (COPPA)."
+      );
+      res.redirect(302, `/?auth_error=${msg}`);
+      return;
+    }
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
     if (!clientId || !clientSecret) {
       const msg = encodeURIComponent(
@@ -20158,7 +23240,12 @@ stravaRouter.get(
       res.redirect(302, `/?auth_error=${msg}`);
       return;
     }
-    const { authUrl } = await buildStravaAuthorizeRequest(req, res, clientId);
+    const { authUrl } = await buildStravaAuthorizeRequest(
+      req,
+      res,
+      clientId,
+      ageCheck.birthMonthYear
+    );
     res.redirect(302, authUrl);
   }
 );
@@ -20205,7 +23292,7 @@ stravaRouter.get("/api/strava/auth/poll", async (req, res) => {
   pendingOAuthByState.delete(lookupNonce);
   await deleteTenantVault(`oauth_poll_${lookupNonce}`);
   clearOAuthStateCookie(res);
-  const { canonicalSid, sessionToken, store } = await activateStravaCanonicalScope(req, res, {
+  const { canonicalSid, store } = await activateStravaCanonicalScope(req, res, {
     athleteId: found.athleteId,
     athleteName: found.athleteName || "Strava Athlete"
   });
@@ -20229,7 +23316,6 @@ stravaRouter.get("/api/strava/auth/poll", async (req, res) => {
     hasExistingSyncPolicy: Boolean(
       found.hasExistingSyncPolicy || store.stravaSyncPolicy?.confirmedAt
     ),
-    sessionToken,
     athleteId: found.athleteId,
     athleteName: found.athleteName,
     measurementPreference: found.measurementPreference,
@@ -20248,15 +23334,33 @@ stravaRouter.get("/api/strava/auth/poll", async (req, res) => {
 });
 stravaRouter.post("/api/strava/exchange-code", async (req, res) => {
   try {
+    const preAgeCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear
+    });
+    if (!preAgeCheck.ok) {
+      res.status(preAgeCheck.statusCode || 400).json({ error: preAgeCheck.error });
+      return;
+    }
     const codeOrUrl = String(req.body?.code || req.body?.url || "").trim();
     const tokenData = await exchangeStravaAuthCode(codeOrUrl, req);
     const { clientId, clientSecret } = getEffectiveStravaClientConfig(req);
     const athleteName = [tokenData.athlete?.firstname, tokenData.athlete?.lastname].filter(Boolean).join(" ").trim() || tokenData.athlete?.username?.trim() || "Strava Athlete";
     const athleteId = extractStravaId(tokenData.athlete) || void 0;
+    const existingStravaUser = athleteId ? await getUserByProvider("strava", athleteId) : null;
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+      existingBirthMonthYear: existingStravaUser?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
+      return;
+    }
     const weightKg = typeof tokenData.athlete?.weight === "number" && tokenData.athlete.weight > 30 ? Number(tokenData.athlete.weight.toFixed(1)) : void 0;
     const ftp = typeof tokenData.athlete?.ftp === "number" && tokenData.athlete.ftp > 80 ? Math.round(tokenData.athlete.ftp) : void 0;
     const measurementPreference = tokenData.athlete?.measurement_preference === "meters" ? "km" : tokenData.athlete?.measurement_preference === "feet" ? "mi" : void 0;
-    const { canonicalSid, sessionToken, store, linkedUserId } = await activateStravaCanonicalScope(req, res, {
+    const { canonicalSid, store, linkedUserId } = await activateStravaCanonicalScope(req, res, {
       athleteId,
       athleteName
     });
@@ -20271,18 +23375,28 @@ stravaRouter.post("/api/strava/exchange-code", async (req, res) => {
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
     if (athleteId && !linkedUserId) {
       try {
-        await findOrCreateUser("strava", athleteId, {
+        const createdUser = await findOrCreateUser("strava", athleteId, {
           name: !isGenericName(athleteName) ? athleteName : void 0
         });
+        if (ageCheck.birthMonthYear && !createdUser.birthMonthYear) {
+          await updateUserBirthMonthYear(createdUser.id, ageCheck.birthMonthYear);
+        }
       } catch (err) {
         console.warn("[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:", err);
+      }
+    } else if (linkedUserId && ageCheck.birthMonthYear) {
+      try {
+        const linked = await getUserById(linkedUserId);
+        if (linked && !linked.birthMonthYear) {
+          await updateUserBirthMonthYear(linked.id, ageCheck.birthMonthYear);
+        }
+      } catch {
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
     res.json({
       connected: true,
       hasExistingSyncPolicy,
-      sessionToken,
       athleteId,
       athleteName,
       weightKg,
@@ -20301,6 +23415,14 @@ stravaRouter.post("/api/strava/exchange-code", async (req, res) => {
 });
 stravaRouter.post("/api/strava/token", async (req, res) => {
   try {
+    const preAgeCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear
+    });
+    if (!preAgeCheck.ok) {
+      res.status(preAgeCheck.statusCode || 400).json({ error: preAgeCheck.error });
+      return;
+    }
     const refreshToken = String(req.body?.refreshToken || "").trim();
     const accessToken = String(req.body?.accessToken || "").trim();
     const allowIdentityOnly = Boolean(req.body?.allowIdentityOnly);
@@ -20379,7 +23501,17 @@ stravaRouter.post("/api/strava/token", async (req, res) => {
       if (athlete.measurement_preference === "meters") measurementPreference = "km";
       else if (athlete.measurement_preference === "feet") measurementPreference = "mi";
     }
-    const { canonicalSid, sessionToken, store, linkedUserId } = await activateStravaCanonicalScope(req, res, {
+    const existingTokenUser = athleteId ? await getUserByProvider("strava", athleteId) : null;
+    const ageCheck = validateCoppaAgeInput({
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear,
+      existingBirthMonthYear: existingTokenUser?.birthMonthYear
+    });
+    if (!ageCheck.ok) {
+      res.status(ageCheck.statusCode || 400).json({ error: ageCheck.error });
+      return;
+    }
+    const { canonicalSid, store, linkedUserId } = await activateStravaCanonicalScope(req, res, {
       athleteId,
       athleteName
     });
@@ -20395,18 +23527,28 @@ stravaRouter.post("/api/strava/token", async (req, res) => {
     if (!isGenericName(athleteName)) store.stravaAthleteName = athleteName;
     if (athleteId && !linkedUserId) {
       try {
-        await findOrCreateUser("strava", athleteId, {
+        const createdUser = await findOrCreateUser("strava", athleteId, {
           name: !isGenericName(athleteName) ? athleteName : void 0
         });
+        if (ageCheck.birthMonthYear && !createdUser.birthMonthYear) {
+          await updateUserBirthMonthYear(createdUser.id, ageCheck.birthMonthYear);
+        }
       } catch (err) {
         console.warn("[MeetReady Auth] Auto-migration of Strava athlete to MeetReady accounts skipped:", err);
+      }
+    } else if (linkedUserId && ageCheck.birthMonthYear) {
+      try {
+        const linked = await getUserById(linkedUserId);
+        if (linked && !linked.birthMonthYear) {
+          await updateUserBirthMonthYear(linked.id, ageCheck.birthMonthYear);
+        }
+      } catch {
       }
     }
     await saveSessionCacheAsync(req, res, canonicalSid);
     res.json({
       connected: true,
       hasExistingSyncPolicy,
-      sessionToken,
       athleteId,
       athleteName,
       weightKg,
@@ -21542,22 +24684,21 @@ var intervalsCallbackHandler = async (req, res) => {
     bindRequestScopeKey(req, sid);
     const store = getScopedRuntimeStore(req);
     store.intervalsAccessToken = accessToken;
-    store.intervalsScope = tokenData.scope || "ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ";
+    store.intervalsScope = tokenData.scope || "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE";
     store.intervalsAthleteId = athleteId;
     store.intervalsAthleteName = athleteName;
     const callerClaims = getVerifiedSessionClaims(req);
     if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
       await connectServiceToUser(callerClaims.sub, "intervals", athleteId, athleteName);
     }
-    const sessionToken = setSessionCookie(req, res, athleteName, sid, "verified");
+    setSessionCookie(req, res, athleteName, sid, "verified");
     await saveSessionCacheAsync(req, res, sid);
     const oauthPayloadJson = safeJsonForScript({
       type: "OAUTH_AUTH_SUCCESS",
       provider: "intervals",
       athleteId,
       athleteName,
-      sessionToken,
-      scope: tokenData.scope,
+      scope: store.intervalsScope,
       returnUrl: "/#fitness?openDataSources=1"
     });
     res.type("html").send(
@@ -21565,15 +24706,13 @@ var intervalsCallbackHandler = async (req, res) => {
         title: "Intervals.icu Connected \xB7 MeetReady",
         heading: `Intervals.icu Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
         accentColor: "#10B981",
-        body: "Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and training data are ready to sync.",
+        body: "Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and cross-watch calendar push are ready.",
         ctaLabel: "Continue to MeetReady",
         ctaHref: "/#fitness?openDataSources=1",
         scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
           try {
-            if (payload.sessionToken) {
-              localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-            }
+            localStorage.setItem('thresh_session_active_hint', '1');
             if (payload.athleteId) {
               localStorage.setItem('aeropulse_intervals_athlete_id', String(payload.athleteId));
             }
@@ -21638,7 +24777,7 @@ var intervalsCallbackHandler = async (req, res) => {
     );
   }
 };
-var intervalsRouter = express8.Router();
+var intervalsRouter = express10.Router();
 intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
@@ -21820,7 +24959,7 @@ intervalsRouter.get(["/api/intervals/auth/url", "/api/auth/intervals/url"], (req
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ",
+    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE",
     state: stateToken
   });
   const authUrl = `https://intervals.icu/oauth/authorize?${params.toString()}`;
@@ -21844,7 +24983,7 @@ intervalsRouter.get(["/api/intervals/auth/login", "/api/auth/intervals/login"], 
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ",
+    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE",
     state: stateToken
   });
   res.redirect(302, `https://intervals.icu/oauth/authorize?${params.toString()}`);
@@ -21920,6 +25059,108 @@ intervalsRouter.post("/api/intervals/disconnect", async (req, res) => {
   }
   await saveSessionCacheAsync(req, res);
   res.json({ connected: false });
+});
+intervalsRouter.post("/api/intervals/workout/push", async (req, res) => {
+  try {
+    const config = getEffectiveIntervalsConfig(req);
+    const authHeader = getIntervalsAuthHeader(config);
+    if (!authHeader) {
+      res.status(401).json({
+        ok: false,
+        pushed: false,
+        connectRequired: true,
+        error: "Intervals.icu is not connected yet. Connect Intervals.icu via OAuth 2.0 or Personal API Key in Data Sources."
+      });
+      return;
+    }
+    const activeScope = String(
+      config.scope || runtimeStore.intervalsScope || req.headers["x-intervals-scope"] || ""
+    ).trim();
+    if (config.accessToken && !config.apiKey && activeScope && !activeScope.toUpperCase().includes("CALENDAR:WRITE")) {
+      res.status(403).json({
+        ok: false,
+        pushed: false,
+        needsScopeUpgrade: true,
+        error: 'Your Intervals.icu OAuth connection only has read-only calendar permissions. Click "Upgrade Scope to Watch Push" in Data Sources to enable CALENDAR:WRITE.'
+      });
+      return;
+    }
+    const body = req.body || {};
+    const date = String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
+    const scheduledTime = typeof body.scheduledTime === "string" && /^([01]?\d|2[0-3]):[0-5]\d$/.test(body.scheduledTime.trim()) ? body.scheduledTime.trim().padStart(5, "0") : "08:00";
+    const name = String(body.name || "MeetReady Prescribed Session").trim();
+    const sportCategory = String(body.sportCategory || "Running");
+    const envPref = String(body.environmentPreference || "FLEXIBLE");
+    const plannedDurationSecs = Math.max(60, Number(body.plannedDurationSecs || 1800));
+    const plannedLoad = Math.max(1, Number(body.plannedLoad || 50));
+    let workoutMarkdown = typeof body.workoutSyntax === "string" ? body.workoutSyntax.trim() : "";
+    if (!workoutMarkdown && Array.isArray(body.steps) && body.steps.length > 0) {
+      const cue = sportCategory === "Running" ? "Pace" : "FTP";
+      workoutMarkdown = body.steps.map((st) => {
+        const durOrDist = st.distanceMeters ? `${Math.round(st.distanceMeters)}m` : `${Math.max(15, Math.round(Number(st.durationSecs || 300)))}s`;
+        const pct = Math.max(45, Math.min(180, Math.round(Number(st.targetPctFtp || 75))));
+        return `- ${durOrDist} ${Math.max(45, pct - 2)}%-${Math.min(180, pct + 2)}% ${cue} (${String(
+          st.label || "Interval"
+        )})`;
+      }).join("\n");
+    }
+    if (!workoutMarkdown) {
+      workoutMarkdown = typeof body.description === "string" && body.description.trim() ? body.description.trim() : "- 30m 75% Pace";
+    }
+    const icuType = sportCategory === "Running" ? "Run" : sportCategory === "Swimming" ? "Swim" : sportCategory === "Strength" ? "WeightTraining" : envPref === "INDOOR" ? "VirtualRide" : "Ride";
+    const athleteId = config.athleteId || "0";
+    const icuResp = await fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/events`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({
+          category: "WORKOUT",
+          start_date_local: `${date}T${scheduledTime}:00`,
+          name,
+          type: icuType,
+          description: workoutMarkdown,
+          moving_time: plannedDurationSecs,
+          icu_training_load: plannedLoad
+        })
+      }
+    );
+    if (icuResp.status === 403) {
+      res.status(403).json({
+        ok: false,
+        pushed: false,
+        needsScopeUpgrade: true,
+        error: 'Intervals.icu returned 403 Forbidden (missing CALENDAR:WRITE permission). Click "Upgrade Scope to Watch Push" in Data Sources to push workouts to Garmin, COROS, Suunto & Wahoo.'
+      });
+      return;
+    }
+    if (!icuResp.ok) {
+      const errText = await icuResp.text().catch(() => "");
+      res.status(icuResp.status).json({
+        ok: false,
+        pushed: false,
+        error: `Intervals.icu workout push failed (${icuResp.status}): ${errText.slice(0, 160)}`
+      });
+      return;
+    }
+    const created = await icuResp.json().catch(() => ({}));
+    res.json({
+      ok: true,
+      pushed: true,
+      eventId: created?.id,
+      message: `Pushed "${name}" to Intervals.icu Calendar (${date}) \u2014 synced to linked Garmin, COROS, Suunto & Wahoo watches.`
+    });
+  } catch (error) {
+    res.status(500).json({
+      ok: false,
+      pushed: false,
+      error: error instanceof Error ? error.message : "Failed to push workout to Intervals.icu"
+    });
+  }
 });
 intervalsRouter.get("/api/intervals/sync", async (req, res) => {
   try {
@@ -22182,15 +25423,23 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
           durationSecs: Number(st.durationSecs || 600),
           targetPctFtp: Number(st.targetPctFtp || 75)
         }));
-        const garminRes = await pushWorkoutToGarminConnect(garminSession, {
-          date,
-          name,
-          sportCategory,
-          description: newEvent.description,
-          ftpWatts: Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250),
-          lthrBpm: Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165),
-          steps: garminSteps
-        });
+        const garminRes = await pushWorkoutToGarminConnect(
+          garminSession,
+          {
+            date,
+            name,
+            sportCategory,
+            description: newEvent.description,
+            workoutSyntax,
+            ftpWatts: Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250),
+            lthrBpm: Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165),
+            thresholdPaceSecsPerKm: Number(
+              body.thresholdPaceSecsPerKm || runtimeStore.athleteProfile?.thresholdPaceSecsPerKm || 245
+            ),
+            steps: garminSteps
+          },
+          req
+        );
         pushedToGarmin = garminRes.pushed;
         garminWorkoutId = garminRes.workoutId;
         saveGarminSession(GARMIN_SESSION_DIR, getGarminScopeKey(req), garminSession);
@@ -22302,11 +25551,15 @@ function registerOAuthConnectorRoutes(router, config) {
     scope,
     envVarNames,
     usePkce = false,
+    unconfiguredStatusCode = 400,
+    unconfiguredMessage,
+    extraAuthorizeParams,
     successBody,
     getClientConfig,
     resolveCallbackUrl: resolveCallbackUrl2,
     exchangeCode,
-    clearStoreTokens
+    clearStoreTokens,
+    onDisconnect
   } = config;
   const returnHref = "/#fitness?openDataSources=1";
   const buildAuthorizeParams = (req, res, clientId, clientNonce) => {
@@ -22327,12 +25580,13 @@ function registerOAuthConnectorRoutes(router, config) {
       response_type: "code",
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope,
+      ...scope && scope.trim() ? { scope: scope.trim() } : {},
       state: stateToken,
       ...pkce ? {
         code_challenge: pkce.codeChallenge,
         code_challenge_method: "S256"
-      } : {}
+      } : {},
+      ...extraAuthorizeParams || {}
     });
     return {
       authUrl: `${authorizeUrl}?${params.toString()}`,
@@ -22343,9 +25597,17 @@ function registerOAuthConnectorRoutes(router, config) {
   router.get([`/api/${provider}/auth/url`, `/api/auth/${provider}/url`], (req, res) => {
     const { clientId, clientSecret } = getClientConfig(req);
     if (!clientId || !clientSecret) {
-      res.status(400).json({
-        error: `${displayName} OAuth is not configured on this server yet. Please set ${envVarNames[0]} and ${envVarNames[1]} in your environment variables.`
-      });
+      const message = unconfiguredMessage || `${displayName} OAuth is not configured on this server yet. Please set ${envVarNames[0]} and ${envVarNames[1]} in your environment variables.`;
+      if (unconfiguredStatusCode === 503) {
+        res.status(503).json({
+          ok: false,
+          configured: false,
+          setupRequired: true,
+          error: message
+        });
+      } else {
+        res.status(unconfiguredStatusCode).json({ error: message });
+      }
       return;
     }
     const clientNonce = String(req.query.state || "").trim();
@@ -22355,9 +25617,18 @@ function registerOAuthConnectorRoutes(router, config) {
   router.get([`/api/${provider}/auth/login`, `/api/auth/${provider}/login`], (req, res) => {
     const { clientId, clientSecret } = getClientConfig(req);
     if (!clientId || !clientSecret) {
-      const msg = encodeURIComponent(
-        `${displayName} OAuth is not configured on this server yet (missing ${envVarNames[0]} or ${envVarNames[1]}).`
-      );
+      const message = unconfiguredMessage || `${displayName} OAuth is not configured on this server yet (missing ${envVarNames[0]} or ${envVarNames[1]}).`;
+      const acceptsHtml = String(req.headers.accept || "").includes("text/html");
+      if (unconfiguredStatusCode === 503 && !acceptsHtml) {
+        res.status(503).json({
+          ok: false,
+          configured: false,
+          setupRequired: true,
+          error: message
+        });
+        return;
+      }
+      const msg = encodeURIComponent(message);
       res.redirect(302, `/?auth_error=${msg}`);
       return;
     }
@@ -22437,7 +25708,7 @@ function registerOAuthConnectorRoutes(router, config) {
       const sid = verifiedState.sid || ensureRequestSessionSid(req, res);
       bindRequestScopeKey(req, sid);
       const store = getScopedRuntimeStore(req);
-      exchanged.applyToStore(store);
+      await exchanged.applyToStore(store, { req, sid });
       const callerClaims = getVerifiedSessionClaims(req);
       if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
         await connectServiceToUser(
@@ -22447,14 +25718,13 @@ function registerOAuthConnectorRoutes(router, config) {
           exchanged.athleteName
         );
       }
-      const sessionToken = setSessionCookie(req, res, exchanged.athleteName, sid, "verified");
+      setSessionCookie(req, res, exchanged.athleteName, sid, "verified");
       await saveSessionCacheAsync(req, res, sid);
       const oauthPayloadJson = safeJsonForScript({
         type: "OAUTH_AUTH_SUCCESS",
         provider,
         athleteId: exchanged.athleteId,
         athleteName: exchanged.athleteName,
-        sessionToken,
         ...exchanged.scope !== void 0 ? { scope: exchanged.scope } : {},
         returnUrl: returnHref
       });
@@ -22469,9 +25739,7 @@ function registerOAuthConnectorRoutes(router, config) {
           scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
           try {
-            if (payload.sessionToken) {
-              localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-            }
+            localStorage.setItem('thresh_session_active_hint', '1');
             if (payload.athleteId) {
               localStorage.setItem('aeropulse_${provider}_athlete_id', String(payload.athleteId));
             }
@@ -22538,6 +25806,9 @@ function registerOAuthConnectorRoutes(router, config) {
   router.post(`/api/${provider}/disconnect`, async (req, res) => {
     const store = getScopedRuntimeStore(req);
     clearStoreTokens(store);
+    if (onDisconnect) {
+      await onDisconnect(req, res);
+    }
     const callerClaims = getVerifiedSessionClaims(req);
     if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
       await disconnectServiceFromUser(callerClaims.sub, provider);
@@ -23100,10 +26371,628 @@ polarRouter.get("/api/polar/sync", async (req, res) => {
   }
 });
 
-// server/routers/coachRouter.ts
+// server/routers/garminRouter.ts
 import { Router as Router5 } from "express";
+var garminRouter = Router5();
+var { callbackHandler: garminCallbackHandler } = registerOAuthConnectorRoutes(garminRouter, {
+  provider: "garmin",
+  displayName: "Garmin Connect",
+  accentColor: "#0EA5E9",
+  authorizeUrl: "https://connect.garmin.com/oauth2Confirm",
+  scope: "",
+  envVarNames: ["GARMIN_CLIENT_ID", "GARMIN_CLIENT_SECRET"],
+  usePkce: true,
+  unconfiguredStatusCode: 503,
+  unconfiguredMessage: "Official Garmin Health & Training Partner OAuth is not configured yet (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET pending). Connect a read-only Personal API Key (GCDC_...), Download .FIT, or use the Intervals.icu Cross-Watch Bridge in the meantime.",
+  successBody: "Your Garmin Connect account is now linked via Official Partner OAuth 2.0 PKCE. Workouts can now push directly to your Garmin watch and Edge head unit.",
+  getClientConfig: getEffectiveGarminClientConfig,
+  resolveCallbackUrl: resolveGarminCallbackUrl,
+  exchangeCode: async ({ code, redirectUri, clientId, clientSecret, codeVerifier }) => {
+    const bodyParams = new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri
+    });
+    if (codeVerifier) {
+      bodyParams.set("code_verifier", codeVerifier);
+    }
+    const tokenResp = await fetch("https://diauth.garmin.com/di-oauth2-service/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json"
+      },
+      body: bodyParams.toString()
+    });
+    if (!tokenResp.ok) {
+      const errText = await tokenResp.text().catch(() => "");
+      throw new Error(
+        `Garmin Partner OAuth token exchange failed (${tokenResp.status}): ${errText.slice(0, 160)}`
+      );
+    }
+    const tokenData = await tokenResp.json();
+    const accessToken = String(tokenData.access_token || "").trim();
+    if (!accessToken) {
+      throw new Error("Garmin Partner OAuth did not return a valid access token.");
+    }
+    let garminUserId = "";
+    try {
+      const userIdResp = await fetch("https://apis.garmin.com/wellness-api/rest/user/id", {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json"
+        }
+      });
+      if (userIdResp.ok) {
+        const userJson = await userIdResp.json();
+        if (userJson?.userId) {
+          garminUserId = String(userJson.userId).trim();
+        }
+      }
+    } catch {
+    }
+    const athleteId = garminUserId || "garmin-partner";
+    const athleteName = garminUserId ? `Garmin Athlete ${garminUserId.slice(0, 8)}` : "Garmin Athlete";
+    const expiresAt = Math.floor(Date.now() / 1e3) + Number(tokenData.expires_in || 86400);
+    return {
+      athleteId,
+      athleteName,
+      scope: tokenData.scope,
+      applyToStore: async (_store, { sid }) => {
+        const scopeKey = sid.slice(0, 24);
+        const existing = loadGarminSession(GARMIN_SESSION_DIR, scopeKey) || {};
+        await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, {
+          ...existing,
+          garminOAuthAccessToken: accessToken,
+          garminOAuthRefreshToken: tokenData.refresh_token || existing.garminOAuthRefreshToken,
+          garminOAuthExpiresAt: expiresAt,
+          garminUserId: garminUserId || existing.garminUserId,
+          garminAuthMethod: "OAUTH",
+          displayName: existing.displayName || athleteName,
+          fullName: existing.fullName || existing.displayName || athleteName,
+          connectedAt: existing.connectedAt || (/* @__PURE__ */ new Date()).toISOString()
+        });
+      }
+    };
+  },
+  clearStoreTokens: () => {
+  },
+  onDisconnect: async (req) => {
+    const scopeKey = getGarminScopeKey(req);
+    if (scopeKey && scopeKey !== "unauthenticated") {
+      await clearGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey);
+    }
+  }
+});
+garminRouter.post("/api/config/garmin", async (req, res) => {
+  try {
+    const body = req.body || {};
+    const hasEmailOrPassword = typeof body.email === "string" && body.email.trim().length > 0 || typeof body.password === "string" && body.password.length > 0;
+    if (hasEmailOrPassword) {
+      res.status(410).json({
+        ok: false,
+        deprecated: true,
+        error: "Garmin password login has been removed. Connect via Official Garmin Partner OAuth, a read-only GCDC Personal API Key, or .FIT workout import."
+      });
+      return;
+    }
+    const session = await authenticateGarminConnect({
+      personalApiKey: body.personalApiKey,
+      directBearerToken: body.directBearerToken
+    });
+    const sessionToken = setSessionCookie(
+      req,
+      res,
+      session.fullName || session.displayName || "garmin-athlete"
+    );
+    const createdClaims = decodeAndVerifyToken(sessionToken);
+    const scopeKey = createdClaims?.sid?.slice(0, 24) || getGarminScopeKey(req);
+    const existing = loadGarminSession(GARMIN_SESSION_DIR, scopeKey);
+    const mergedSession = {
+      ...existing || {},
+      ...session
+    };
+    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, mergedSession);
+    const garminData = await fetchDirectGarminProfileAndWellness(mergedSession, 28).catch(
+      () => null
+    );
+    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, mergedSession);
+    await saveSessionCacheAsync(req, res, createdClaims?.sid);
+    const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
+    const sId = String(stravaIdentity?.athleteId || "").replace(/[^0-9]/g, "");
+    const sActs = sId ? loadJsonFile(`/tmp/aeropulse-strava-archive-${sId}.json`, []) : [];
+    const normalizedGarminActs = garminData?.activities ? normalizeGarminPersonalApiActivities(garminData.activities, 250) : [];
+    const latestW = garminData?.wellnessRows && garminData.wellnessRows.length > 0 ? {
+      ...garminData.wellnessRows[garminData.wellnessRows.length - 1],
+      weightKg: garminData.rawProfile?.weight,
+      restingHR: garminData.rawProfile?.icu_resting_hr
+    } : {
+      weightKg: garminData?.rawProfile?.weight,
+      restingHR: garminData?.rawProfile?.icu_resting_hr
+    };
+    const syncedProfile = buildServerAthleteProfile(
+      {
+        ...garminData?.rawProfile || {},
+        name: garminData?.rawProfile?.name || mergedSession.fullName || mergedSession.displayName || stravaIdentity?.athleteName,
+        source: "INTERVALS_GARMIN"
+      },
+      latestW,
+      [...normalizedGarminActs, ...sActs]
+    );
+    res.json({
+      ok: true,
+      garminConnected: true,
+      garminAuthMethod: mergedSession.garminOAuthAccessToken ? "OAUTH" : "PERSONAL_KEY",
+      garminCanPushWorkouts: Boolean(mergedSession.garminOAuthAccessToken),
+      garminAthleteName: garminData?.rawProfile?.name || mergedSession.fullName || mergedSession.displayName || syncedProfile.name,
+      athleteProfile: syncedProfile
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to authenticate with Garmin Connect"
+    });
+  }
+});
+garminRouter.get("/api/garmin/sync", async (req, res) => {
+  try {
+    const session = getActiveGarminSession(req);
+    if (!session) {
+      res.status(401).json({ error: "Garmin Connect is not connected." });
+      return;
+    }
+    const garminData = await fetchDirectGarminProfileAndWellness(session, 28);
+    const scopeKey = getGarminScopeKey(req);
+    if (scopeKey !== "unauthenticated") {
+      saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
+    }
+    const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
+    const sId = String(stravaIdentity?.athleteId || "").replace(/[^0-9]/g, "");
+    const sActs = sId ? loadJsonFile(`/tmp/aeropulse-strava-archive-${sId}.json`, []) : [];
+    const prelimActivities = normalizeGarminPersonalApiActivities(
+      garminData.activities || [],
+      runtimeStore.athleteFtp || 250
+    );
+    const latestW = garminData.wellnessRows && garminData.wellnessRows.length > 0 ? {
+      ...garminData.wellnessRows[garminData.wellnessRows.length - 1],
+      weightKg: garminData.rawProfile?.weight,
+      restingHR: garminData.rawProfile?.icu_resting_hr
+    } : {
+      weightKg: garminData?.rawProfile?.weight,
+      restingHR: garminData?.rawProfile?.icu_resting_hr
+    };
+    const syncedProfile = buildServerAthleteProfile(
+      {
+        ...garminData.rawProfile || {},
+        name: garminData.rawProfile?.name || session.fullName || session.displayName || stravaIdentity?.athleteName,
+        source: "INTERVALS_GARMIN"
+      },
+      latestW,
+      [...prelimActivities, ...sActs]
+    );
+    const normalizedActivities = normalizeGarminPersonalApiActivities(
+      garminData.activities || [],
+      syncedProfile.ftp || 250,
+      {
+        lthr: syncedProfile.lthr,
+        runLthr: syncedProfile.runLthr,
+        thresholdPaceSecsPerKm: syncedProfile.thresholdPaceSecsPerKm,
+        restingHr: syncedProfile.restingHr
+      }
+    );
+    runtimeStore.athleteFtp = syncedProfile.ftp;
+    runtimeStore.athleteIndoorFtp = syncedProfile.indoorFtp;
+    runtimeStore.athleteRunFtp = syncedProfile.runFtp;
+    runtimeStore.athleteLthr = syncedProfile.lthr;
+    runtimeStore.athleteMaxHr = syncedProfile.maxHr;
+    runtimeStore.athleteProfile = syncedProfile;
+    await saveSessionCacheAsync(req, res);
+    const loadByDate = /* @__PURE__ */ new Map();
+    const garminActivitiesList = [];
+    for (const a of normalizedActivities) {
+      const d = String(a.startDateLocal || "").slice(0, 10);
+      if (d) {
+        loadByDate.set(d, (loadByDate.get(d) || 0) + Number(a.trainingLoad || 0));
+      }
+      if (resolveActivityStartEpochMs(a) > 0) {
+        garminActivitiesList.push(a);
+      }
+    }
+    const stravaCal = {
+      calibratedFtp: Math.max(120, syncedProfile.ftp || 250),
+      calibratedBikeLthr: Math.max(135, syncedProfile.lthr || 163),
+      calibratedRunLthr: Math.max(140, syncedProfile.runLthr || 168),
+      calibratedThresholdPaceSecsPerKm: Math.max(
+        155,
+        syncedProfile.thresholdPaceSecsPerKm || 255
+      ),
+      restingHr: Math.max(38, Math.min(78, syncedProfile.restingHr || 52))
+    };
+    for (const rawSa of sActs) {
+      if (!rawSa || !rawSa.start_date_local && !rawSa.start_date) continue;
+      const saNorm = normalizeRawStravaActivity(rawSa, stravaCal);
+      const isDup = garminActivitiesList.some(
+        (gAct) => areActivityTimestampsClose(gAct, saNorm, 300)
+      );
+      if (isDup) continue;
+      const d = saNorm.startDateLocal.slice(0, 10);
+      if (d) {
+        loadByDate.set(d, (loadByDate.get(d) || 0) + Number(saNorm.trainingLoad || 0));
+      }
+    }
+    let lastRhr = syncedProfile.restingHr || 0;
+    let lastWeight = syncedProfile.weightKg || 0;
+    let ctlRaw = 0;
+    let atlRaw = 0;
+    const wellnessRows = garminData.wellnessRows || [];
+    const firstWellnessDate = wellnessRows.length > 0 ? String(wellnessRows[0].id || "").slice(0, 10) : getLocalDateIso();
+    const warmupStartDate = shiftIsoDate(firstWellnessDate, -365);
+    for (let dWarm = warmupStartDate; dWarm < firstWellnessDate; dWarm = shiftIsoDate(dWarm, 1)) {
+      const warmLoad = loadByDate.get(dWarm) || 0;
+      ctlRaw = ctlRaw * BANISTER_CTL_DECAY + warmLoad * (1 - BANISTER_CTL_DECAY);
+      atlRaw = atlRaw * BANISTER_ATL_DECAY + warmLoad * (1 - BANISTER_ATL_DECAY);
+    }
+    const ctlHistory = [];
+    const formattedWellnessDays = wellnessRows.map((w, idx) => {
+      const d = String(w.id || "").slice(0, 10);
+      const dailyLoad = loadByDate.get(d) || 0;
+      ctlRaw = ctlRaw * BANISTER_CTL_DECAY + dailyLoad * (1 - BANISTER_CTL_DECAY);
+      atlRaw = atlRaw * BANISTER_ATL_DECAY + dailyLoad * (1 - BANISTER_ATL_DECAY);
+      const ctl = Number(ctlRaw.toFixed(1));
+      const atl = Number(atlRaw.toFixed(1));
+      ctlHistory.push(ctl);
+      const ctl7dAgo = idx >= 7 ? ctlHistory[idx - 7] : ctlHistory[0] || 0;
+      const rampRate = Number((ctl - ctl7dAgo).toFixed(1));
+      const tsb = Number((ctlRaw - atlRaw).toFixed(1));
+      const loadRatio = ctl > 0 ? Number((atlRaw / ctlRaw).toFixed(2)) : 0;
+      if (Number(w.restingHR) >= 30) lastRhr = Math.round(Number(w.restingHR));
+      if (Number(w.weight) >= 35) lastWeight = Number(Number(w.weight).toFixed(1));
+      const hrv = Math.round(Number(w.hrv || 0));
+      const baseline7d = Math.round(Number(w.hrvBaseline7d || hrv || 0));
+      const hrvLow = baseline7d > 0 ? Math.round(Number(w.hrvNormalLow || Math.max(20, baseline7d * 0.88))) : 0;
+      const hrvHigh = baseline7d > 0 ? Math.round(Number(w.hrvNormalHigh || Math.max(hrvLow + 8, baseline7d * 1.15))) : 0;
+      const rawStatus = String(w.garminHrvStatus || "").toUpperCase();
+      const hrvStatus = rawStatus === "BALANCED" ? "Balanced" : rawStatus === "UNBALANCED" ? "Unbalanced" : rawStatus === "LOW" ? "Low" : rawStatus === "POOR" ? "Poor" : hrv > 0 && hrvLow > 0 && hrv < hrvLow ? "Low" : "Balanced";
+      const sleepSecs = Math.round(Number(w.sleepSecs || 0));
+      const sleepScore = Math.round(Number(w.sleepScore || 0));
+      const sleepQuality = sleepScore >= 85 ? "Excellent" : sleepScore >= 75 ? "Good" : sleepScore >= 60 ? "Fair" : "Poor";
+      return {
+        date: d,
+        ctl,
+        atl,
+        tsb,
+        loadRatio,
+        rampRate,
+        hrvRMSSD: hrv,
+        hrvBaseline7d: baseline7d,
+        hrvNormalBandLow: hrvLow,
+        hrvNormalBandHigh: hrvHigh,
+        hrvStatus,
+        restingHR: lastRhr,
+        sleepSecs,
+        sleepScore,
+        sleepQuality,
+        sleepDebt7dSecs: Math.max(0, 7.8 * 3600 - sleepSecs),
+        weightKg: lastWeight,
+        vo2MaxCycling: syncedProfile.vo2MaxCycling,
+        vo2MaxRunning: syncedProfile.vo2MaxRunning,
+        steps: w.steps != null ? Number(w.steps) : void 0,
+        rideEftp: syncedProfile.eFtp,
+        rideWPrime: syncedProfile.wPrime,
+        ridePMax: syncedProfile.pMax,
+        runEftp: syncedProfile.runEFtp,
+        garminTrainingStatus: hrvStatus === "Low" ? "Strained" : "Productive",
+        trainingStatusReason: `Synced directly via Garmin Connect Personal API (HRV ${hrv || baseline7d} ms \xB7 ${hrvStatus}, RHR ${lastRhr} bpm).`,
+        readinessStatus: hrvStatus === "Low" ? "Strain" : hrvStatus === "Unbalanced" ? "Caution" : "Optimal",
+        dailyLoad
+      };
+    });
+    res.json({
+      ok: true,
+      garminAthleteName: syncedProfile.name,
+      athleteProfile: syncedProfile,
+      wellnessDays: formattedWellnessDays,
+      activities: normalizedActivities
+    });
+  } catch (err) {
+    res.status(400).json({
+      error: err instanceof Error ? err.message : "Failed to sync Garmin Connect Personal API"
+    });
+  }
+});
+garminRouter.delete("/api/config/garmin", async (req, res) => {
+  if (!isAuthenticatedRequest(req)) {
+    res.status(401).json({ error: "Authentication required to disconnect Garmin Connect." });
+    return;
+  }
+  const scopeKey = getGarminScopeKey(req);
+  if (scopeKey !== "unauthenticated") {
+    await clearGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey);
+  }
+  res.json({ ok: true, garminConnected: false });
+});
+garminRouter.post("/api/garmin/workout/push", async (req, res) => {
+  const { clientId, clientSecret } = getEffectiveGarminClientConfig(req);
+  const partnerKeysConfigured = Boolean(clientId && clientSecret);
+  try {
+    const session = getActiveGarminSession(req);
+    if (!session) {
+      res.status(partnerKeysConfigured ? 401 : 503).json({
+        ok: false,
+        pushed: false,
+        requiresPartnerOAuth: true,
+        setupRequired: !partnerKeysConfigured,
+        error: partnerKeysConfigured ? "Garmin Connect is not connected yet. Connect Official Garmin Partner OAuth in Data Sources first." : "Garmin Health & Training Partner OAuth credentials (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET) are pending. Use Download .FIT or the Intervals.icu Cross-Watch Bridge in the meantime."
+      });
+      return;
+    }
+    const body = req.body || {};
+    const date = String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
+    const name = String(body.name || "MeetReady Daily Prescription");
+    const sportCategory = String(body.sportCategory || "Cycling");
+    const ftpWatts = Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250);
+    const lthrBpm = Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165);
+    const thresholdPaceSecsPerKm = Number(
+      body.thresholdPaceSecsPerKm || runtimeStore.athleteProfile?.thresholdPaceSecsPerKm || 245
+    );
+    const workoutSyntax = String(body.workoutSyntax || "");
+    const plannedDurationSecs = Number(body.plannedDurationSecs || 3600);
+    const parsedSteps = Array.isArray(body.steps) && body.steps.length > 0 ? body.steps : parseWorkoutSyntaxToSteps(workoutSyntax, plannedDurationSecs).map((st) => ({
+      label: st.label,
+      durationSecs: st.durationSecs || 600,
+      targetPctFtp: st.targetPctFtp || 75
+    }));
+    const pushRes = await pushWorkoutToGarminConnect(
+      session,
+      {
+        date,
+        name,
+        sportCategory,
+        description: body.description || workoutSyntax,
+        workoutSyntax,
+        ftpWatts,
+        lthrBpm,
+        thresholdPaceSecsPerKm,
+        steps: parsedSteps
+      },
+      req
+    );
+    const scopeKey = getGarminScopeKey(req);
+    if (scopeKey && scopeKey !== "unauthenticated") {
+      saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
+    }
+    res.json({ ok: true, ...pushRes });
+  } catch (err) {
+    if (err instanceof GarminPartnerOAuthError) {
+      res.status(err.setupRequired ? 503 : 403).json({
+        ok: false,
+        pushed: false,
+        requiresPartnerOAuth: err.requiresPartnerOAuth,
+        setupRequired: err.setupRequired,
+        error: err.message
+      });
+      return;
+    }
+    res.status(500).json({
+      ok: false,
+      pushed: false,
+      error: err instanceof Error ? err.message : "Failed to push workout to Garmin Connect"
+    });
+  }
+});
+
+// server/routers/corosRouter.ts
+import { Router as Router6 } from "express";
+var corosRouter = Router6();
+var { callbackHandler: corosCallbackHandler } = registerOAuthConnectorRoutes(corosRouter, {
+  provider: "coros",
+  displayName: "COROS",
+  accentColor: "#F97316",
+  authorizeUrl: `${COROS_API_BASE}/oauth2/authorize`,
+  scope: (process.env.COROS_OAUTH_SCOPE || "").trim(),
+  envVarNames: ["COROS_CLIENT_ID", "COROS_CLIENT_SECRET"],
+  usePkce: false,
+  unconfiguredStatusCode: 503,
+  unconfiguredMessage: "COROS Open API OAuth is not configured yet (COROS_CLIENT_ID / COROS_CLIENT_SECRET pending). Use the Intervals.icu Cross-Watch Bridge or Download .FIT to push workouts to your COROS watch in the meantime.",
+  successBody: "Your COROS account is now linked via Official COROS Open API OAuth 2.0. Workouts, biometrics, and structured training sessions sync automatically.",
+  getClientConfig: getEffectiveCorosClientConfig,
+  resolveCallbackUrl: resolveCorosCallbackUrl,
+  exchangeCode: async ({ code, redirectUri, clientId, clientSecret }) => {
+    const tokenResp = await fetch(`${COROS_API_BASE}/oauth2/accesstoken`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json"
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        grant_type: "authorization_code",
+        redirect_uri: redirectUri
+      }).toString()
+    });
+    if (!tokenResp.ok) {
+      const errBody = await tokenResp.text().catch(() => "");
+      throw new Error(
+        `COROS token exchange failed (${tokenResp.status}): ${errBody.slice(0, 160)}`
+      );
+    }
+    const rawTokenJson = await tokenResp.json();
+    const tokenData = rawTokenJson.data || rawTokenJson;
+    const accessToken = String(tokenData.access_token || "").trim();
+    if (!accessToken) {
+      throw new Error("COROS Open API did not return a valid access token.");
+    }
+    let athleteId = String(tokenData.openId || "").trim();
+    let athleteName = athleteId ? `COROS Athlete ${athleteId.slice(0, 6)}` : "COROS Athlete";
+    try {
+      const userUrl = athleteId ? `${COROS_API_BASE}/v2/coros/user/info?openId=${encodeURIComponent(athleteId)}` : `${COROS_API_BASE}/v2/coros/user/info`;
+      const profileResp = await fetch(userUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json"
+        }
+      });
+      if (profileResp.ok) {
+        const rawUser = await profileResp.json();
+        const u = rawUser.data || rawUser;
+        if (u.openId && !athleteId) athleteId = String(u.openId).trim();
+        const resolvedName = String(u.nickname || u.name || "").trim();
+        if (resolvedName) athleteName = resolvedName;
+      }
+    } catch {
+    }
+    if (!athleteId) athleteId = "coros-athlete";
+    return {
+      athleteId,
+      athleteName,
+      scope: tokenData.scope,
+      applyToStore: (store) => {
+        store.corosAccessToken = accessToken;
+        if (tokenData.refresh_token) store.corosRefreshToken = tokenData.refresh_token;
+        if (tokenData.expires_in) {
+          store.corosExpiresAt = Math.floor(Date.now() / 1e3) + Number(tokenData.expires_in);
+        }
+        store.corosAthleteId = athleteId;
+        store.corosAthleteName = athleteName;
+      }
+    };
+  },
+  clearStoreTokens: (store) => {
+    store.corosAccessToken = "";
+    store.corosRefreshToken = "";
+    store.corosExpiresAt = 0;
+    store.corosAthleteId = "";
+    store.corosAthleteName = "";
+  }
+});
+function formatCorosDateParam(date) {
+  return date.toISOString().slice(0, 10).replace(/-/g, "");
+}
+corosRouter.get("/api/coros/sync", async (req, res) => {
+  try {
+    const token = await ensureValidCorosAccessToken(req);
+    if (!token) {
+      res.status(401).json({ ok: false, error: "COROS account is not connected." });
+      return;
+    }
+    const { athleteId } = getEffectiveCorosTokens(req);
+    const endDate = formatCorosDateParam(new Date(Date.now() + 86400 * 1e3));
+    const startDate = formatCorosDateParam(new Date(Date.now() - 30 * 86400 * 1e3));
+    const qs = new URLSearchParams({
+      startDate,
+      endDate,
+      ...athleteId ? { openId: athleteId } : {}
+    });
+    const resp = await fetch(`${COROS_API_BASE}/v2/coros/sport/list?${qs.toString()}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json"
+      }
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      res.status(resp.status).json({
+        ok: false,
+        error: `Failed to fetch COROS workouts (${resp.status}): ${errText.slice(0, 160)}`
+      });
+      return;
+    }
+    const payload = await resp.json();
+    let rawList = [];
+    if (Array.isArray(payload)) {
+      rawList = payload;
+    } else if (Array.isArray(payload.data)) {
+      rawList = payload.data;
+    } else if (payload.data && Array.isArray(payload.data.dataList)) {
+      rawList = payload.data.dataList;
+    } else if (payload.data && Array.isArray(payload.data.list)) {
+      rawList = payload.data.list;
+    } else if (Array.isArray(payload.dataList)) {
+      rawList = payload.dataList;
+    } else if (Array.isArray(payload.workouts)) {
+      rawList = payload.workouts;
+    } else if (Array.isArray(payload.activities)) {
+      rawList = payload.activities;
+    }
+    const store = getScopedRuntimeStore(req);
+    const profileObj = store.athleteProfile || {};
+    const clientTzOffsetMins = parseClientTzOffsetMins(req.headers["x-client-tz-offset-mins"]);
+    const activities = rawList.map(
+      (raw) => normalizeCorosWorkout(raw, {
+        thresholdPaceSecsPerKm: Number(profileObj.thresholdPaceSecsPerKm) || 245,
+        ftpWatts: store.athleteFtp || Number(profileObj.ftp) || 250,
+        lthrBpm: store.athleteLthr || Number(profileObj.lthr) || 165,
+        restingHr: Number(profileObj.restingHr) || 52,
+        clientTzOffsetMins
+      })
+    );
+    res.json({
+      ok: true,
+      activities,
+      count: activities.length,
+      syncedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to sync COROS workouts"
+    });
+  }
+});
+corosRouter.post("/api/coros/workout/push", async (req, res) => {
+  const { clientId, clientSecret } = getEffectiveCorosClientConfig(req);
+  const corosConfigured = Boolean(clientId && clientSecret);
+  try {
+    const token = await ensureValidCorosAccessToken(req);
+    if (!token) {
+      res.status(corosConfigured ? 401 : 503).json({
+        ok: false,
+        pushed: false,
+        setupRequired: !corosConfigured,
+        connectRequired: corosConfigured,
+        error: corosConfigured ? "COROS is not connected yet. Connect COROS in Data Sources to push workouts directly to your watch." : "COROS Open API credentials (COROS_CLIENT_ID / COROS_CLIENT_SECRET) are not configured yet. Use the Intervals.icu Cross-Watch Bridge or Download .FIT in the meantime."
+      });
+      return;
+    }
+    const body = req.body || {};
+    const store = getScopedRuntimeStore(req);
+    const profileObj = store.athleteProfile || {};
+    const { athleteId } = getEffectiveCorosTokens(req);
+    const pushResult = await pushWorkoutToCorosConnect({
+      accessToken: token,
+      openId: athleteId || void 0,
+      input: {
+        date: String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10),
+        name: String(body.name || "MeetReady Prescribed Session"),
+        sportCategory: String(body.sportCategory || "Running"),
+        description: typeof body.description === "string" ? body.description : void 0,
+        workoutSyntax: typeof body.workoutSyntax === "string" ? body.workoutSyntax : void 0,
+        ftpWatts: Number(body.ftpWatts || store.athleteFtp || profileObj.ftp || 250),
+        lthrBpm: Number(body.lthrBpm || store.athleteLthr || profileObj.lthr || 165),
+        thresholdPaceSecsPerKm: Number(
+          body.thresholdPaceSecsPerKm || profileObj.thresholdPaceSecsPerKm || 245
+        ),
+        steps: Array.isArray(body.steps) ? body.steps : void 0
+      }
+    });
+    res.json({ ok: true, ...pushResult });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      pushed: false,
+      error: err instanceof Error ? err.message : "Failed to push workout to COROS"
+    });
+  }
+});
+
+// server/routers/coachRouter.ts
+import { Router as Router7 } from "express";
 import { GoogleGenAI, Type } from "@google/genai";
-var coachRouter = Router5();
+var coachRouter = Router7();
 function getEffectiveGeminiApiKey(req) {
   const activeReq = req ?? requestContext.getStore();
   const headerKey = activeReq?.headers["x-gemini-api-key"]?.trim();
@@ -23432,7 +27321,7 @@ coachRouter.post("/api/gemini/config", async (req, res) => {
   });
 });
 coachRouter.post("/api/coach/options", async (req, res) => {
-  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  const rateCheck = await checkAiRateLimitAsync(getClientAiRateLimitKey(req));
   if (!rateCheck.allowed) {
     res.status(429).json({
       error: "AI request limit reached. Please wait a moment before requesting another workout option.",
@@ -23538,7 +27427,7 @@ coachRouter.post("/api/coach/chat", async (req, res) => {
     });
     return;
   }
-  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  const rateCheck = await checkAiRateLimitAsync(getClientAiRateLimitKey(req));
   if (!rateCheck.allowed) {
     res.status(429).json({
       error: "AI request limit reached. Please wait a moment before sending another message.",
@@ -23661,7 +27550,12 @@ ${message}
   }
 });
 coachRouter.post(["/api/races/parse", "/races/parse"], async (req, res) => {
-  const rateCheck = checkAiRateLimit(getClientAiRateLimitKey(req));
+  const claims = getVerifiedSessionClaims(req);
+  if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+    res.status(401).json({ error: "Authentication required to parse official race results." });
+    return;
+  }
+  const rateCheck = await checkAiRateLimitAsync(getClientAiRateLimitKey(req));
   if (!rateCheck.allowed) {
     res.status(429).json({
       error: "Race parser rate limit reached. Please wait a moment.",
@@ -23669,6 +27563,7 @@ coachRouter.post(["/api/races/parse", "/races/parse"], async (req, res) => {
     });
     return;
   }
+  const youthStatus = await resolveCallerYouthSafeguardStatus(req, req.body?.telemetrySummary);
   try {
     const { url, rawText } = req.body;
     let fetchedTextSnippet = "";
@@ -23712,7 +27607,7 @@ ${fetchedTextSnippet}` : ""
       res.status(400).json({ error: "Provide an Athletic.net / TFRRS / MileSplit URL or pasted race results text." });
       return;
     }
-    const ai = getGeminiClient(req);
+    const ai = youthStatus.isMinorU18 ? null : getGeminiClient(req);
     if (ai) {
       try {
         const response = await generateGeminiContentWithFallback(ai, {
@@ -23779,17 +27674,17 @@ ${combinedInput}`,
 });
 
 // server/routers/configRouter.ts
-var configRouter = Router6();
+var configRouter = Router8();
 configRouter.post("/api/auth/session", (req, res) => {
   const existing = getVerifiedSessionClaims(req);
   if (existing && isCanonicalAuthenticatedClaims(existing)) {
-    const refreshedToken = setSessionCookie(req, res, existing.sub, existing.sid, "verified");
-    res.json({ ok: true, sessionToken: refreshedToken, authLevel: "verified" });
+    setSessionCookie(req, res, existing.sub, existing.sid, "verified");
+    res.json({ ok: true, authLevel: "verified" });
     return;
   }
-  const anonSub = `anon_${crypto22.randomBytes(8).toString("hex")}`;
-  const sessionToken = setSessionCookie(req, res, anonSub, void 0, "anon");
-  res.json({ ok: true, sessionToken, authLevel: "anon" });
+  const anonSub = `anon_${crypto23.randomBytes(8).toString("hex")}`;
+  setSessionCookie(req, res, anonSub, void 0, "anon");
+  res.json({ ok: true, authLevel: "anon" });
 });
 configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) => {
   const verifiedClaims = getVerifiedSessionClaims(req);
@@ -23798,7 +27693,8 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
   const {
     apiKey: intervalsKey,
     accessToken: intervalsAccessToken,
-    athleteId
+    athleteId,
+    scope: intervalsScope
   } = getEffectiveIntervalsConfig(req);
   const {
     clientId: stravaClientId,
@@ -23856,10 +27752,14 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
   const resolvedStravaName = stravaIdentity?.athleteName || (!isGenericName(runtimeStore.stravaAthleteName) ? runtimeStore.stravaAthleteName : void 0);
   const resolvedMeasurementPref = stravaIdentity?.measurementPreference || runtimeStore.stravaMeasurementPreference || void 0;
   const resolvedIntervalsName = intervalsIdentity?.athleteName || (!isGenericName(runtimeStore.intervalsAthleteName) ? runtimeStore.intervalsAthleteName : void 0);
+  const { clientId: garminClientId, clientSecret: garminClientSecret } = getEffectiveGarminClientConfig(req);
+  const garminConfigured = Boolean(garminClientId && garminClientSecret);
   const activeGarminSession = getActiveGarminSession(req);
   const isGarminConnected = Boolean(
-    activeGarminSession?.personalApiKey || activeGarminSession?.oauth2AccessToken || activeGarminSession?.oauth1Token
+    activeGarminSession?.garminOAuthAccessToken || activeGarminSession?.personalApiKey || activeGarminSession?.oauth2AccessToken
   );
+  const garminAuthMethod = activeGarminSession?.garminOAuthAccessToken ? "OAUTH" : activeGarminSession?.personalApiKey ? "PERSONAL_KEY" : "NONE";
+  const garminCanPushWorkouts = Boolean(activeGarminSession?.garminOAuthAccessToken);
   const resolvedGarminName = activeGarminSession?.fullName || activeGarminSession?.displayName || void 0;
   const { clientId: wahooClientId, clientSecret: wahooClientSecret } = getEffectiveWahooClientConfig(req);
   const { accessToken: wahooAccessToken, athleteId: wahooAthleteId, athleteName: wahooAthleteName } = getEffectiveWahooTokens(req);
@@ -23867,15 +27767,21 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
   const { clientId: polarClientId, clientSecret: polarClientSecret } = getEffectivePolarClientConfig(req);
   const { accessToken: polarAccessToken, athleteId: polarAthleteId, athleteName: polarAthleteName } = getEffectivePolarTokens(req);
   const isPolarConnected = Boolean(polarAccessToken);
-  let sessionToken;
-  if ((isVerifiedSession || Boolean(resolvedStravaAthleteId)) && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected)) {
+  const { clientId: corosClientId, clientSecret: corosClientSecret } = getEffectiveCorosClientConfig(req);
+  const { accessToken: corosAccessToken, athleteId: corosAthleteId, athleteName: corosAthleteName } = getEffectiveCorosTokens(req);
+  const isCorosConnected = Boolean(corosAccessToken);
+  const resolvedIntervalsScope = isIntervalsConnected ? (intervalsScope || runtimeStore.intervalsScope || "").trim() : "";
+  const intervalsCanWriteCalendar = Boolean(
+    isIntervalsConnected && (intervalsKey || resolvedIntervalsScope.toUpperCase().includes("CALENDAR:WRITE"))
+  );
+  if ((isVerifiedSession || Boolean(resolvedStravaAthleteId)) && (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected || isCorosConnected)) {
     const existingClaims = verifiedClaims;
     const keepUserSub = Boolean(existingClaims?.sub?.startsWith("usr_"));
     const canonicalSid = keepUserSub ? existingClaims.sid : resolvedStravaAthleteId ? deriveStravaSessionSid(resolvedStravaAthleteId) : existingClaims?.sid;
-    sessionToken = setSessionCookie(
+    setSessionCookie(
       req,
       res,
-      keepUserSub ? existingClaims.sub : resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || "athlete",
+      keepUserSub ? existingClaims.sub : resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || corosAthleteName || "athlete",
       canonicalSid,
       "verified"
     );
@@ -23883,11 +27789,16 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
   }
   res.json({
     vaultStorageBackend: getVaultStorageBackend(),
+    garminConfigured,
     garminConnected: isGarminConnected,
+    garminAuthMethod,
+    garminCanPushWorkouts,
     garminAthleteName: resolvedGarminName,
     intervalsConfigured: Boolean(intervalsClientId && intervalsClientSecret),
     intervalsConnected: isIntervalsConnected,
     intervalsAuthMethod: intervalsAccessToken ? "OAUTH" : intervalsKey ? "API_KEY" : "NONE",
+    intervalsScope: resolvedIntervalsScope || void 0,
+    intervalsCanWriteCalendar,
     intervalsAthleteId: isIntervalsConnected ? intervalsIdentity?.athleteId || athleteId || "0" : "0",
     intervalsAthleteName: resolvedIntervalsName,
     intervalsSource: intervalsAccessToken ? "OAUTH" : isIntervalsConnected ? "USER_INPUT" : "NONE",
@@ -23899,6 +27810,10 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
     polarConnected: isPolarConnected,
     polarAthleteId: isPolarConnected ? polarAthleteId : void 0,
     polarAthleteName: isPolarConnected ? polarAthleteName : void 0,
+    corosConfigured: Boolean(corosClientId && corosClientSecret),
+    corosConnected: isCorosConnected,
+    corosAthleteId: isCorosConnected ? corosAthleteId : void 0,
+    corosAthleteName: isCorosConnected ? corosAthleteName : void 0,
     stravaConfigured: Boolean(stravaClientId && stravaClientSecret),
     stravaClientId: stravaClientId || void 0,
     stravaConnected: isStravaConnected,
@@ -23921,7 +27836,6 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
     athleteProfile: runtimeStore.athleteProfile || void 0,
     callbackUrl: resolveCallbackUrl(req),
     stravaTokens: isStravaConnected ? getStravaTokenRotationPayload(req) : void 0,
-    sessionToken,
     mapTileProvider: effectiveMapProvider,
     mapTileApiKeyConfigured: Boolean(effectiveMapKey),
     mapTileApiKey: isVerifiedSession && effectiveMapKey ? effectiveMapKey : void 0
@@ -23929,8 +27843,25 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
 });
 configRouter.post("/api/athlete/profile", (req, res) => {
   const incoming = req.body?.athleteProfile || req.body || {};
+  const coppaCheck = validateCoppaAgeInput({
+    birthMonthYear: incoming.birthMonthYear,
+    birthYear: incoming.birthYear,
+    existingBirthMonthYear: typeof runtimeStore.athleteProfile?.birthMonthYear === "string" ? runtimeStore.athleteProfile.birthMonthYear : void 0
+  });
+  if (!coppaCheck.ok) {
+    res.status(coppaCheck.statusCode || 400).json({
+      ok: false,
+      error: coppaCheck.error,
+      coppaBlocked: coppaCheck.isUnder13
+    });
+    return;
+  }
   const updated = buildServerAthleteProfile(
-    { ...incoming, source: "CUSTOM_OVERRIDE" },
+    {
+      ...incoming,
+      ...coppaCheck.birthMonthYear ? { birthMonthYear: coppaCheck.birthMonthYear } : {},
+      source: "CUSTOM_OVERRIDE"
+    },
     null
   );
   runtimeStore.athleteFtp = updated.ftp;
@@ -24113,8 +28044,26 @@ configRouter.post("/api/auth/logout", async (req, res) => {
       runtimeStore.stravaGrantedScope = void 0;
       runtimeStore.stravaSyncPolicy = void 0;
       runtimeStore.intervalsApiKey = "";
+      runtimeStore.intervalsAccessToken = "";
+      runtimeStore.intervalsScope = "";
       runtimeStore.intervalsAthleteId = "0";
       runtimeStore.intervalsAthleteName = "";
+      runtimeStore.corosAccessToken = "";
+      runtimeStore.corosRefreshToken = "";
+      runtimeStore.corosExpiresAt = 0;
+      runtimeStore.corosAthleteId = "";
+      runtimeStore.corosAthleteName = "";
+      runtimeStore.wahooAccessToken = "";
+      runtimeStore.wahooRefreshToken = "";
+      runtimeStore.wahooExpiresAt = 0;
+      runtimeStore.wahooScope = "";
+      runtimeStore.wahooUserId = "";
+      runtimeStore.wahooAthleteName = "";
+      runtimeStore.polarAccessToken = "";
+      runtimeStore.polarUserId = "";
+      runtimeStore.polarAthleteName = "";
+      runtimeStore.polarExpiresAt = 0;
+      runtimeStore.polarScope = "";
       if (scopeKey) {
         scopedStoresInMemory.delete(scopeKey);
         hydratedReqScopeMap.delete(req);
@@ -24140,300 +28089,8 @@ configRouter.post("/api/auth/logout", async (req, res) => {
   }
 });
 
-// server/routers/garminRouter.ts
-import { Router as Router7 } from "express";
-var garminRouter = Router7();
-garminRouter.post("/api/config/garmin", async (req, res) => {
-  try {
-    const body = req.body || {};
-    const session = await authenticateGarminConnect({
-      personalApiKey: body.personalApiKey,
-      email: body.email,
-      password: body.password,
-      directBearerToken: body.directBearerToken,
-      oauth1Token: body.oauth1Token,
-      oauth1TokenSecret: body.oauth1TokenSecret
-    });
-    const sessionToken = setSessionCookie(
-      req,
-      res,
-      session.fullName || session.displayName || "garmin-athlete"
-    );
-    const createdClaims = decodeAndVerifyToken(sessionToken);
-    const scopeKey = createdClaims?.sid?.slice(0, 24) || getGarminScopeKey(req);
-    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, session);
-    const garminData = await fetchDirectGarminProfileAndWellness(session, 28).catch(
-      () => null
-    );
-    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, session);
-    await saveSessionCacheAsync(req, res, createdClaims?.sid);
-    const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
-    const sId = String(stravaIdentity?.athleteId || "").replace(/[^0-9]/g, "");
-    const sActs = sId ? loadJsonFile(`/tmp/aeropulse-strava-archive-${sId}.json`, []) : [];
-    const normalizedGarminActs = garminData?.activities ? normalizeGarminPersonalApiActivities(garminData.activities, 250) : [];
-    const latestW = garminData?.wellnessRows && garminData.wellnessRows.length > 0 ? {
-      ...garminData.wellnessRows[garminData.wellnessRows.length - 1],
-      weightKg: garminData.rawProfile?.weight,
-      restingHR: garminData.rawProfile?.icu_resting_hr
-    } : {
-      weightKg: garminData?.rawProfile?.weight,
-      restingHR: garminData?.rawProfile?.icu_resting_hr
-    };
-    const syncedProfile = buildServerAthleteProfile(
-      {
-        ...garminData?.rawProfile || {},
-        name: garminData?.rawProfile?.name || session.fullName || session.displayName || stravaIdentity?.athleteName,
-        source: "INTERVALS_GARMIN"
-      },
-      latestW,
-      [...normalizedGarminActs, ...sActs]
-    );
-    res.json({
-      ok: true,
-      garminConnected: true,
-      garminAthleteName: garminData?.rawProfile?.name || session.fullName || session.displayName || syncedProfile.name,
-      athleteProfile: syncedProfile,
-      sessionToken,
-      garminTokens: {
-        personalApiKey: session.personalApiKey,
-        oauth2AccessToken: session.oauth2AccessToken,
-        oauth1Token: session.oauth1Token,
-        oauth1TokenSecret: session.oauth1TokenSecret
-      }
-    });
-  } catch (err) {
-    res.status(400).json({
-      error: err instanceof Error ? err.message : "Failed to authenticate with Garmin Connect"
-    });
-  }
-});
-garminRouter.get("/api/garmin/sync", async (req, res) => {
-  try {
-    const session = getActiveGarminSession(req);
-    if (!session) {
-      res.status(401).json({ error: "Garmin Connect is not connected." });
-      return;
-    }
-    const garminData = await fetchDirectGarminProfileAndWellness(session, 28);
-    const scopeKey = getGarminScopeKey(req);
-    if (scopeKey !== "unauthenticated") {
-      saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
-    }
-    const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
-    const sId = String(stravaIdentity?.athleteId || "").replace(/[^0-9]/g, "");
-    const sActs = sId ? loadJsonFile(`/tmp/aeropulse-strava-archive-${sId}.json`, []) : [];
-    const prelimActivities = normalizeGarminPersonalApiActivities(
-      garminData.activities || [],
-      runtimeStore.athleteFtp || 250
-    );
-    const latestW = garminData.wellnessRows && garminData.wellnessRows.length > 0 ? {
-      ...garminData.wellnessRows[garminData.wellnessRows.length - 1],
-      weightKg: garminData.rawProfile?.weight,
-      restingHR: garminData.rawProfile?.icu_resting_hr
-    } : {
-      weightKg: garminData.rawProfile?.weight,
-      restingHR: garminData.rawProfile?.icu_resting_hr
-    };
-    const syncedProfile = buildServerAthleteProfile(
-      {
-        ...garminData.rawProfile || {},
-        name: garminData.rawProfile?.name || session.fullName || session.displayName || stravaIdentity?.athleteName,
-        source: "INTERVALS_GARMIN"
-      },
-      latestW,
-      [...prelimActivities, ...sActs]
-    );
-    const normalizedActivities = normalizeGarminPersonalApiActivities(
-      garminData.activities || [],
-      syncedProfile.ftp || 250,
-      {
-        lthr: syncedProfile.lthr,
-        runLthr: syncedProfile.runLthr,
-        thresholdPaceSecsPerKm: syncedProfile.thresholdPaceSecsPerKm,
-        restingHr: syncedProfile.restingHr
-      }
-    );
-    runtimeStore.athleteFtp = syncedProfile.ftp;
-    runtimeStore.athleteIndoorFtp = syncedProfile.indoorFtp;
-    runtimeStore.athleteRunFtp = syncedProfile.runFtp;
-    runtimeStore.athleteLthr = syncedProfile.lthr;
-    runtimeStore.athleteMaxHr = syncedProfile.maxHr;
-    runtimeStore.athleteProfile = syncedProfile;
-    await saveSessionCacheAsync(req, res);
-    const loadByDate = /* @__PURE__ */ new Map();
-    const garminActivitiesList = [];
-    for (const a of normalizedActivities) {
-      const d = String(a.startDateLocal || "").slice(0, 10);
-      if (d) {
-        loadByDate.set(d, (loadByDate.get(d) || 0) + Number(a.trainingLoad || 0));
-      }
-      if (resolveActivityStartEpochMs(a) > 0) {
-        garminActivitiesList.push(a);
-      }
-    }
-    const stravaCal = {
-      calibratedFtp: Math.max(120, syncedProfile.ftp || 250),
-      calibratedBikeLthr: Math.max(135, syncedProfile.lthr || 163),
-      calibratedRunLthr: Math.max(140, syncedProfile.runLthr || 168),
-      calibratedThresholdPaceSecsPerKm: Math.max(
-        155,
-        syncedProfile.thresholdPaceSecsPerKm || 255
-      ),
-      restingHr: Math.max(38, Math.min(78, syncedProfile.restingHr || 52))
-    };
-    for (const rawSa of sActs) {
-      if (!rawSa || !rawSa.start_date_local && !rawSa.start_date) continue;
-      const saNorm = normalizeRawStravaActivity(rawSa, stravaCal);
-      const isDup = garminActivitiesList.some(
-        (gAct) => areActivityTimestampsClose(gAct, saNorm, 300)
-      );
-      if (isDup) continue;
-      const d = saNorm.startDateLocal.slice(0, 10);
-      if (d) {
-        loadByDate.set(d, (loadByDate.get(d) || 0) + Number(saNorm.trainingLoad || 0));
-      }
-    }
-    let lastRhr = syncedProfile.restingHr || 0;
-    let lastWeight = syncedProfile.weightKg || 0;
-    let ctlRaw = 0;
-    let atlRaw = 0;
-    const wellnessRows = garminData.wellnessRows || [];
-    const firstWellnessDate = wellnessRows.length > 0 ? String(wellnessRows[0].id || "").slice(0, 10) : getLocalDateIso();
-    const warmupStartDate = shiftIsoDate(firstWellnessDate, -365);
-    for (let dWarm = warmupStartDate; dWarm < firstWellnessDate; dWarm = shiftIsoDate(dWarm, 1)) {
-      const warmLoad = loadByDate.get(dWarm) || 0;
-      ctlRaw = ctlRaw * BANISTER_CTL_DECAY + warmLoad * (1 - BANISTER_CTL_DECAY);
-      atlRaw = atlRaw * BANISTER_ATL_DECAY + warmLoad * (1 - BANISTER_ATL_DECAY);
-    }
-    const ctlHistory = [];
-    const formattedWellnessDays = wellnessRows.map((w, idx) => {
-      const d = String(w.id || "").slice(0, 10);
-      const dailyLoad = loadByDate.get(d) || 0;
-      ctlRaw = ctlRaw * BANISTER_CTL_DECAY + dailyLoad * (1 - BANISTER_CTL_DECAY);
-      atlRaw = atlRaw * BANISTER_ATL_DECAY + dailyLoad * (1 - BANISTER_ATL_DECAY);
-      const ctl = Number(ctlRaw.toFixed(1));
-      const atl = Number(atlRaw.toFixed(1));
-      ctlHistory.push(ctl);
-      const ctl7dAgo = idx >= 7 ? ctlHistory[idx - 7] : ctlHistory[0] || 0;
-      const rampRate = Number((ctl - ctl7dAgo).toFixed(1));
-      const tsb = Number((ctlRaw - atlRaw).toFixed(1));
-      const loadRatio = ctl > 0 ? Number((atlRaw / ctlRaw).toFixed(2)) : 0;
-      if (Number(w.restingHR) >= 30) lastRhr = Math.round(Number(w.restingHR));
-      if (Number(w.weight) >= 35) lastWeight = Number(Number(w.weight).toFixed(1));
-      const hrv = Math.round(Number(w.hrv || 0));
-      const baseline7d = Math.round(Number(w.hrvBaseline7d || hrv || 0));
-      const hrvLow = baseline7d > 0 ? Math.round(Number(w.hrvNormalLow || Math.max(20, baseline7d * 0.88))) : 0;
-      const hrvHigh = baseline7d > 0 ? Math.round(Number(w.hrvNormalHigh || Math.max(hrvLow + 8, baseline7d * 1.15))) : 0;
-      const rawStatus = String(w.garminHrvStatus || "").toUpperCase();
-      const hrvStatus = rawStatus === "BALANCED" ? "Balanced" : rawStatus === "UNBALANCED" ? "Unbalanced" : rawStatus === "LOW" ? "Low" : rawStatus === "POOR" ? "Poor" : hrv > 0 && hrvLow > 0 && hrv < hrvLow ? "Low" : "Balanced";
-      const sleepSecs = Math.round(Number(w.sleepSecs || 0));
-      const sleepScore = Math.round(Number(w.sleepScore || 0));
-      const sleepQuality = sleepScore >= 85 ? "Excellent" : sleepScore >= 75 ? "Good" : sleepScore >= 60 ? "Fair" : "Poor";
-      return {
-        date: d,
-        ctl,
-        atl,
-        tsb,
-        loadRatio,
-        rampRate,
-        hrvRMSSD: hrv,
-        hrvBaseline7d: baseline7d,
-        hrvNormalBandLow: hrvLow,
-        hrvNormalBandHigh: hrvHigh,
-        hrvStatus,
-        restingHR: lastRhr,
-        sleepSecs,
-        sleepScore,
-        sleepQuality,
-        sleepDebt7dSecs: Math.max(0, 7.8 * 3600 - sleepSecs),
-        weightKg: lastWeight,
-        vo2MaxCycling: syncedProfile.vo2MaxCycling,
-        vo2MaxRunning: syncedProfile.vo2MaxRunning,
-        steps: w.steps != null ? Number(w.steps) : void 0,
-        rideEftp: syncedProfile.eFtp,
-        rideWPrime: syncedProfile.wPrime,
-        ridePMax: syncedProfile.pMax,
-        runEftp: syncedProfile.runEFtp,
-        garminTrainingStatus: hrvStatus === "Low" ? "Strained" : "Productive",
-        trainingStatusReason: `Synced directly via Garmin Connect Personal API (HRV ${hrv || baseline7d} ms \xB7 ${hrvStatus}, RHR ${lastRhr} bpm).`,
-        readinessStatus: hrvStatus === "Low" ? "Strain" : hrvStatus === "Unbalanced" ? "Caution" : "Optimal",
-        dailyLoad
-      };
-    });
-    res.json({
-      ok: true,
-      garminAthleteName: syncedProfile.name,
-      athleteProfile: syncedProfile,
-      wellnessDays: formattedWellnessDays,
-      activities: normalizedActivities
-    });
-  } catch (err) {
-    res.status(400).json({
-      error: err instanceof Error ? err.message : "Failed to sync Garmin Connect Personal API"
-    });
-  }
-});
-garminRouter.delete("/api/config/garmin", async (req, res) => {
-  if (!isAuthenticatedRequest(req)) {
-    res.status(401).json({ error: "Authentication required to disconnect Garmin Connect." });
-    return;
-  }
-  const scopeKey = getGarminScopeKey(req);
-  if (scopeKey !== "unauthenticated") {
-    await clearGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey);
-  }
-  res.json({ ok: true, garminConnected: false });
-});
-garminRouter.post("/api/garmin/workout/push", async (req, res) => {
-  try {
-    const session = getActiveGarminSession(req);
-    if (!session) {
-      res.status(400).json({
-        error: "Garmin Connect is not connected yet. Connect your Garmin account in Data Sources first."
-      });
-      return;
-    }
-    const body = req.body || {};
-    const date = String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
-    const name = String(body.name || "MeetReady Daily Prescription");
-    const sportCategory = body.sportCategory || "Cycling";
-    const ftpWatts = Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250);
-    const lthrBpm = Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165);
-    const workoutSyntax = String(body.workoutSyntax || "");
-    const plannedDurationSecs = Number(body.plannedDurationSecs || 3600);
-    const parsedSteps = Array.isArray(body.steps) && body.steps.length > 0 ? body.steps : parseWorkoutSyntaxToSteps(workoutSyntax, plannedDurationSecs).map((st) => ({
-      label: st.label,
-      durationSecs: st.durationSecs || 600,
-      targetPctFtp: st.targetPctFtp || 75
-    }));
-    const pushRes = await pushWorkoutToGarminConnect(session, {
-      date,
-      name,
-      sportCategory,
-      description: body.description || workoutSyntax,
-      ftpWatts,
-      lthrBpm,
-      steps: parsedSteps
-    });
-    saveGarminSession(GARMIN_SESSION_DIR, getGarminScopeKey(req), session);
-    res.json(pushRes);
-  } catch (err) {
-    res.status(500).json({
-      error: err instanceof Error ? err.message : "Failed to push workout to Garmin Connect"
-    });
-  }
-});
-garminRouter.post("/api/garmin/disconnect", async (req, res) => {
-  const scopeKey = getGarminScopeKey(req);
-  if (scopeKey && scopeKey !== "unauthenticated") {
-    await clearGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey);
-  }
-  await saveSessionCacheAsync(req, res);
-  res.json({ connected: false });
-});
-
 // server/routers/webhookRouter.ts
-import express9 from "express";
+import express11 from "express";
 import fs8 from "fs";
 async function executeHourlyBackgroundPoll() {
   const results = {
@@ -24466,7 +28123,7 @@ async function executeHourlyBackgroundPoll() {
   await saveSessionCacheAsync();
   return results;
 }
-var webhookRouter = express9.Router();
+var webhookRouter = express11.Router();
 webhookRouter.all("/api/cron/hourly-sync", async (req, res) => {
   if (!hasValidCronAuthorization(req)) {
     res.status(401).json({ ok: false, error: "Unauthorized cron invocation." });
@@ -24625,9 +28282,9 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
 });
 
 // server/apiRouter.ts
-var apiRouter = express10.Router();
+var apiRouter = express12.Router();
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use(express10.urlencoded({ extended: false }));
+apiRouter.use(express12.urlencoded({ extended: false }));
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
@@ -24659,10 +28316,13 @@ apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
 apiRouter.use(teamMeetDayRouter);
+apiRouter.use(teamInjuryRouter);
+apiRouter.use(teamBillingRouter);
 apiRouter.use(teamSyncRouter);
 apiRouter.use(authRouter);
 apiRouter.use(configRouter);
 apiRouter.use(garminRouter);
+apiRouter.use(corosRouter);
 apiRouter.use(wahooRouter);
 apiRouter.use(polarRouter);
 apiRouter.use(intervalsRouter);
@@ -24672,7 +28332,7 @@ apiRouter.use(coachRouter);
 apiRouter.use(webhookRouter);
 
 // server/observability.ts
-import crypto23 from "crypto";
+import crypto24 from "crypto";
 function sanitizeTelemetryString(raw, maxLen = 300) {
   return String(raw || "").replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[REDACTED]").replace(/([?&](?:token|code|secret|key|t)=)[^&\s]+/gi, "$1[REDACTED]").slice(0, maxLen);
 }
@@ -24738,7 +28398,7 @@ async function captureServerException(err, context = {}) {
   const dsn = parseSentryDsn(process.env.SENTRY_DSN);
   if (!dsn) return;
   await postSentryEvent(dsn, {
-    event_id: crypto23.randomBytes(16).toString("hex"),
+    event_id: crypto24.randomBytes(16).toString("hex"),
     timestamp,
     level: "error",
     platform: "node",
@@ -24766,7 +28426,7 @@ async function captureServerException(err, context = {}) {
 import fs9 from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
-import express11 from "express";
+import express13 from "express";
 
 // src/utils/shareWorkoutCodec.ts
 var FORBIDDEN_RAW_TELEMETRY_KEYS = [
@@ -25057,7 +28717,7 @@ function buildJoinOgMetadata(slug, preview) {
   };
 }
 function createOgPreviewRouter(options = {}) {
-  const router = express11.Router();
+  const router = express13.Router();
   let cachedHtmlShell = options.htmlShell ?? null;
   const getHtmlShell = () => {
     if (cachedHtmlShell !== null) {
@@ -25136,12 +28796,15 @@ function createOgPreviewRouter(options = {}) {
 var ogPreviewRouter = createOgPreviewRouter();
 
 // server/vercelApp.ts
-var app = express12();
+var app = express14();
 app.disable("x-powered-by");
 app.use(
-  express12.json({
+  express14.json({
     limit: "2mb",
-    reviver: strava64BitJsonReviver
+    reviver: strava64BitJsonReviver,
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    }
   })
 );
 app.use(apiRouter);

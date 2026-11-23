@@ -92,6 +92,8 @@ interface StravaAuthGateProps {
   onExchangeStravaCode?: (codeOrUrl: string) => Promise<void>;
   onConnectIntervals?: (athleteId: string, apiKey: string) => Promise<void>;
   onLaunchIntervalsOAuth?: () => Promise<void>;
+  onLaunchGarminOAuth?: () => Promise<void>;
+  onLaunchCorosOAuth?: () => Promise<void>;
   onLaunchWahooOAuth?: () => Promise<void>;
   onLaunchPolarOAuth?: () => Promise<void>;
   onSyncNow?: (fullHistory?: boolean, explicitWindow?: StravaSyncWindow) => Promise<void>;
@@ -181,6 +183,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   onExchangeStravaCode,
   onConnectIntervals,
   onLaunchIntervalsOAuth,
+  onLaunchGarminOAuth,
+  onLaunchCorosOAuth,
   onLaunchWahooOAuth,
   onLaunchPolarOAuth,
   onSyncNow,
@@ -2204,6 +2208,8 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               setStep={setStep}
               onOpenArchiveWizard={() => setShowArchiveWizard(true)}
               onLaunchIntervalsOAuth={onLaunchIntervalsOAuth}
+              onLaunchGarminOAuth={onLaunchGarminOAuth}
+              onLaunchCorosOAuth={onLaunchCorosOAuth}
               onLaunchWahooOAuth={onLaunchWahooOAuth}
               onLaunchPolarOAuth={onLaunchPolarOAuth}
               handleConnectGarminInline={handleConnectGarminInline}

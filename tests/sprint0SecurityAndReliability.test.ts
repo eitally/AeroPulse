@@ -221,15 +221,14 @@ describe('Sprint 0: Track A Security, SafeSport & Serverless Reliability P0s', (
       expect(followRes.status).toBe(200);
       const followJson = await followRes.json();
       expect(followJson.ok).toBe(true);
-      expect(followJson.sessionToken).toBeTruthy();
-
-      const followClaims = decodeAndVerifyToken(followJson.sessionToken);
-      expect(followClaims?.sub).toMatch(/^anon_supporter_[a-f0-9]{8}$/);
-      expect(followClaims?.authLevel).toBe('anon');
-      expect(isCanonicalAuthenticatedClaims(followClaims)).toBe(false);
+      expect(followJson.sessionToken).toBeUndefined();
 
       const cookies = extractCookiePairs(followRes);
       const cookieHeader = `${SESSION_COOKIE_NAME}=${cookies[SESSION_COOKIE_NAME]}`;
+      const followClaims = decodeAndVerifyToken(cookies[SESSION_COOKIE_NAME]);
+      expect(followClaims?.sub).toMatch(/^anon_supporter_[a-f0-9]{8}$/);
+      expect(followClaims?.authLevel).toBe('anon');
+      expect(isCanonicalAuthenticatedClaims(followClaims)).toBe(false);
 
       const createRes = await originalFetch(`${baseUrl}/api/teams`, {
         method: 'POST',

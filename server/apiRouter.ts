@@ -14,10 +14,13 @@ import { athleteStateRouter } from './routers/athleteStateRouter.ts';
 import { webhooksAndExportRouter } from './routers/webhooksAndExportRouter.ts';
 import { teamRouter } from './routers/teamRouter.ts';
 import { teamMeetDayRouter } from './routers/teamMeetDayRouter.ts';
+import { teamInjuryRouter } from './routers/teamInjuryRouter.ts';
+import { teamBillingRouter } from './routers/teamBillingRouter.ts';
 import { teamSyncRouter } from './routers/teamSyncRouter.ts';
 import { authRouter } from './routers/authRouter.ts';
 import { configRouter } from './routers/configRouter.ts';
 import { garminRouter } from './routers/garminRouter.ts';
+import { corosRouter } from './routers/corosRouter.ts';
 import { wahooRouter } from './routers/wahooRouter.ts';
 import { polarRouter } from './routers/polarRouter.ts';
 import { intervalsRouter } from './routers/intervalsRouter.ts';
@@ -68,10 +71,13 @@ apiRouter.use(athleteStateRouter);
 apiRouter.use(webhooksAndExportRouter);
 apiRouter.use(teamRouter);
 apiRouter.use(teamMeetDayRouter);
+apiRouter.use(teamInjuryRouter);
+apiRouter.use(teamBillingRouter);
 apiRouter.use(teamSyncRouter);
 apiRouter.use(authRouter);
 apiRouter.use(configRouter);
 apiRouter.use(garminRouter);
+apiRouter.use(corosRouter);
 apiRouter.use(wahooRouter);
 apiRouter.use(polarRouter);
 apiRouter.use(intervalsRouter);
@@ -92,9 +98,14 @@ export {
   isAuthorizedForServerAi,
   isAuthorizedForAi,
   checkAiRateLimit,
+  checkAiRateLimitAsync,
   getClientAiRateLimitKey,
   resetAiRateLimitsForTesting,
 } from './secretManager.ts';
+export {
+  resetRateLimitsForTesting,
+  resetRateLimitsForTesting as resetAllRateLimitsForTesting,
+} from './rateLimiter.ts';
 
 export {
   getEffectiveIntervalsConfig,
