@@ -49,6 +49,7 @@ import {
   Globe,
   HeartPulse,
   HelpCircle,
+  Layers,
   Shield,
   Users,
 } from './icons/PhosphorIcons';
@@ -127,6 +128,13 @@ const AthleticTrainerInjuryHub = lazyWithRetry(
       default: m.AthleticTrainerInjuryHub,
     })),
   { chunkKey: 'AthleticTrainerInjuryHub', restoreTab: 'coach' }
+);
+const DistrictAdOverviewModal = lazyWithRetry(
+  () =>
+    import('./coach/DistrictAdOverviewModal').then((m) => ({
+      default: m.DistrictAdOverviewModal,
+    })),
+  { chunkKey: 'DistrictAdOverviewModal', restoreTab: 'coach' }
 );
 
 export interface CoachWorkspaceViewProps {
@@ -821,6 +829,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   ]);
   const [showMeetDayModal, setShowMeetDayModal] = useState<boolean>(false);
   const [showInjuryHubModal, setShowInjuryHubModal] = useState<boolean>(false);
+  const [showDistrictAdModal, setShowDistrictAdModal] = useState<boolean>(false);
   const [drawerAthleteId, setDrawerAthleteId] = useState<string | null>(null);
   const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
   const [caraStrengthHours, setCaraStrengthHours] = useState<number>(0);
@@ -1084,6 +1093,19 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 <Globe className="w-3.5 h-3.5" weight="duotone" />
                 <span>Athletic.net / TFRRS</span>
               </button>
+              {myTeams.some(
+                (t) => t.myRole === 'HEAD_COACH' || t.myRole === 'ORG_ADMIN'
+              ) && (
+                <button
+                  type="button"
+                  data-testid="coach-open-district-ad-btn"
+                  onClick={() => setShowDistrictAdModal(true)}
+                  className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Layers className="w-3.5 h-3.5 ap-text-brand" />
+                  <span>District Overview</span>
+                </button>
+              )}
               {onOpenCoachGuide && (
                 <button
                   type="button"
@@ -1754,6 +1776,21 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               myTeams={myTeams}
               isSampleDemoMode={isSampleDemoMode}
               onTeamsUpdated={onTeamsUpdated}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
+
+      {showDistrictAdModal && (
+        <WorkspaceErrorBoundary fallbackTitle="District AD Overview" restoreTab="coach">
+          <Suspense fallback={null}>
+            <DistrictAdOverviewModal
+              isOpen={showDistrictAdModal}
+              onClose={() => setShowDistrictAdModal(false)}
+              myTeams={myTeams}
+              activeTeamId={activeTeamId}
+              isSampleDemoMode={isSampleDemoMode}
+              onSelectActiveTeam={(teamId) => onSelectActiveTeam(teamId)}
             />
           </Suspense>
         </WorkspaceErrorBoundary>

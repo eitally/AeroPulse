@@ -15,8 +15,10 @@ import type {
   CoachEventGroup,
   FieldEventCode,
   FieldTrialEntry,
+  PracticeVenueGeofence,
   TeamAnnouncementCategory,
   TeamAnnouncementRecord,
+  TeamAttendanceRecord,
   TeamAttendanceStatus,
   TeamMessageChannelScope,
   TeamMessageRecord,
@@ -304,6 +306,49 @@ export async function recordTeamAttendanceBatchApi(params: {
   }>(`/api/teams/${encodeURIComponent(params.teamId)}/attendance`, {
     method: 'POST',
     body: JSON.stringify({ date: params.date, entries: params.entries }),
+  });
+}
+
+export async function updateTeamPracticeVenuesApi(params: {
+  teamId: string;
+  practiceVenues: PracticeVenueGeofence[];
+}) {
+  return requestLifecycleJson<{
+    practiceVenues?: PracticeVenueGeofence[];
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/practice-venues`, {
+    method: 'PUT',
+    body: JSON.stringify({ practiceVenues: params.practiceVenues }),
+  });
+}
+
+export async function selfCheckInPracticeAttendanceApi(params: {
+  teamId: string;
+  date?: string;
+  venueId?: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number;
+}) {
+  return requestLifecycleJson<{
+    verifiedOnSite: boolean;
+    distanceMeters?: number;
+    radiusMeters?: number;
+    venueId?: string;
+    venueName?: string;
+    record?: TeamAttendanceRecord;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/attendance/self-checkin`, {
+    method: 'POST',
+    body: JSON.stringify({
+      date: params.date,
+      venueId: params.venueId,
+      latitude: params.latitude,
+      longitude: params.longitude,
+      accuracyMeters: params.accuracyMeters,
+    }),
   });
 }
 

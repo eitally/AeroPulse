@@ -10,11 +10,37 @@ import {
   issueSchoolPoInvoice,
   processStripeWebhookEvent,
 } from '../teamBillingService.ts';
+import { getDistrictAdOverview } from '../teamDistrictService.ts';
 import { listTeamsForUser } from '../teamStoreCore.ts';
 
 type RequestWithRawBody = Request & { rawBody?: Buffer };
 
 export const teamBillingRouter = express.Router();
+
+teamBillingRouter.get('/api/teams/district-overview', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+
+    const districtName =
+      typeof req.query.districtName === 'string' && req.query.districtName.trim()
+        ? req.query.districtName.trim()
+        : undefined;
+    const report = await getDistrictAdOverview({
+      callerSid: claims.sid,
+      districtName,
+    });
+    res.json({ ok: true, report });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed loading district AD overview.',
+    });
+  }
+});
 
 teamBillingRouter.get('/api/teams/:teamId/billing', async (req: Request, res: Response) => {
   try {

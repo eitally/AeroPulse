@@ -5,6 +5,7 @@ import type {
   FieldEventCode,
   FieldEventLogRecord,
   FieldTrialEntry,
+  PracticeVenueGeofence,
   TeamAnnouncementCategory,
   TeamAnnouncementRecord,
   TeamAttendanceRecord,
@@ -25,6 +26,7 @@ import {
   hashToken,
   loadTeamDocRaw,
   projectTeamSummaryForCaller,
+  sanitizePracticeVenues,
   sanitizeTargetEventGroups,
   saveTeamDocRaw,
   type StoredMembershipInternal,
@@ -74,6 +76,26 @@ const VALID_FIELD_EVENT_CODES = new Set<FieldEventCode>([
   'DEC',
 ]);
 
+export function computeHaversineDistanceMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const earthRadiusMeters = 6_371_000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) *
+      Math.cos(toRad(lat2)) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+}
+
 export async function recordTeamAttendanceBatch(params: {
   callerSid: string;
   teamId: string;
@@ -117,11 +139,28 @@ export async function recordTeamAttendanceBatch(params: {
       );
       if (!targetMem) continue;
 
+      const existingRec = dayBucket[memId];
+      const keepGpsMeta =
+        existingRec?.method === 'GPS_GEOFENCE' &&
+        (status === 'PRESENT' || status === 'LATE');
+
       dayBucket[memId] = {
         date: cleanDate,
         membershipId: memId,
         status,
         ...(rawEntry.note ? { note: String(rawEntry.note).trim().slice(0, 140) } : {}),
+        ...(keepGpsMeta
+          ? {
+              checkedInAt: existingRec.checkedInAt,
+              verifiedOnSite: existingRec.verifiedOnSite,
+              distanceMeters: existingRec.distanceMeters,
+              venueId: existingRec.venueId,
+              venueName: existingRec.venueName,
+              method: 'GPS_GEOFENCE' as const,
+            }
+          : {
+              method: 'COACH_MANUAL' as const,
+            }),
         updatedAt: nowIso,
         updatedBySid: params.callerSid,
       };
@@ -151,6 +190,275 @@ export async function recordTeamAttendanceBatch(params: {
       ok: true,
       recordedCount,
       team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    };
+  });
+}
+
+export async function updateTeamPracticeVenues(params: {
+  callerSid: string;
+  teamId: string;
+  practiceVenues: unknown;
+  originUrl?: string;
+}): Promise<{
+  ok: boolean;
+  statusCode?: number;
+  practiceVenues?: PracticeVenueGeofence[];
+  team?: TeamSummaryWithRole | null;
+  error?: string;
+}> {
+  const originUrl = params.originUrl || 'https://meetready.app';
+  const sanitized = sanitizePracticeVenues(params.practiceVenues);
+
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, statusCode: 404, error: 'Team not found.' };
+    }
+
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' &&
+        callerMem.role !== 'ASSISTANT_COACH' &&
+        callerMem.role !== 'ORG_ADMIN')
+    ) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: 'Head Coach, Assistant Coach, or Org Admin permissions required.',
+      };
+    }
+
+    doc.brand.practiceVenues = sanitized;
+    doc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'PRACTICE_VENUES_UPDATED',
+      targetId: params.teamId,
+      metadata: {
+        venueCount: sanitized.length,
+        enabledCount: sanitized.filter((v) => v.enabled).length,
+      },
+    });
+
+    return {
+      ok: true,
+      statusCode: 200,
+      practiceVenues: sanitized,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, originUrl),
+    };
+  });
+}
+
+export async function selfCheckInTeamAttendance(params: {
+  callerSid: string;
+  teamId: string;
+  date?: string;
+  venueId?: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number;
+  originUrl?: string;
+}): Promise<{
+  ok: boolean;
+  statusCode: number;
+  verifiedOnSite: boolean;
+  distanceMeters?: number;
+  radiusMeters?: number;
+  venueId?: string;
+  venueName?: string;
+  record?: TeamAttendanceRecord;
+  team?: TeamSummaryWithRole | null;
+  error?: string;
+}> {
+  const originUrl = params.originUrl || 'https://meetready.app';
+  const cleanDate =
+    params.date === undefined || params.date === null || String(params.date).trim() === ''
+      ? new Date().toISOString().slice(0, 10)
+      : String(params.date).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: 'Valid YYYY-MM-DD check-in date required.',
+    };
+  }
+
+  const lat = Number(params.latitude);
+  const lng = Number(params.longitude);
+  if (
+    typeof params.latitude !== 'number' ||
+    typeof params.longitude !== 'number' ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: 'Valid GPS coordinates are required for one-time geofence check-in.',
+    };
+  }
+
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return {
+        ok: false,
+        statusCode: 404,
+        verifiedOnSite: false,
+        error: 'Team not found.',
+      };
+    }
+
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
+    );
+    if (!callerMem) {
+      return {
+        ok: false,
+        statusCode: 403,
+        verifiedOnSite: false,
+        error: 'Active team membership required to check in.',
+      };
+    }
+    if (callerMem.role === 'PARENT_FOLLOWER') {
+      return {
+        ok: false,
+        statusCode: 403,
+        verifiedOnSite: false,
+        error: 'Parent/guardian follower accounts cannot submit athlete practice check-ins.',
+      };
+    }
+
+    const enabledVenues = (doc.brand.practiceVenues || []).filter((v) => v.enabled);
+    if (enabledVenues.length === 0) {
+      return {
+        ok: false,
+        statusCode: 400,
+        verifiedOnSite: false,
+        error: 'No enabled practice venue geofences are configured for this team.',
+      };
+    }
+
+    let selectedVenue: PracticeVenueGeofence | undefined;
+    let distanceMeters = 0;
+
+    if (params.venueId && String(params.venueId).trim()) {
+      const requestedId = String(params.venueId).trim();
+      selectedVenue = enabledVenues.find((v) => v.id === requestedId);
+      if (!selectedVenue) {
+        return {
+          ok: false,
+          statusCode: 400,
+          verifiedOnSite: false,
+          error: 'Requested practice venue is not enabled for this team.',
+        };
+      }
+      distanceMeters = Math.round(
+        computeHaversineDistanceMeters(lat, lng, selectedVenue.latitude, selectedVenue.longitude)
+      );
+    } else {
+      let bestDist = Infinity;
+      for (const venue of enabledVenues) {
+        const d = computeHaversineDistanceMeters(lat, lng, venue.latitude, venue.longitude);
+        if (d < bestDist) {
+          bestDist = d;
+          selectedVenue = venue;
+        }
+      }
+      distanceMeters = Math.round(bestDist);
+    }
+
+    if (!selectedVenue) {
+      return {
+        ok: false,
+        statusCode: 400,
+        verifiedOnSite: false,
+        error: 'No enabled practice venue available.',
+      };
+    }
+
+    if (distanceMeters > selectedVenue.radiusMeters) {
+      return {
+        ok: false,
+        statusCode: 400,
+        verifiedOnSite: false,
+        distanceMeters,
+        radiusMeters: selectedVenue.radiusMeters,
+        venueId: selectedVenue.id,
+        venueName: selectedVenue.name,
+        error: `Outside ${selectedVenue.name} practice geofence (${distanceMeters}m away; max ${selectedVenue.radiusMeters}m).`,
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    doc.attendanceByDate = doc.attendanceByDate || {};
+    const dayBucket: Record<string, TeamAttendanceRecord> = {
+      ...(doc.attendanceByDate[cleanDate] || {}),
+    };
+
+    // Privacy-first: persist distanceMeters + venue metadata ONLY — never coordinates
+    const record: TeamAttendanceRecord = {
+      date: cleanDate,
+      membershipId: callerMem.membershipId,
+      status: 'PRESENT',
+      checkedInAt: nowIso,
+      verifiedOnSite: true,
+      distanceMeters,
+      venueId: selectedVenue.id,
+      venueName: selectedVenue.name,
+      method: 'GPS_GEOFENCE',
+      updatedAt: nowIso,
+      updatedBySid: params.callerSid,
+    };
+
+    dayBucket[callerMem.membershipId] = record;
+    doc.attendanceByDate[cleanDate] = dayBucket;
+
+    const allDates = Object.keys(doc.attendanceByDate).sort();
+    if (allDates.length > 45) {
+      for (const oldKey of allDates.slice(0, allDates.length - 45)) {
+        delete doc.attendanceByDate[oldKey];
+      }
+    }
+
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'ATTENDANCE_GPS_SELF_CHECKIN',
+      targetId: callerMem.membershipId,
+      metadata: {
+        date: cleanDate,
+        venueId: selectedVenue.id,
+        venueName: selectedVenue.name,
+        distanceMeters,
+        radiusMeters: selectedVenue.radiusMeters,
+        verifiedOnSite: true,
+      },
+    });
+
+    return {
+      ok: true,
+      statusCode: 200,
+      verifiedOnSite: true,
+      distanceMeters,
+      radiusMeters: selectedVenue.radiusMeters,
+      venueId: selectedVenue.id,
+      venueName: selectedVenue.name,
+      record,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, originUrl),
     };
   });
 }

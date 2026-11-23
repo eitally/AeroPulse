@@ -190,13 +190,14 @@ export function exportWorkoutAsErg(opts: WorkoutExportOptions): void {
 export interface WearablePushResult {
   pushed: boolean;
   message: string;
+  partialSuccess?: boolean;
   requiresPartnerOAuth?: boolean;
   setupRequired?: boolean;
   needsScopeUpgrade?: boolean;
   connectRequired?: boolean;
 }
 
-export type WearablePushTarget = 'garmin' | 'coros' | 'intervals';
+export type WearablePushTarget = 'garmin' | 'wahoo' | 'coros' | 'intervals';
 
 function buildNormalizedStepsPayload(opts: WorkoutExportOptions) {
   const safeFtp = Math.max(80, Math.round(opts.ftpWatts || 250));
@@ -267,18 +268,28 @@ function getNonSessionIntervalsHeaders(): Record<string, string> {
   return headers;
 }
 
-export async function pushWorkoutDirectToGarmin(
-  opts: WorkoutExportOptions
-): Promise<WearablePushResult> {
+async function postWearableWorkoutPush(params: {
+  endpoint: string;
+  opts: WorkoutExportOptions;
+  extraHeaders?: Record<string, string>;
+  includePlannedDuration?: boolean;
+  successFallback: (dateIso: string) => string;
+  errorFallback: string;
+  networkFallback: string;
+}): Promise<WearablePushResult> {
+  const { endpoint, opts, extraHeaders, includePlannedDuration, successFallback, errorFallback, networkFallback } =
+    params;
   const dateIso = opts.dateIso || getLocalDateIso();
-  const { safeFtp, safeLthr, thresholdPace, stepsPayload } = buildNormalizedStepsPayload(opts);
+  const { safeFtp, safeLthr, thresholdPace, stepsPayload, plannedDurationSecs } =
+    buildNormalizedStepsPayload(opts);
 
   try {
-    const resp = await fetch('/api/garmin/workout/push', {
+    const resp = await fetch(endpoint, {
       method: 'POST',
       credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
+        ...(extraHeaders || {}),
       },
       body: JSON.stringify({
         date: dateIso,
@@ -287,6 +298,7 @@ export async function pushWorkoutDirectToGarmin(
         ftpWatts: opts.sport === 'Cycling' ? safeFtp : undefined,
         lthrBpm: safeLthr,
         thresholdPaceSecsPerKm: thresholdPace,
+        ...(includePlannedDuration ? { plannedDurationSecs } : {}),
         workoutSyntax: opts.workoutSyntax,
         description: opts.description || opts.workoutSyntax,
         steps: stepsPayload,
@@ -298,128 +310,80 @@ export async function pushWorkoutDirectToGarmin(
     if (resp.ok && data.pushed) {
       return {
         pushed: true,
-        message: data.message || `Pushed "${opts.name}" directly to Garmin Connect (${dateIso}).`,
+        ...(data.partialSuccess ? { partialSuccess: true } : {}),
+        message: data.message || successFallback(dateIso),
       };
     }
     return {
       pushed: false,
       requiresPartnerOAuth: Boolean(data.requiresPartnerOAuth),
       setupRequired: Boolean(data.setupRequired),
-      message:
-        data.error ||
-        'Connect Official Garmin Partner OAuth in Data Sources to push directly, or download .FIT instead.',
+      needsScopeUpgrade: Boolean(data.needsScopeUpgrade),
+      connectRequired: Boolean(data.connectRequired),
+      message: data.error || errorFallback,
     };
   } catch {
     return {
       pushed: false,
-      message: 'Network unavailable for Garmin push. Use .FIT download to transfer manually.',
+      message: networkFallback,
     };
   }
+}
+
+export async function pushWorkoutDirectToGarmin(
+  opts: WorkoutExportOptions
+): Promise<WearablePushResult> {
+  return postWearableWorkoutPush({
+    endpoint: '/api/garmin/workout/push',
+    opts,
+    successFallback: (dateIso) => `Pushed "${opts.name}" directly to Garmin Connect (${dateIso}).`,
+    errorFallback:
+      'Connect Official Garmin Partner OAuth in Data Sources to push directly, or download .FIT instead.',
+    networkFallback: 'Network unavailable for Garmin push. Use .FIT download to transfer manually.',
+  });
+}
+
+export async function pushWorkoutToWahoo(
+  opts: WorkoutExportOptions
+): Promise<WearablePushResult> {
+  return postWearableWorkoutPush({
+    endpoint: '/api/wahoo/workouts/push',
+    opts,
+    successFallback: (dateIso) =>
+      `Pushed "${opts.name}" directly to Wahoo Cloud / ELEMNT (${dateIso}).`,
+    errorFallback:
+      'Connect Wahoo with workout write permissions in Data Sources (or use Intervals.icu Cross-Watch Bridge / .FIT download).',
+    networkFallback: 'Network unavailable for Wahoo push. Use .FIT download to transfer manually.',
+  });
 }
 
 export async function pushWorkoutToCoros(
   opts: WorkoutExportOptions
 ): Promise<WearablePushResult> {
-  const dateIso = opts.dateIso || getLocalDateIso();
-  const { safeFtp, safeLthr, thresholdPace, stepsPayload } = buildNormalizedStepsPayload(opts);
-
-  try {
-    const resp = await fetch('/api/coros/workout/push', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        date: dateIso,
-        name: opts.name,
-        sportCategory: opts.sport,
-        ftpWatts: opts.sport === 'Cycling' ? safeFtp : undefined,
-        lthrBpm: safeLthr,
-        thresholdPaceSecsPerKm: thresholdPace,
-        workoutSyntax: opts.workoutSyntax,
-        description: opts.description || opts.workoutSyntax,
-        steps: stepsPayload,
-      }),
-    });
-    const data = (await resp.json().catch(() => ({}))) as Partial<WearablePushResult> & {
-      error?: string;
-    };
-    if (resp.ok && data.pushed) {
-      return {
-        pushed: true,
-        message: data.message || `Pushed "${opts.name}" directly to COROS Calendar (${dateIso}).`,
-      };
-    }
-    return {
-      pushed: false,
-      setupRequired: Boolean(data.setupRequired),
-      connectRequired: Boolean(data.connectRequired),
-      message:
-        data.error ||
-        'Connect COROS in Data Sources (or use Intervals.icu Cross-Watch Bridge / .FIT download).',
-    };
-  } catch {
-    return {
-      pushed: false,
-      message: 'Network unavailable for COROS push. Use .FIT download to transfer manually.',
-    };
-  }
+  return postWearableWorkoutPush({
+    endpoint: '/api/coros/workout/push',
+    opts,
+    successFallback: (dateIso) => `Pushed "${opts.name}" directly to COROS Calendar (${dateIso}).`,
+    errorFallback:
+      'Connect COROS in Data Sources (or use Intervals.icu Cross-Watch Bridge / .FIT download).',
+    networkFallback: 'Network unavailable for COROS push. Use .FIT download to transfer manually.',
+  });
 }
 
 export async function pushWorkoutToIntervalsBridge(
   opts: WorkoutExportOptions
 ): Promise<WearablePushResult> {
-  const dateIso = opts.dateIso || getLocalDateIso();
-  const { safeFtp, safeLthr, thresholdPace, stepsPayload, plannedDurationSecs } =
-    buildNormalizedStepsPayload(opts);
-
-  try {
-    const resp = await fetch('/api/intervals/workout/push', {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getNonSessionIntervalsHeaders(),
-      },
-      body: JSON.stringify({
-        date: dateIso,
-        name: opts.name,
-        sportCategory: opts.sport,
-        ftpWatts: opts.sport === 'Cycling' ? safeFtp : undefined,
-        lthrBpm: safeLthr,
-        thresholdPaceSecsPerKm: thresholdPace,
-        plannedDurationSecs,
-        workoutSyntax: opts.workoutSyntax,
-        description: opts.description || opts.workoutSyntax,
-        steps: stepsPayload,
-      }),
-    });
-    const data = (await resp.json().catch(() => ({}))) as Partial<WearablePushResult> & {
-      error?: string;
-    };
-    if (resp.ok && data.pushed) {
-      return {
-        pushed: true,
-        message:
-          data.message ||
-          `Pushed "${opts.name}" to Intervals.icu Calendar (${dateIso}) for Garmin / COROS / Suunto / Wahoo sync.`,
-      };
-    }
-    return {
-      pushed: false,
-      needsScopeUpgrade: Boolean(data.needsScopeUpgrade),
-      connectRequired: Boolean(data.connectRequired),
-      message:
-        data.error ||
-        'Connect Intervals.icu with CALENDAR:WRITE in Data Sources to push workouts to your watch.',
-    };
-  } catch {
-    return {
-      pushed: false,
-      message: 'Network unavailable for Intervals.icu bridge push. Use .FIT download instead.',
-    };
-  }
+  return postWearableWorkoutPush({
+    endpoint: '/api/intervals/workout/push',
+    opts,
+    extraHeaders: getNonSessionIntervalsHeaders(),
+    includePlannedDuration: true,
+    successFallback: (dateIso) =>
+      `Pushed "${opts.name}" to Intervals.icu Calendar (${dateIso}) for Garmin / COROS / Suunto / Wahoo sync.`,
+    errorFallback:
+      'Connect Intervals.icu with CALENDAR:WRITE in Data Sources to push workouts to your watch.',
+    networkFallback: 'Network unavailable for Intervals.icu bridge push. Use .FIT download instead.',
+  });
 }
 
 export async function pushWorkoutToWearable(
@@ -427,6 +391,7 @@ export async function pushWorkoutToWearable(
   opts: WorkoutExportOptions
 ): Promise<WearablePushResult> {
   if (target === 'garmin') return pushWorkoutDirectToGarmin(opts);
+  if (target === 'wahoo') return pushWorkoutToWahoo(opts);
   if (target === 'coros') return pushWorkoutToCoros(opts);
   return pushWorkoutToIntervalsBridge(opts);
 }

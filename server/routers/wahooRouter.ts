@@ -3,6 +3,12 @@ import { resolveWahooCallbackUrl } from '../oauthHelpers.ts';
 import { registerOAuthConnectorRoutes } from '../oauthConnectorFactory.ts';
 import { getScopedRuntimeStore, requestContext, saveSessionCacheAsync } from '../sessionContext.ts';
 import {
+  WAHOO_OAUTH_SCOPES,
+  WahooCloudPushError,
+  hasWahooWorkoutPushScopes,
+  pushWorkoutToWahooCloud,
+} from '../wahooConnectService.ts';
+import {
   normalizeActivityTimestamps,
   parseClientTzOffsetMins,
   parseIsoWithExplicitOffsetToUtcMs,
@@ -118,7 +124,7 @@ const { callbackHandler: wahooCallbackHandler } = registerOAuthConnectorRoutes(w
   displayName: 'Wahoo',
   accentColor: '#0EA5E9',
   authorizeUrl: 'https://api.wahooligan.com/oauth/authorize',
-  scope: 'user_read workouts_read',
+  scope: WAHOO_OAUTH_SCOPES,
   envVarNames: ['WAHOO_CLIENT_ID', 'WAHOO_CLIENT_SECRET'],
   usePkce: true,
   successBody:
@@ -379,3 +385,111 @@ wahooRouter.get('/api/wahoo/sync', async (req: Request, res: Response) => {
     });
   }
 });
+
+wahooRouter.post(
+  ['/api/wahoo/workouts/push', '/api/wahoo/workout/push'],
+  async (req: Request, res: Response) => {
+    const { clientId, clientSecret } = getEffectiveWahooClientConfig(req);
+    const wahooConfigured = Boolean(clientId && clientSecret);
+    try {
+      const token = await ensureValidWahooAccessToken(req);
+      if (!token) {
+        res.status(wahooConfigured ? 401 : 503).json({
+          ok: false,
+          pushed: false,
+          setupRequired: !wahooConfigured,
+          connectRequired: wahooConfigured,
+          error: wahooConfigured
+            ? 'Wahoo Cloud is not connected yet. Connect Wahoo in Data Sources to push workouts directly to your ELEMNT.'
+            : 'Wahoo Cloud API credentials (WAHOO_CLIENT_ID / WAHOO_CLIENT_SECRET) are not configured yet. Use Download .FIT or Intervals.icu Cross-Watch Bridge in the meantime.',
+        });
+        return;
+      }
+
+      const headerToken = String(req.headers['x-wahoo-access-token'] || '').trim();
+      const { scope } = getEffectiveWahooTokens(req);
+      const effectiveScope = headerToken
+        ? String(req.headers['x-wahoo-scope'] || scope || '').trim()
+        : scope;
+
+      if (!hasWahooWorkoutPushScopes(effectiveScope)) {
+        res.status(403).json({
+          ok: false,
+          pushed: false,
+          needsScopeUpgrade: true,
+          error:
+            'Your Wahoo connection is read-only. Reconnect Wahoo in Data Sources to grant workouts_write & plans_write permissions.',
+        });
+        return;
+      }
+
+      const body = (req.body || {}) as Record<string, unknown>;
+      const store = getScopedRuntimeStore(req);
+      const profileObj = (store.athleteProfile || {}) as {
+        thresholdPaceSecsPerKm?: number;
+        ftp?: number;
+        lthr?: number;
+      };
+      const pushInput = {
+        date: String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10),
+        name: String(body.name || 'MeetReady Prescribed Session'),
+        sportCategory: String(body.sportCategory || 'Cycling'),
+        description: typeof body.description === 'string' ? body.description : undefined,
+        workoutSyntax: typeof body.workoutSyntax === 'string' ? body.workoutSyntax : undefined,
+        ftpWatts: Number(body.ftpWatts || store.athleteFtp || profileObj.ftp || 250),
+        lthrBpm: Number(body.lthrBpm || store.athleteLthr || profileObj.lthr || 165),
+        thresholdPaceSecsPerKm: Number(
+          body.thresholdPaceSecsPerKm || profileObj.thresholdPaceSecsPerKm || 245
+        ),
+        steps: Array.isArray(body.steps) ? body.steps : undefined,
+      };
+
+      const executePush = async (activeToken: string) =>
+        pushWorkoutToWahooCloud({ accessToken: activeToken, input: pushInput });
+
+      let pushResult;
+      try {
+        pushResult = await executePush(token);
+      } catch (firstErr) {
+        if (firstErr instanceof WahooCloudPushError && firstErr.unauthorized) {
+          const refreshedToken = await ensureValidWahooAccessToken(req, true);
+          if (refreshedToken && refreshedToken !== token) {
+            pushResult = await executePush(refreshedToken);
+          } else {
+            throw firstErr;
+          }
+        } else {
+          throw firstErr;
+        }
+      }
+
+      res.status(200).json({ ok: true, ...pushResult });
+    } catch (err: unknown) {
+      if (err instanceof WahooCloudPushError) {
+        if (err.needsScopeUpgrade) {
+          res.status(403).json({
+            ok: false,
+            pushed: false,
+            needsScopeUpgrade: true,
+            error: err.message,
+          });
+          return;
+        }
+        if (err.unauthorized) {
+          res.status(401).json({
+            ok: false,
+            pushed: false,
+            connectRequired: true,
+            error: err.message,
+          });
+          return;
+        }
+      }
+      res.status(500).json({
+        ok: false,
+        pushed: false,
+        error: err instanceof Error ? err.message : 'Failed to push workout to Wahoo Cloud.',
+      });
+    }
+  }
+);

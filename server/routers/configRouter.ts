@@ -55,6 +55,7 @@ import {
   getEffectiveWahooClientConfig,
   getEffectiveWahooTokens,
 } from './wahooRouter.ts';
+import { hasWahooWorkoutPushScopes } from '../wahooConnectService.ts';
 import {
   getEffectivePolarClientConfig,
   getEffectivePolarTokens,
@@ -202,8 +203,16 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
     activeGarminSession?.fullName || activeGarminSession?.displayName || undefined;
 
   const { clientId: wahooClientId, clientSecret: wahooClientSecret } = getEffectiveWahooClientConfig(req);
-  const { accessToken: wahooAccessToken, athleteId: wahooAthleteId, athleteName: wahooAthleteName } = getEffectiveWahooTokens(req);
+  const {
+    accessToken: wahooAccessToken,
+    athleteId: wahooAthleteId,
+    athleteName: wahooAthleteName,
+    scope: wahooScope,
+  } = getEffectiveWahooTokens(req);
   const isWahooConnected = Boolean(wahooAccessToken);
+  const wahooCanPushWorkouts = Boolean(
+    isWahooConnected && hasWahooWorkoutPushScopes(wahooScope)
+  );
 
   const { clientId: polarClientId, clientSecret: polarClientSecret } = getEffectivePolarClientConfig(req);
   const { accessToken: polarAccessToken, athleteId: polarAthleteId, athleteName: polarAthleteName } = getEffectivePolarTokens(req);
@@ -274,14 +283,18 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
     intervalsSource: intervalsAccessToken ? 'OAUTH' : isIntervalsConnected ? 'USER_INPUT' : 'NONE',
     wahooConfigured: Boolean(wahooClientId && wahooClientSecret),
     wahooConnected: isWahooConnected,
+    wahooScope: isWahooConnected && wahooScope ? wahooScope : undefined,
+    wahooCanPushWorkouts,
     wahooAthleteId: isWahooConnected ? wahooAthleteId : undefined,
     wahooAthleteName: isWahooConnected ? wahooAthleteName : undefined,
     polarConfigured: Boolean(polarClientId && polarClientSecret),
     polarConnected: isPolarConnected,
+    polarCanPushWorkouts: false,
     polarAthleteId: isPolarConnected ? polarAthleteId : undefined,
     polarAthleteName: isPolarConnected ? polarAthleteName : undefined,
     corosConfigured: Boolean(corosClientId && corosClientSecret),
     corosConnected: isCorosConnected,
+    corosCanPushWorkouts: isCorosConnected,
     corosAthleteId: isCorosConnected ? corosAthleteId : undefined,
     corosAthleteName: isCorosConnected ? corosAthleteName : undefined,
     stravaConfigured: Boolean(stravaClientId && stravaClientSecret),

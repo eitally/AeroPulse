@@ -42,6 +42,7 @@ import {
   pushWorkoutDirectToGarmin,
   pushWorkoutToCoros,
   pushWorkoutToIntervalsBridge,
+  pushWorkoutToWahoo,
 } from '../utils/workoutExportActions';
 import { BracketedIntervalTape } from './charts/MicroGraphics';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
@@ -755,6 +756,20 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
 
   const handlePushCorosClick = async () => {
     const res = await pushWorkoutToCoros({
+      name: builderName,
+      sport: builderSport,
+      workoutSyntax: effectiveSyntax,
+      description: notes,
+      ftpWatts: safeFtp,
+      lthrBpm: safeLthr,
+      thresholdPaceSecsPerKm: safeThresholdPace,
+      dateIso: builderDate,
+    });
+    setStatusMessage(res.message);
+  };
+
+  const handlePushWahooClick = async () => {
+    const res = await pushWorkoutToWahoo({
       name: builderName,
       sport: builderSport,
       workoutSyntax: effectiveSyntax,
@@ -1566,6 +1581,15 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Garmin Partner Push</span>
+              </button>
+              <button
+                type="button"
+                data-testid="visual-builder-wahoo-push"
+                onClick={handlePushWahooClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Wahoo ELEMNT Push</span>
               </button>
               <button
                 type="button"

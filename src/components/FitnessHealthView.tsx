@@ -34,6 +34,7 @@ import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { CircadianFirstTouchHero, type CircadianHeroMode } from './CircadianFirstTouchHero';
 import { AthleteSessionCheckInCard } from './AthleteSessionCheckInCard';
 import { EveningCloseoutCard } from './today/EveningCloseoutCard';
+import { PracticeAttendanceCheckInCard } from './today/PracticeAttendanceCheckInCard';
 import { FitnessCheckInAndCrossTrainingDrawer } from './fitness/FitnessCheckInAndCrossTrainingDrawer';
 import { FitnessSnapshotMetricCards } from './fitness/FitnessSnapshotMetricCards';
 import { resolveCircadianHeroMode } from '../physiology/eveningHabitEngine';
@@ -81,6 +82,9 @@ interface FitnessHealthViewProps {
   activities?: UnifiedActivity[];
   athleteProfile?: AthleteProfile;
   activeTeam?: TeamSummaryWithRole | null;
+  myTeams?: TeamSummaryWithRole[];
+  isSampleDemoMode?: boolean;
+  onTeamsUpdated?: (teams: TeamSummaryWithRole[], activeId?: string) => void;
   distanceUnit?: DistanceUnit;
   plainLanguageMode?: boolean;
   selfName?: string;
@@ -165,6 +169,9 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   activities = [],
   athleteProfile,
   activeTeam = null,
+  myTeams = [],
+  isSampleDemoMode = false,
+  onTeamsUpdated,
   distanceUnit = 'mi',
   plainLanguageMode = false,
   onSelectActivity,
@@ -978,6 +985,18 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onQuickLogRun={onQuickLogRun}
         onOpenTracksideStopwatch={onOpenTracksideStopwatch}
       />
+
+      {activeTeam &&
+        activeTeam.myRole !== 'PARENT_FOLLOWER' &&
+        (activeTeam.brand.practiceVenues || []).some((v) => v.enabled) && (
+          <PracticeAttendanceCheckInCard
+            activeTeam={activeTeam}
+            myTeams={myTeams}
+            todayIso={todayIso}
+            isSampleDemoMode={isSampleDemoMode}
+            onTeamsUpdated={onTeamsUpdated}
+          />
+        )}
 
       {onRecordSessionCheckIn &&
         circadianMode !== 'TONIGHT' &&

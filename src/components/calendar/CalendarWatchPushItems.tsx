@@ -25,6 +25,11 @@ const WATCH_TARGETS: Array<{
     title: 'Push via Official Garmin Training API v2 (Partner OAuth)',
   },
   {
+    target: 'wahoo',
+    label: 'Wahoo ELEMNT',
+    title: 'Push structured workout directly to Wahoo Cloud / ELEMNT',
+  },
+  {
     target: 'coros',
     label: 'COROS Watch',
     title: 'Push directly to your COROS Training Calendar',

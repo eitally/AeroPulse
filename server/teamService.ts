@@ -28,7 +28,9 @@ import {
   hashToken,
   loadDirectory,
   projectTeamSummaryForCaller,
+  sanitizeDistrictName,
   sanitizeExternalSyncConfig,
+  sanitizePracticeVenues,
   saveTeamDocRaw,
   teamDocVaultKey,
   userTeamsVaultKey,
@@ -48,6 +50,7 @@ import type {
   CoachDataSharingTier,
   CoachEventGroup,
   DistanceUnit,
+  PracticeVenueGeofence,
   TeamBrandConfig,
   TeamExternalSyncConfig,
   TeamInvitePreviewPayload,
@@ -188,7 +191,27 @@ export async function migrateAnonymousTeamsToStravaSid(params: {
   });
 }
 
-function sanitizeCoachAttribution(raw?: unknown): CoachLandingAttribution | undefined {
+function sanitizeReferrerHost(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || /\s/.test(trimmed)) return undefined;
+  try {
+    const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return undefined;
+    const host = parsed.hostname
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9.-]/g, '')
+      .replace(/^\.+|\.+$/g, '')
+      .slice(0, 80);
+    return host || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function sanitizeCoachAttribution(raw?: unknown): CoachLandingAttribution | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const input = raw as Record<string, unknown>;
   const cleanField = (key: string, maxLen: number): string | undefined => {
@@ -197,12 +220,14 @@ function sanitizeCoachAttribution(raw?: unknown): CoachLandingAttribution | unde
     const trimmed = val.trim().slice(0, maxLen);
     return trimmed || undefined;
   };
+  const referrerHost = sanitizeReferrerHost(input.referrerHost);
   const out: CoachLandingAttribution = {
     ...(cleanField('utm_source', 80) ? { utm_source: cleanField('utm_source', 80) } : {}),
     ...(cleanField('utm_medium', 80) ? { utm_medium: cleanField('utm_medium', 80) } : {}),
     ...(cleanField('utm_campaign', 80) ? { utm_campaign: cleanField('utm_campaign', 80) } : {}),
     ...(cleanField('utm_content', 80) ? { utm_content: cleanField('utm_content', 80) } : {}),
     ...(cleanField('src', 80) ? { src: cleanField('src', 80) } : {}),
+    ...(referrerHost ? { referrerHost } : {}),
     ...(cleanField('landing_path', 120) ? { landing_path: cleanField('landing_path', 120) } : {}),
     ...(cleanField('selfReportedChannel', 60)
       ? { selfReportedChannel: cleanField('selfReportedChannel', 60) }
@@ -218,6 +243,8 @@ export async function createTeamForCoach(params: {
   name: string;
   shortName?: string;
   mascotOrMotto?: string;
+  districtName?: string;
+  practiceVenues?: PracticeVenueGeofence[];
   orgType: TeamOrgType;
   primarySport?: 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid';
   primaryHex?: string;
@@ -277,6 +304,9 @@ export async function createTeamForCoach(params: {
       ? params.logoDataUrl
       : undefined;
 
+  const cleanDistrictName = sanitizeDistrictName(params.districtName);
+  const cleanPracticeVenues = sanitizePracticeVenues(params.practiceVenues);
+
   const brand: TeamBrandConfig = {
     teamId,
     slug,
@@ -284,6 +314,8 @@ export async function createTeamForCoach(params: {
     name: cleanName,
     shortName: cleanShort,
     mascotOrMotto: params.mascotOrMotto ? String(params.mascotOrMotto).trim().slice(0, 64) : undefined,
+    ...(cleanDistrictName ? { districtName: cleanDistrictName } : {}),
+    ...(cleanPracticeVenues.length > 0 ? { practiceVenues: cleanPracticeVenues } : {}),
     orgType,
     primarySport: params.primarySport || orgDefaults.defaultPrimarySport,
     logoDataUrl: safeLogo,
@@ -364,6 +396,8 @@ export async function updateTeamBranding(params: {
       | 'name'
       | 'shortName'
       | 'mascotOrMotto'
+      | 'districtName'
+      | 'practiceVenues'
       | 'orgType'
       | 'primarySport'
       | 'logoDataUrl'
@@ -401,6 +435,12 @@ export async function updateTeamBranding(params: {
     if (typeof u.mascotOrMotto === 'string') {
       doc.brand.mascotOrMotto = u.mascotOrMotto.trim().slice(0, 64) || undefined;
     }
+    if (typeof u.districtName === 'string') {
+      doc.brand.districtName = sanitizeDistrictName(u.districtName);
+    }
+    if (Array.isArray(u.practiceVenues)) {
+      doc.brand.practiceVenues = sanitizePracticeVenues(u.practiceVenues);
+    }
     if (u.orgType && callerMem.role === 'HEAD_COACH') doc.brand.orgType = u.orgType;
     if (u.primarySport) doc.brand.primarySport = u.primarySport;
     if (u.primaryHex) doc.brand.primaryHex = normalizeHexColor(u.primaryHex, doc.brand.primaryHex);
@@ -434,7 +474,7 @@ export async function updateTeamBranding(params: {
     }
 
     doc.updatedAt = new Date().toISOString();
-    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+    await saveTeamDocRaw(params.teamId, doc);
     return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
   });
 }

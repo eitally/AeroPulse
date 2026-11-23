@@ -6,7 +6,9 @@ import {
   postTeamAnnouncement,
   recordTeamAttendanceBatch,
   recordTeamFieldMarks,
+  selfCheckInTeamAttendance,
   updateAssistantCoachEventGroups,
+  updateTeamPracticeVenues,
 } from '../teamFieldAndDailyOpsService.ts';
 import {
   dispatchPushPayloadToUsers,
@@ -85,6 +87,7 @@ import {
 import type {
   CoachDataSharingTier,
   CoachEventGroup,
+  TeamAttendanceStatus,
   TeamInviteStatus,
   TeamMemberRole,
 } from '../../src/types.ts';
@@ -265,6 +268,8 @@ teamRouter.post('/api/teams', async (req: Request, res: Response) => {
       name: String(req.body?.name || ''),
       shortName: req.body?.shortName ? String(req.body.shortName) : undefined,
       mascotOrMotto: req.body?.mascotOrMotto ? String(req.body.mascotOrMotto) : undefined,
+      districtName: typeof req.body?.districtName === 'string' ? req.body.districtName : undefined,
+      practiceVenues: Array.isArray(req.body?.practiceVenues) ? req.body.practiceVenues : undefined,
       orgType: req.body?.orgType || 'HIGH_SCHOOL',
       primarySport: req.body?.primarySport,
       primaryHex: req.body?.primaryHex,
@@ -318,6 +323,44 @@ teamRouter.put('/api/teams/:teamId', async (req: Request, res: Response) => {
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to update team.',
+    });
+  }
+});
+
+// 5b. Configure Team Practice Venue Geofences (Coaches & Org Admins)
+teamRouter.put('/api/teams/:teamId/practice-venues', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as { practiceVenues?: unknown };
+    const result = await updateTeamPracticeVenues({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      practiceVenues: body.practiceVenues,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.statusCode || 403).json({
+        ok: false,
+        error: result.error || 'Coach or Org Admin permissions required.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      practiceVenues: result.practiceVenues,
+      team: result.team,
+      teams,
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed updating practice venues.',
     });
   }
 });
@@ -1501,7 +1544,7 @@ teamRouter.post('/api/teams/:teamId/attendance', async (req: Request, res: Respo
     const entries = Array.isArray(body.entries)
       ? body.entries.map((entry) => ({
           membershipId: String(entry?.membershipId || ''),
-          status: String(entry?.status || 'PRESENT') as 'PRESENT' | 'LATE' | 'ABSENT' | 'EXCUSED',
+          status: String(entry?.status || 'PRESENT') as TeamAttendanceStatus,
           note: typeof entry?.note === 'string' ? entry.note : undefined,
         }))
       : [];
@@ -1525,6 +1568,72 @@ teamRouter.post('/api/teams/:teamId/attendance', async (req: Request, res: Respo
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed recording attendance.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/attendance/self-checkin', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      date?: unknown;
+      venueId?: unknown;
+      latitude?: unknown;
+      longitude?: unknown;
+      accuracyMeters?: unknown;
+    };
+    const parseCoord = (raw: unknown): number => {
+      if (typeof raw === 'number') return raw;
+      if (typeof raw === 'string' && raw.trim() !== '') return Number(raw);
+      return Number.NaN;
+    };
+    const result = await selfCheckInTeamAttendance({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      date: typeof body.date === 'string' ? body.date : undefined,
+      venueId: typeof body.venueId === 'string' ? body.venueId : undefined,
+      latitude: parseCoord(body.latitude),
+      longitude: parseCoord(body.longitude),
+      accuracyMeters:
+        typeof body.accuracyMeters === 'number' && Number.isFinite(body.accuracyMeters)
+          ? body.accuracyMeters
+          : undefined,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.statusCode || 400).json({
+        ok: false,
+        verifiedOnSite: false,
+        ...(typeof result.distanceMeters === 'number' ? { distanceMeters: result.distanceMeters } : {}),
+        ...(typeof result.radiusMeters === 'number' ? { radiusMeters: result.radiusMeters } : {}),
+        ...(result.venueId ? { venueId: result.venueId } : {}),
+        ...(result.venueName ? { venueName: result.venueName } : {}),
+        error: result.error || 'Practice geofence check-in failed.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      verifiedOnSite: true,
+      distanceMeters: result.distanceMeters,
+      radiusMeters: result.radiusMeters,
+      venueId: result.venueId,
+      venueName: result.venueName,
+      record: result.record,
+      team: result.team,
+      teams,
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      verifiedOnSite: false,
+      error: err instanceof Error ? err.message : 'Failed GPS practice check-in.',
     });
   }
 });

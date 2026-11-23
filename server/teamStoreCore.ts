@@ -20,6 +20,8 @@ import type {
   FieldEventLogRecord,
   GuardianSafetyAlertRecord,
   MeetDayPacketRecord,
+  PracticeVenueCategory,
+  PracticeVenueGeofence,
   TeamAnnouncementRecord,
   TeamAthleteLiveSnapshot,
   TeamAttendanceRecord,
@@ -179,6 +181,87 @@ export function sanitizeExternalSyncConfig(
         : false,
     ...(merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}),
   };
+}
+
+const VALID_PRACTICE_VENUE_CATEGORIES = new Set<PracticeVenueCategory>([
+  'TRACK',
+  'XC_COURSE',
+  'ROAD_CAMPUS',
+  'GYM_WEIGHTS',
+  'POOL_CROSS',
+  'OTHER',
+]);
+
+export function sanitizeDistrictName(raw?: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().slice(0, 80);
+  return trimmed || undefined;
+}
+
+export function sanitizePracticeVenues(raw?: unknown): PracticeVenueGeofence[] {
+  if (!Array.isArray(raw)) return [];
+  const out: PracticeVenueGeofence[] = [];
+  const seenIds = new Set<string>();
+  for (const entry of raw) {
+    if (out.length >= 8) break;
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    const item = entry as Record<string, unknown>;
+    const name = String(item.name || '').trim().slice(0, 64);
+    if (!name) continue;
+    const hasLat =
+      item.latitude !== undefined &&
+      item.latitude !== null &&
+      String(item.latitude).trim() !== '';
+    const hasLng =
+      item.longitude !== undefined &&
+      item.longitude !== null &&
+      String(item.longitude).trim() !== '';
+    const lat = hasLat ? Number(item.latitude) : Number.NaN;
+    const lng = hasLng ? Number(item.longitude) : Number.NaN;
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      continue;
+    }
+    const rawRadius =
+      item.radiusMeters !== undefined &&
+      item.radiusMeters !== null &&
+      String(item.radiusMeters).trim() !== ''
+        ? Number(item.radiusMeters)
+        : NaN;
+    const radiusMeters = Number.isFinite(rawRadius)
+      ? Math.max(50, Math.min(1500, Math.round(rawRadius)))
+      : 250;
+    const rawCat = String(item.category || 'TRACK')
+      .trim()
+      .toUpperCase() as PracticeVenueCategory;
+    const category: PracticeVenueCategory = VALID_PRACTICE_VENUE_CATEGORIES.has(rawCat)
+      ? rawCat
+      : 'TRACK';
+    let id =
+      typeof item.id === 'string'
+        ? item.id.trim().replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48)
+        : '';
+    if (!id || seenIds.has(id)) {
+      id = `venue_${crypto.randomBytes(4).toString('hex')}`;
+    }
+    seenIds.add(id);
+    out.push({
+      id,
+      name,
+      category,
+      latitude: lat,
+      longitude: lng,
+      radiusMeters,
+      enabled: typeof item.enabled === 'boolean' ? item.enabled : true,
+    });
+  }
+  return out;
 }
 
 export function projectSafePublicExternalSync(
@@ -651,6 +734,24 @@ export function projectTeamSummaryForCaller(
     ? projectSafePublicExternalSync(doc.brand.externalSync)
     : doc.brand.externalSync;
 
+  const projectedAttendanceByDate: Record<string, Record<string, TeamAttendanceRecord>> | undefined =
+    doc.attendanceByDate
+      ? isStaffViewer
+        ? doc.attendanceByDate
+        : !isParentFollower && myMembership.role === 'ATHLETE'
+          ? (() => {
+              const ownOnly: Record<string, Record<string, TeamAttendanceRecord>> = {};
+              for (const [dateKey, dayMap] of Object.entries(doc.attendanceByDate)) {
+                const selfRec = dayMap?.[myMembership.membershipId];
+                if (selfRec) {
+                  ownOnly[dateKey] = { [myMembership.membershipId]: selfRec };
+                }
+              }
+              return ownOnly;
+            })()
+          : undefined
+      : undefined;
+
   return {
     brand: {
       ...doc.brand,
@@ -685,7 +786,7 @@ export function projectTeamSummaryForCaller(
     ...(isParentFollower ? {} : { workoutLibrary: doc.workoutLibrary || [] }),
     workoutComments: visibleComments,
     guardianSafetyAlerts: visibleSafetyAlerts,
-    ...(isStaffViewer && doc.attendanceByDate ? { attendanceByDate: doc.attendanceByDate } : {}),
+    ...(projectedAttendanceByDate ? { attendanceByDate: projectedAttendanceByDate } : {}),
     announcements: visibleAnnouncements,
     ...(isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks }),
     ...(typeof doc.fieldMarkLogsTotalCount === 'number' && !isParentFollower

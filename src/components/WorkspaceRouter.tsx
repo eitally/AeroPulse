@@ -227,6 +227,9 @@ export const WorkspaceRouter: React.FC = () => {
             activities={effectiveActivities}
             athleteProfile={effectiveAthleteProfile}
             activeTeam={activeTeam}
+            myTeams={myTeams}
+            isSampleDemoMode={isSampleDemoMode}
+            onTeamsUpdated={onTeamsUpdated}
             distanceUnit={distanceUnit}
             plainLanguageMode={plainLanguageMode}
             sessionCheckIns={effectiveSessionCheckIns}

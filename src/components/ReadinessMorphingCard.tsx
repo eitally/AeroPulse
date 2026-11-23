@@ -1479,6 +1479,21 @@ ${dataLines.join('\n')}
                     <button
                       type="button"
                       role="menuitem"
+                      data-testid="readiness-wahoo-push"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        void handlePushToWatch('wahoo');
+                      }}
+                      className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Zap className="w-3.5 h-3.5 text-sky-600 dark:text-sky-300" />
+                        Push to Wahoo ELEMNT
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
                       onClick={() => {
                         setIsExportMenuOpen(false);
                         void handlePushToWatch('coros');
