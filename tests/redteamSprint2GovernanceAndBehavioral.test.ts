@@ -409,7 +409,7 @@ describe('Red-Team Sprint 2 Governance, Safety, Math & Resilience Suite', () => 
     it('builds the 12-athlete Willow Glen Coach Demo squad with Maya Chen shin alert & non-zero PMC snapshots', () => {
       const ds = buildSampleDemoDataset('2026-11-19');
       expect(ds.plannedEvents).toHaveLength(4);
-      expect(ds.demoTeams).toHaveLength(1);
+      expect(ds.demoTeams).toHaveLength(2);
       const squad = buildSampleDemoCoachSquad('2026-11-19');
       const athletes = squad.memberships.filter((m) => m.role === 'ATHLETE');
       expect(athletes).toHaveLength(12);

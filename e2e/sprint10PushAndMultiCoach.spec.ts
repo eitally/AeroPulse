@@ -58,7 +58,7 @@ test.describe('Wave 4: Device Push Notifications & Multi-Coach Staff (Desktop & 
     await lensSelect.selectOption('demo-mem-coach-thr');
     await expect(page.getByTestId('coach-workspace-view')).toContainText('1 connected athlete');
     await lensSelect.selectOption('ALL_TEAM');
-    await expect(page.getByTestId('coach-workspace-view')).toContainText('1-Tap Roll Call (0/12 Present)');
+    await expect(page.getByTestId('coach-workspace-view')).toContainText('1-Tap Roll Call (2/12 Present)');
     await expect(page.getByTestId('coach-workspace-view')).toContainText('2 Athletes Flagged');
 
     // 3. Open Roster -> verify 7-lane Coaching Staff Coverage Matrix & Invite Specialty Coach

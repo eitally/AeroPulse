@@ -174,7 +174,14 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
       await context.clearCookies();
       await page.goto('/');
       await page.evaluate(() => localStorage.clear());
-      await page.reload();
+      await Promise.all([
+        page.waitForResponse((resp) => resp.url().includes('/api/config/status')),
+        page.reload(),
+      ]);
+
+      await expect(page.getByRole('button', { name: /Connect with Strava/i })).toBeVisible({
+        timeout: 15000,
+      });
 
       const googleUrlProbe = await page.request.get('/api/auth/google/url');
       expect(googleUrlProbe.status()).toBe(200);
@@ -183,9 +190,6 @@ test.describe('Authentication & OAuth Handoff Flows (Strava + Google)', () => {
 
       // 3. Strava OAUTH_AUTH_SUCCESS on BroadcastChannel enters workspace directly without Step 2 or Step 3
       await installStravaWorkspaceMocks(page);
-      await expect(page.getByRole('button', { name: /Connect with Strava/i })).toBeVisible({
-        timeout: 15000,
-      });
 
       await page.evaluate(() => {
         const bc = new BroadcastChannel('aeropulse_oauth');

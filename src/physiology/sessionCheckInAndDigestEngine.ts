@@ -338,15 +338,18 @@ export function buildCoachSquadExecutionDigest(opts: {
     let attentionReason: DigestAttentionReason = 'ON_TRACK';
     let attentionSummary = 'Executing on target';
 
-    if (isInjuredMember) {
-      attentionReason = 'INJURED';
-      attentionSummary = 'Injured · Rehab / Modified Training';
-    } else if (hasPain) {
+    if (hasPain) {
       attentionReason = 'PAIN_FLAG';
       const area = latestCheckIn?.painArea || 'Soreness';
-      attentionSummary = latestCheckIn?.autoSwappedToRecovery
+      const baseSummary = latestCheckIn?.autoSwappedToRecovery
         ? `Pain · ${area} (Swapped)`
         : `Pain · ${area}`;
+      attentionSummary = isInjuredMember
+        ? `${baseSummary} · Rehab / Modified`
+        : baseSummary;
+    } else if (isInjuredMember) {
+      attentionReason = 'INJURED';
+      attentionSummary = 'Injured · Rehab / Modified Training';
     } else if (hasHighRpe) {
       attentionReason = 'HIGH_RPE_STRAIN';
       attentionSummary = `High RPE (${latestCheckIn?.rpe ?? avgRpe7d}/10)`;

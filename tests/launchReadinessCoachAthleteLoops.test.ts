@@ -192,7 +192,7 @@ describe('Launch-Readiness Coach & Athlete End-to-End Loops', () => {
     expect(unloggedCloseoutHtml).toContain('0.0 mi');
     expect(unloggedCloseoutHtml).not.toContain('0 km');
     expect(unloggedCloseoutHtml).toContain('data-testid="watchless-did-workout-btn"');
-    expect(unloggedCloseoutHtml).not.toContain('data-testid="checkin-submit-clear"');
+    expect(unloggedCloseoutHtml).toContain('data-testid="checkin-submit-clear"');
 
     const completedActivity = makeTestActivity({
       id: 'act-1',

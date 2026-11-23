@@ -467,8 +467,9 @@ export function useAthleteCloudSync({
             dirtyAtStart ||
             isCloudStateDirty() ||
             localMutationRevRef.current > revAtStart;
+          const noLocalEditThisSession = localMutationRevRef.current === revAtStart;
 
-          if (!hasUnsavedLocalMutations) {
+          if (!hasUnsavedLocalMutations || noLocalEditThisSession) {
             const latest = latestSyncStateRef.current;
             let localUpdatedAt = '';
             try {
@@ -481,64 +482,74 @@ export function useAthleteCloudSync({
               (!localUpdatedAt || cloudState.updatedAt >= localUpdatedAt);
 
             let didUpdateState = false;
+            const hydratedSnapshot = { ...latest };
+
+            const canReplaceList = <T,>(cloudArr: T[], localArr: T[]): boolean =>
+              !hasUnsavedLocalMutations
+                ? serverIsNewer || (cloudArr.length > 0 && localArr.length === 0)
+                : cloudArr.length > 0 && localArr.length === 0;
 
             if (
               Array.isArray(cloudState.plannedEvents) &&
-              (serverIsNewer ||
-                (cloudState.plannedEvents.length > 0 && latest.plannedEvents.length === 0))
+              canReplaceList(cloudState.plannedEvents, latest.plannedEvents)
             ) {
               setPlannedEvents(cloudState.plannedEvents);
+              hydratedSnapshot.plannedEvents = cloudState.plannedEvents;
               didUpdateState = true;
             }
 
             if (
               Array.isArray(cloudState.targetGoals) &&
-              (serverIsNewer ||
-                (cloudState.targetGoals.length > 0 && latest.targetGoals.length === 0))
+              canReplaceList(cloudState.targetGoals, latest.targetGoals)
             ) {
               setTargetGoals(cloudState.targetGoals);
+              hydratedSnapshot.targetGoals = cloudState.targetGoals;
               didUpdateState = true;
             }
 
             if (
               Array.isArray(cloudState.annualMileageGoals) &&
-              (serverIsNewer ||
-                (cloudState.annualMileageGoals.length > 0 &&
-                  latest.annualMileageGoals.length === 0))
+              canReplaceList(cloudState.annualMileageGoals, latest.annualMileageGoals)
             ) {
               setAnnualMileageGoals(cloudState.annualMileageGoals);
+              hydratedSnapshot.annualMileageGoals = cloudState.annualMileageGoals;
               didUpdateState = true;
             }
 
             if (
               setGearItems &&
               Array.isArray(cloudState.gearItems) &&
-              (serverIsNewer ||
-                (cloudState.gearItems.length > 0 && (latest.gearItems?.length ?? 0) === 0))
+              canReplaceList(cloudState.gearItems, latest.gearItems || [])
             ) {
               setGearItems(cloudState.gearItems);
+              hydratedSnapshot.gearItems = cloudState.gearItems;
               didUpdateState = true;
             }
 
-            if (cloudState.distanceUnit && serverIsNewer) {
+            if (!hasUnsavedLocalMutations && cloudState.distanceUnit && serverIsNewer) {
               setDistanceUnit(cloudState.distanceUnit);
+              hydratedSnapshot.distanceUnit = cloudState.distanceUnit;
               didUpdateState = true;
             }
 
-            if (cloudState.athleteProfile && serverIsNewer) {
+            if (!hasUnsavedLocalMutations && cloudState.athleteProfile && serverIsNewer) {
               setAthleteProfile((prev) => ({
                 ...prev,
                 ...cloudState.athleteProfile,
               }));
+              hydratedSnapshot.athleteProfile = {
+                ...latest.athleteProfile,
+                ...cloudState.athleteProfile,
+              };
               didUpdateState = true;
             }
 
             if (
               Array.isArray(cloudState.sessionCheckIns) &&
-              (serverIsNewer ||
-                (cloudState.sessionCheckIns.length > 0 && latest.sessionCheckIns.length === 0))
+              canReplaceList(cloudState.sessionCheckIns, latest.sessionCheckIns)
             ) {
               setSessionCheckIns(cloudState.sessionCheckIns);
+              hydratedSnapshot.sessionCheckIns = cloudState.sessionCheckIns;
               didUpdateState = true;
               try {
                 localStorage.setItem(
@@ -551,8 +562,20 @@ export function useAthleteCloudSync({
             }
 
             if (didUpdateState) {
+              latestSyncStateRef.current = hydratedSnapshot;
               skipNextSaveRef.current = true;
               applyingCloudHydrationRef.current = true;
+              if (
+                hasUnsavedLocalMutations &&
+                serverIsNewer &&
+                latest.plannedEvents.length === 0 &&
+                latest.targetGoals.length === 0 &&
+                latest.annualMileageGoals.length === 0 &&
+                (latest.gearItems?.length ?? 0) === 0 &&
+                latest.sessionCheckIns.length === 0
+              ) {
+                setCloudStateDirty(false);
+              }
             }
 
             if (cloudState.updatedAt && (serverIsNewer || didUpdateState)) {

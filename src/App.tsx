@@ -533,7 +533,10 @@ export default function App() {
     ) {
       return;
     }
-    const timer = window.setTimeout(() => {
+    let flushed = false;
+    const flushSnapshotToIdb = () => {
+      if (flushed) return;
+      flushed = true;
       const earliestActivityDate =
         activities.length > 0
           ? activities[activities.length - 1].startDateLocal.slice(0, 10)
@@ -551,8 +554,13 @@ export default function App() {
           if (savedTimestamp) setIdbSavedAt(savedTimestamp);
         })
         .catch(() => undefined);
-    }, 400);
-    return () => window.clearTimeout(timer);
+    };
+    const timer = window.setTimeout(flushSnapshotToIdb, 120);
+    window.addEventListener('pagehide', flushSnapshotToIdb);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('pagehide', flushSnapshotToIdb);
+    };
   }, [
     isSampleDemoMode,
     hasEnteredWorkspace,

@@ -506,7 +506,7 @@ function securityHeadersMiddleware(req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
   res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(self)");
   const forwardedProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
   const isHttps = req.secure || forwardedProto === "https";
   if (isHttps || isProductionDeployment()) {
@@ -514,13 +514,34 @@ function securityHeadersMiddleware(req, res, next) {
   }
   const rawPath = (req.path || req.url || "").split("?")[0];
   const isAuthOrConsentHtmlPath = /^\/auth\/[^/]+\/callback\/?$/i.test(rawPath) || rawPath === "/api/auth/magic-link/verify" || rawPath === "/api/teams/parent-consent";
+  const isPublicTeamApiPath = rawPath.startsWith("/api/teams/public/");
+  const strictApiCsp = "default-src 'none'; frame-ancestors 'none'";
+  const publicHtmlCsp = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'";
   if (isAuthOrConsentHtmlPath) {
     res.setHeader(
       "Content-Security-Policy",
       "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'"
     );
+  } else if (isPublicTeamApiPath) {
+    const applyPublicCsp = () => {
+      const contentType = String(res.getHeader("content-type") || "").toLowerCase();
+      res.setHeader(
+        "Content-Security-Policy",
+        contentType.includes("text/html") ? publicHtmlCsp : strictApiCsp
+      );
+    };
+    applyPublicCsp();
+    if (typeof res.end === "function") {
+      const origEnd = res.end;
+      res.end = function(...args) {
+        if (!this.headersSent) {
+          applyPublicCsp();
+        }
+        return origEnd.apply(this, args);
+      };
+    }
   } else if (rawPath.startsWith("/api/")) {
-    res.setHeader("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader("Content-Security-Policy", strictApiCsp);
   }
   const allowedOrigin = resolveTrustedCorsOrigin(req.headers.origin);
   if (allowedOrigin) {
@@ -642,6 +663,12 @@ var testPgPoolOverride = null;
 var pgSchemaInitialized = false;
 var pgSchemaPromise = null;
 var pgTxContext = new AsyncLocalStorage();
+function getActivePgTxState() {
+  return pgTxContext.getStore();
+}
+function getActivePgTxClient() {
+  return pgTxContext.getStore()?.client;
+}
 function getVaultStorageBackend() {
   return process.env.DATABASE_URL?.trim() || testPgPoolOverride ? "POSTGRES" : "ENCRYPTED_FILE";
 }
@@ -755,6 +782,19 @@ async function ensurePostgresVaultSchema(pool) {
           ON thresh_funnel_events (created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_thresh_funnel_events_name_created
           ON thresh_funnel_events (event_name, created_at DESC);
+        CREATE TABLE IF NOT EXISTS thresh_stripe_events (
+          event_id TEXT PRIMARY KEY,
+          event_type TEXT NOT NULL,
+          team_id TEXT,
+          customer_id TEXT,
+          subscription_id TEXT,
+          status TEXT NOT NULL DEFAULT 'PROCESSED',
+          processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_stripe_events_customer
+          ON thresh_stripe_events (customer_id);
+        CREATE INDEX IF NOT EXISTS idx_thresh_stripe_events_subscription
+          ON thresh_stripe_events (subscription_id);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -767,7 +807,7 @@ async function ensurePostgresVaultSchema(pool) {
 async function findTeamIdsByInvitedEmailPostgresAsync(email) {
   const cleanEmail = String(email || "").trim().toLowerCase();
   if (!cleanEmail) return [];
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return null;
   try {
@@ -785,6 +825,47 @@ async function findTeamIdsByInvitedEmailPostgresAsync(email) {
     return res.rows.map((r) => r.team_id);
   } catch (err) {
     warnServerFallback("vault:find-teams-by-email", err);
+    return null;
+  }
+}
+async function findTeamIdsForUserPostgresAsync(userSid, email) {
+  const sids = Array.from(
+    new Set(
+      (Array.isArray(userSid) ? userSid : userSid ? [userSid] : []).map((s) => String(s || "").trim()).filter(Boolean)
+    )
+  );
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  if (sids.length === 0 && !cleanEmail) return [];
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    let res;
+    if (sids.length > 0 && cleanEmail) {
+      res = await runner.query(
+        `SELECT team_id FROM thresh_team_members WHERE user_sid = ANY($1::text[])
+         UNION
+         SELECT team_id FROM thresh_team_members WHERE LOWER(invited_email) = $2`,
+        [sids, cleanEmail]
+      );
+    } else if (sids.length > 0) {
+      res = await runner.query(
+        `SELECT DISTINCT team_id FROM thresh_team_members WHERE user_sid = ANY($1::text[])`,
+        [sids]
+      );
+    } else {
+      res = await runner.query(
+        `SELECT DISTINCT team_id FROM thresh_team_members WHERE LOWER(invited_email) = $1`,
+        [cleanEmail]
+      );
+    }
+    return res.rows.map((r) => r.team_id);
+  } catch (err) {
+    warnServerFallback("vault:find-teams-for-user", err);
     return null;
   }
 }
@@ -887,9 +968,38 @@ function saveTenantVaultSync(tenantId, data) {
     })();
   }
 }
+function flushPgTxCacheState(txState) {
+  for (const safeId of txState.pendingVaultDeletes) {
+    memoryVaultCache.delete(safeId);
+    try {
+      const encPath = getEncryptedVaultFilePath(safeId);
+      if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
+    } catch {
+    }
+  }
+  for (const [safeId, pending] of txState.pendingVaultWrites.entries()) {
+    setBoundedMemoryVaultEntry(safeId, structuredClone(pending.data));
+    try {
+      const encPath = getEncryptedVaultFilePath(safeId);
+      fs2.writeFileSync(encPath, pending.envelope, { encoding: "utf8", mode: 384 });
+    } catch {
+    }
+  }
+}
+function invalidatePgTxTouchedKeys(txState) {
+  for (const safeId of txState.touchedKeys) {
+    memoryVaultCache.delete(safeId);
+    try {
+      const encPath = getEncryptedVaultFilePath(safeId);
+      if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
+    } catch {
+    }
+  }
+}
 async function loadTenantVaultAsync(tenantId, fallback) {
   const safeId = sanitizeTenantId(tenantId);
-  const txClient = pgTxContext.getStore();
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -904,22 +1014,26 @@ async function loadTenantVaultAsync(tenantId, fallback) {
       if (result.rows.length > 0) {
         const decrypted = decryptJsonFromVault(result.rows[0].encrypted_envelope);
         if (decrypted !== null) {
-          setBoundedMemoryVaultEntry(safeId, decrypted);
-          try {
-            fs2.writeFileSync(getEncryptedVaultFilePath(safeId), result.rows[0].encrypted_envelope, {
-              encoding: "utf8",
-              mode: 384
-            });
-          } catch {
+          if (!txState) {
+            setBoundedMemoryVaultEntry(safeId, decrypted);
+            try {
+              fs2.writeFileSync(getEncryptedVaultFilePath(safeId), result.rows[0].encrypted_envelope, {
+                encoding: "utf8",
+                mode: 384
+              });
+            } catch {
+            }
           }
           return structuredClone(decrypted);
         }
       }
-      memoryVaultCache.delete(safeId);
-      try {
-        const encPath = getEncryptedVaultFilePath(safeId);
-        if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
-      } catch {
+      if (!txState) {
+        memoryVaultCache.delete(safeId);
+        try {
+          const encPath = getEncryptedVaultFilePath(safeId);
+          if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
+        } catch {
+        }
       }
       return structuredClone(fallback);
     } catch (err) {
@@ -931,10 +1045,84 @@ async function loadTenantVaultAsync(tenantId, fallback) {
   }
   return loadTenantVaultSync(safeId, fallback);
 }
+async function loadTenantVaultsBatchAsync(tenantIds) {
+  const uniqueSafeIds = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const rawId of tenantIds || []) {
+    if (!rawId) continue;
+    try {
+      const safeId = sanitizeTenantId(rawId);
+      if (!seen.has(safeId)) {
+        seen.add(safeId);
+        uniqueSafeIds.push(safeId);
+      }
+    } catch {
+    }
+  }
+  const results = /* @__PURE__ */ new Map();
+  if (uniqueSafeIds.length === 0) return results;
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
+  const pool = getPostgresPool();
+  if (txClient || pool) {
+    try {
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool;
+      const res = await queryRunner.query(
+        "SELECT tenant_id, encrypted_envelope FROM thresh_tenant_vault WHERE tenant_id = ANY($1::text[])",
+        [uniqueSafeIds]
+      );
+      for (const row of res.rows) {
+        const decrypted = decryptJsonFromVault(row.encrypted_envelope);
+        if (decrypted !== null) {
+          results.set(row.tenant_id, structuredClone(decrypted));
+          if (!txState) {
+            setBoundedMemoryVaultEntry(row.tenant_id, decrypted);
+            try {
+              fs2.writeFileSync(getEncryptedVaultFilePath(row.tenant_id), row.encrypted_envelope, {
+                encoding: "utf8",
+                mode: 384
+              });
+            } catch {
+            }
+          }
+        }
+      }
+      if (!txState) {
+        for (const safeId of uniqueSafeIds) {
+          if (!results.has(safeId)) {
+            memoryVaultCache.delete(safeId);
+            try {
+              const encPath = getEncryptedVaultFilePath(safeId);
+              if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
+            } catch {
+            }
+          }
+        }
+      }
+      return results;
+    } catch (err) {
+      if (txClient) {
+        throw err;
+      }
+      warnServerFallback("vault:postgres-batch-read-fallback", err);
+    }
+  }
+  for (const safeId of uniqueSafeIds) {
+    const val = loadTenantVaultSync(safeId, null);
+    if (val !== null) {
+      results.set(safeId, val);
+    }
+  }
+  return results;
+}
 async function saveTenantVaultAsync(tenantId, data) {
   const safeId = sanitizeTenantId(tenantId);
   const envelope = encryptJsonForVault(data);
-  const txClient = pgTxContext.getStore();
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -953,6 +1141,12 @@ async function saveTenantVaultAsync(tenantId, data) {
       warnServerFallback("vault:postgres-upsert", err);
       throw err;
     }
+  }
+  if (txState) {
+    txState.touchedKeys.add(safeId);
+    txState.pendingVaultDeletes.delete(safeId);
+    txState.pendingVaultWrites.set(safeId, { data: structuredClone(data), envelope });
+    return;
   }
   setBoundedMemoryVaultEntry(safeId, structuredClone(data));
   try {
@@ -1004,14 +1198,8 @@ function buildClearUserCookieHeader() {
 }
 async function deleteTenantVault(tenantId) {
   const safeId = sanitizeTenantId(tenantId);
-  memoryVaultCache.delete(safeId);
-  try {
-    const encPath = getEncryptedVaultFilePath(safeId);
-    if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
-  } catch (err) {
-    warnServerFallback("vault:local-unlink", err);
-  }
-  const txClient = pgTxContext.getStore();
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -1024,6 +1212,19 @@ async function deleteTenantVault(tenantId) {
       warnServerFallback("vault:postgres-delete", err);
       throw err;
     }
+  }
+  if (txState) {
+    txState.touchedKeys.add(safeId);
+    txState.pendingVaultWrites.delete(safeId);
+    txState.pendingVaultDeletes.add(safeId);
+    return;
+  }
+  memoryVaultCache.delete(safeId);
+  try {
+    const encPath = getEncryptedVaultFilePath(safeId);
+    if (fs2.existsSync(encPath)) fs2.unlinkSync(encPath);
+  } catch (err) {
+    warnServerFallback("vault:local-unlink", err);
   }
 }
 var vaultOperationQueues = /* @__PURE__ */ new Map();
@@ -1103,7 +1304,7 @@ async function runNormalizedTeamSyncStatements(runner, safeTeamId, metadata, env
   }
 }
 async function syncNormalizedTeamPostgresAsync(teamId, metadata, docPayload, members) {
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return;
   const safeTeamId = sanitizeTenantId(teamId);
@@ -1138,24 +1339,32 @@ async function withTeamRowLock(teamId, fn) {
   const safeTeamId = sanitizeTenantId(teamId);
   const lockKey = `team_doc_${safeTeamId.slice(0, 40)}`;
   return withVaultLock(lockKey, async () => {
-    const existingClient = pgTxContext.getStore();
-    if (existingClient) {
-      await existingClient.query("SELECT pg_advisory_xact_lock(hashtext($1))", [safeTeamId]);
+    const existingTxState = getActivePgTxState();
+    if (existingTxState) {
+      await existingTxState.client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [safeTeamId]);
       return fn();
     }
     const pool = getPostgresPool();
     if (!pool) return fn();
     await ensurePostgresVaultSchema(pool);
     const client = await pool.connect();
+    const txState = {
+      client,
+      pendingVaultWrites: /* @__PURE__ */ new Map(),
+      pendingVaultDeletes: /* @__PURE__ */ new Set(),
+      touchedKeys: /* @__PURE__ */ new Set()
+    };
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '4000ms'");
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [safeTeamId]);
-      const result = await pgTxContext.run(client, fn);
+      const result = await pgTxContext.run(txState, fn);
       await client.query("COMMIT");
+      flushPgTxCacheState(txState);
       return result;
     } catch (err) {
       await client.query("ROLLBACK").catch(() => void 0);
+      invalidatePgTxTouchedKeys(txState);
       throw err;
     } finally {
       client.release();
@@ -1182,7 +1391,7 @@ async function appendAuditLogAsync(params) {
     const next = [...existing, entry].slice(-MAX_LOCAL_AUDIT_ENTRIES);
     await saveTenantVaultAsync(key, next);
   });
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -1214,7 +1423,7 @@ async function appendAuditLogAsync(params) {
 async function listTeamAuditLogAsync(teamId, limit = 100) {
   const safeTeamId = sanitizeTenantId(teamId);
   const clampedLimit = Math.max(1, Math.min(250, Math.round(limit)));
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -1260,7 +1469,7 @@ async function consumeRateLimitPostgresAsync(key, limit, windowMs) {
   if (!cleanKey) {
     return { allowed: true, retryAfterSecs: 0, remaining: Math.max(0, limit) };
   }
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return null;
   try {
@@ -1308,7 +1517,7 @@ async function consumeRateLimitPostgresAsync(key, limit, windowMs) {
 }
 async function deleteTeamPostgresRowsAsync(teamId) {
   const safeTeamId = sanitizeTenantId(teamId);
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return;
   try {
@@ -1325,20 +1534,24 @@ async function deleteTeamPostgresRowsAsync(teamId) {
   }
 }
 async function deleteMemberPostgresRowsAsync(params) {
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return;
   const safeTeamId = params.teamId ? sanitizeTenantId(params.teamId) : void 0;
   const membershipIds = Array.from(
     new Set((params.membershipIds || []).map((v) => String(v || "").trim()).filter(Boolean))
   );
+  const injuryCaseIds = Array.from(
+    new Set((params.injuryCaseIds || []).map((v) => String(v || "").trim()).filter(Boolean))
+  );
+  const auditTargetIds = Array.from(/* @__PURE__ */ new Set([...membershipIds, ...injuryCaseIds]));
   const userSids = Array.from(
     new Set((params.userSids || []).map((v) => String(v || "").trim()).filter(Boolean))
   );
   const emails = Array.from(
     new Set((params.emails || []).map((v) => String(v || "").trim().toLowerCase()).filter(Boolean))
   );
-  if (membershipIds.length === 0 && userSids.length === 0 && emails.length === 0) {
+  if (auditTargetIds.length === 0 && userSids.length === 0 && emails.length === 0) {
     return;
   }
   try {
@@ -1351,12 +1564,34 @@ async function deleteMemberPostgresRowsAsync(params) {
         "DELETE FROM thresh_team_members WHERE team_id = $1 AND membership_id = ANY($2::text[])",
         [safeTeamId, membershipIds]
       );
-      await runner.query(
-        `UPDATE thresh_audit_log
-         SET metadata_json = '{"redacted":true}'
-         WHERE team_id = $1 AND target_id = ANY($2::text[])`,
-        [safeTeamId, membershipIds]
-      );
+    }
+    if (auditTargetIds.length > 0) {
+      if (safeTeamId) {
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET metadata_json = '{"redacted":true}'
+           WHERE team_id = $1
+             AND (
+               target_id = ANY($2::text[])
+               OR EXISTS (
+                 SELECT 1 FROM unnest($2::text[]) AS tid
+                 WHERE strpos(metadata_json, tid) > 0
+               )
+             )`,
+          [safeTeamId, auditTargetIds]
+        );
+      } else {
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET metadata_json = '{"redacted":true}'
+           WHERE target_id = ANY($1::text[])
+              OR EXISTS (
+                SELECT 1 FROM unnest($1::text[]) AS tid
+                WHERE strpos(metadata_json, tid) > 0
+              )`,
+          [auditTargetIds]
+        );
+      }
     }
     if (userSids.length > 0) {
       if (safeTeamId) {
@@ -1435,19 +1670,123 @@ async function queryFunnelEventsPostgresAsync(sinceIso, limit = 1e4) {
   if (!pool) return null;
   try {
     await ensurePostgresVaultSchema(pool);
+    const cappedLimit = Math.max(1, Math.min(1e4, Math.floor(limit)));
     const res = await pool.query(
-      `SELECT event_name, created_at::text AS created_at, utm_source, utm_medium, utm_campaign,
-              utm_content, src, referrer_host, landing_path, role, tier
+      `SELECT event_name,
+              TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS created_at,
+              utm_source,
+              utm_medium,
+              utm_campaign,
+              referrer_host,
+              COALESCE(NULLIF(role, ''), 'UNKNOWN') AS role,
+              tier,
+              COUNT(*)::int AS event_count
        FROM thresh_funnel_events
        WHERE created_at >= $1::timestamptz
+       GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
        ORDER BY created_at DESC
        LIMIT $2`,
-      [sinceIso, Math.max(1, Math.min(25e3, Math.floor(limit)))]
+      [sinceIso, cappedLimit]
     );
     return res.rows;
   } catch (err) {
     warnServerFallback("vault:query-funnel-events-postgres", err);
     return null;
+  }
+}
+var DELETED_USERS_TOMBSTONES_KEY = "deleted_users_tombstones_v1";
+async function markDeletedUserTombstoneAsync(userId) {
+  const cleanId = String(userId || "").trim();
+  if (!cleanId.startsWith("usr_")) return;
+  await withVaultLock(DELETED_USERS_TOMBSTONES_KEY, async () => {
+    const existing = await loadTenantVaultAsync(
+      DELETED_USERS_TOMBSTONES_KEY,
+      { ids: {} }
+    );
+    const ids = { ...existing?.ids || {} };
+    ids[cleanId] = (/* @__PURE__ */ new Date()).toISOString();
+    const entries = Object.entries(ids);
+    const trimmed = entries.length > 5e3 ? Object.fromEntries(entries.sort((a, b) => a[1].localeCompare(b[1])).slice(-5e3)) : ids;
+    await saveTenantVaultAsync(DELETED_USERS_TOMBSTONES_KEY, { ids: trimmed });
+  });
+}
+async function isUserDeletedTombstoneAsync(userId) {
+  const cleanId = String(userId || "").trim();
+  if (!cleanId.startsWith("usr_")) return false;
+  const existing = await loadTenantVaultAsync(
+    DELETED_USERS_TOMBSTONES_KEY,
+    { ids: {} }
+  );
+  return Boolean(existing?.ids && Object.prototype.hasOwnProperty.call(existing.ids, cleanId));
+}
+async function lookupStripeEventPostgresAsync(params) {
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    const dupRes = await runner.query(
+      "SELECT event_id FROM thresh_stripe_events WHERE event_id = $1 LIMIT 1",
+      [params.eventId]
+    );
+    if (dupRes.rows.length > 0) {
+      return { alreadyProcessed: true };
+    }
+    let resolvedTeamId;
+    if (params.subscriptionId) {
+      const subRes = await runner.query(
+        `SELECT team_id FROM thresh_stripe_events
+         WHERE subscription_id = $1 AND team_id IS NOT NULL
+         ORDER BY processed_at DESC LIMIT 1`,
+        [params.subscriptionId]
+      );
+      if (subRes.rows[0]?.team_id) resolvedTeamId = subRes.rows[0].team_id;
+    }
+    if (!resolvedTeamId && params.customerId) {
+      const custRes = await runner.query(
+        `SELECT team_id FROM thresh_stripe_events
+         WHERE customer_id = $1 AND team_id IS NOT NULL
+         ORDER BY processed_at DESC LIMIT 1`,
+        [params.customerId]
+      );
+      if (custRes.rows[0]?.team_id) resolvedTeamId = custRes.rows[0].team_id;
+    }
+    return { alreadyProcessed: false, resolvedTeamId };
+  } catch (err) {
+    warnServerFallback("stripe:postgres-lookup", err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+async function recordStripeEventPostgresAsync(params) {
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool;
+    const res = await runner.query(
+      `INSERT INTO thresh_stripe_events (event_id, event_type, team_id, customer_id, subscription_id, status, processed_at)
+       VALUES ($1, $2, $3, $4, $5, 'PROCESSED', NOW())
+       ON CONFLICT (event_id) DO NOTHING
+       RETURNING event_id`,
+      [
+        params.eventId,
+        params.eventType,
+        params.teamId || null,
+        params.customerId || null,
+        params.subscriptionId || null
+      ]
+    );
+    return { inserted: res.rows.length > 0 };
+  } catch (err) {
+    warnServerFallback("stripe:postgres-record", err);
+    throw err;
   }
 }
 
@@ -4743,14 +5082,13 @@ function resolveAthleteAgeTier(params) {
   const currentIsoDate = safeNow.toISOString().slice(0, 10);
   const normBmy = normalizeBirthMonthYear(params.birthMonthYear);
   const explicitYear = typeof params.birthYear === "number" && Number.isFinite(params.birthYear) && params.birthYear >= 1920 && params.birthYear <= nowYear + 1 ? Math.round(params.birthYear) : void 0;
+  const effectiveBmy = normBmy ?? (explicitYear !== void 0 ? `${explicitYear}-12` : void 0);
   let estimatedAgeYears = null;
-  if (normBmy) {
-    const bYear = Number(normBmy.slice(0, 4));
-    const bMonth = Number(normBmy.slice(5, 7));
+  if (effectiveBmy) {
+    const bYear = Number(effectiveBmy.slice(0, 4));
+    const bMonth = Number(effectiveBmy.slice(5, 7));
     const completedMonths = (nowYear - bYear) * 12 + (nowMonth - bMonth) - 1;
     estimatedAgeYears = Math.max(0, Math.floor(completedMonths / 12));
-  } else if (explicitYear !== void 0) {
-    estimatedAgeYears = Math.max(0, nowYear - explicitYear);
   }
   let ageTier = "UNKNOWN";
   let isUnder13 = false;
@@ -4780,8 +5118,8 @@ function resolveAthleteAgeTier(params) {
     isUnder13,
     isMinorU18,
     shouldAutoGraduateHs,
-    birthYear: parseBirthYearFromBirthMonthYear(normBmy) ?? explicitYear,
-    birthMonthYear: normBmy
+    birthYear: parseBirthYearFromBirthMonthYear(effectiveBmy) ?? explicitYear,
+    birthMonthYear: effectiveBmy
   };
 }
 
@@ -7106,7 +7444,8 @@ async function pushWorkoutToWahooCloud(opts) {
         external_id: externalId,
         provider_updated_at: nowIso
       }
-    })
+    }),
+    signal: AbortSignal.timeout(12e3)
   });
   if (!planResp.ok) {
     const errText = await planResp.text().catch(() => "");
@@ -7130,11 +7469,12 @@ async function pushWorkoutToWahooCloud(opts) {
         name: planJson.name,
         starts: `${planJson.planDate}T08:00:00.000Z`,
         minutes: Math.max(1, Math.round(planJson.estimatedDurationSecs / 60)),
-        workout_type_id: isRunning ? 0 : 1,
+        workout_type_id: isRunning ? 1 : 0,
         ...planId !== void 0 ? { plan_id: planId } : {},
         workout_token: externalId
       }
-    })
+    }),
+    signal: AbortSignal.timeout(12e3)
   });
   if (workoutResp.status === 403) {
     return {
@@ -10106,7 +10446,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     messagingPolicy: resolvedMessagingPolicy
   };
 }
-async function listTeamsForUser(callerSid, originUrl) {
+async function loadTeamDocsForCaller(callerSid) {
   const userIdx = await loadTenantVaultAsync(
     userTeamsVaultKey(callerSid),
     {
@@ -10114,13 +10454,24 @@ async function listTeamsForUser(callerSid, originUrl) {
       updatedAt: ""
     }
   );
+  const pgTeamIds = await findTeamIdsForUserPostgresAsync([callerSid]);
+  const teamIds = Array.from(
+    new Set([...userIdx.teamIds || [], ...pgTeamIds || []].filter(Boolean))
+  );
+  if (teamIds.length === 0) return [];
+  const docKeys = teamIds.map((teamId) => teamDocVaultKey(teamId));
+  const docsByKey = await loadTenantVaultsBatchAsync(docKeys);
+  const docs = [];
+  for (const key of docKeys) {
+    const doc = docsByKey.get(key) ?? null;
+    if (doc) docs.push(doc);
+  }
+  return docs;
+}
+async function listTeamsForUser(callerSid, originUrl) {
+  const docs = await loadTeamDocsForCaller(callerSid);
   const out = [];
-  for (const teamId of userIdx.teamIds) {
-    const doc = await loadTenantVaultAsync(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
+  for (const doc of docs) {
     const summary = projectTeamSummaryForCaller(doc, callerSid, originUrl);
     if (summary) out.push(summary);
   }
@@ -12932,6 +13283,13 @@ async function getTeamGovernanceAuditLog(params) {
 }
 
 // server/teamService.ts
+var RASTER_LOGO_DATA_URL_RE = /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i;
+function sanitizeRasterLogoDataUrl(raw) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 96e3) return void 0;
+  return RASTER_LOGO_DATA_URL_RE.test(trimmed) ? trimmed : void 0;
+}
 async function updateTeamMemberEmailsForUser(params) {
   const cleanNew = params.newEmail.trim().toLowerCase();
   const cleanOld = params.oldEmail?.trim().toLowerCase();
@@ -12953,32 +13311,30 @@ async function updateTeamMemberEmailsForUser(params) {
     });
   }
   if (params.callerSid) {
-    const idx = await loadTenantVaultAsync(userTeamsVaultKey(params.callerSid), {
+    const callerSid = params.callerSid;
+    const idx = await loadTenantVaultAsync(userTeamsVaultKey(callerSid), {
       teamIds: [],
       updatedAt: (/* @__PURE__ */ new Date()).toISOString()
     });
     if (idx.email !== cleanNew) {
       idx.email = cleanNew;
       idx.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTenantVaultAsync(userTeamsVaultKey(params.callerSid), idx);
+      await saveTenantVaultAsync(userTeamsVaultKey(callerSid), idx);
     }
     for (const teamId of idx.teamIds) {
-      await withVaultLock(teamDocVaultKey(teamId), async () => {
-        const doc = await loadTenantVaultAsync(
-          teamDocVaultKey(teamId),
-          null
-        );
+      await withTeamRowLock(teamId, async () => {
+        const doc = await loadTeamDocRaw(teamId);
         if (!doc) return;
         let changed = false;
         for (const m of doc.memberships) {
-          if (m.userSid === params.callerSid && m.status !== "REVOKED") {
+          if (m.userSid === callerSid && m.status !== "REVOKED") {
             m.invitedEmail = cleanNew;
             changed = true;
           }
         }
         if (changed) {
           doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-          await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+          await saveTeamDocRaw(teamId, doc);
         }
       });
     }
@@ -12993,26 +13349,28 @@ async function migrateAnonymousTeamsToSid(params) {
   });
   if (oldIdx.teamIds.length === 0) return;
   for (const teamId of oldIdx.teamIds) {
-    const doc = await loadTenantVaultAsync(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-    let changed = false;
-    for (const m of doc.memberships) {
-      if (m.userSid === oldSid && m.status !== "REVOKED") {
-        m.userSid = newSid;
-        if (stravaAthleteId) m.stravaAthleteId = stravaAthleteId;
-        if (email && !m.invitedEmail) m.invitedEmail = email;
-        if (athleteName && (!m.invitedName || m.invitedName === "Team Athlete" || m.invitedName.toLowerCase().startsWith("anonymous"))) {
-          m.invitedName = athleteName.slice(0, 64);
+    const migrated = await withTeamRowLock(teamId, async () => {
+      const doc = await loadTeamDocRaw(teamId);
+      if (!doc) return false;
+      let changed = false;
+      for (const m of doc.memberships) {
+        if (m.userSid === oldSid && m.status !== "REVOKED") {
+          m.userSid = newSid;
+          if (stravaAthleteId) m.stravaAthleteId = stravaAthleteId;
+          if (email && !m.invitedEmail) m.invitedEmail = email;
+          if (athleteName && (!m.invitedName || m.invitedName === "Team Athlete" || m.invitedName.toLowerCase().startsWith("anonymous"))) {
+            m.invitedName = athleteName.slice(0, 64);
+          }
+          changed = true;
         }
-        changed = true;
       }
-    }
-    if (changed) {
-      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+      if (changed) {
+        doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        await saveTeamDocRaw(teamId, doc);
+      }
+      return changed;
+    });
+    if (migrated) {
       await addTeamToUserIndex(newSid, teamId, athleteName || oldIdx.displayName, email || oldIdx.email);
     }
   }
@@ -13080,7 +13438,7 @@ async function createTeamForCoach(params) {
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const defaultSafeSportShield = typeof params.defaultSafeSportShield === "boolean" ? params.defaultSafeSportShield : orgDefaults.defaultSafeSportShield;
   const enableParentGuardianCc = typeof params.enableParentGuardianCc === "boolean" ? params.enableParentGuardianCc : orgDefaults.enableParentGuardianCc;
-  const safeLogo = params.logoDataUrl && params.logoDataUrl.startsWith("data:image/") && params.logoDataUrl.length <= 96e3 ? params.logoDataUrl : void 0;
+  const safeLogo = sanitizeRasterLogoDataUrl(params.logoDataUrl);
   const cleanDistrictName = sanitizeDistrictName(params.districtName);
   const cleanPracticeVenues = sanitizePracticeVenues(params.practiceVenues);
   const brand = {
@@ -13200,8 +13558,11 @@ async function updateTeamBranding(params) {
     }
     if (u.logoDataUrl === "") {
       doc.brand.logoDataUrl = void 0;
-    } else if (u.logoDataUrl && u.logoDataUrl.startsWith("data:image/") && u.logoDataUrl.length <= 96e3) {
-      doc.brand.logoDataUrl = u.logoDataUrl;
+    } else {
+      const sanitizedLogo = sanitizeRasterLogoDataUrl(u.logoDataUrl);
+      if (sanitizedLogo) {
+        doc.brand.logoDataUrl = sanitizedLogo;
+      }
     }
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     await saveTeamDocRaw(params.teamId, doc);
@@ -13366,53 +13727,97 @@ async function bulkCreateAndSendInvites(params) {
   };
 }
 async function resendPendingTeamInvites(params) {
-  const doc = await loadTenantVaultAsync(
-    teamDocVaultKey(params.teamId),
-    null
-  );
-  if (!doc) return { summary: null, emailedCount: 0, resendConfigured: isResendConfigured() };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+  const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+  const prepared = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return null;
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH") {
+      return null;
+    }
+    let tokensUpdated = false;
+    const pendingEmails = [];
+    for (const m of doc.memberships) {
+      if (m.status === "ACTIVE" || m.status === "REVOKED" || !m.invitedEmail) continue;
+      if (params.membershipId && params.membershipId !== "ALL_PENDING" && m.membershipId !== params.membershipId) {
+        continue;
+      }
+      if (!m.rawInviteToken) {
+        m.rawInviteToken = crypto12.randomBytes(12).toString("base64url");
+        m.inviteTokenHash = hashToken(m.rawInviteToken);
+        tokensUpdated = true;
+      }
+      const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : "";
+      const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam}`;
+      const ccEmail = doc.brand.enableParentGuardianCc && m.parentGuardianEmail ? m.parentGuardianEmail : void 0;
+      const emailContent = buildTeamInviteEmailContent({
+        brand: doc.brand,
+        invitedName: m.invitedName,
+        squadGroup: m.squadGroup,
+        magicJoinUrl,
+        hasParentCc: Boolean(ccEmail),
+        seedMarkOrFtp: m.seedMarkOrFtp
+      });
+      pendingEmails.push({
+        membershipId: m.membershipId,
+        to: m.invitedEmail,
+        cc: ccEmail,
+        subject: `Reminder: ${emailContent.subject}`,
+        html: emailContent.html,
+        text: emailContent.text
+      });
+    }
+    if (tokensUpdated) {
+      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await saveTeamDocRaw(params.teamId, doc);
+    }
+    return { doc, pendingEmails };
+  });
+  if (!prepared) {
     return { summary: null, emailedCount: 0, resendConfigured: isResendConfigured() };
   }
-  const cleanOrigin = params.originUrl.replace(/\/+$/, "");
   let emailedCount = 0;
-  for (const m of doc.memberships) {
-    if (m.status === "ACTIVE" || m.status === "REVOKED" || !m.invitedEmail) continue;
-    if (params.membershipId && params.membershipId !== "ALL_PENDING" && m.membershipId !== params.membershipId) {
-      continue;
-    }
-    if (!m.rawInviteToken) {
-      m.rawInviteToken = crypto12.randomBytes(12).toString("base64url");
-      m.inviteTokenHash = hashToken(m.rawInviteToken);
-    }
-    const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : "";
-    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam}`;
-    const ccEmail = doc.brand.enableParentGuardianCc && m.parentGuardianEmail ? m.parentGuardianEmail : void 0;
-    const emailContent = buildTeamInviteEmailContent({
-      brand: doc.brand,
-      invitedName: m.invitedName,
-      squadGroup: m.squadGroup,
-      magicJoinUrl,
-      hasParentCc: Boolean(ccEmail),
-      seedMarkOrFtp: m.seedMarkOrFtp
-    });
-    const sendRes = await sendEmailViaResend({
-      to: m.invitedEmail,
-      cc: ccEmail,
-      subject: `Reminder: ${emailContent.subject}`,
-      html: emailContent.html,
-      text: emailContent.text
-    });
-    m.emailDeliveryStatus = sendRes.status;
-    if (sendRes.delivered) emailedCount += 1;
+  if (prepared.pendingEmails.length === 0) {
+    return {
+      summary: projectTeamSummaryForCaller(prepared.doc, params.callerSid, params.originUrl),
+      emailedCount: 0,
+      resendConfigured: isResendConfigured()
+    };
   }
-  doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+  const statusById = /* @__PURE__ */ new Map();
+  for (let i = 0; i < prepared.pendingEmails.length; i += 4) {
+    const batch = prepared.pendingEmails.slice(i, i + 4);
+    await Promise.all(
+      batch.map(async (item) => {
+        const sendRes = await sendEmailViaResend({
+          to: item.to,
+          cc: item.cc,
+          subject: item.subject,
+          html: item.html,
+          text: item.text
+        });
+        statusById.set(item.membershipId, sendRes.status);
+        if (sendRes.delivered) emailedCount += 1;
+      })
+    );
+  }
+  const finalSummary = await withTeamRowLock(params.teamId, async () => {
+    const latestDoc = await loadTeamDocRaw(params.teamId);
+    if (!latestDoc) return null;
+    for (const m of latestDoc.memberships) {
+      const nextStatus = statusById.get(m.membershipId);
+      if (nextStatus) {
+        m.emailDeliveryStatus = nextStatus;
+      }
+    }
+    latestDoc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, latestDoc);
+    return projectTeamSummaryForCaller(latestDoc, params.callerSid, params.originUrl);
+  });
   return {
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    summary: finalSummary || projectTeamSummaryForCaller(prepared.doc, params.callerSid, params.originUrl),
     emailedCount,
     resendConfigured: isResendConfigured()
   };
@@ -13526,6 +13931,30 @@ async function claimTeamJoinInvite(params) {
       }
     }
     const isStaffInvite = Boolean(mem && mem.role !== "ATHLETE");
+    const hadPreExistingMinor = Boolean(mem && mem.isMinorU18);
+    const hadPreExistingParentEmail = mem?.parentGuardianEmail?.trim().toLowerCase() || void 0;
+    const existingMemBmy = mem?.birthMonthYear || (typeof mem?.birthYear === "number" && mem.birthYear > 1900 ? `${mem.birthYear}-12` : void 0);
+    if (!isStaffInvite) {
+      const coppaCheck = validateCoppaAgeInput({
+        birthMonthYear: params.birthMonthYear,
+        birthYear: params.birthYear,
+        existingBirthMonthYear: existingMemBmy
+      });
+      if (!coppaCheck.ok) {
+        return {
+          ok: false,
+          statusCode: coppaCheck.statusCode || 400,
+          error: coppaCheck.error
+        };
+      }
+      if (mem && mem.status === "ACTIVE" && mem.isMinorU18 && !existingMemBmy && coppaCheck.ageTier === "ADULT_18_PLUS") {
+        return {
+          ok: false,
+          statusCode: 403,
+          error: "Minor birth date cannot be altered to an adult date directly."
+        };
+      }
+    }
     const ageCheck = isStaffInvite ? {
       ageTier: "ADULT_18_PLUS",
       isUnder13: false,
@@ -13533,7 +13962,7 @@ async function claimTeamJoinInvite(params) {
       birthYear: void 0,
       birthMonthYear: void 0
     } : resolveAthleteAgeTier({
-      birthMonthYear: mem?.birthMonthYear || params.birthMonthYear,
+      birthMonthYear: existingMemBmy || params.birthMonthYear,
       birthYear: mem?.birthYear ?? params.birthYear,
       orgType: doc.brand.orgType,
       graduationYear: params.graduationYear ?? mem?.graduationYear
@@ -13608,18 +14037,25 @@ async function claimTeamJoinInvite(params) {
       if (!mem.openedAt) mem.openedAt = nowIso;
       if (!mem.joinedAt) mem.joinedAt = nowIso;
     }
-    mem.isMinorU18 = isMinor;
-    if (ageCheck.birthMonthYear && !mem.birthMonthYear) {
+    const preserveMinorAndParent = Boolean(
+      !isStaffInvite && (hadPreExistingMinor && !existingMemBmy && hadPreExistingParentEmail || hadPreExistingMinor && existingMemBmy && ageCheck.isMinorU18)
+    );
+    mem.isMinorU18 = preserveMinorAndParent ? true : isMinor;
+    if (existingMemBmy && !mem.birthMonthYear) {
+      mem.birthMonthYear = existingMemBmy;
+    } else if (ageCheck.birthMonthYear && !mem.birthMonthYear && !preserveMinorAndParent) {
       mem.birthMonthYear = ageCheck.birthMonthYear;
     }
-    if (ageCheck.birthYear && ageCheck.birthYear > 1900 && !mem.birthYear) {
+    if (ageCheck.birthYear && ageCheck.birthYear > 1900 && !mem.birthYear && !preserveMinorAndParent) {
       mem.birthYear = ageCheck.birthYear;
     }
-    if (ageCheck.ageTier === "ADULT_18_PLUS") {
+    if (ageCheck.ageTier === "ADULT_18_PLUS" && !hadPreExistingParentEmail && !preserveMinorAndParent) {
       mem.parentGuardianEmail = void 0;
       mem.parentConsentToken = void 0;
       mem.parentConsentTokenHash = void 0;
       mem.parentConsentStatus = "NOT_REQUIRED";
+    } else if (hadPreExistingParentEmail) {
+      mem.parentGuardianEmail = effectiveParentEmail || hadPreExistingParentEmail;
     } else if (effectiveParentEmail) {
       mem.parentGuardianEmail = effectiveParentEmail;
     }
@@ -14054,110 +14490,120 @@ function findOrCreateExternalMembership(doc, candidate) {
   return { mem: createdMem, created: true };
 }
 async function applyExternalTeamSyncBatch(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+  const pendingArchives = [];
+  const lockOutcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+      return {
+        summary: null,
+        addedAthletes: 0,
+        updatedAthletes: 0,
+        addedMeets: 0,
+        recordedResults: 0
+      };
+    }
+    let addedAthletes = 0;
+    let updatedAthletes = 0;
+    let addedMeets = 0;
+    let recordedResults = 0;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    for (const ath of (params.athletes || []).slice(0, 400)) {
+      const res = findOrCreateExternalMembership(doc, ath);
+      if (res.created) addedAthletes += 1;
+      else updatedAthletes += 1;
+    }
+    if (Array.isArray(params.meets) && params.meets.length > 0) {
+      const extSource = params.externalSyncPatch?.platform === "TFRRS" || doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
+      addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
+    }
+    const matchedFieldItems = [];
+    for (const row of (params.results || []).slice(0, 200)) {
+      const { mem, created } = findOrCreateExternalMembership(doc, {
+        name: row.athleteName,
+        squadGroup: row.squadGroup,
+        graduationYear: row.graduationYear,
+        genderDivision: row.genderDivision,
+        seedMarkOrFtp: row.isFieldEvent ? row.displayFieldMark || row.displayFatTime : row.displayFatTime,
+        externalSource: row.externalSource,
+        externalAthleteId: row.externalAthleteId,
+        externalProfileUrl: row.externalProfileUrl,
+        isMinorU18: doc.brand.orgType === "HIGH_SCHOOL"
+      });
+      if (created) addedAthletes += 1;
+      if (row.isFieldEvent) {
+        matchedFieldItems.push({ row, mem });
+        continue;
+      }
+      const existingActs = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
+      const duplicate = existingActs.some(
+        (a) => a.startDateLocal?.slice(0, 10) === row.date && a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters && Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
+      );
+      if (duplicate) continue;
+      const activity = synthesizeOfficialRaceActivity({
+        id: `ext-meet-${crypto13.randomBytes(5).toString("hex")}`,
+        date: row.date,
+        meetName: row.meetName,
+        eventLabel: row.eventLabel,
+        eventDistanceMeters: row.eventDistanceMeters,
+        fatTimeSecs: row.fatTimeSecs,
+        displayFatTime: row.displayFatTime || formatFatTime(row.fatTimeSecs),
+        platform: row.platform,
+        trackType: row.trackType,
+        placeFinish: row.placeFinish,
+        lapSplitDistanceMeters: row.eventDistanceMeters <= 400 ? 200 : row.eventDistanceMeters >= 3e3 ? 1e3 : 400,
+        lapSplitsSecs: [],
+        includeWarmupCooldown: false,
+        sourceUrl: row.externalProfileUrl || row.sourceUrl,
+        startDateLocalIso: `${row.date}T09:00:00`
+      });
+      mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
+      if (!mem.seedMarkOrFtp) {
+        mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
+      }
+      if (mem.userSid || mem.stravaAthleteId || mem.invitedEmail) {
+        pendingArchives.push({ mem, activity });
+      }
+      recordedResults += 1;
+    }
+    if (matchedFieldItems.length > 0) {
+      const existingFieldLogs = await loadFullTeamFieldMarksArchive(
+        params.teamId,
+        doc.fieldMarkLogs
+      );
+      const fieldRes = applyParsedExternalFieldMarksToDoc({
+        doc,
+        existingLogs: existingFieldLogs,
+        matchedFieldItems
+      });
+      const boundedFieldLogs = fieldRes.mergedLogs.slice(0, 2500);
+      await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), boundedFieldLogs);
+      doc.fieldMarkLogs = boundedFieldLogs.slice(0, 150);
+      doc.fieldMarkLogsTotalCount = boundedFieldLogs.length;
+      recordedResults += fieldRes.addedCount;
+    }
+    doc.brand.externalSync = sanitizeExternalSyncConfig(
+      {
+        ...params.externalSyncPatch || {},
+        lastSyncedAt: nowIso
+      },
+      doc.brand.externalSync
+    );
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
     return {
-      summary: null,
-      addedAthletes: 0,
-      updatedAthletes: 0,
-      addedMeets: 0,
-      recordedResults: 0
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      addedAthletes,
+      updatedAthletes,
+      addedMeets,
+      recordedResults
     };
-  }
-  let addedAthletes = 0;
-  let updatedAthletes = 0;
-  let addedMeets = 0;
-  let recordedResults = 0;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  for (const ath of (params.athletes || []).slice(0, 400)) {
-    const res = findOrCreateExternalMembership(doc, ath);
-    if (res.created) addedAthletes += 1;
-    else updatedAthletes += 1;
-  }
-  if (Array.isArray(params.meets) && params.meets.length > 0) {
-    const extSource = params.externalSyncPatch?.platform === "TFRRS" || doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
-    addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
-  }
-  const matchedFieldItems = [];
-  for (const row of (params.results || []).slice(0, 200)) {
-    const { mem, created } = findOrCreateExternalMembership(doc, {
-      name: row.athleteName,
-      squadGroup: row.squadGroup,
-      graduationYear: row.graduationYear,
-      genderDivision: row.genderDivision,
-      seedMarkOrFtp: row.isFieldEvent ? row.displayFieldMark || row.displayFatTime : row.displayFatTime,
-      externalSource: row.externalSource,
-      externalAthleteId: row.externalAthleteId,
-      externalProfileUrl: row.externalProfileUrl,
-      isMinorU18: doc.brand.orgType === "HIGH_SCHOOL"
-    });
-    if (created) addedAthletes += 1;
-    if (row.isFieldEvent) {
-      matchedFieldItems.push({ row, mem });
-      continue;
-    }
-    const existingActs = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
-    const duplicate = existingActs.some(
-      (a) => a.startDateLocal?.slice(0, 10) === row.date && a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters && Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
+  });
+  if (pendingArchives.length > 0) {
+    await Promise.allSettled(
+      pendingArchives.map(({ mem, activity }) => archiveCoachActivitiesForMember(mem, [activity]))
     );
-    if (duplicate) continue;
-    const activity = synthesizeOfficialRaceActivity({
-      id: `ext-meet-${crypto13.randomBytes(5).toString("hex")}`,
-      date: row.date,
-      meetName: row.meetName,
-      eventLabel: row.eventLabel,
-      eventDistanceMeters: row.eventDistanceMeters,
-      fatTimeSecs: row.fatTimeSecs,
-      displayFatTime: row.displayFatTime || formatFatTime(row.fatTimeSecs),
-      platform: row.platform,
-      trackType: row.trackType,
-      placeFinish: row.placeFinish,
-      lapSplitDistanceMeters: row.eventDistanceMeters <= 400 ? 200 : row.eventDistanceMeters >= 3e3 ? 1e3 : 400,
-      lapSplitsSecs: [],
-      includeWarmupCooldown: false,
-      sourceUrl: row.externalProfileUrl || row.sourceUrl,
-      startDateLocalIso: `${row.date}T09:00:00`
-    });
-    mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
-    if (!mem.seedMarkOrFtp) {
-      mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
-    }
-    if (mem.userSid || mem.stravaAthleteId || mem.invitedEmail) {
-      await archiveCoachActivitiesForMember(mem, [activity]).catch(() => void 0);
-    }
-    recordedResults += 1;
   }
-  if (matchedFieldItems.length > 0) {
-    const existingFieldLogs = await loadFullTeamFieldMarksArchive(
-      params.teamId,
-      doc.fieldMarkLogs
-    );
-    const fieldRes = applyParsedExternalFieldMarksToDoc({
-      doc,
-      existingLogs: existingFieldLogs,
-      matchedFieldItems
-    });
-    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), fieldRes.mergedLogs);
-    doc.fieldMarkLogs = fieldRes.mergedLogs.slice(0, 150);
-    doc.fieldMarkLogsTotalCount = fieldRes.mergedLogs.length;
-    recordedResults += fieldRes.addedCount;
-  }
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    {
-      ...params.externalSyncPatch || {},
-      lastSyncedAt: nowIso
-    },
-    doc.brand.externalSync
-  );
-  doc.updatedAt = nowIso;
-  await saveTeamDocRaw(params.teamId, doc);
-  return {
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-    addedAthletes,
-    updatedAthletes,
-    addedMeets,
-    recordedResults
-  };
+  return lockOutcome;
 }
 async function getPublicTeamHubBySlugOrCode(slugOrCode) {
   const doc = await findTeamDocumentByCodeOrSlug(slugOrCode);
@@ -14498,6 +14944,49 @@ async function subscribeParentEmailToPublicHub(params) {
     message: sendRes.delivered ? `Confirmation link sent to ${cleanEmail}. Check your inbox to activate updates.` : `Subscription saved, but email delivery failed (${sendRes.error || "retry shortly"}).`
   };
 }
+async function previewParentEmailSubscriptionToken(params) {
+  const cleanToken = String(params.token || "").trim();
+  if (!cleanToken) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: params.mode === "confirm" ? "Missing confirmation token." : "Missing unsubscribe token."
+    };
+  }
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (!doc || params.mode === "confirm" && !doc.brand.externalSync?.enablePublicParentHub) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: params.mode === "confirm" ? "Team Hub not found or public parent access is disabled." : "Team Hub not found."
+    };
+  }
+  const targetHash = hashToken(cleanToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+  const records = await loadTenantVaultAsync(vaultKey, []);
+  const match = records.find(
+    (r) => params.mode === "confirm" ? Boolean(r.confirmTokenHash && timingSafeStringEqual(r.confirmTokenHash, targetHash)) : (r.unsubscribeTokenHashes || []).some((h) => timingSafeStringEqual(h, targetHash))
+  );
+  if (!match) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: params.mode === "confirm" ? "Invalid or already-used confirmation token." : "Invalid or expired unsubscribe token."
+    };
+  }
+  return {
+    ok: true,
+    statusCode: 200,
+    teamName: doc.brand.name,
+    slug: doc.brand.slug
+  };
+}
+async function previewParentEmailSubscriptionConfirm(params) {
+  return previewParentEmailSubscriptionToken({ ...params, mode: "confirm" });
+}
+async function previewParentEmailSubscriptionUnsubscribe(params) {
+  return previewParentEmailSubscriptionToken({ ...params, mode: "unsubscribe" });
+}
 async function confirmParentEmailSubscription(params) {
   const cleanToken = String(params.token || "").trim();
   if (!cleanToken) {
@@ -14591,7 +15080,7 @@ async function dispatchParentHubAnnouncementEmails(params) {
       vaultKey,
       []
     );
-    const confirmed = records.filter((r) => r.status === "CONFIRMED").slice(0, 50);
+    const confirmed = records.filter((r) => r.status === "CONFIRMED").slice(0, 500);
     if (confirmed.length === 0) return;
     for (const rec of confirmed) {
       const rawUnsubToken = crypto13.randomBytes(24).toString("base64url");
@@ -14614,30 +15103,34 @@ async function dispatchParentHubAnnouncementEmails(params) {
   const safeTitle = escapeHtml(params.title);
   const safeBody = escapeHtml(params.body);
   const safeHubUrl = escapeHtml(hubUrl);
-  const results = await Promise.allSettled(
-    dispatchTargets.map(async (target) => {
-      const unsubUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
-        target.rawUnsubToken
-      )}`;
-      const safeUnsub = escapeHtml(unsubUrl);
-      return sendEmailViaResend({
-        to: target.email,
-        subject: `[${params.teamName}] ${params.title}`,
-        html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">${safeTeam} \xB7 ${safeCat}</div><h1 style="font-size:19px;margin:8px 0 10px;">${safeTitle}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 18px;">${safeBody}</p><a href="${safeHubUrl}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Open Public Team Hub</a><p style="margin-top:20px;font-size:12px;color:#57544D;">Public team notice only \xB7 <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe</a></p></div></body></html>`,
-        text: `${params.teamName} [${params.category}]
+  const CHUNK_SIZE = 25;
+  let sentCount = 0;
+  for (let i = 0; i < dispatchTargets.length; i += CHUNK_SIZE) {
+    const chunk = dispatchTargets.slice(i, i + CHUNK_SIZE);
+    const results = await Promise.allSettled(
+      chunk.map(async (target) => {
+        const unsubUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
+          target.rawUnsubToken
+        )}`;
+        const safeUnsub = escapeHtml(unsubUrl);
+        return sendEmailViaResend({
+          to: target.email,
+          subject: `[${params.teamName}] ${params.title}`,
+          html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">${safeTeam} \xB7 ${safeCat}</div><h1 style="font-size:19px;margin:8px 0 10px;">${safeTitle}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 18px;">${safeBody}</p><a href="${safeHubUrl}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Open Public Team Hub</a><p style="margin-top:20px;font-size:12px;color:#57544D;">Public team notice only \xB7 <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe</a></p></div></body></html>`,
+          text: `${params.teamName} [${params.category}]
 ${params.title}
 
 ${params.body}
 
 Public Team Hub: ${hubUrl}
 Unsubscribe: ${unsubUrl}`
-      });
-    })
-  );
-  let sentCount = 0;
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value.delivered) {
-      sentCount += 1;
+        });
+      })
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value.delivered) {
+        sentCount += 1;
+      }
     }
   }
   return { sentCount };
@@ -14708,7 +15201,7 @@ async function recordTeamAttendanceBatch(params) {
       );
       if (!targetMem) continue;
       const existingRec = dayBucket[memId];
-      const keepGpsMeta = existingRec?.method === "GPS_GEOFENCE" && (status === "PRESENT" || status === "LATE");
+      const keepGpsMeta = existingRec?.method === "GPS_GEOFENCE" && (status === "PRESENT" || status === "LATE" || status === "INJURED_MODIFIED");
       dayBucket[memId] = {
         date: cleanDate,
         membershipId: memId,
@@ -14802,6 +15295,32 @@ async function selfCheckInTeamAttendance(params) {
       error: "Valid YYYY-MM-DD check-in date required."
     };
   }
+  const [yr, mo, dy] = cleanDate.split("-").map(Number);
+  const parsedDateUtc = Date.UTC(yr, mo - 1, dy);
+  const checkDate = new Date(parsedDateUtc);
+  if (checkDate.getUTCFullYear() !== yr || checkDate.getUTCMonth() !== mo - 1 || checkDate.getUTCDate() !== dy) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: "Valid calendar YYYY-MM-DD check-in date required."
+    };
+  }
+  const nowDate = /* @__PURE__ */ new Date();
+  const todayUtc = Date.UTC(
+    nowDate.getUTCFullYear(),
+    nowDate.getUTCMonth(),
+    nowDate.getUTCDate()
+  );
+  const dayDiff = Math.abs(Math.round((parsedDateUtc - todayUtc) / 864e5));
+  if (dayDiff > 1) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: "GPS self check-in date must be within +/- 1 day of today (UTC)."
+    };
+  }
   const lat = Number(params.latitude);
   const lng = Number(params.longitude);
   if (typeof params.latitude !== "number" || typeof params.longitude !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
@@ -14885,7 +15404,8 @@ async function selfCheckInTeamAttendance(params) {
         error: "No enabled practice venue available."
       };
     }
-    if (distanceMeters > selectedVenue.radiusMeters) {
+    const accuracyCushionMeters = Math.min(Math.max(0, Number(params.accuracyMeters) || 0), 50);
+    if (distanceMeters > selectedVenue.radiusMeters + accuracyCushionMeters) {
       return {
         ok: false,
         statusCode: 400,
@@ -14894,7 +15414,7 @@ async function selfCheckInTeamAttendance(params) {
         radiusMeters: selectedVenue.radiusMeters,
         venueId: selectedVenue.id,
         venueName: selectedVenue.name,
-        error: `Outside ${selectedVenue.name} practice geofence (${distanceMeters}m away; max ${selectedVenue.radiusMeters}m).`
+        error: `Outside ${selectedVenue.name} practice geofence (${distanceMeters}m away; max ${selectedVenue.radiusMeters}m${accuracyCushionMeters > 0 ? ` + ${Math.round(accuracyCushionMeters)}m accuracy cushion` : ""}).`
       };
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
@@ -14902,10 +15422,20 @@ async function selfCheckInTeamAttendance(params) {
     const dayBucket = {
       ...doc.attendanceByDate[cleanDate] || {}
     };
+    const existingRec = dayBucket[callerMem.membershipId];
+    if (existingRec && (existingRec.status === "ABSENT" || existingRec.status === "EXCUSED")) {
+      return {
+        ok: false,
+        statusCode: 409,
+        verifiedOnSite: false,
+        error: `Coach already marked attendance as ${existingRec.status} for ${cleanDate}.`
+      };
+    }
+    const preservedStatus = callerMem.status === "INJURED" || existingRec?.status === "INJURED_MODIFIED" ? "INJURED_MODIFIED" : "PRESENT";
     const record = {
       date: cleanDate,
       membershipId: callerMem.membershipId,
-      status: "PRESENT",
+      status: preservedStatus,
       checkedInAt: nowIso,
       verifiedOnSite: true,
       distanceMeters,
@@ -15288,9 +15818,10 @@ async function recordTeamFieldMarks(params) {
         ].slice(0, 80);
       }
     }
-    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), archive);
-    doc.fieldMarkLogs = archive.slice(0, 150);
-    doc.fieldMarkLogsTotalCount = archive.length;
+    const boundedArchive = archive.slice(0, 2500);
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), boundedArchive);
+    doc.fieldMarkLogs = boundedArchive.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = boundedArchive.length;
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
     await appendAuditLogAsync({
@@ -15299,7 +15830,7 @@ async function recordTeamFieldMarks(params) {
       action: "FIELD_MARKS_RECORDED",
       metadata: {
         recordedCount,
-        totalArchiveCount: archive.length,
+        totalArchiveCount: boundedArchive.length,
         ...topBatchId ? { clientBatchId: topBatchId } : {}
       }
     });
@@ -15909,8 +16440,13 @@ function scrubMemberFromTeamDocument(params) {
   }
   doc.updatedAt = nowIso;
 }
+function collectMemberInjuryCaseIds(doc, targetMembershipIds) {
+  return new Set(
+    (doc.injuryCases || []).filter((c) => targetMembershipIds.has(c.membershipId)).map((c) => c.id)
+  );
+}
 async function scrubMemberSidecarVaultsAndPostgres(params) {
-  const { teamId, targetMembershipIds, targetSids, emails } = params;
+  const { teamId, targetMembershipIds, targetSids, emails, injuryCaseIds } = params;
   let updatedFieldLogCount;
   const fieldKey = teamFieldLogsVaultKey(teamId);
   await withVaultLock(fieldKey, async () => {
@@ -15926,13 +16462,19 @@ async function scrubMemberSidecarVaultsAndPostgres(params) {
     }
   });
   const auditKey = `audit_log_${sanitizeTenantId(teamId).slice(0, 40)}`;
+  const scrubbedReferenceIds = [
+    ...Array.from(targetMembershipIds),
+    ...injuryCaseIds ? Array.from(injuryCaseIds) : []
+  ].filter(Boolean);
   await withVaultLock(auditKey, async () => {
     const entries = await loadTenantVaultAsync(auditKey, []);
     let changed = false;
     const scrubbed = entries.map((entry) => {
-      const matchesTarget = entry.targetId ? targetMembershipIds.has(entry.targetId) : false;
+      const matchesTarget = entry.targetId ? targetMembershipIds.has(entry.targetId) || Boolean(injuryCaseIds && injuryCaseIds.has(entry.targetId)) : false;
       const matchesActor = targetSids.has(entry.actorSid);
-      if (!matchesTarget && !matchesActor) return entry;
+      const serializedMeta = entry.metadata && scrubbedReferenceIds.length > 0 ? JSON.stringify(entry.metadata) : "";
+      const matchesMetadata = serializedMeta.length > 0 && scrubbedReferenceIds.some((id) => serializedMeta.includes(id));
+      if (!matchesTarget && !matchesActor && !matchesMetadata) return entry;
       changed = true;
       return {
         ...entry,
@@ -15948,7 +16490,8 @@ async function scrubMemberSidecarVaultsAndPostgres(params) {
     teamId,
     membershipIds: Array.from(targetMembershipIds),
     userSids: Array.from(targetSids),
-    emails
+    emails,
+    injuryCaseIds: injuryCaseIds ? Array.from(injuryCaseIds) : []
   });
   return updatedFieldLogCount;
 }
@@ -16016,7 +16559,8 @@ async function revokeAthleteGuardianConsentForTeam(params) {
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
     );
     if (!mem) return { ok: false, error: "Membership not found." };
-    const canonicalBmy = mem.birthMonthYear || params.verifiedUserBirthMonthYear || (mem.isMinorU18 && !mem.birthYear ? void 0 : params.birthMonthYear);
+    const storedBmy = mem.birthMonthYear || (typeof mem.birthYear === "number" && mem.birthYear > 1900 ? `${mem.birthYear}-12` : void 0);
+    const canonicalBmy = storedBmy || (mem.isMinorU18 ? void 0 : params.verifiedUserBirthMonthYear || params.birthMonthYear);
     const ageCheck = resolveAthleteAgeTier({
       birthMonthYear: canonicalBmy,
       birthYear: mem.birthYear,
@@ -16405,6 +16949,7 @@ async function declineAndPurgeParentConsent(token) {
       const targetMembershipIds = /* @__PURE__ */ new Set([mem.membershipId]);
       const targetSids = new Set(mem.userSid ? [mem.userSid] : []);
       const emails = mem.invitedEmail ? [mem.invitedEmail] : [];
+      const injuryCaseIds = collectMemberInjuryCaseIds(freshDoc, targetMembershipIds);
       scrubMemberFromTeamDocument({
         doc: freshDoc,
         targetMembershipIds,
@@ -16415,7 +16960,8 @@ async function declineAndPurgeParentConsent(token) {
         teamId,
         targetMembershipIds,
         targetSids,
-        emails
+        emails,
+        injuryCaseIds
       });
       if (typeof updatedFieldCount === "number") {
         freshDoc.fieldMarkLogsTotalCount = updatedFieldCount;
@@ -16873,8 +17419,10 @@ teamRouter.post("/api/teams/join-claim", async (req, res) => {
       deferParentEmail: Boolean(req.body?.deferParentEmail)
     });
     if (!claimed.ok || !claimed.summary) {
-      const isValidationError = Boolean(claimed.error) && /COPPA|13 or older|Parent or guardian email/i.test(claimed.error || "");
-      res.status(isValidationError ? 400 : 404).json({
+      const isValidationError = Boolean(claimed.error) && /COPPA|13 or older|Parent or guardian email|Minor birth date|Valid YYYY-MM|Valid 4-digit/i.test(
+        claimed.error || ""
+      );
+      res.status(claimed.statusCode || (isValidationError ? 400 : 404)).json({
         ok: false,
         error: claimed.error || "Team invite could not be claimed."
       });
@@ -17816,6 +18364,21 @@ teamRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) =
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
+    const rl = await checkDistributedRateLimitAsync(
+      `gps_checkin_u:${claims.sid}`,
+      10,
+      10 * 60 * 1e3
+    );
+    if (!rl.allowed) {
+      res.setHeader("Retry-After", String(rl.retryAfterSecs || 1));
+      res.status(429).json({
+        ok: false,
+        verifiedOnSite: false,
+        error: "Too many GPS self check-in attempts. Please wait a few minutes and try again.",
+        retryAfterSecs: rl.retryAfterSecs
+      });
+      return;
+    }
     const originUrl = resolveRequestOrigin(req);
     const body = req.body || {};
     const parseCoord = (raw) => {
@@ -17823,6 +18386,7 @@ teamRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) =
       if (typeof raw === "string" && raw.trim() !== "") return Number(raw);
       return Number.NaN;
     };
+    const parsedAccuracy = parseCoord(body.accuracyMeters);
     const result = await selfCheckInTeamAttendance({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ""),
@@ -17830,7 +18394,7 @@ teamRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) =
       venueId: typeof body.venueId === "string" ? body.venueId : void 0,
       latitude: parseCoord(body.latitude),
       longitude: parseCoord(body.longitude),
-      accuracyMeters: typeof body.accuracyMeters === "number" && Number.isFinite(body.accuracyMeters) ? body.accuracyMeters : void 0,
+      accuracyMeters: Number.isFinite(parsedAccuracy) ? parsedAccuracy : void 0,
       originUrl
     });
     if (!result.ok) {
@@ -18751,6 +19315,13 @@ async function upsertTeamInjuryCase(params) {
     }
     const existingList = Array.isArray(doc.injuryCases) ? [...doc.injuryCases] : [];
     const existingCase = requestedId ? existingList.find((c) => c.id === requestedId) : void 0;
+    if (existingCase && existingCase.membershipId !== targetMem.membershipId) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Injury case ID belongs to a different athlete membership."
+      };
+    }
     const isTrainer = callerMem.role === "ATHLETIC_TRAINER";
     const hasClinicalInput = params.input?.privateClinicalNotes !== void 0;
     const cleanClinicalInput = hasClinicalInput ? String(params.input?.privateClinicalNotes || "").trim().slice(0, 1200) : void 0;
@@ -18824,17 +19395,25 @@ async function deleteTeamInjuryCase(params) {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
     );
-    if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    const canDeleteInjuryRole = callerMem && (callerMem.role === "ATHLETIC_TRAINER" || callerMem.role === "HEAD_COACH" || callerMem.role === "ORG_ADMIN");
+    if (!callerMem || !canDeleteInjuryRole) {
       return {
         ok: false,
         status: 403,
-        error: "Coach, Athletic Trainer, or Org Admin permissions required."
+        error: "Athletic Trainer, Head Coach, or Org Admin permissions required to delete injury cases."
       };
     }
     const existingList = Array.isArray(doc.injuryCases) ? doc.injuryCases : [];
     const targetCase = existingList.find((c) => c.id === cleanCaseId);
     if (!targetCase) {
       return { ok: false, status: 404, error: "Injury case not found." };
+    }
+    if (callerMem.role !== "ATHLETIC_TRAINER" && Boolean(targetCase.privateClinicalNotes && targetCase.privateClinicalNotes.trim())) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only an Athletic Trainer may delete an injury case containing private clinical notes."
+      };
     }
     doc.injuryCases = existingList.filter((c) => c.id !== cleanCaseId);
     const targetMem = doc.memberships.find((m) => m.membershipId === targetCase.membershipId);
@@ -19343,6 +19922,28 @@ function verifyStripeWebhookSignature(params) {
   return { valid: true, timestamp };
 }
 var STRIPE_WEBHOOK_STATE_KEY = "stripe_webhook_state_v1";
+async function recordStripeWebhookEventInVault(params) {
+  await withVaultLock(STRIPE_WEBHOOK_STATE_KEY, async () => {
+    const state = await loadTenantVaultAsync(
+      STRIPE_WEBHOOK_STATE_KEY,
+      {
+        processedEventIds: [],
+        teamByStripeCustomer: {},
+        teamByStripeSubscription: {}
+      }
+    );
+    if (params.teamId) {
+      if (params.customerId) state.teamByStripeCustomer[params.customerId] = params.teamId;
+      if (params.subscriptionId) {
+        state.teamByStripeSubscription[params.subscriptionId] = params.teamId;
+      }
+    }
+    if (!state.processedEventIds.includes(params.eventId)) {
+      state.processedEventIds = [...state.processedEventIds, params.eventId].slice(-500);
+    }
+    await saveTenantVaultAsync(STRIPE_WEBHOOK_STATE_KEY, state);
+  });
+}
 async function processStripeWebhookEvent(params) {
   const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET || "").trim();
   if (!webhookSecret) {
@@ -19381,8 +19982,23 @@ async function processStripeWebhookEvent(params) {
   const obj = event.data?.object || {};
   const customerId = typeof obj.customer === "string" ? obj.customer.trim() : void 0;
   const subscriptionId = typeof obj.subscription === "string" ? obj.subscription.trim() : eventType.startsWith("customer.subscription.") && typeof obj.id === "string" ? obj.id.trim() : void 0;
-  const lockState = await withVaultLock(STRIPE_WEBHOOK_STATE_KEY, async () => {
-    const state = await loadTenantVaultAsync(
+  let resolvedTeamId;
+  try {
+    const pgPrecheck = await lookupStripeEventPostgresAsync({
+      eventId,
+      customerId,
+      subscriptionId
+    });
+    if (pgPrecheck?.alreadyProcessed) {
+      return {
+        ok: true,
+        status: 200,
+        duplicate: true,
+        eventId,
+        eventType
+      };
+    }
+    const vaultState = await loadTenantVaultAsync(
       STRIPE_WEBHOOK_STATE_KEY,
       {
         processedEventIds: [],
@@ -19390,87 +20006,135 @@ async function processStripeWebhookEvent(params) {
         teamByStripeSubscription: {}
       }
     );
-    if (state.processedEventIds.includes(eventId)) {
-      return { duplicate: true, resolvedTeamId: void 0 };
+    if (vaultState.processedEventIds.includes(eventId)) {
+      return {
+        ok: true,
+        status: 200,
+        duplicate: true,
+        eventId,
+        eventType
+      };
     }
     const metaTeamId = obj.metadata?.teamId || obj.subscription_details?.metadata?.teamId || obj.client_reference_id;
-    const resolvedTeamId = (metaTeamId ? String(metaTeamId).trim() : "") || (subscriptionId ? state.teamByStripeSubscription[subscriptionId] : "") || (customerId ? state.teamByStripeCustomer[customerId] : "") || void 0;
-    if (resolvedTeamId) {
-      if (customerId) state.teamByStripeCustomer[customerId] = resolvedTeamId;
-      if (subscriptionId) state.teamByStripeSubscription[subscriptionId] = resolvedTeamId;
+    resolvedTeamId = (metaTeamId ? String(metaTeamId).trim() : "") || pgPrecheck?.resolvedTeamId || (subscriptionId ? vaultState.teamByStripeSubscription[subscriptionId] : "") || (customerId ? vaultState.teamByStripeCustomer[customerId] : "") || void 0;
+    if (!resolvedTeamId) {
+      await recordStripeEventPostgresAsync({
+        eventId,
+        eventType,
+        customerId,
+        subscriptionId
+      });
+      await recordStripeWebhookEventInVault({
+        eventId,
+        customerId,
+        subscriptionId
+      });
+      return { ok: true, status: 200, eventId, eventType };
     }
-    state.processedEventIds = [...state.processedEventIds, eventId].slice(-500);
-    await saveTenantVaultAsync(STRIPE_WEBHOOK_STATE_KEY, state);
-    return { duplicate: false, resolvedTeamId };
-  });
-  if (lockState.duplicate) {
+    const teamId = resolvedTeamId;
+    const metaPlan = obj.metadata?.planCode || obj.subscription_details?.metadata?.planCode;
+    const periodEndEpoch = obj.current_period_end || obj.lines?.data?.[0]?.period?.end || void 0;
+    const txOutcome = await withTeamRowLock(teamId, async () => {
+      const pgInside = await lookupStripeEventPostgresAsync({
+        eventId,
+        customerId,
+        subscriptionId
+      });
+      if (pgInside?.alreadyProcessed) {
+        return { duplicate: true };
+      }
+      const doc = await loadTeamDocRaw(teamId);
+      if (doc) {
+        const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+        const nextBilling = {
+          ...doc.billing || { planCode: "FREE_FOUNDING", status: "PILOT" },
+          ...isValidPaidPlanCode(metaPlan) ? { planCode: metaPlan } : {},
+          ...customerId ? { stripeCustomerId: customerId } : {},
+          ...subscriptionId ? { stripeSubscriptionId: subscriptionId } : {},
+          updatedAt: nowIso
+        };
+        let auditAction = "BILLING_STRIPE_EVENT";
+        let shouldPersistDoc = true;
+        if (eventType === "checkout.session.completed" || eventType === "invoice.paid") {
+          nextBilling.status = "ACTIVE_PAID";
+          const cycleEnd = periodEndEpoch ? new Date(periodEndEpoch * 1e3).toISOString() : new Date(Date.now() + 365 * 864e5).toISOString();
+          nextBilling.billingCycleEndIso = cycleEnd;
+          if (Array.isArray(nextBilling.poInvoices)) {
+            nextBilling.poInvoices = nextBilling.poInvoices.map(
+              (inv) => inv.status === "ISSUED" && (!isValidPaidPlanCode(metaPlan) || inv.planCode === metaPlan) ? { ...inv, status: "PAID", paidAt: nowIso } : inv
+            );
+          }
+          auditAction = eventType === "checkout.session.completed" ? "BILLING_STRIPE_ACTIVATED" : "BILLING_STRIPE_RENEWED";
+        } else if (eventType === "invoice.payment_failed") {
+          nextBilling.status = "PAST_DUE";
+          auditAction = "BILLING_STRIPE_PAST_DUE";
+        } else if (eventType === "customer.subscription.deleted") {
+          nextBilling.status = "RENEWAL_DUE";
+          auditAction = "BILLING_STRIPE_SUB_ENDED";
+        } else {
+          shouldPersistDoc = false;
+        }
+        if (shouldPersistDoc) {
+          doc.billing = nextBilling;
+          doc.updatedAt = nowIso;
+          await saveTeamDocRaw(teamId, doc);
+          await appendAuditLogAsync({
+            teamId,
+            actorSid: "stripe_webhook",
+            action: auditAction,
+            targetId: eventId,
+            metadata: {
+              eventType,
+              planCode: nextBilling.planCode,
+              status: nextBilling.status
+            }
+          });
+        }
+      }
+      const pgRecorded = await recordStripeEventPostgresAsync({
+        eventId,
+        eventType,
+        teamId,
+        customerId,
+        subscriptionId
+      });
+      if (pgRecorded && !pgRecorded.inserted) {
+        return { duplicate: true };
+      }
+      return { duplicate: false };
+    });
+    if (txOutcome.duplicate) {
+      return {
+        ok: true,
+        status: 200,
+        duplicate: true,
+        eventId,
+        eventType
+      };
+    }
+    await recordStripeWebhookEventInVault({
+      eventId,
+      teamId,
+      customerId,
+      subscriptionId
+    });
     return {
       ok: true,
       status: 200,
-      duplicate: true,
       eventId,
-      eventType
+      eventType,
+      teamId
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      eventId,
+      eventType,
+      teamId: resolvedTeamId,
+      error: err instanceof Error ? err.message : "Stripe billing update failed."
     };
   }
-  const teamId = lockState.resolvedTeamId;
-  if (!teamId) {
-    return { ok: true, status: 200, eventId, eventType };
-  }
-  const metaPlan = obj.metadata?.planCode || obj.subscription_details?.metadata?.planCode;
-  const periodEndEpoch = obj.current_period_end || obj.lines?.data?.[0]?.period?.end || void 0;
-  await withTeamRowLock(teamId, async () => {
-    const doc = await loadTeamDocRaw(teamId);
-    if (!doc) return;
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const nextBilling = {
-      ...doc.billing || { planCode: "FREE_FOUNDING", status: "PILOT" },
-      ...isValidPaidPlanCode(metaPlan) ? { planCode: metaPlan } : {},
-      ...customerId ? { stripeCustomerId: customerId } : {},
-      ...subscriptionId ? { stripeSubscriptionId: subscriptionId } : {},
-      updatedAt: nowIso
-    };
-    let auditAction = "BILLING_STRIPE_EVENT";
-    if (eventType === "checkout.session.completed" || eventType === "invoice.paid") {
-      nextBilling.status = "ACTIVE_PAID";
-      const cycleEnd = periodEndEpoch ? new Date(periodEndEpoch * 1e3).toISOString() : new Date(Date.now() + 365 * 864e5).toISOString();
-      nextBilling.billingCycleEndIso = cycleEnd;
-      if (Array.isArray(nextBilling.poInvoices)) {
-        nextBilling.poInvoices = nextBilling.poInvoices.map(
-          (inv) => inv.status === "ISSUED" && (!isValidPaidPlanCode(metaPlan) || inv.planCode === metaPlan) ? { ...inv, status: "PAID", paidAt: nowIso } : inv
-        );
-      }
-      auditAction = eventType === "checkout.session.completed" ? "BILLING_STRIPE_ACTIVATED" : "BILLING_STRIPE_RENEWED";
-    } else if (eventType === "invoice.payment_failed") {
-      nextBilling.status = "PAST_DUE";
-      auditAction = "BILLING_STRIPE_PAST_DUE";
-    } else if (eventType === "customer.subscription.deleted") {
-      nextBilling.status = "RENEWAL_DUE";
-      auditAction = "BILLING_STRIPE_SUB_ENDED";
-    } else {
-      return;
-    }
-    doc.billing = nextBilling;
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(teamId, doc);
-    await appendAuditLogAsync({
-      teamId,
-      actorSid: "stripe_webhook",
-      action: auditAction,
-      targetId: eventId,
-      metadata: {
-        eventType,
-        planCode: nextBilling.planCode,
-        status: nextBilling.status
-      }
-    });
-  });
-  return {
-    ok: true,
-    status: 200,
-    eventId,
-    eventType,
-    teamId
-  };
 }
 
 // src/physiology/trackEnvironmentPhysics.ts
@@ -19720,6 +20384,7 @@ function buildDistrictOverviewFromDocs(docs, callerSid, opts) {
       ...doc.billing?.poInvoices?.[0] ? { latestInvoice: sanitizeInvoiceForDistrictOverview(doc.billing.poInvoices[0]) } : {}
     };
   });
+  const countedDistrictCommitments = /* @__PURE__ */ new Set();
   const totalsAccumulator = schools.reduce(
     (acc, s) => {
       acc.totalAthletes += s.totalAthletes;
@@ -19734,7 +20399,16 @@ function buildDistrictOverviewFromDocs(docs, callerSid, opts) {
       acc.caraOverCapCount += s.caraOverCapCount;
       acc.caraWarningCount += s.caraWarningCount;
       if (s.renewalAlert) acc.schoolsNeedingRenewal += 1;
-      acc.totalAnnualCommittedUsd += committedPlanAmountUsd(s.billingPlanCode, s.billingStatus);
+      const planAmount = committedPlanAmountUsd(s.billingPlanCode, s.billingStatus);
+      if (s.billingPlanCode === "DISTRICT_2000" && planAmount > 0) {
+        const districtKey = (s.districtName || s.billingSchoolOrDistrictName || "").trim().toLowerCase();
+        if (!districtKey || !countedDistrictCommitments.has(districtKey)) {
+          if (districtKey) countedDistrictCommitments.add(districtKey);
+          acc.totalAnnualCommittedUsd += planAmount;
+        }
+      } else {
+        acc.totalAnnualCommittedUsd += planAmount;
+      }
       return acc;
     },
     {
@@ -19771,18 +20445,7 @@ function buildDistrictOverviewFromDocs(docs, callerSid, opts) {
   };
 }
 async function getDistrictAdOverview(params) {
-  const userIdx = await loadTenantVaultAsync(
-    userTeamsVaultKey(params.callerSid),
-    {
-      teamIds: [],
-      updatedAt: ""
-    }
-  );
-  const docs = [];
-  for (const teamId of userIdx.teamIds) {
-    const doc = await loadTeamDocRaw(teamId);
-    if (doc) docs.push(doc);
-  }
+  const docs = await loadTeamDocsForCaller(params.callerSid);
   return buildDistrictOverviewFromDocs(docs, params.callerSid, {
     districtName: params.districtName
   });
@@ -20163,6 +20826,28 @@ teamSyncRouter.post(
   "/api/teams/public/:slugOrCode/subscribe",
   async (req, res) => {
     try {
+      const clientIp = getClientRateLimitIp(req);
+      const normalizedEmail = String(req.body?.email || "").trim().toLowerCase();
+      const ipRl = await checkDistributedRateLimitAsync(
+        `pub_sub_ip:${clientIp}`,
+        5,
+        15 * 60 * 1e3
+      );
+      const emailRl = normalizedEmail ? await checkDistributedRateLimitAsync(
+        `pub_sub_em:${hashAuthLookupKey(normalizedEmail)}`,
+        2,
+        15 * 60 * 1e3
+      ) : { allowed: true, retryAfterSecs: 0 };
+      if (!ipRl.allowed || !emailRl.allowed) {
+        const retryAfterSecs = Math.max(ipRl.retryAfterSecs || 0, emailRl.retryAfterSecs || 0, 1);
+        res.setHeader("Retry-After", String(retryAfterSecs));
+        res.status(429).json({
+          ok: false,
+          error: "Too many subscription requests. Please wait a few minutes and try again.",
+          retryAfterSecs
+        });
+        return;
+      }
       const originUrl = resolveSyncOrigin(req);
       const result = await subscribeParentEmailToPublicHub({
         slugOrCode: String(req.params.slugOrCode || ""),
@@ -20188,7 +20873,7 @@ teamSyncRouter.post(
 function renderParentHubSubscriptionHtml(params) {
   const safeHubHref = params.slug ? `/team/${encodeURIComponent(params.slug)}` : "/";
   const accent = params.ok ? "#1E4D36" : "#B83A24";
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${escapeHtml(
     params.title
   )}</title></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;color:#121413;padding:40px 16px;margin:0;"><div style="max-width:500px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:28px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent};">MeetReady Parent Hub</div><h1 style="margin:8px 0 10px;font-size:20px;">${escapeHtml(
     params.heading
@@ -20196,39 +20881,114 @@ function renderParentHubSubscriptionHtml(params) {
     params.body
   )}</p><a href="${safeHubHref}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Back to Team Hub</a></div></body></html>`;
 }
+function renderParentHubSubscriptionActionFormHtml(params) {
+  const btnBg = params.buttonColor || "#121413";
+  const btnFg = params.buttonColor ? "#FFFFFF" : "#D8FF2A";
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>${escapeHtml(
+    params.title
+  )}</title></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;color:#121413;padding:40px 16px;margin:0;"><div style="max-width:500px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:28px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#1E4D36;">MeetReady Parent Hub</div><h1 style="margin:8px 0 10px;font-size:20px;">${escapeHtml(
+    params.heading
+  )}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 20px;">${escapeHtml(
+    params.body
+  )}</p><form method="POST" action="${escapeHtml(
+    params.actionUrl
+  )}" style="margin:0;"><input type="hidden" name="token" value="${escapeHtml(
+    params.token
+  )}" /><button type="submit" style="display:inline-block;background:${btnBg};color:${btnFg};border:none;cursor:pointer;font-weight:700;font-size:14px;padding:12px 20px;border-radius:10px;">${escapeHtml(
+    params.buttonLabel
+  )}</button></form></div></body></html>`;
+}
+function requestPrefersJson(req) {
+  const accept = String(req.headers.accept || "");
+  return accept.includes("application/json") && !accept.includes("text/html");
+}
+function extractSubscriptionToken(req) {
+  return String(req.body?.token || req.query?.token || "").trim();
+}
+async function handlePublicSubscriptionGet(req, res, mode) {
+  const slugOrCode = String(req.params.slugOrCode || "");
+  const token = String(req.query?.token || "").trim();
+  const preview = mode === "confirm" ? await previewParentEmailSubscriptionConfirm({ slugOrCode, token }) : await previewParentEmailSubscriptionUnsubscribe({ slugOrCode, token });
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  if (requestPrefersJson(req)) {
+    res.status(preview.statusCode || (preview.ok ? 200 : 400)).json({
+      ...preview,
+      requiresConfirmation: preview.ok
+    });
+    return;
+  }
+  if (!preview.ok) {
+    res.type("html").status(preview.statusCode || 400).send(
+      renderParentHubSubscriptionHtml({
+        ok: false,
+        title: mode === "confirm" ? "Subscription Link Error \xB7 MeetReady" : "Unsubscribe Link Error \xB7 MeetReady",
+        heading: mode === "confirm" ? "Could Not Confirm Subscription" : "Unsubscribe Link Not Recognized",
+        body: preview.error || (mode === "confirm" ? "This confirmation link is invalid or already used." : "This unsubscribe link could not be verified.")
+      })
+    );
+    return;
+  }
+  const encodedSlugOrCode = encodeURIComponent(slugOrCode);
+  const actionUrl = mode === "confirm" ? `/api/teams/public/${encodedSlugOrCode}/subscribe/confirm` : `/api/teams/public/${encodedSlugOrCode}/unsubscribe`;
+  res.type("html").status(200).send(
+    renderParentHubSubscriptionActionFormHtml({
+      title: mode === "confirm" ? "Confirm Parent Hub Subscription \xB7 MeetReady" : "Confirm Unsubscribe \xB7 MeetReady",
+      heading: mode === "confirm" ? `Confirm Updates for ${preview.teamName || "Team Hub"}` : `Unsubscribe from ${preview.teamName || "Team Hub"}?`,
+      body: mode === "confirm" ? `Click below to activate public schedule, weather, and meet notices for ${preview.teamName || "this team"}.` : `Click below to stop receiving Parent Hub email alerts for ${preview.teamName || "this team"}.`,
+      actionUrl,
+      buttonLabel: mode === "confirm" ? "Confirm Email Subscription" : "Unsubscribe from Alerts",
+      token,
+      ...mode === "unsubscribe" ? { buttonColor: "#B83A24" } : {}
+    })
+  );
+}
+async function handlePublicSubscriptionPost(req, res, mode) {
+  const slugOrCode = String(req.params.slugOrCode || "");
+  const token = extractSubscriptionToken(req);
+  const result = mode === "confirm" ? await confirmParentEmailSubscription({ slugOrCode, token }) : await unsubscribeParentEmailSubscription({ slugOrCode, token });
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  if (requestPrefersJson(req)) {
+    res.status(result.statusCode || (result.ok ? 200 : 400)).json(result);
+    return;
+  }
+  if (!result.ok) {
+    res.type("html").status(result.statusCode || 400).send(
+      renderParentHubSubscriptionHtml({
+        ok: false,
+        title: mode === "confirm" ? "Subscription Link Error \xB7 MeetReady" : "Unsubscribe Link Error \xB7 MeetReady",
+        heading: mode === "confirm" ? "Could Not Confirm Subscription" : "Unsubscribe Link Not Recognized",
+        body: result.error || (mode === "confirm" ? "This confirmation link is invalid or already used." : "This unsubscribe link could not be verified.")
+      })
+    );
+    return;
+  }
+  res.type("html").status(200).send(
+    renderParentHubSubscriptionHtml({
+      ok: true,
+      title: mode === "confirm" ? "Subscription Confirmed \xB7 MeetReady" : "Unsubscribed \xB7 MeetReady",
+      heading: mode === "confirm" ? "Parent Hub Updates Confirmed" : "Email Updates Turned Off",
+      body: mode === "confirm" ? `You are subscribed to public schedule alerts, weather changes, and meet notices for ${result.teamName || "this team"}.` : `Your email has been unsubscribed from ${result.teamName || "this team"} Parent Hub notifications.`,
+      slug: result.slug
+    })
+  );
+}
 teamSyncRouter.get(
   "/api/teams/public/:slugOrCode/subscribe/confirm",
   async (req, res) => {
     try {
-      const result = await confirmParentEmailSubscription({
-        slugOrCode: String(req.params.slugOrCode || ""),
-        token: String(req.query?.token || "")
-      });
-      const wantsJson = String(req.headers.accept || "").includes("application/json") && !String(req.headers.accept || "").includes("text/html");
-      if (wantsJson) {
-        res.status(result.statusCode || (result.ok ? 200 : 400)).json(result);
-        return;
-      }
-      if (!result.ok) {
-        res.status(result.statusCode || 400).send(
-          renderParentHubSubscriptionHtml({
-            ok: false,
-            title: "Subscription Link Error \xB7 MeetReady",
-            heading: "Could Not Confirm Subscription",
-            body: result.error || "This confirmation link is invalid or already used."
-          })
-        );
-        return;
-      }
-      res.status(200).send(
-        renderParentHubSubscriptionHtml({
-          ok: true,
-          title: "Subscription Confirmed \xB7 MeetReady",
-          heading: "Parent Hub Updates Confirmed",
-          body: `You are subscribed to public schedule alerts, weather changes, and meet notices for ${result.teamName || "this team"}.`,
-          slug: result.slug
-        })
-      );
+      await handlePublicSubscriptionGet(req, res, "confirm");
+    } catch {
+      res.status(500).send("Unable to load subscription confirmation.");
+    }
+  }
+);
+teamSyncRouter.post(
+  "/api/teams/public/:slugOrCode/subscribe/confirm",
+  async (req, res) => {
+    try {
+      await handlePublicSubscriptionPost(req, res, "confirm");
     } catch {
       res.status(500).send("Unable to confirm subscription.");
     }
@@ -20238,35 +20998,17 @@ teamSyncRouter.get(
   "/api/teams/public/:slugOrCode/unsubscribe",
   async (req, res) => {
     try {
-      const result = await unsubscribeParentEmailSubscription({
-        slugOrCode: String(req.params.slugOrCode || ""),
-        token: String(req.query?.token || "")
-      });
-      const wantsJson = String(req.headers.accept || "").includes("application/json") && !String(req.headers.accept || "").includes("text/html");
-      if (wantsJson) {
-        res.status(result.statusCode || (result.ok ? 200 : 400)).json(result);
-        return;
-      }
-      if (!result.ok) {
-        res.status(result.statusCode || 400).send(
-          renderParentHubSubscriptionHtml({
-            ok: false,
-            title: "Unsubscribe Link Error \xB7 MeetReady",
-            heading: "Unsubscribe Link Not Recognized",
-            body: result.error || "This unsubscribe link could not be verified."
-          })
-        );
-        return;
-      }
-      res.status(200).send(
-        renderParentHubSubscriptionHtml({
-          ok: true,
-          title: "Unsubscribed \xB7 MeetReady",
-          heading: "Email Updates Turned Off",
-          body: `Your email has been unsubscribed from ${result.teamName || "this team"} Parent Hub notifications.`,
-          slug: result.slug
-        })
-      );
+      await handlePublicSubscriptionGet(req, res, "unsubscribe");
+    } catch {
+      res.status(500).send("Unable to load unsubscribe confirmation.");
+    }
+  }
+);
+teamSyncRouter.post(
+  "/api/teams/public/:slugOrCode/unsubscribe",
+  async (req, res) => {
+    try {
+      await handlePublicSubscriptionPost(req, res, "unsubscribe");
     } catch {
       res.status(500).send("Unable to unsubscribe.");
     }
@@ -20655,8 +21397,14 @@ function collectCandidateIdentityContext(req, user, claimsSid) {
 }
 async function resolveAuthenticatedUserForRequest(req, sub) {
   if (sub.startsWith("usr_")) {
+    if (await isUserDeletedTombstoneAsync(sub)) {
+      return null;
+    }
     const found = await getUserById(sub);
     if (found) return found;
+    if (getVaultStorageBackend() === "POSTGRES") {
+      return null;
+    }
     const cookies = parseCookies(req.headers.cookie);
     const backupEnvelope = cookies[USER_VAULT_COOKIE_NAME];
     if (backupEnvelope) {
@@ -20672,9 +21420,48 @@ async function resolveAuthenticatedUserForRequest(req, sub) {
   }
   return null;
 }
+async function collectCandidateTeamDocsAsync(candidateSids, cleanEmail) {
+  const sidList = Array.from(candidateSids).filter(Boolean);
+  const teamIdSet = /* @__PURE__ */ new Set();
+  if (sidList.length > 0) {
+    const idxDocs = await loadTenantVaultsBatchAsync(
+      sidList.map((sid) => userTeamsVaultKey(sid))
+    );
+    for (const idx of idxDocs.values()) {
+      for (const id of idx?.teamIds || []) {
+        teamIdSet.add(id);
+      }
+    }
+  }
+  const pgTeamIds = await findTeamIdsForUserPostgresAsync(sidList, cleanEmail);
+  if (pgTeamIds !== null) {
+    for (const id of pgTeamIds) {
+      teamIdSet.add(id);
+    }
+  } else {
+    const dir = await loadDirectory();
+    for (const id of dir.allTeamIds || []) {
+      teamIdSet.add(id);
+    }
+  }
+  const teamIds = Array.from(teamIdSet);
+  const docsByTeamId = /* @__PURE__ */ new Map();
+  if (teamIds.length > 0) {
+    const docKeys = teamIds.map((id) => teamDocVaultKey(id));
+    const loadedDocs = await loadTenantVaultsBatchAsync(docKeys);
+    for (const id of teamIds) {
+      const doc = loadedDocs.get(teamDocVaultKey(id)) ?? null;
+      if (doc) docsByTeamId.set(id, doc);
+    }
+  }
+  return { teamIds, docsByTeamId };
+}
 async function buildUserDataExportPayload(req) {
   const claims = getVerifiedSessionClaims(req);
   if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+    return null;
+  }
+  if (claims.sub.startsWith("usr_") && await isUserDeletedTombstoneAsync(claims.sub)) {
     return null;
   }
   const user = await resolveAuthenticatedUserForRequest(req, claims.sub);
@@ -20703,24 +21490,14 @@ async function buildUserDataExportPayload(req) {
       break;
     }
   }
-  const teamIdSet = /* @__PURE__ */ new Set();
-  for (const sid of candidateSids) {
-    const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
-      teamIds: [],
-      updatedAt: ""
-    });
-    for (const id of idx.teamIds || []) {
-      teamIdSet.add(id);
-    }
-  }
-  const dir = await loadDirectory();
-  for (const id of dir.allTeamIds || []) {
-    teamIdSet.add(id);
-  }
   const cleanUserEmail = user?.email?.trim().toLowerCase() || "";
+  const { teamIds: candidateTeamIds, docsByTeamId } = await collectCandidateTeamDocsAsync(
+    candidateSids,
+    cleanUserEmail
+  );
   const exportedTeams = [];
-  for (const teamId of teamIdSet) {
-    const doc = await loadTeamDocRaw(teamId);
+  for (const teamId of candidateTeamIds) {
+    const doc = docsByTeamId.get(teamId);
     if (!doc) continue;
     const myMem = doc.memberships.find(
       (m) => m.status !== "REVOKED" && (candidateSids.has(m.userSid || "") || cleanUserEmail && m.invitedEmail?.trim().toLowerCase() === cleanUserEmail)
@@ -21014,12 +21791,21 @@ async function deleteThreshAccountPermanently(req, res) {
   const activeStore = getScopedRuntimeStore(req);
   const { candidateSids, stravaIds } = collectCandidateIdentityContext(req, user, claims.sid);
   const cleanEmail = user?.email ? user.email.trim().toLowerCase() : "";
-  const dirForGuard = await loadDirectory();
-  for (const teamId of dirForGuard.allTeamIds || []) {
-    const doc = await loadTeamDocRaw(teamId);
+  const { teamIds: candidateTeamIds, docsByTeamId } = await collectCandidateTeamDocsAsync(
+    candidateSids,
+    cleanEmail
+  );
+  const matchedTeamIds = [];
+  for (const teamId of candidateTeamIds) {
+    const doc = docsByTeamId.get(teamId);
     if (!doc) continue;
-    const isMyHeadCoach = doc.memberships.some(
-      (m) => candidateSids.has(m.userSid || "") && m.role === "HEAD_COACH" && m.status !== "REVOKED"
+    const myMems = doc.memberships.filter(
+      (m) => candidateSids.has(m.userSid || "") || cleanEmail && m.invitedEmail?.trim().toLowerCase() === cleanEmail
+    );
+    if (myMems.length === 0) continue;
+    matchedTeamIds.push(teamId);
+    const isMyHeadCoach = myMems.some(
+      (m) => m.role === "HEAD_COACH" && m.status !== "REVOKED"
     );
     if (!isMyHeadCoach) continue;
     const otherActive = doc.memberships.filter(
@@ -21077,18 +21863,8 @@ async function deleteThreshAccountPermanently(req, res) {
     }
   }
   await bestEffortRevokeUpstreamTokens(stravaAccessToken, polarAccessToken, polarUserId);
-  const affectedTeamIds = new Set(dirForGuard.allTeamIds || []);
-  for (const sid of candidateSids) {
-    const idx = await loadTenantVaultAsync(userTeamsVaultKey(sid), {
-      teamIds: [],
-      updatedAt: ""
-    });
-    for (const id of idx.teamIds) {
-      affectedTeamIds.add(id);
-    }
-  }
   const deletedTeamIds = [];
-  for (const teamId of affectedTeamIds) {
+  for (const teamId of matchedTeamIds) {
     await withTeamRowLock(teamId, async () => {
       const doc = await loadTeamDocRaw(teamId);
       if (!doc) return;
@@ -21112,6 +21888,7 @@ async function deleteThreshAccountPermanently(req, res) {
         return;
       }
       const targetSids = new Set(candidateSids);
+      const injuryCaseIds = collectMemberInjuryCaseIds(doc, targetMembershipIds);
       scrubMemberFromTeamDocument({
         doc,
         targetMembershipIds,
@@ -21122,7 +21899,8 @@ async function deleteThreshAccountPermanently(req, res) {
         teamId,
         targetMembershipIds,
         targetSids,
-        emails: cleanEmail ? [cleanEmail] : []
+        emails: cleanEmail ? [cleanEmail] : [],
+        injuryCaseIds
       });
       if (typeof updatedFieldCount === "number") {
         doc.fieldMarkLogsTotalCount = updatedFieldCount;
@@ -21195,6 +21973,12 @@ async function deleteThreshAccountPermanently(req, res) {
       } catch {
       }
     }
+  }
+  const tombstoneIds = /* @__PURE__ */ new Set();
+  if (claims.sub.startsWith("usr_")) tombstoneIds.add(claims.sub);
+  if (user?.id && user.id.startsWith("usr_")) tombstoneIds.add(user.id);
+  for (const tid of tombstoneIds) {
+    await markDeletedUserTombstoneAsync(tid).catch(() => void 0);
   }
   runtimeStore.stravaAccessToken = "";
   runtimeStore.stravaRefreshToken = "";
@@ -21378,8 +22162,14 @@ authRouter.get("/api/auth/me", async (req, res) => {
     }
     let user = null;
     if (claims.sub.startsWith("usr_")) {
+      if (await isUserDeletedTombstoneAsync(claims.sub)) {
+        clearSessionCookie(res);
+        appendSetCookieHeader(res, buildClearVaultCookieHeader());
+        appendSetCookieHeader(res, buildClearUserCookieHeader());
+        return res.json({ authenticated: false, user: null });
+      }
       user = await getUserById(claims.sub);
-      if (!user) {
+      if (!user && getVaultStorageBackend() !== "POSTGRES") {
         const cookies = parseCookies(req.headers.cookie);
         const backupEnvelope = cookies[USER_VAULT_COOKIE_NAME];
         if (backupEnvelope) {
@@ -21392,6 +22182,12 @@ authRouter.get("/api/auth/me", async (req, res) => {
             }
           }
         }
+      }
+      if (!user) {
+        clearSessionCookie(res);
+        appendSetCookieHeader(res, buildClearVaultCookieHeader());
+        appendSetCookieHeader(res, buildClearUserCookieHeader());
+        return res.json({ authenticated: false, user: null });
       }
     } else {
       user = await getUserByProvider("strava", claims.sub);
@@ -21986,6 +22782,24 @@ authRouter.post("/api/auth/change-email", async (req, res) => {
   const newEmail = String(req.body?.email || req.body?.newEmail || "").trim().toLowerCase();
   const verificationCode = String(req.body?.verificationCode || req.body?.code || "").trim();
   if (!verificationCode) {
+    const userRl = await checkDistributedRateLimitAsync(
+      `change_email_u:${userId}`,
+      3,
+      15 * 60 * 1e3
+    );
+    const emailRl = newEmail ? await checkDistributedRateLimitAsync(
+      `change_email_em:${hashAuthLookupKey(newEmail)}`,
+      2,
+      15 * 60 * 1e3
+    ) : { allowed: true, retryAfterSecs: 0 };
+    if (!userRl.allowed || !emailRl.allowed) {
+      const retryAfterSecs = Math.max(userRl.retryAfterSecs || 0, emailRl.retryAfterSecs || 0, 1);
+      res.setHeader("Retry-After", String(retryAfterSecs));
+      return res.status(429).json({
+        error: "Too many email change requests. Please wait 15 minutes and try again.",
+        retryAfterSecs
+      });
+    }
     const reqRes = await createPendingEmailChange(userId, newEmail);
     if (!reqRes.ok) {
       const status = reqRes.error?.includes("unavailable") ? 503 : 400;
@@ -21998,6 +22812,18 @@ authRouter.post("/api/auth/change-email", async (req, res) => {
       pendingEmail: newEmail,
       devMode: exposeDev,
       ...exposeDev && reqRes.devCode ? { devCode: reqRes.devCode } : {}
+    });
+  }
+  const verifyRl = await checkDistributedRateLimitAsync(
+    `change_email_verify_u:${userId}`,
+    10,
+    15 * 60 * 1e3
+  );
+  if (!verifyRl.allowed) {
+    res.setHeader("Retry-After", String(verifyRl.retryAfterSecs || 1));
+    return res.status(429).json({
+      error: "Too many email verification attempts. Please try again later.",
+      retryAfterSecs: verifyRl.retryAfterSecs
     });
   }
   const result = await verifyAndCommitEmailChange(
@@ -22029,10 +22855,25 @@ authRouter.post("/api/auth/birth-month", async (req, res) => {
   if (!existingUser) {
     return res.status(404).json({ error: "Account not found." });
   }
+  const candidateStateKeys = [
+    `athlete_state_user_${existingUser.id}`,
+    `athlete_state_sid_${claims.sid}`,
+    `athlete_state_sid_${claims.sid.slice(0, 32)}`,
+    `athlete_state_sid_${claims.sid.slice(0, 24)}`
+  ];
+  let existingStateBirthMonthYear;
+  for (const stateKey of candidateStateKeys) {
+    const stateEnv = await loadTenantVaultAsync(stateKey, null);
+    const stateBmy = normalizeBirthMonthYear(stateEnv?.athleteProfile?.birthMonthYear);
+    if (stateBmy) {
+      existingStateBirthMonthYear = stateBmy;
+      break;
+    }
+  }
   const ageCheck = validateCoppaAgeInput({
     birthMonthYear: req.body?.birthMonthYear,
     birthYear: req.body?.birthYear,
-    existingBirthMonthYear: existingUser.birthMonthYear,
+    existingBirthMonthYear: existingUser.birthMonthYear || existingStateBirthMonthYear,
     required: true
   });
   if (!ageCheck.ok || !ageCheck.birthMonthYear) {
@@ -26230,7 +27071,6 @@ intervalsRouter.post("/api/intervals/connect", async (req, res) => {
     await saveSessionCacheAsync(req, res, createdClaims?.sid);
     res.json({
       connected: true,
-      sessionToken,
       athleteId: resolvedId,
       athleteName: resolvedName
     });
@@ -27056,7 +27896,8 @@ async function ensureValidWahooAccessToken(req, forceRefresh = false) {
           client_secret: clientSecret,
           grant_type: "refresh_token",
           refresh_token: refreshToken
-        }).toString()
+        }).toString(),
+        signal: AbortSignal.timeout(12e3)
       });
       if (resp.ok) {
         const refreshed = await resp.json();
@@ -27104,7 +27945,8 @@ var { callbackHandler: wahooCallbackHandler } = registerOAuthConnectorRoutes(wah
         "Content-Type": "application/x-www-form-urlencoded",
         Accept: "application/json"
       },
-      body: bodyParams.toString()
+      body: bodyParams.toString(),
+      signal: AbortSignal.timeout(12e3)
     });
     if (!tokenResp.ok) {
       const errBody = await tokenResp.text();
@@ -27131,7 +27973,7 @@ var { callbackHandler: wahooCallbackHandler } = registerOAuthConnectorRoutes(wah
         if (tokenData.expires_in) {
           store.wahooExpiresAt = Math.floor(Date.now() / 1e3) + tokenData.expires_in;
         }
-        store.wahooScope = tokenData.scope || "user_read workouts_read";
+        store.wahooScope = tokenData.scope || WAHOO_OAUTH_SCOPES;
         store.wahooUserId = athleteId;
         store.wahooAthleteName = athleteName;
       }
@@ -27157,7 +27999,8 @@ wahooRouter.get("/api/wahoo/workouts", async (req, res) => {
     const perPage = Math.min(50, Math.max(1, Number(req.query.per_page) || 50));
     const url = `https://api.wahooligan.com/v1/workouts?page=${page}&per_page=${perPage}&order=created_at`;
     const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(12e3)
     });
     if (!resp.ok) {
       const errText = await resp.text();
@@ -27189,7 +28032,8 @@ wahooRouter.get("/api/wahoo/workouts/:id/file", async (req, res) => {
     }
     const url = `https://api.wahooligan.com/v1/workouts/${workoutId}/file`;
     const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(12e3)
     });
     if (!resp.ok) {
       const errText = await resp.text();
@@ -27217,7 +28061,8 @@ wahooRouter.get("/api/wahoo/sync", async (req, res) => {
       return;
     }
     const resp = await fetch("https://api.wahooligan.com/v1/workouts?per_page=50&order=created_at", {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" }
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(12e3)
     });
     if (!resp.ok) {
       const errText = await resp.text();
@@ -27236,7 +28081,7 @@ wahooRouter.get("/api/wahoo/sync", async (req, res) => {
     );
     const activities = rawWorkouts.map((w) => {
       const summary = w.workout_summary || {};
-      const sport = w.workout_type_id === 2 ? "Running" : "Cycling";
+      const sport = w.workout_type_id === 1 || w.workout_type_id === 5 ? "Running" : "Cycling";
       const duration = Number(summary.duration_active_seconds || summary.duration_seconds || 0);
       const isIndoor = /kickr|indoor|trainer/i.test(w.name || "");
       const rawStartUtc = w.starts || (/* @__PURE__ */ new Date()).toISOString();
@@ -29759,10 +30604,10 @@ function pct(numerator, denominator) {
   if (!denominator || denominator <= 0) return 0;
   return Math.round(numerator / denominator * 1e3) / 10;
 }
-function incrementDimension(map, rawValue) {
+function incrementDimension(map, rawValue, count = 1) {
   const clean = typeof rawValue === "string" ? rawValue.trim() : "";
   if (!clean) return;
-  map[clean] = (map[clean] || 0) + 1;
+  map[clean] = (map[clean] || 0) + count;
 }
 async function getFunnelSummaryAsync(opts) {
   const parsedDays = Number(opts?.windowDays);
@@ -29793,14 +30638,15 @@ async function getFunnelSummaryAsync(opts) {
   for (const row of rows) {
     if (!row || !isValidFunnelEventName(row.event_name)) continue;
     const eventName = row.event_name;
-    totalEvents += 1;
-    byEvent[eventName] += 1;
-    incrementDimension(byUtmSource, row.utm_source);
-    incrementDimension(byUtmMedium, row.utm_medium);
-    incrementDimension(byUtmCampaign, row.utm_campaign);
-    incrementDimension(byReferrerHost, row.referrer_host);
-    incrementDimension(byRole, row.role || "UNKNOWN");
-    incrementDimension(byTier, row.tier);
+    const weight = Math.max(1, Number(row.event_count || 1));
+    totalEvents += weight;
+    byEvent[eventName] += weight;
+    incrementDimension(byUtmSource, row.utm_source, weight);
+    incrementDimension(byUtmMedium, row.utm_medium, weight);
+    incrementDimension(byUtmCampaign, row.utm_campaign, weight);
+    incrementDimension(byReferrerHost, row.referrer_host, weight);
+    incrementDimension(byRole, row.role || "UNKNOWN", weight);
+    incrementDimension(byTier, row.tier, weight);
     const parsedDate = row.created_at ? new Date(String(row.created_at)) : null;
     const dateKey = parsedDate && Number.isFinite(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
     let bucket = dailyMap.get(dateKey);
@@ -29812,8 +30658,8 @@ async function getFunnelSummaryAsync(opts) {
       };
       dailyMap.set(dateKey, bucket);
     }
-    bucket.total += 1;
-    bucket.byEvent[eventName] += 1;
+    bucket.total += weight;
+    bucket.byEvent[eventName] += weight;
   }
   const dailyCounts = Array.from(dailyMap.values()).sort(
     (a, b) => a.date.localeCompare(b.date)
@@ -29909,7 +30755,9 @@ apiRouter.use(express13.urlencoded({ extended: false }));
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
-    const scopeKey = resolveSessionScopeKey(req);
+    const reqPath = (req.path || req.url || "").split("?")[0];
+    const skipPrewarm = reqPath === "/api/health" || reqPath === "/api/analytics/event" || reqPath.startsWith("/api/teams/public/");
+    const scopeKey = skipPrewarm ? "" : resolveSessionScopeKey(req);
     if (scopeKey && process.env.DATABASE_URL?.trim()) {
       Promise.all([
         loadTenantVaultAsync(`session_${scopeKey}`, {}),
@@ -29924,7 +30772,7 @@ apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
   const env = process.env;
-  const buildTimestamp = "2026-11-23T06:29:11Z" ? "2026-11-23T06:29:11Z" : SERVER_BOOT_ISO;
+  const buildTimestamp = "2026-11-23T07:22:20Z" ? "2026-11-23T07:22:20Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",
