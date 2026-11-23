@@ -1,11 +1,22 @@
+import fs from 'node:fs';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const pkgJson = JSON.parse(
+  fs.readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf8')
+) as { version?: string };
+const APP_VERSION = String(pkgJson.version || '2.1.0');
+const BUILD_TIMESTAMP = new Date().toISOString();
+
 export default defineConfig(() => {
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(APP_VERSION),
+      __BUILD_TIMESTAMP__: JSON.stringify(BUILD_TIMESTAMP),
+    },
     plugins: [
       react(),
       tailwindcss(),
@@ -104,6 +115,8 @@ export default defineConfig(() => {
             '**/assets/archiveImporter-*',
             '**/assets/AthleticTrainerInjuryHub-*',
             '**/assets/TeamBillingAndPoModal-*',
+            '**/assets/DistrictAdOverviewModal-*',
+            '**/assets/districtAdOverviewHelper-*',
             '**/assets/schoolPoInvoiceHelper-*',
           ],
           cleanupOutdatedCaches: true,

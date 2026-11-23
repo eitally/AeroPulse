@@ -4,12 +4,27 @@ export interface CoachLandingAttribution {
   utm_campaign?: string;
   utm_content?: string;
   src?: string;
+  referrerHost?: string;
   landing_path?: string;
   selfReportedChannel?: string;
   capturedAt?: string;
 }
 
 const ATTRIBUTION_STORAGE_KEY = 'meetready_first_party_attr_v1';
+
+function extractSafeReferrerHost(): string | undefined {
+  if (typeof document === 'undefined' || typeof window === 'undefined') return undefined;
+  try {
+    const rawRef = String(document.referrer || '').trim();
+    if (!rawRef) return undefined;
+    const refUrl = new URL(rawRef);
+    const host = refUrl.hostname.trim().toLowerCase().slice(0, 80);
+    if (!host || host === window.location.hostname.trim().toLowerCase()) return undefined;
+    return host;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Pure first-party sessionStorage campaign capture (zero cookies, zero third-party pixels).
@@ -21,6 +36,7 @@ export function captureLandingAttribution(): CoachLandingAttribution | null {
     const existingRaw = window.sessionStorage.getItem(ATTRIBUTION_STORAGE_KEY);
     const params = new URLSearchParams(window.location.search);
     const fresh: CoachLandingAttribution = {};
+    const referrerHost = extractSafeReferrerHost();
 
     const keys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'src'] as const;
     let hasParam = false;
@@ -33,6 +49,7 @@ export function captureLandingAttribution(): CoachLandingAttribution | null {
     }
 
     if (hasParam) {
+      if (referrerHost) fresh.referrerHost = referrerHost;
       fresh.landing_path = `${window.location.pathname}${window.location.hash ? window.location.hash.slice(0, 48) : ''}`.slice(0, 120);
       fresh.capturedAt = new Date().toISOString();
       window.sessionStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(fresh));
@@ -40,10 +57,26 @@ export function captureLandingAttribution(): CoachLandingAttribution | null {
     }
 
     if (existingRaw) {
-      return JSON.parse(existingRaw) as CoachLandingAttribution;
+      const parsed = JSON.parse(existingRaw) as CoachLandingAttribution & { referrer?: string };
+      if (!parsed.referrerHost && (parsed.referrer || referrerHost)) {
+        try {
+          const derived = parsed.referrer
+            ? new URL(parsed.referrer).hostname.trim().toLowerCase().slice(0, 80)
+            : referrerHost;
+          if (derived && derived !== window.location.hostname.trim().toLowerCase()) {
+            parsed.referrerHost = derived;
+          }
+        } catch {
+          if (referrerHost) parsed.referrerHost = referrerHost;
+        }
+        delete parsed.referrer;
+        window.sessionStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(parsed));
+      }
+      return parsed;
     }
 
     const initial: CoachLandingAttribution = {
+      ...(referrerHost ? { referrerHost } : {}),
       landing_path: window.location.pathname.slice(0, 120) || '/',
       capturedAt: new Date().toISOString(),
     };

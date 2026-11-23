@@ -1464,6 +1464,16 @@ export interface TeamExternalSyncConfig {
   lastSyncedAt?: string;
 }
 
+export interface PracticeVenueGeofence {
+  id: string;
+  name: string;
+  category: PracticeVenueCategory;
+  latitude: number; // Public facility pin ONLY — never athlete coords
+  longitude: number;
+  radiusMeters: number; // Clamped 50..1500m, default 250m
+  enabled: boolean;
+}
+
 export interface TeamBrandConfig {
   teamId: string;
   slug: string; // e.g. 'palo-alto-xc' -> /join/palo-alto-xc
@@ -1471,6 +1481,8 @@ export interface TeamBrandConfig {
   name: string; // e.g. 'Palo Alto High Varsity XC'
   shortName: string; // e.g. 'PALY XC'
   mascotOrMotto?: string;
+  districtName?: string;
+  practiceVenues?: PracticeVenueGeofence[];
   orgType: TeamOrgType;
   primarySport: 'Running' | 'Cycling' | 'Swimming' | 'Triathlon' | 'Hybrid';
   logoDataUrl?: string; // Optional SVG/PNG/WebP crest data URL
@@ -1777,6 +1789,66 @@ export interface TeamBillingSummary {
   updatedAt?: string;
 }
 
+export interface DistrictSchoolRollupItem {
+  teamId: string;
+  teamName: string;
+  shortName: string;
+  orgType: TeamOrgType;
+  districtName?: string;
+  myRole: TeamMemberRole;
+  totalAthletes: number;
+  activeAthletes: number;
+  totalCoachesAndStaff: number;
+  watchConnectedAthletes: number;
+  activeAtInjuries: number;
+  modifiedAttendanceToday: number;
+  safeSportRedFlags: number;
+  safeSportAmberFlags: number;
+  safeSportShieldEnabled: boolean;
+  guardianCcEnabled: boolean;
+  minorAthleteCount: number;
+  parentConsentAcknowledgedCount: number;
+  guardianCcCompliancePct: number;
+  caraTrackedAthletes: number;
+  avgCaraHours7d: number;
+  maxCaraHours7d: number;
+  caraOverCapCount: number;
+  caraWarningCount: number;
+  billingPlanCode: TeamBillingPlanCode;
+  billingStatus: TeamBillingStatus;
+  billingSchoolOrDistrictName?: string;
+  poNumber?: string;
+  billingCycleEndIso?: string;
+  renewalAlert: boolean;
+  latestInvoice?: SchoolPoInvoiceRecord;
+}
+
+export interface DistrictOverviewReport {
+  generatedAt: string;
+  districtFilter?: string;
+  availableDistrictNames: string[];
+  hasDistrictPlan: boolean;
+  totals: {
+    schoolCount: number;
+    totalAthletes: number;
+    activeAthletes: number;
+    totalCoachesAndStaff: number;
+    activeAtInjuries: number;
+    modifiedAttendanceToday: number;
+    safeSportRedFlags: number;
+    safeSportAmberFlags: number;
+    minorAthleteCount: number;
+    parentConsentAcknowledgedCount: number;
+    overallGuardianCcCompliancePct: number;
+    caraOverCapCount: number;
+    caraWarningCount: number;
+    avgCaraHours7d: number;
+    schoolsNeedingRenewal: number;
+    totalAnnualCommittedUsd: number;
+  };
+  schools: DistrictSchoolRollupItem[];
+}
+
 export interface TeamSummaryWithRole {
   brand: TeamBrandConfig;
   myRole: TeamMemberRole;
@@ -1945,11 +2017,19 @@ export type TeamAttendanceStatus =
   | 'ABSENT'
   | 'INJURED_MODIFIED';
 
+export type TeamAttendanceMethod = 'COACH_MANUAL' | 'GPS_GEOFENCE';
+
 export interface TeamAttendanceRecord {
   date: string;
   membershipId: string;
   status: TeamAttendanceStatus;
   note?: string;
+  checkedInAt?: string;
+  verifiedOnSite?: boolean;
+  distanceMeters?: number; // Rounded integer meters only — never coordinates
+  venueId?: string;
+  venueName?: string;
+  method?: TeamAttendanceMethod;
   updatedAt: string;
   updatedBySid?: string;
 }

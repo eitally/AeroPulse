@@ -1,9 +1,18 @@
 import type { Request } from 'express';
 import {
   consumeRateLimitPostgresAsync,
+  getVaultStorageBackend,
   resetRateLimitsPostgresForTesting,
   warnServerFallback,
 } from './tokenVault.ts';
+
+export function getConfiguredRateLimitBackend(): 'UPSTASH_REDIS' | 'POSTGRES' | 'MEMORY' {
+  const restUrl = (process.env.UPSTASH_REDIS_REST_URL || '').trim();
+  const restToken = (process.env.UPSTASH_REDIS_REST_TOKEN || '').trim();
+  if (restUrl && restToken) return 'UPSTASH_REDIS';
+  if (getVaultStorageBackend() === 'POSTGRES') return 'POSTGRES';
+  return 'MEMORY';
+}
 
 export interface RateLimitResult {
   allowed: boolean;

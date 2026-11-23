@@ -2179,14 +2179,18 @@ export interface ServerConfigStatusResponse {
   garminAthleteName?: string;
   corosConfigured?: boolean;
   corosConnected?: boolean;
+  corosCanPushWorkouts?: boolean;
   corosAthleteId?: string;
   corosAthleteName?: string;
   wahooConfigured?: boolean;
   wahooConnected?: boolean;
+  wahooScope?: string;
+  wahooCanPushWorkouts?: boolean;
   wahooAthleteId?: string;
   wahooAthleteName?: string;
   polarConfigured?: boolean;
   polarConnected?: boolean;
+  polarCanPushWorkouts?: boolean;
   polarAthleteId?: string;
   polarAthleteName?: string;
   hasGeminiServerKey?: boolean;

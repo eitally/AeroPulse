@@ -515,6 +515,7 @@ function mergeRuntimeStoreCredentials(
   if (!target.intervalsAthleteName && source.intervalsAthleteName) target.intervalsAthleteName = source.intervalsAthleteName;
   if (!target.wahooAccessToken && source.wahooAccessToken) target.wahooAccessToken = source.wahooAccessToken;
   if (!target.wahooRefreshToken && source.wahooRefreshToken) target.wahooRefreshToken = source.wahooRefreshToken;
+  if (!target.wahooScope && source.wahooScope) target.wahooScope = source.wahooScope;
   if (!target.polarAccessToken && source.polarAccessToken) target.polarAccessToken = source.polarAccessToken;
   if (!target.corosAccessToken && source.corosAccessToken) target.corosAccessToken = source.corosAccessToken;
   if (!target.corosRefreshToken && source.corosRefreshToken) target.corosRefreshToken = source.corosRefreshToken;
@@ -603,6 +604,7 @@ export function emitEncryptedVaultCookieIfPossible(
         wahooAccessToken: compact.wahooAccessToken,
         wahooRefreshToken: compact.wahooRefreshToken,
         wahooExpiresAt: compact.wahooExpiresAt,
+        wahooScope: compact.wahooScope,
         polarAccessToken: compact.polarAccessToken,
         garminPersonalApiKey: compact.garminPersonalApiKey,
         garminOAuthAccessToken: compact.garminOAuthAccessToken,

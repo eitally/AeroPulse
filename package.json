@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "tsx server.ts",
-    "build:api": "esbuild server/vercelApp.ts --bundle --platform=node --target=node22 --format=esm --packages=external --outfile=api/index.js",
+    "build:api": "esbuild server/vercelApp.ts --bundle --platform=node --target=node22 --format=esm --packages=external --define:__MEETREADY_BUILD_TIMESTAMP__='\"'$(date -u +%Y-%m-%dT%H:%M:%SZ)'\"' --outfile=api/index.js",
     "build": "npm run build:api && vite build",
     "start": "node server.ts",
     "preview": "vite preview",

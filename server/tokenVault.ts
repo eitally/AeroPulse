@@ -235,6 +235,24 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
         );
         CREATE INDEX IF NOT EXISTS idx_thresh_rate_limits_expires
           ON thresh_rate_limits (expires_at);
+        CREATE TABLE IF NOT EXISTS thresh_funnel_events (
+          id BIGSERIAL PRIMARY KEY,
+          event_name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          utm_source TEXT,
+          utm_medium TEXT,
+          utm_campaign TEXT,
+          utm_content TEXT,
+          src TEXT,
+          referrer_host TEXT,
+          landing_path TEXT,
+          role TEXT,
+          tier TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_funnel_events_created
+          ON thresh_funnel_events (created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_thresh_funnel_events_name_created
+          ON thresh_funnel_events (event_name, created_at DESC);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -274,11 +292,12 @@ export async function findTeamIdsByInvitedEmailPostgresAsync(
 
 export async function checkPostgresHealthAsync(
   timeoutMs = 2000
-): Promise<{ configured: boolean; healthy: boolean | null }> {
+): Promise<{ configured: boolean; healthy: boolean | null; latencyMs: number | null }> {
   const pool = getPostgresPool();
   if (!pool) {
-    return { configured: false, healthy: null };
+    return { configured: false, healthy: null, latencyMs: null };
   }
+  const startedAt = Date.now();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
@@ -288,10 +307,10 @@ export async function checkPostgresHealthAsync(
         if (typeof timer.unref === 'function') timer.unref();
       }),
     ]);
-    return { configured: true, healthy: true };
+    return { configured: true, healthy: true, latencyMs: Math.max(0, Date.now() - startedAt) };
   } catch (err: unknown) {
     warnServerFallback('vault:health-check', err);
-    return { configured: true, healthy: false };
+    return { configured: true, healthy: false, latencyMs: Math.max(0, Date.now() - startedAt) };
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -1127,5 +1146,75 @@ export async function deleteMemberPostgresRowsAsync(params: {
   } catch (err: unknown) {
     warnServerFallback('vault:delete-member-postgres', err);
     if (txClient) throw err;
+  }
+}
+
+export interface FunnelEventDbRow {
+  event_name: string;
+  created_at?: string;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  src?: string | null;
+  referrer_host?: string | null;
+  landing_path?: string | null;
+  role?: string | null;
+  tier?: string | null;
+}
+
+export async function insertFunnelEventPostgresAsync(
+  row: Omit<FunnelEventDbRow, 'created_at'>
+): Promise<boolean | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  try {
+    await ensurePostgresVaultSchema(pool);
+    await pool.query(
+      `INSERT INTO thresh_funnel_events (
+         event_name, utm_source, utm_medium, utm_campaign, utm_content, src,
+         referrer_host, landing_path, role, tier
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        row.event_name,
+        row.utm_source || null,
+        row.utm_medium || null,
+        row.utm_campaign || null,
+        row.utm_content || null,
+        row.src || null,
+        row.referrer_host || null,
+        row.landing_path || null,
+        row.role || null,
+        row.tier || null,
+      ]
+    );
+    return true;
+  } catch (err: unknown) {
+    warnServerFallback('vault:insert-funnel-event-postgres', err);
+    return null;
+  }
+}
+
+export async function queryFunnelEventsPostgresAsync(
+  sinceIso: string,
+  limit = 10000
+): Promise<FunnelEventDbRow[] | null> {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  try {
+    await ensurePostgresVaultSchema(pool);
+    const res = await pool.query<FunnelEventDbRow>(
+      `SELECT event_name, created_at::text AS created_at, utm_source, utm_medium, utm_campaign,
+              utm_content, src, referrer_host, landing_path, role, tier
+       FROM thresh_funnel_events
+       WHERE created_at >= $1::timestamptz
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [sinceIso, Math.max(1, Math.min(25000, Math.floor(limit)))]
+    );
+    return res.rows;
+  } catch (err: unknown) {
+    warnServerFallback('vault:query-funnel-events-postgres', err);
+    return null;
   }
 }

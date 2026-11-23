@@ -737,6 +737,24 @@ async function ensurePostgresVaultSchema(pool) {
         );
         CREATE INDEX IF NOT EXISTS idx_thresh_rate_limits_expires
           ON thresh_rate_limits (expires_at);
+        CREATE TABLE IF NOT EXISTS thresh_funnel_events (
+          id BIGSERIAL PRIMARY KEY,
+          event_name TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          utm_source TEXT,
+          utm_medium TEXT,
+          utm_campaign TEXT,
+          utm_content TEXT,
+          src TEXT,
+          referrer_host TEXT,
+          landing_path TEXT,
+          role TEXT,
+          tier TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_funnel_events_created
+          ON thresh_funnel_events (created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_thresh_funnel_events_name_created
+          ON thresh_funnel_events (event_name, created_at DESC);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -773,8 +791,9 @@ async function findTeamIdsByInvitedEmailPostgresAsync(email) {
 async function checkPostgresHealthAsync(timeoutMs = 2e3) {
   const pool = getPostgresPool();
   if (!pool) {
-    return { configured: false, healthy: null };
+    return { configured: false, healthy: null, latencyMs: null };
   }
+  const startedAt = Date.now();
   let timer;
   try {
     await Promise.race([
@@ -784,10 +803,10 @@ async function checkPostgresHealthAsync(timeoutMs = 2e3) {
         if (typeof timer.unref === "function") timer.unref();
       })
     ]);
-    return { configured: true, healthy: true };
+    return { configured: true, healthy: true, latencyMs: Math.max(0, Date.now() - startedAt) };
   } catch (err) {
     warnServerFallback("vault:health-check", err);
-    return { configured: true, healthy: false };
+    return { configured: true, healthy: false, latencyMs: Math.max(0, Date.now() - startedAt) };
   } finally {
     if (timer) clearTimeout(timer);
   }
@@ -4151,6 +4170,7 @@ function mergeRuntimeStoreCredentials(target, source) {
   if (!target.intervalsAthleteName && source.intervalsAthleteName) target.intervalsAthleteName = source.intervalsAthleteName;
   if (!target.wahooAccessToken && source.wahooAccessToken) target.wahooAccessToken = source.wahooAccessToken;
   if (!target.wahooRefreshToken && source.wahooRefreshToken) target.wahooRefreshToken = source.wahooRefreshToken;
+  if (!target.wahooScope && source.wahooScope) target.wahooScope = source.wahooScope;
   if (!target.polarAccessToken && source.polarAccessToken) target.polarAccessToken = source.polarAccessToken;
   if (!target.corosAccessToken && source.corosAccessToken) target.corosAccessToken = source.corosAccessToken;
   if (!target.corosRefreshToken && source.corosRefreshToken) target.corosRefreshToken = source.corosRefreshToken;
@@ -4226,6 +4246,7 @@ function emitEncryptedVaultCookieIfPossible(req, res, scopeKey, store) {
         wahooAccessToken: compact.wahooAccessToken,
         wahooRefreshToken: compact.wahooRefreshToken,
         wahooExpiresAt: compact.wahooExpiresAt,
+        wahooScope: compact.wahooScope,
         polarAccessToken: compact.polarAccessToken,
         garminPersonalApiKey: compact.garminPersonalApiKey,
         garminOAuthAccessToken: compact.garminOAuthAccessToken,
@@ -20892,6 +20913,7 @@ var SERVER_OWNED_SECRET_ENV_KEYS = [
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "UPSTASH_REDIS_REST_TOKEN",
+  "CRON_SECRET",
   "SESSION_SECRET",
   "TOKEN_VAULT_KEY"
 ];
