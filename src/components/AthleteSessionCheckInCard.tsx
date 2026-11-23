@@ -12,19 +12,84 @@ import {
   evaluateSafetySwapFromCheckIn,
   type SafetySwapEventInput,
 } from '../physiology/sessionCheckInAndDigestEngine';
+import { parseStructuredTrackWorkout } from '../utils/workoutParser';
 import type {
   PlannedWorkoutEvent,
   SessionCheckInRecord,
+  UnifiedActivity,
 } from '../types';
+
+export interface WatchlessCompletionInput {
+  workoutName: string;
+  durationMins: number;
+  distanceKm: number;
+  rpe: number;
+  dateIso: string;
+}
+
+export function deriveWatchlessCompletionPayload(params: {
+  todayPlanned?: PlannedWorkoutEvent | null;
+  rpe: number;
+  dateIso: string;
+}): WatchlessCompletionInput {
+  const { todayPlanned, rpe, dateIso } = params;
+  const workoutName = todayPlanned?.name?.trim() || 'Self-Logged Session';
+
+  let plannedMeters = 0;
+  let parsedSecs = 0;
+  if (todayPlanned?.trackSpec) {
+    const ts = todayPlanned.trackSpec;
+    const setMeters =
+      ts.sets && ts.sets.length > 0
+        ? ts.sets.reduce((acc, s) => acc + (s.repCount || 0) * (s.repDistanceMeters || 0), 0)
+        : (ts.repCount || 0) * (ts.repDistanceMeters || 0);
+    plannedMeters =
+      (ts.warmupDistanceMeters || 0) + setMeters + (ts.cooldownDistanceMeters || 0);
+  }
+  if (todayPlanned?.workoutSyntax) {
+    const nodes = parseStructuredTrackWorkout(todayPlanned.workoutSyntax);
+    let syntaxMeters = 0;
+    for (const node of nodes) {
+      if (node.type === 'step') {
+        syntaxMeters += node.step.distanceMeters || 0;
+        parsedSecs += node.step.durationSecs || 0;
+      } else {
+        const repDist = node.steps.reduce((acc, s) => acc + (s.distanceMeters || 0), 0);
+        const repDur = node.steps.reduce((acc, s) => acc + (s.durationSecs || 0), 0);
+        syntaxMeters += repDist * node.repeatCount;
+        parsedSecs += repDur * node.repeatCount;
+      }
+    }
+    if (plannedMeters <= 0) plannedMeters = syntaxMeters;
+  }
+
+  const durationMins =
+    todayPlanned?.plannedDurationSecs && todayPlanned.plannedDurationSecs > 0
+      ? Math.max(1, Math.round(todayPlanned.plannedDurationSecs / 60))
+      : parsedSecs > 0
+        ? Math.max(1, Math.round(parsedSecs / 60))
+        : 30;
+  const distanceKm = plannedMeters > 0 ? Number((plannedMeters / 1000).toFixed(2)) : 0;
+
+  return {
+    workoutName,
+    durationMins,
+    distanceKm,
+    rpe,
+    dateIso,
+  };
+}
 
 export interface AthleteSessionCheckInCardProps {
   todayIso: string;
+  activities?: UnifiedActivity[];
   plannedEvents: PlannedWorkoutEvent[];
   sessionCheckIns: SessionCheckInRecord[];
   onRecordCheckIn: (
     input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
     safetySwapEvent?: SafetySwapEventInput | null
   ) => Promise<void> | void;
+  onLogWatchlessCompletion?: (input: WatchlessCompletionInput) => Promise<void> | void;
 }
 
 const RPE_PRESETS: Array<{ rpe: number; label: string; hint: string }> = [
@@ -55,13 +120,19 @@ const PAIN_AREAS: Array<{
 
 export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps> = ({
   todayIso,
+  activities = [],
   plannedEvents,
   sessionCheckIns,
   onRecordCheckIn,
+  onLogWatchlessCompletion,
 }) => {
   const existingToday = useMemo(
     () => sessionCheckIns.find((c) => (c.date || '').slice(0, 10) === todayIso) || null,
     [sessionCheckIns, todayIso]
+  );
+  const hasSyncedToday = useMemo(
+    () => activities.some((a) => (a.startDateLocal || '').slice(0, 10) === todayIso),
+    [activities, todayIso]
   );
   const streakDays = useMemo(
     () => computeCheckInStreak(sessionCheckIns, todayIso),
@@ -79,6 +150,7 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
   const [sorenessNote, setSorenessNote] = useState<string>(existingToday?.sorenessNote || '');
   const [isSaving, setIsSaving] = useState(false);
   const [lastSwapFeedback, setLastSwapFeedback] = useState<string | null>(null);
+  const [justLoggedWatchless, setJustLoggedWatchless] = useState<boolean>(false);
 
   const todayPlanned = useMemo(
     () => plannedEvents.find((ev) => (ev.date || '').slice(0, 10) === todayIso) || null,
@@ -104,10 +176,23 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
   const submitCheckIn = async (opts: {
     painFlag: boolean;
     applySwap: boolean;
+    logWatchless?: boolean;
   }) => {
     setIsSaving(true);
     try {
       const swapInput = opts.applySwap ? swapEval.replacementEventInput : null;
+      if (opts.logWatchless && onLogWatchlessCompletion && !hasSyncedToday) {
+        await onLogWatchlessCompletion(
+          deriveWatchlessCompletionPayload({
+            todayPlanned,
+            rpe: selectedRpe,
+            dateIso: todayIso,
+          })
+        );
+        setJustLoggedWatchless(true);
+      } else {
+        setJustLoggedWatchless(false);
+      }
       await onRecordCheckIn(
         {
           date: todayIso,
@@ -157,6 +242,11 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
               ? `Pain · ${existingToday.painArea || 'Flagged'}`
               : `RPE ${existingToday.rpe}/10`}
           </span>
+          {justLoggedWatchless && (
+            <span className="px-2 py-0.5 rounded-md font-mono text-2xs font-bold ap-status-info">
+              Self-Logged
+            </span>
+          )}
           <span className="font-semibold text-slate-900 dark:text-white">
             Today&apos;s Check-In Logged
           </span>
@@ -261,15 +351,23 @@ export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps>
 
           {!painDrawerOpen && (
             <>
-              <button
-                type="button"
-                data-testid="watchless-did-workout-btn"
-                disabled={isSaving}
-                onClick={() => void submitCheckIn({ painFlag: false, applySwap: false })}
-                className="min-h-[44px] px-3.5 py-1.5 rounded-xl border border-ap-frame/30 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon text-xs font-bold text-ap-ink dark:text-ap-chalk hover:brightness-95 cursor-pointer disabled:opacity-50"
-              >
-                I Did Today&apos;s Workout ✓
-              </button>
+              {!hasSyncedToday && (
+                <button
+                  type="button"
+                  data-testid="watchless-did-workout-btn"
+                  disabled={isSaving}
+                  onClick={() =>
+                    void submitCheckIn({
+                      painFlag: false,
+                      applySwap: false,
+                      logWatchless: true,
+                    })
+                  }
+                  className="min-h-[44px] px-3.5 py-1.5 rounded-xl border border-ap-frame/30 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon text-xs font-bold text-ap-ink dark:text-ap-chalk hover:brightness-95 cursor-pointer disabled:opacity-50"
+                >
+                  I Did Today&apos;s Workout ✓
+                </button>
+              )}
               <button
                 type="button"
                 data-testid="checkin-submit-clear"

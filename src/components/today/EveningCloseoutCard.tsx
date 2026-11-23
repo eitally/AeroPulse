@@ -25,6 +25,10 @@ import {
   type BedtimeReminderPrefs,
 } from '../../utils/bedtimeReminderEngine';
 import { formatPracticeTime12h } from '../../utils/workoutScheduleUtils';
+import {
+  deriveWatchlessCompletionPayload,
+  type WatchlessCompletionInput,
+} from '../AthleteSessionCheckInCard';
 import type { SafetySwapEventInput } from '../../physiology/sessionCheckInAndDigestEngine';
 import type {
   DistanceUnit,
@@ -47,6 +51,7 @@ export interface EveningCloseoutCardProps {
     checkInInput: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
     safetySwapEvent?: SafetySwapEventInput | null
   ) => Promise<void> | void;
+  onLogWatchlessCompletion?: (input: WatchlessCompletionInput) => Promise<void> | void;
   isDuskMode: boolean;
   onToggleDuskMode: () => void;
 }
@@ -95,6 +100,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
   safeSportHideWeight = false,
   sessionCheckIns,
   onRecordCheckIn,
+  onLogWatchlessCompletion,
   isDuskMode,
   onToggleDuskMode,
 }) => {
@@ -106,6 +112,10 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
   const existingToday = useMemo(
     () => sessionCheckIns.find((c) => (c.date || '').slice(0, 10) === todayIso) || null,
     [sessionCheckIns, todayIso]
+  );
+  const todayPlanned = useMemo(
+    () => plannedEvents.find((ev) => (ev.date || '').slice(0, 10) === todayIso) || null,
+    [plannedEvents, todayIso]
   );
 
   const [isEditing, setIsEditing] = useState(false);
@@ -125,6 +135,8 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
   const [sorenessNote, setSorenessNote] = useState<string>(existingToday?.sorenessNote || '');
   const [isSaving, setIsSaving] = useState(false);
   const [lastSwapFeedback, setLastSwapFeedback] = useState<string | null>(null);
+  const [watchlessLoggedSummary, setWatchlessLoggedSummary] =
+    useState<WatchlessCompletionInput | null>(null);
   const [reminderPrefs, setReminderPrefs] = useState<BedtimeReminderPrefs>(() =>
     loadBedtimeReminderPrefs()
   );
@@ -212,9 +224,22 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
     [sessionCheckIns, todayIso]
   );
 
-  const handleSave = async () => {
+  const handleSave = async (logWatchlessCompletion = false) => {
     setIsSaving(true);
     try {
+      let loggedWatchless: WatchlessCompletionInput | null = null;
+      if (logWatchlessCompletion && onLogWatchlessCompletion && todayReceipt.sessionCount === 0) {
+        loggedWatchless = deriveWatchlessCompletionPayload({
+          todayPlanned,
+          rpe: selectedRpe,
+          dateIso: todayIso,
+        });
+        await onLogWatchlessCompletion(loggedWatchless);
+        setWatchlessLoggedSummary(loggedWatchless);
+      } else if (!logWatchlessCompletion) {
+        setWatchlessLoggedSummary(null);
+      }
+
       const targetEv = lockIn.plannedEvent;
       await onRecordCheckIn(
         {
@@ -238,7 +263,9 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
       setLastSwapFeedback(
         lockIn.swapEvaluation.shouldSwap && lockIn.swapEvaluation.replacementEventInput
           ? `Tomorrow updated to ${lockIn.swapEvaluation.replacementEventInput.name}`
-          : 'Day closed and tomorrow locked.'
+          : loggedWatchless
+            ? `Self-logged ${loggedWatchless.workoutName} (${loggedWatchless.durationMins}m) and locked tomorrow.`
+            : 'Day closed and tomorrow locked.'
       );
       setIsEditing(false);
     } finally {
@@ -265,6 +292,11 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
               <span className="px-2 py-0.5 rounded-md font-mono font-bold text-2xs ap-status-prime tabular-nums">
                 RPE {existingToday.rpe}/10
               </span>
+              {watchlessLoggedSummary && (
+                <span className="px-2 py-0.5 rounded-md font-mono font-bold text-2xs ap-status-info">
+                  Self-Logged · {watchlessLoggedSummary.durationMins}m
+                </span>
+              )}
               {existingToday.legFeel && (
                 <span className="px-2 py-0.5 rounded-md font-mono text-2xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
                   Legs {existingToday.legFeel}
@@ -418,13 +450,22 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
         <div className="rounded-xl ap-card-inset p-3 space-y-1">
           <div className="text-xs font-bold text-slate-900 dark:text-white">Today&apos;s Bank</div>
           <div className="text-xs font-mono font-semibold ap-text-brand tabular-nums">
-            {todayReceipt.headline}
+            {todayReceipt.sessionCount === 0 && watchlessLoggedSummary
+              ? `${watchlessLoggedSummary.workoutName} · Self-Logged`
+              : todayReceipt.headline}
           </div>
           <div className="text-2xs text-slate-600 dark:text-slate-300">
-            {todayReceipt.totalDurationMins}m ·{' '}
-            {distanceUnit === 'km'
-              ? `${todayReceipt.totalDistanceKm} km`
-              : `${(todayReceipt.totalDistanceKm * 0.621371).toFixed(1)} mi`}
+            {todayReceipt.sessionCount === 0 && watchlessLoggedSummary
+              ? `${watchlessLoggedSummary.durationMins}m · ${
+                  distanceUnit === 'km'
+                    ? `${watchlessLoggedSummary.distanceKm} km`
+                    : `${(watchlessLoggedSummary.distanceKm * 0.621371).toFixed(1)} mi`
+                }`
+              : `${todayReceipt.totalDurationMins}m · ${
+                  distanceUnit === 'km'
+                    ? `${todayReceipt.totalDistanceKm} km`
+                    : `${(todayReceipt.totalDistanceKm * 0.621371).toFixed(1)} mi`
+                }`}
           </div>
         </div>
 
@@ -534,7 +575,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
                   type="button"
                   data-testid="watchless-did-workout-btn"
                   disabled={isSaving}
-                  onClick={handleSave}
+                  onClick={() => void handleSave(true)}
                   className="min-h-[44px] px-3.5 py-1.5 rounded-xl border border-ap-frame/30 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon text-xs font-bold text-ap-ink dark:text-ap-chalk hover:brightness-95 cursor-pointer disabled:opacity-60"
                 >
                   {isSaving ? 'Locking…' : "I Did Today's Workout ✓"}
@@ -544,7 +585,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
                 type="button"
                 data-testid="checkin-submit-clear"
                 disabled={isSaving}
-                onClick={handleSave}
+                onClick={() => void handleSave(false)}
                 className="min-h-[44px] px-4 py-1.5 rounded-xl ap-btn-primary text-xs font-bold cursor-pointer disabled:opacity-60"
               >
                 {isSaving ? 'Locking…' : 'Close Day & Lock Tomorrow'}
@@ -621,7 +662,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
                 type="button"
                 data-testid="checkin-submit-pain-swap"
                 disabled={isSaving}
-                onClick={handleSave}
+                onClick={() => void handleSave(false)}
                 className="min-h-[44px] sm:min-h-[38px] px-4 py-1.5 rounded-xl ap-btn-primary text-xs font-bold shrink-0 cursor-pointer disabled:opacity-60"
               >
                 {isSaving ? 'Locking…' : 'Flag, Auto-Swap Tomorrow & Alert Coach'}
@@ -635,7 +676,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
                 type="button"
                 data-testid="checkin-submit-pain-swap"
                 disabled={isSaving}
-                onClick={handleSave}
+                onClick={() => void handleSave(false)}
                 className="min-h-[44px] sm:min-h-[38px] px-4 py-1.5 rounded-xl ap-btn-primary text-xs font-bold cursor-pointer disabled:opacity-60"
               >
                 {isSaving ? 'Locking…' : 'Close Day & Notify Coach'}

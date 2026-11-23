@@ -166,6 +166,42 @@ export function buildAttendanceCsv(params: {
   return [headers.map(escapeOpsCsvCell).join(','), ...rows].join('\n');
 }
 
+const VALID_ATTENDANCE_STATUSES = new Set<TeamAttendanceStatus>([
+  'PRESENT',
+  'LATE',
+  'ABSENT',
+  'EXCUSED',
+  'INJURED_MODIFIED',
+]);
+
+export function buildExplicitAttendanceSaveEntries(params: {
+  members: TeamSummaryWithRole['memberships'];
+  attendanceMap: Record<string, TeamAttendanceStatus | undefined>;
+}): Array<{ membershipId: string; status: TeamAttendanceStatus }> {
+  const entries: Array<{ membershipId: string; status: TeamAttendanceStatus }> = [];
+  for (const m of params.members) {
+    const status = params.attendanceMap[m.membershipId];
+    if (status && VALID_ATTENDANCE_STATUSES.has(status)) {
+      entries.push({ membershipId: m.membershipId, status });
+    }
+  }
+  return entries;
+}
+
+export function applyMarkAllPresentDraft(params: {
+  visibleMembers: TeamSummaryWithRole['memberships'];
+  attendanceMap: Record<string, TeamAttendanceStatus>;
+  atRtpByMemberId: Map<string, 'OUT' | 'MODIFIED'>;
+}): Record<string, TeamAttendanceStatus> {
+  const next: Record<string, TeamAttendanceStatus> = { ...params.attendanceMap };
+  for (const m of params.visibleMembers) {
+    if (next[m.membershipId]) continue;
+    const isInjured = m.status === 'INJURED' || params.atRtpByMemberId.has(m.membershipId);
+    next[m.membershipId] = isInjured ? 'INJURED_MODIFIED' : 'PRESENT';
+  }
+  return next;
+}
+
 function readSavedAttendanceMap(
   team: TeamSummaryWithRole | null,
   dateIso: string
@@ -174,7 +210,9 @@ function readSavedAttendanceMap(
   const next: Record<string, TeamAttendanceStatus> = {};
   if (savedMap) {
     for (const rec of Object.values(savedMap)) {
-      next[rec.membershipId] = rec.status;
+      if (VALID_ATTENDANCE_STATUSES.has(rec.status)) {
+        next[rec.membershipId] = rec.status;
+      }
     }
   }
   return next;
@@ -272,12 +310,13 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   }, [athleteMembers, groupFilter, searchQuery]);
 
   const handleMarkAllPresent = () => {
-    const next: Record<string, TeamAttendanceStatus> = { ...attendanceMap };
-    for (const m of visibleMembers) {
-      const isInjured = m.status === 'INJURED' || atRtpByMemberId.has(m.membershipId);
-      next[m.membershipId] = isInjured ? 'INJURED_MODIFIED' : 'PRESENT';
-    }
-    setAttendanceMap(next);
+    setAttendanceMap((prev) =>
+      applyMarkAllPresentDraft({
+        visibleMembers,
+        attendanceMap: prev,
+        atRtpByMemberId,
+      })
+    );
     setAttendanceBanner(null);
   };
 
@@ -311,15 +350,21 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
 
   const handleSaveAttendance = async () => {
     if (!activeTeam) return;
-    const entries = visibleMembers.map((m) => ({
-      membershipId: m.membershipId,
-      status:
-        attendanceMap[m.membershipId] ||
-        (m.status === 'INJURED' || atRtpByMemberId.has(m.membershipId)
-          ? ('INJURED_MODIFIED' as const)
-          : ('PRESENT' as const)),
-    }));
-    if (entries.length === 0) return;
+    const entries = buildExplicitAttendanceSaveEntries({
+      members: athleteMembers,
+      attendanceMap,
+    });
+    if (entries.length === 0) {
+      setAttendanceBanner({
+        text: 'Mark at least one athlete (or tap Mark All Present) before saving roll call.',
+        tone: 'error',
+      });
+      return;
+    }
+    const unmarkedAtSave = Math.max(0, athleteMembers.length - entries.length);
+    const savedSummaryText = `Saved roll call for ${entries.length} marked athlete${
+      entries.length === 1 ? '' : 's'
+    } (${selectedDate})${unmarkedAtSave > 0 ? ` · ${unmarkedAtSave} unmarked` : ''} ✓`;
 
     const applyLocal = () => {
       const existing = activeTeam.attendanceByDate || {};
@@ -356,7 +401,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
         updated.brand.teamId
       );
       setAttendanceBanner({
-        text: `Saved attendance for ${entries.length} athletes (${selectedDate}) ✓`,
+        text: savedSummaryText,
         tone: 'ok',
       });
     };
@@ -383,7 +428,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
         );
       }
       setAttendanceBanner({
-        text: `Saved attendance for ${entries.length} athletes (${selectedDate}) ✓`,
+        text: savedSummaryText,
         tone: 'ok',
       });
     } catch (err) {
@@ -507,6 +552,15 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
       athleteMembers.filter((m) => (attendanceMap[m.membershipId] || '') === 'PRESENT').length,
     [athleteMembers, attendanceMap]
   );
+  const markedCount = useMemo(
+    () =>
+      athleteMembers.filter((m) => {
+        const st = attendanceMap[m.membershipId];
+        return Boolean(st && VALID_ATTENDANCE_STATUSES.has(st));
+      }).length,
+    [athleteMembers, attendanceMap]
+  );
+  const unmarkedCount = Math.max(0, athleteMembers.length - markedCount);
 
   const canManageVenues =
     activeTeam?.myRole === 'HEAD_COACH' ||
@@ -682,6 +736,12 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                 <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
                   1-Tap Roll Call ({presentCount}/{athleteMembers.length} Present)
                 </span>
+                <span
+                  data-testid="roll-call-counts"
+                  className="px-2 py-0.5 rounded-md bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark font-mono text-2xs font-semibold text-ap-muted dark:text-ap-muted-dark tabular-nums"
+                >
+                  {markedCount} marked · {unmarkedCount} unmarked
+                </span>
                 <input
                   type="date"
                   data-testid="attendance-date-picker"
@@ -746,7 +806,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
               </select>
             </div>
 
-            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-0.5">
+            <div className="space-y-1.5 max-h-[420px] sm:max-h-72 overflow-y-auto pr-0.5">
               {visibleMembers.length === 0 ? (
                 <div className="text-xs text-ap-muted dark:text-ap-muted-dark py-2">
                   No athletes on roster yet. Invite athletes via join code{' '}

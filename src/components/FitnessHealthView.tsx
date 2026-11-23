@@ -12,6 +12,7 @@ import {
   AthleteProfile,
   ConnectedAthleteRecord,
   CrossTrainingModality,
+  DelegatedTimingSessionRecord,
   DistanceUnit,
   PlannedWorkoutEvent,
   SessionCheckInRecord,
@@ -32,10 +33,16 @@ import {
 } from './charts/MicroGraphics';
 import { ReadinessMorphingCard } from './ReadinessMorphingCard';
 import { CircadianFirstTouchHero, type CircadianHeroMode } from './CircadianFirstTouchHero';
-import { AthleteSessionCheckInCard } from './AthleteSessionCheckInCard';
+import {
+  AthleteSessionCheckInCard,
+  type WatchlessCompletionInput,
+} from './AthleteSessionCheckInCard';
 import { EveningCloseoutCard } from './today/EveningCloseoutCard';
 import { PracticeAttendanceCheckInCard } from './today/PracticeAttendanceCheckInCard';
-import { AthleteTeamStatusAndNotesCard } from './today/AthleteTeamStatusAndNotesCard';
+import {
+  AthleteTeamStatusAndNotesCard,
+  isDelegatedTimingAssignmentActive,
+} from './today/AthleteTeamStatusAndNotesCard';
 import { FitnessCheckInAndCrossTrainingDrawer } from './fitness/FitnessCheckInAndCrossTrainingDrawer';
 import { FitnessSnapshotMetricCards } from './fitness/FitnessSnapshotMetricCards';
 import { resolveCircadianHeroMode } from '../physiology/eveningHabitEngine';
@@ -109,11 +116,46 @@ interface FitnessHealthViewProps {
   onOpenCoachWithPrompt: (prompt: string) => void;
   onQuickLogRun?: (activity: UnifiedActivity) => void;
   onOpenTracksideStopwatch?: () => void;
+  onLaunchDelegatedTiming?: (assignment: DelegatedTimingSessionRecord) => void;
+  onLogWatchlessCompletion?: (input: WatchlessCompletionInput) => Promise<void> | void;
   sessionCheckIns?: SessionCheckInRecord[];
   onRecordSessionCheckIn?: (
     input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
     safetySwapEvent?: SafetySwapEventInput | null
   ) => Promise<void> | void;
+}
+
+export function hasUrgentAthleteTeamSignal(
+  activeTeam: TeamSummaryWithRole | null | undefined,
+  todayIso: string
+): boolean {
+  if (!activeTeam || activeTeam.myRole === 'PARENT_FOLLOWER') return false;
+
+  const hasActiveRtp = (activeTeam.injuryCases || []).some(
+    (c) => c.membershipId === activeTeam.myMembershipId && c.rtpStage !== 'CLEARED'
+  );
+  if (hasActiveRtp) return true;
+
+  const recentCutoffIso = shiftIsoDate(todayIso, -7);
+  const allComments = activeTeam.workoutComments || [];
+  const scopedComments =
+    activeTeam.myRole === 'ATHLETE'
+      ? allComments.filter((c) => c.targetMembershipId === activeTeam.myMembershipId)
+      : allComments;
+  const hasRecentCoachNote = scopedComments.some((c) => {
+    const noteDate = (c.workoutDate || String(c.createdAt || '').slice(0, 10)).slice(0, 10);
+    return !noteDate || noteDate >= recentCutoffIso;
+  });
+  if (hasRecentCoachNote) return true;
+
+  const hasDelegatedTiming = (activeTeam.myDelegatedTimingAssignments || []).some((s) =>
+    isDelegatedTimingAssignmentActive(s, todayIso)
+  );
+  if (hasDelegatedTiming) return true;
+
+  return (activeTeam.myMeetDaySchedule || []).some(
+    (item) => !item.meetDate || item.meetDate.slice(0, 10) >= todayIso
+  );
 }
 
 type DateRangePreset =
@@ -181,6 +223,8 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   onOpenCoachWithPrompt,
   onQuickLogRun,
   onOpenTracksideStopwatch,
+  onLaunchDelegatedTiming,
+  onLogWatchlessCompletion,
   sessionCheckIns = [],
   onRecordSessionCheckIn,
 }) => {
@@ -217,12 +261,15 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
   );
   const isEveningHours = resolveCircadianHeroMode({ hasCompletedToday }) === 'TONIGHT';
   const [circadianMode, setCircadianMode] = useState<CircadianHeroMode>(() =>
-    hasCompletedToday ? 'POST_SESSION' : 'MORNING'
+    resolveCircadianHeroMode({ hasCompletedToday })
   );
   useEffect(() => {
-    if (hasCompletedToday) {
-      setCircadianMode((prev) => (prev === 'MORNING' ? 'POST_SESSION' : prev));
-    }
+    setCircadianMode((prev) => {
+      if (hasCompletedToday) return prev === 'MORNING' ? 'POST_SESSION' : prev;
+      return prev === 'POST_SESSION'
+        ? resolveCircadianHeroMode({ hasCompletedToday: false })
+        : prev;
+    });
   }, [hasCompletedToday]);
   const [isDuskMode, setIsDuskMode] = useState<boolean>(() => {
     try {
@@ -954,8 +1001,26 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
     [plannedEvents, todayIso]
   );
 
+  const promoteTeamCardAboveHero = useMemo(
+    () => hasUrgentAthleteTeamSignal(activeTeam, todayIso),
+    [activeTeam, todayIso]
+  );
+
+  const teamStatusCard = activeTeam ? (
+    <AthleteTeamStatusAndNotesCard
+      activeTeam={activeTeam}
+      myTeams={myTeams}
+      todayIso={todayIso}
+      isSampleDemoMode={isSampleDemoMode}
+      onTeamsUpdated={onTeamsUpdated}
+      onLaunchDelegatedTiming={onLaunchDelegatedTiming}
+    />
+  ) : null;
+
   return (
     <div className="space-y-4 sm:space-y-5">
+      {promoteTeamCardAboveHero && teamStatusCard}
+
       {/* ==========================================================================
           0A. BI-MODAL CIRCADIAN FIRST-TOUCH HERO (Morning Wake-Up <-> Post-Session Receipt)
          ========================================================================== */}
@@ -977,6 +1042,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onModeChange={setCircadianMode}
         sessionCheckIns={sessionCheckIns}
         onRecordSessionCheckIn={onRecordSessionCheckIn}
+        onLogWatchlessCompletion={onLogWatchlessCompletion}
         isDuskMode={isDuskMode}
         onToggleDuskMode={() => setIsDuskMode((prev) => !prev)}
         onSelectActivity={onSelectActivity}
@@ -987,15 +1053,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onOpenTracksideStopwatch={onOpenTracksideStopwatch}
       />
 
-      {activeTeam && (
-        <AthleteTeamStatusAndNotesCard
-          activeTeam={activeTeam}
-          myTeams={myTeams}
-          todayIso={todayIso}
-          isSampleDemoMode={isSampleDemoMode}
-          onTeamsUpdated={onTeamsUpdated}
-        />
-      )}
+      {!promoteTeamCardAboveHero && teamStatusCard}
 
       {activeTeam &&
         activeTeam.myRole !== 'PARENT_FOLLOWER' &&
@@ -1026,6 +1084,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 safeSportHideWeight={Boolean(athleteProfile?.safeSportHideWeight)}
                 sessionCheckIns={sessionCheckIns}
                 onRecordCheckIn={onRecordSessionCheckIn}
+                onLogWatchlessCompletion={onLogWatchlessCompletion}
                 isDuskMode={isDuskMode}
                 onToggleDuskMode={() => setIsDuskMode((prev) => !prev)}
               />
@@ -1033,9 +1092,11 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
           ) : (
             <AthleteSessionCheckInCard
               todayIso={todayIso}
+              activities={activities}
               plannedEvents={plannedEvents}
               sessionCheckIns={sessionCheckIns}
               onRecordCheckIn={onRecordSessionCheckIn}
+              onLogWatchlessCompletion={onLogWatchlessCompletion}
             />
           )
         ) : (

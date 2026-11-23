@@ -43,6 +43,43 @@ import type {
   UnifiedWellnessDay,
 } from '../types';
 
+const STAFF_TEAM_ROLES = new Set([
+  'HEAD_COACH',
+  'ASSISTANT_COACH',
+  'ATHLETIC_TRAINER',
+  'ORG_ADMIN',
+]);
+
+export function shouldShowCoachWorkspaceSwitch(params: {
+  activeTab: ActiveTab;
+  myTeams: TeamSummaryWithRole[];
+  isSampleDemoMode: boolean;
+  hasCoachOnboardingRole: boolean;
+}): boolean {
+  if (params.activeTab === 'coach' || params.isSampleDemoMode) return true;
+  if (params.myTeams.length > 0) {
+    return params.myTeams.some((t) => STAFF_TEAM_ROLES.has(t.myRole));
+  }
+  return params.hasCoachOnboardingRole;
+}
+
+export function shouldShowMobileAthleteSwitcher(params: {
+  activeTab: ActiveTab;
+  activeViewedAthleteId: string;
+  myTeams: TeamSummaryWithRole[];
+  combinedRoster: ConnectedAthleteRecord[];
+  isSampleDemoMode: boolean;
+}): boolean {
+  if (params.activeTab === 'coach') return false;
+  if (params.activeViewedAthleteId !== 'SELF') return true;
+  if (params.myTeams.length === 0) return false;
+  if (params.isSampleDemoMode) return true;
+  if (params.myTeams.some((t) => STAFF_TEAM_ROLES.has(t.myRole))) return true;
+  return params.combinedRoster.some(
+    (a) => a.status === 'CONNECTED' && a.role === 'COACH_EDIT'
+  );
+}
+
 export interface CockpitHeaderProps {
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
@@ -165,11 +202,20 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
       return false;
     }
   })();
-  const showCoachSwitchInHeader =
-    activeTab === 'coach' ||
-    myTeams.length > 0 ||
-    isSampleDemoMode ||
-    hasCoachOnboardingRole;
+  const hasStaffTeam = myTeams.some((t) => STAFF_TEAM_ROLES.has(t.myRole));
+  const showCoachSwitchInHeader = shouldShowCoachWorkspaceSwitch({
+    activeTab,
+    myTeams,
+    isSampleDemoMode,
+    hasCoachOnboardingRole,
+  });
+  const showMobileAthleteSwitcher = shouldShowMobileAthleteSwitcher({
+    activeTab,
+    activeViewedAthleteId,
+    myTeams,
+    combinedRoster,
+    isSampleDemoMode,
+  });
 
   const hasStoredStopwatchSession = () => {
     try {
@@ -744,7 +790,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       </span>
                     </button>
 
-                    {onSelectCoachSubTab && (
+                    {onSelectCoachSubTab &&
+                      (isSampleDemoMode || myTeams.length === 0 || hasStaffTeam) && (
                       <button
                         type="button"
                         role="menuitem"
@@ -1057,7 +1104,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               </div>
             )}
 
-            {(myTeams.length > 0 || activeViewedAthleteId !== 'SELF') && activeTab !== 'coach' && (
+            {showMobileAthleteSwitcher && (
               <div className="min-h-[44px] inline-flex items-center gap-1 rounded-xl liquid-capsule-track px-2.5 py-1 shrink-0">
                 <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" weight="duotone" />
                 <select

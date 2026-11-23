@@ -81,6 +81,28 @@ import {
   Waves,
 } from './icons/PhosphorIcons';
 
+export function shouldDefaultExpandWorkoutLibrary(viewportWidth?: number): boolean {
+  if (typeof viewportWidth === 'number' && Number.isFinite(viewportWidth)) {
+    return viewportWidth >= 768;
+  }
+  if (typeof window !== 'undefined' && typeof window.innerWidth === 'number') {
+    return window.innerWidth >= 768;
+  }
+  return true;
+}
+
+export function isScholasticTrackOrXcTeam(
+  activeTeam?: TeamSummaryWithRole | null
+): boolean {
+  if (!activeTeam) return false;
+  const isScholasticOrg =
+    activeTeam.brand.orgType === 'HIGH_SCHOOL' ||
+    activeTeam.brand.orgType === 'COLLEGIATE';
+  if (!isScholasticOrg) return false;
+  const primary = activeTeam.brand.primarySport;
+  return primary !== 'Cycling' && primary !== 'Swimming' && primary !== 'Triathlon';
+}
+
 export interface CoachClipboardWorkoutBuilderProps {
   activeTeam: TeamSummaryWithRole | null;
   myTeams: TeamSummaryWithRole[];
@@ -347,7 +369,10 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
   const [stopwatchWaveMode, setStopwatchWaveMode] = useState<'MASS' | 'POD_10S' | 'PURSUIT'>('POD_10S');
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignFeedback, setAssignFeedback] = useState<string | null>(null);
-  const [showWorkoutLibrary, setShowWorkoutLibrary] = useState(true);
+  const [showWorkoutLibrary, setShowWorkoutLibrary] = useState<boolean>(() =>
+    shouldDefaultExpandWorkoutLibrary()
+  );
+  const [showMultisportGroup, setShowMultisportGroup] = useState<boolean>(false);
   const [libraryFilter, setLibraryFilter] = useState<'ALL' | TeamWorkoutLibraryCategory>('ALL');
   const [isSavingLibrary, setIsSavingLibrary] = useState(false);
   const [deletingLibraryId, setDeletingLibraryId] = useState<string | null>(null);
@@ -360,6 +385,16 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       }),
     [selfProfile, activeTeam]
   );
+  const isScholasticTrack = useMemo(
+    () => isScholasticTrackOrXcTeam(activeTeam),
+    [activeTeam]
+  );
+  const showMultisportButtons =
+    !isScholasticTrack ||
+    showMultisportGroup ||
+    clipboardSport === 'Cycling' ||
+    clipboardSport === 'Swimming' ||
+    clipboardSport === 'Multisport';
 
   const audienceChips: Array<{ id: AudienceMode; label: string }> = useMemo(() => {
     const base: Array<{ id: AudienceMode; label: string }> = [
@@ -1200,109 +1235,6 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             </button>
             <button
               type="button"
-              aria-pressed={clipboardSport === 'Cycling'}
-              onClick={() => {
-                setClipboardSport('Cycling');
-                if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
-                  setAudienceMode('ALL');
-                }
-              }}
-              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
-                clipboardSport === 'Cycling'
-                  ? 'ap-nav-volt-active'
-                  : 'text-ap-muted dark:text-ap-muted-dark'
-              }`}
-            >
-              <Bike className="w-3 h-3" />
-              <span>Cycling</span>
-            </button>
-            <button
-              type="button"
-              data-testid="clipboard-sport-swimming"
-              aria-pressed={clipboardSport === 'Swimming'}
-              onClick={() => {
-                setClipboardSport('Swimming');
-                if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
-                  setAudienceMode('ALL');
-                }
-                setLocationCategory('POOL_CROSS');
-                setLocationName('Competition Pool');
-                if (workoutTitle === 'Track Multi-Set' || workoutTitle === 'Triathlon T2 Brick') {
-                  setWorkoutTitle('Pool CSS Set');
-                }
-                setSets([
-                  {
-                    id: `swim-set-${Date.now()}`,
-                    repCount: 10,
-                    repDistanceMeters: 100,
-                    measureMode: 'DISTANCE_M',
-                    intensity: 'THRESHOLD_CV',
-                    restLabel: '15s rest',
-                    setRestAfterSecs: 0,
-                  },
-                ]);
-                setShowManualSetRows(true);
-              }}
-              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
-                clipboardSport === 'Swimming'
-                  ? 'ap-nav-volt-active'
-                  : 'text-ap-muted dark:text-ap-muted-dark'
-              }`}
-            >
-              <Waves className="w-3 h-3" />
-              <span>Swim</span>
-            </button>
-            <button
-              type="button"
-              data-testid="clipboard-sport-multisport"
-              aria-pressed={clipboardSport === 'Multisport'}
-              onClick={() => {
-                setClipboardSport('Multisport');
-                if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
-                  setAudienceMode('ALL');
-                }
-                setLocationCategory('ROAD_CAMPUS');
-                setLocationName('Transition / Loop');
-                if (workoutTitle === 'Track Multi-Set' || workoutTitle === 'Pool CSS Set') {
-                  setWorkoutTitle('Triathlon T2 Brick');
-                }
-                setSets([
-                  {
-                    id: `brick-bike-${Date.now()}`,
-                    repCount: 1,
-                    repDistanceMeters: 800,
-                    measureMode: 'TIME_MINS',
-                    durationMins: 45,
-                    targetPctFtp: 88,
-                    intensity: 'SUB_THRESHOLD',
-                    restLabel: '2m T2',
-                    setRestAfterSecs: 0,
-                  },
-                  {
-                    id: `brick-run-${Date.now() + 1}`,
-                    repCount: 1,
-                    repDistanceMeters: 800,
-                    measureMode: 'TIME_MINS',
-                    durationMins: 20,
-                    targetPctFtp: 90,
-                    intensity: 'THRESHOLD_CV',
-                    restLabel: 'cooldown',
-                    setRestAfterSecs: 0,
-                  },
-                ]);
-                setShowManualSetRows(true);
-              }}
-              className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
-                clipboardSport === 'Multisport'
-                  ? 'ap-nav-volt-active'
-                  : 'text-ap-muted dark:text-ap-muted-dark'
-              }`}
-            >
-              <Layers className="w-3 h-3" />
-              <span>Tri Brick</span>
-            </button>
-            <button
-              type="button"
               data-testid="clipboard-sport-strength"
               aria-pressed={clipboardSport === 'Strength'}
               onClick={() => {
@@ -1333,6 +1265,124 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
               <Dumbbell className="w-3 h-3" />
               <span>Gym / Lift</span>
             </button>
+            {isScholasticTrack && (
+              <button
+                type="button"
+                data-testid="clipboard-multisport-expander"
+                aria-expanded={showMultisportButtons}
+                onClick={() => setShowMultisportGroup((prev) => !prev)}
+                className="min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white cursor-pointer"
+              >
+                <span>{showMultisportButtons ? '− Multisport' : '+ Multisport'}</span>
+              </button>
+            )}
+            {showMultisportButtons && (
+              <>
+                <button
+                  type="button"
+                  aria-pressed={clipboardSport === 'Cycling'}
+                  onClick={() => {
+                    setClipboardSport('Cycling');
+                    if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
+                      setAudienceMode('ALL');
+                    }
+                  }}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                    clipboardSport === 'Cycling'
+                      ? 'ap-nav-volt-active'
+                      : 'text-ap-muted dark:text-ap-muted-dark'
+                  }`}
+                >
+                  <Bike className="w-3 h-3" />
+                  <span>Cycling</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="clipboard-sport-swimming"
+                  aria-pressed={clipboardSport === 'Swimming'}
+                  onClick={() => {
+                    setClipboardSport('Swimming');
+                    if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
+                      setAudienceMode('ALL');
+                    }
+                    setLocationCategory('POOL_CROSS');
+                    setLocationName('Competition Pool');
+                    if (workoutTitle === 'Track Multi-Set' || workoutTitle === 'Triathlon T2 Brick') {
+                      setWorkoutTitle('Pool CSS Set');
+                    }
+                    setSets([
+                      {
+                        id: `swim-set-${Date.now()}`,
+                        repCount: 10,
+                        repDistanceMeters: 100,
+                        measureMode: 'DISTANCE_M',
+                        intensity: 'THRESHOLD_CV',
+                        restLabel: '15s rest',
+                        setRestAfterSecs: 0,
+                      },
+                    ]);
+                    setShowManualSetRows(true);
+                  }}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                    clipboardSport === 'Swimming'
+                      ? 'ap-nav-volt-active'
+                      : 'text-ap-muted dark:text-ap-muted-dark'
+                  }`}
+                >
+                  <Waves className="w-3 h-3" />
+                  <span>Swim</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="clipboard-sport-multisport"
+                  aria-pressed={clipboardSport === 'Multisport'}
+                  onClick={() => {
+                    setClipboardSport('Multisport');
+                    if (audienceMode !== 'ALL' && audienceMode !== 'INDIVIDUAL') {
+                      setAudienceMode('ALL');
+                    }
+                    setLocationCategory('ROAD_CAMPUS');
+                    setLocationName('Transition / Loop');
+                    if (workoutTitle === 'Track Multi-Set' || workoutTitle === 'Pool CSS Set') {
+                      setWorkoutTitle('Triathlon T2 Brick');
+                    }
+                    setSets([
+                      {
+                        id: `brick-bike-${Date.now()}`,
+                        repCount: 1,
+                        repDistanceMeters: 800,
+                        measureMode: 'TIME_MINS',
+                        durationMins: 45,
+                        targetPctFtp: 88,
+                        intensity: 'SUB_THRESHOLD',
+                        restLabel: '2m T2',
+                        setRestAfterSecs: 0,
+                      },
+                      {
+                        id: `brick-run-${Date.now() + 1}`,
+                        repCount: 1,
+                        repDistanceMeters: 800,
+                        measureMode: 'TIME_MINS',
+                        durationMins: 20,
+                        targetPctFtp: 90,
+                        intensity: 'THRESHOLD_CV',
+                        restLabel: 'cooldown',
+                        setRestAfterSecs: 0,
+                      },
+                    ]);
+                    setShowManualSetRows(true);
+                  }}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-md inline-flex items-center gap-1 cursor-pointer ${
+                    clipboardSport === 'Multisport'
+                      ? 'ap-nav-volt-active'
+                      : 'text-ap-muted dark:text-ap-muted-dark'
+                  }`}
+                >
+                  <Layers className="w-3 h-3" />
+                  <span>Tri Brick</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
 

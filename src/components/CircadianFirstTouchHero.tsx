@@ -49,6 +49,7 @@ import type {
 } from '../types';
 import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { EveningCloseoutCard } from './today/EveningCloseoutCard';
+import type { WatchlessCompletionInput } from './AthleteSessionCheckInCard';
 import {
   findMorningContinuityFromLastNight,
   resolveCircadianHeroMode,
@@ -90,6 +91,7 @@ interface CircadianFirstTouchHeroProps {
     input: Omit<SessionCheckInRecord, 'id' | 'createdAt'>,
     safetySwapEvent?: SafetySwapEventInput | null
   ) => Promise<void> | void;
+  onLogWatchlessCompletion?: (input: WatchlessCompletionInput) => Promise<void> | void;
   isDuskMode?: boolean;
   onToggleDuskMode?: () => void;
   onSelectActivity?: (activity: UnifiedActivity) => void;
@@ -191,6 +193,32 @@ const LoadFocusGaugeRow: React.FC<{ bucket: LoadFocusBucketSummary }> = ({
   );
 };
 
+const ReadinessMetricCell: React.FC<{
+  label: React.ReactNode;
+  subLabel: React.ReactNode;
+  value: React.ReactNode;
+  bullet?: React.ReactNode;
+  className?: string;
+  truncateValue?: boolean;
+}> = ({ label, subLabel, value, bullet, className = '', truncateValue = false }) => (
+  <div
+    className={`p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent ${className}`}
+  >
+    <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
+      {label}
+      <span className="text-2xs opacity-85">{subLabel}</span>
+    </div>
+    <div
+      className={`mt-0.5 ${
+        bullet ? 'flex items-center justify-between gap-2 ' : ''
+      }text-xs sm:text-sm font-bold text-ap-ink dark:text-white${truncateValue ? ' truncate' : ''}`}
+    >
+      <span>{value}</span>
+      {bullet}
+    </div>
+  </div>
+);
+
 export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = ({
   wellnessDays,
   activities,
@@ -209,6 +237,7 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   onModeChange,
   sessionCheckIns = [],
   onRecordSessionCheckIn,
+  onLogWatchlessCompletion,
   isDuskMode = false,
   onToggleDuskMode,
   onSelectActivity,
@@ -246,9 +275,11 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
 
   // Auto-flip into Post-Session Receipt as soon as a workout syncs for today (without overriding explicit Tonight mode)
   useEffect(() => {
-    if (hasCompletedToday && !controlledMode) {
-      setInternalMode((prev) => (prev === 'MORNING' ? 'POST_SESSION' : prev));
-    }
+    if (controlledMode) return;
+    setInternalMode((prev) => {
+      if (hasCompletedToday) return prev === 'MORNING' ? 'POST_SESSION' : prev;
+      return prev === 'POST_SESSION' ? resolveCircadianHeroMode({ hasCompletedToday: false }) : prev;
+    });
   }, [hasCompletedToday, controlledMode]);
 
   const lastNightContinuity = useMemo(
@@ -317,6 +348,8 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
   const [isSavingRx, setIsSavingRx] = useState<boolean>(false);
   const [rxToast, setRxToast] = useState<string | null>(null);
   const [selectedTodayIdx, setSelectedTodayIdx] = useState<number>(0);
+  const [showAllWorkoutSteps, setShowAllWorkoutSteps] = useState<boolean>(false);
+  const [showEasyAltDrawer, setShowEasyAltDrawer] = useState<boolean>(false);
 
   const todayScheduledList = useMemo(
     () =>
@@ -337,6 +370,11 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
       ) || todayScheduledList[0];
     return sportMatched || null;
   }, [todayScheduledList, selectedTodayIdx, rxSport]);
+
+  useEffect(() => {
+    setShowAllWorkoutSteps(false);
+    setShowEasyAltDrawer(false);
+  }, [todayScheduled?.id, rxSport]);
 
   const todayCombinedPlannedTss = useMemo(
     () => todayScheduledList.reduce((acc, ev) => acc + (ev.plannedLoad || 0), 0),
@@ -435,9 +473,33 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
     )
   );
 
-  const maxSparkDayLoad = Math.max(
-    45,
-    ...productivity.dailyWindow.map((d) => d.totalLoad)
+  const maxSparkDayLoad = Math.max(45, ...productivity.dailyWindow.map((d) => d.totalLoad));
+  const previewSyntax =
+    shouldOfferGuardrailSwap && orthopedicSummary
+      ? orthopedicSummary.suggestedBikeWorkoutSyntax
+      : todayScheduled?.workoutSyntax || activeRxSyntax;
+  const allPreviewLines = previewSyntax.split('\n').filter((line) => line.trim().length > 0);
+  const INITIAL_WORKOUT_PREVIEW_STEPS = 6;
+  const visiblePreviewLines = showAllWorkoutSteps
+    ? allPreviewLines
+    : allPreviewLines.slice(0, INITIAL_WORKOUT_PREVIEW_STEPS);
+
+  const renderCustomizeExportBtn = (primary: boolean) => (
+    <button
+      type="button"
+      aria-expanded={isWorkbenchExpanded}
+      onClick={onToggleWorkbench}
+      className={
+        primary
+          ? 'ap-btn-primary px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 flex-1 justify-center cursor-pointer'
+          : 'ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer'
+      }
+      title="Open full Skyline Interval Workbench, Garmin Push & .FIT/.ZWO Export"
+    >
+      <Sliders className="w-3.5 h-3.5" />
+      <span>Customize &amp; Export</span>
+      {isWorkbenchExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+    </button>
   );
 
   return (
@@ -591,9 +653,11 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
           activities={activities}
           plannedEvents={plannedEvents}
           latestWellness={wellnessDays.length > 0 ? wellnessDays[wellnessDays.length - 1] : null}
+          distanceUnit={distanceUnit}
           safeSportHideWeight={Boolean(athleteProfile?.safeSportHideWeight)}
           sessionCheckIns={sessionCheckIns}
           onRecordCheckIn={onRecordSessionCheckIn || (() => {})}
+          onLogWatchlessCompletion={onLogWatchlessCompletion}
           isDuskMode={isDuskMode}
           onToggleDuskMode={onToggleDuskMode || (() => {})}
         />
@@ -718,15 +782,9 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             <div className="pt-2 border-t border-ap-cobalt/12 dark:border-white/10">
               <div className="grid grid-cols-7 gap-1.5 items-end h-11">
                 {productivity.dailyWindow.map((day) => {
-                  const lowH = Math.round(
-                    (day.lowAerobicLoad / maxSparkDayLoad) * 28
-                  );
-                  const highH = Math.round(
-                    (day.highAerobicLoad / maxSparkDayLoad) * 28
-                  );
-                  const neuroH = Math.round(
-                    (day.neuromuscularLoad / maxSparkDayLoad) * 28
-                  );
+                  const lowH = Math.round((day.lowAerobicLoad / maxSparkDayLoad) * 28);
+                  const highH = Math.round((day.highAerobicLoad / maxSparkDayLoad) * 28);
+                  const neuroH = Math.round((day.neuromuscularLoad / maxSparkDayLoad) * 28);
                   return (
                     <div
                       key={day.date}
@@ -736,24 +794,9 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                       <div className="w-full max-w-[24px] h-7 flex flex-col-reverse rounded-xs overflow-hidden bg-slate-200/55 dark:bg-slate-800/60">
                         {day.totalLoad > 0 && (
                           <>
-                            <div
-                              style={{
-                                height: `${Math.max(lowH > 0 ? 2 : 0, lowH)}px`,
-                                backgroundColor: '#0D9488',
-                              }}
-                            />
-                            <div
-                              style={{
-                                height: `${Math.max(highH > 0 ? 2 : 0, highH)}px`,
-                                backgroundColor: '#EA580C',
-                              }}
-                            />
-                            <div
-                              style={{
-                                height: `${Math.max(neuroH > 0 ? 2 : 0, neuroH)}px`,
-                                backgroundColor: '#7C3AED',
-                              }}
-                            />
+                            <div style={{ height: `${Math.max(lowH > 0 ? 2 : 0, lowH)}px`, backgroundColor: '#0D9488' }} />
+                            <div style={{ height: `${Math.max(highH > 0 ? 2 : 0, highH)}px`, backgroundColor: '#EA580C' }} />
+                            <div style={{ height: `${Math.max(neuroH > 0 ? 2 : 0, neuroH)}px`, backgroundColor: '#7C3AED' }} />
                           </>
                         )}
                       </div>
@@ -840,62 +883,36 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                 data-testid="strava-only-readiness-summary"
                 className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-ap-cobalt/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1"
               >
-                <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
-                    <span className="font-medium">Form (TSB)</span>
-                    <span className="text-2xs opacity-85">Freshness</span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-ap-ink dark:text-white">
-                    <span>
-                      {productivity.tsb > 0
-                        ? `+${productivity.tsb.toFixed(0)}`
-                        : productivity.tsb.toFixed(0)}
-                    </span>
+                <ReadinessMetricCell
+                  className="lg:first:pt-0"
+                  label={<span className="font-medium">Form (TSB)</span>}
+                  subLabel="Freshness"
+                  value={productivity.tsb > 0 ? `+${productivity.tsb.toFixed(0)}` : productivity.tsb.toFixed(0)}
+                  bullet={
                     <VitalsCorridorBulletRow
                       valuePct={50 + productivity.tsb}
                       bandStartPct={30}
                       bandWidthPct={45}
                       tone={productivity.tsb < -20 ? 'caution' : 'prime'}
                     />
-                  </div>
-                </div>
-
-                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
-                    <span className="font-medium">Fitness (CTL)</span>
-                    <span className="text-2xs opacity-85">
-                      {productivity.ctlRamp7d >= 0
-                        ? `+${productivity.ctlRamp7d}/wk`
-                        : `${productivity.ctlRamp7d}/wk`}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-ap-ink dark:text-white">
-                    {productivity.ctl.toFixed(0)}
-                  </div>
-                </div>
-
-                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
-                    <span className="font-medium">7d Acute Load</span>
-                    <span className="text-2xs opacity-85">
-                      {productivity.acwr.toFixed(2)}x ACWR
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-ap-ink dark:text-white">
-                    <span>{productivity.acuteLoad7d} TSS</span>
+                  }
+                />
+                <ReadinessMetricCell
+                  label={<span className="font-medium">Fitness (CTL)</span>}
+                  subLabel={productivity.ctlRamp7d >= 0 ? `+${productivity.ctlRamp7d}/wk` : `${productivity.ctlRamp7d}/wk`}
+                  value={productivity.ctl.toFixed(0)}
+                />
+                <ReadinessMetricCell
+                  label={<span className="font-medium">7d Acute Load</span>}
+                  subLabel={`${productivity.acwr.toFixed(2)}x ACWR`}
+                  value={`${productivity.acuteLoad7d} TSS`}
+                  bullet={
                     <VitalsCorridorBulletRow
                       valuePct={((productivity.acwr - 0.4) / 1.4) * 100}
-                      tone={
-                        productivity.acwr >= 1.35
-                          ? 'strained'
-                          : productivity.acwr >= 1.2
-                            ? 'caution'
-                            : 'prime'
-                      }
+                      tone={productivity.acwr >= 1.35 ? 'strained' : productivity.acwr >= 1.2 ? 'caution' : 'prime'}
                     />
-                  </div>
-                </div>
-
+                  }
+                />
                 {onOpenAthleteProfileModal ? (
                   <button
                     type="button"
@@ -912,118 +929,83 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               </div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-1 gap-2 lg:gap-0 lg:divide-y lg:divide-ap-cobalt/12 lg:dark:divide-white/10 font-mono tabular-nums flex-1">
-                <div className="p-2 lg:p-0 lg:py-2 lg:first:pt-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
-                    <span
-                      className="inline-flex items-center gap-1 font-medium"
-                      title="Overnight HRV (rMSSD)"
-                    >
+                <ReadinessMetricCell
+                  className="lg:first:pt-0"
+                  label={
+                    <span className="inline-flex items-center gap-1 font-medium" title="Overnight HRV (rMSSD)">
                       <HeartPulse className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                       Overnight HRV
                     </span>
-                    <span className="text-2xs opacity-85">
-                      {productivity.hrv7dAvgMs > 0
-                        ? `${productivity.hrv7dAvgMs}ms`
-                        : 'Wearable'}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-ap-ink dark:text-white">
-                    <span>
-                      {productivity.hrvLatestMs > 0
-                        ? `${productivity.hrvLatestMs} ms`
-                        : 'Wearable needed'}
-                    </span>
-                    {productivity.hrvLatestMs > 0 && (
+                  }
+                  subLabel={productivity.hrv7dAvgMs > 0 ? `${productivity.hrv7dAvgMs}ms` : 'Wearable'}
+                  value={productivity.hrvLatestMs > 0 ? `${productivity.hrvLatestMs} ms` : 'Wearable needed'}
+                  bullet={
+                    productivity.hrvLatestMs > 0 ? (
                       <VitalsCorridorBulletRow
                         valuePct={
                           productivity.hrv7dAvgMs > 0
                             ? 50 + ((productivity.hrvLatestMs - productivity.hrv7dAvgMs) / Math.max(10, productivity.hrv7dAvgMs * 0.25)) * 25
                             : 55
                         }
-                        tone={
-                          productivity.autonomicState === 'SUPPRESSED'
-                            ? 'strained'
-                            : productivity.autonomicState === 'CAUTION'
-                              ? 'caution'
-                              : 'prime'
-                        }
+                        tone={productivity.autonomicState === 'SUPPRESSED' ? 'strained' : productivity.autonomicState === 'CAUTION' ? 'caution' : 'prime'}
                       />
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
+                    ) : null
+                  }
+                />
+                <ReadinessMetricCell
+                  truncateValue
+                  label={
                     <span className="inline-flex items-center gap-1 font-medium">
                       <Moon className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                       Overnight Sleep
                     </span>
-                    <span className="text-2xs opacity-85">
-                      {productivity.sleepHoursLatest > 0
-                        ? `${productivity.sleepHoursLatest}h`
-                        : '—'}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-ap-ink dark:text-white truncate">
-                    <span>
-                      {productivity.sleepScoreLatest > 0
-                        ? `Score ${productivity.sleepScoreLatest}`
-                        : productivity.sleepHoursLatest > 0
-                          ? `${productivity.sleepHoursLatest} hrs`
-                          : 'Awaiting sync'}
-                    </span>
-                    {productivity.sleepHoursLatest > 0 && (
+                  }
+                  subLabel={productivity.sleepHoursLatest > 0 ? `${productivity.sleepHoursLatest}h` : '—'}
+                  value={
+                    productivity.sleepScoreLatest > 0
+                      ? `Score ${productivity.sleepScoreLatest}`
+                      : productivity.sleepHoursLatest > 0
+                        ? `${productivity.sleepHoursLatest} hrs`
+                        : 'Awaiting sync'
+                  }
+                  bullet={
+                    productivity.sleepHoursLatest > 0 ? (
                       <VitalsCorridorBulletRow
                         valuePct={(productivity.sleepHoursLatest / 9.5) * 100}
                         bandStartPct={68}
                         bandWidthPct={25}
                         tone={productivity.sleepHoursLatest < 6.5 ? 'caution' : 'info'}
                       />
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-2 lg:p-0 lg:py-2 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
-                    <span className="font-medium">Resting HR</span>
-                    <span className="text-2xs opacity-85">
-                      {productivity.rhrLatestBpm === 0
-                        ? 'Wearable'
-                        : productivity.rhrDeltaBpm === 0
-                          ? 'Base'
-                          : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} base`}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 flex items-center justify-between gap-2 text-xs sm:text-sm font-bold text-ap-ink dark:text-white">
-                    <span>
-                      {productivity.rhrLatestBpm > 0
-                        ? `${productivity.rhrLatestBpm} bpm`
-                        : 'Wearable needed'}
-                    </span>
-                    {productivity.rhrLatestBpm > 0 && (
+                    ) : null
+                  }
+                />
+                <ReadinessMetricCell
+                  label={<span className="font-medium">Resting HR</span>}
+                  subLabel={
+                    productivity.rhrLatestBpm === 0
+                      ? 'Wearable'
+                      : productivity.rhrDeltaBpm === 0
+                        ? 'Base'
+                        : `${productivity.rhrDeltaBpm > 0 ? `+${productivity.rhrDeltaBpm}` : productivity.rhrDeltaBpm} base`
+                  }
+                  value={productivity.rhrLatestBpm > 0 ? `${productivity.rhrLatestBpm} bpm` : 'Wearable needed'}
+                  bullet={
+                    productivity.rhrLatestBpm > 0 ? (
                       <VitalsCorridorBulletRow
                         valuePct={50 + productivity.rhrDeltaBpm * 4}
                         bandStartPct={32}
                         bandWidthPct={36}
                         tone={productivity.rhrDeltaBpm >= 5 ? 'caution' : 'prime'}
                       />
-                    )}
-                  </div>
-                </div>
-
-                <div className="p-2 lg:p-0 lg:py-2 lg:last:pb-0 rounded-lg lg:rounded-none bg-slate-100/50 dark:bg-white/5 lg:bg-transparent lg:dark:bg-transparent">
-                  <div className="flex items-center justify-between text-2xs font-sans text-ap-muted dark:text-ap-muted-dark">
-                    <span className="font-medium">Form (TSB)</span>
-                    <span className="text-2xs opacity-85">
-                      CTL {productivity.ctl.toFixed(0)}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 text-xs sm:text-sm font-bold text-ap-ink dark:text-white">
-                    {productivity.tsb > 0
-                      ? `+${productivity.tsb.toFixed(0)}`
-                      : productivity.tsb.toFixed(0)}
-                  </div>
-                </div>
+                    ) : null
+                  }
+                />
+                <ReadinessMetricCell
+                  className="lg:last:pb-0"
+                  label={<span className="font-medium">Form (TSB)</span>}
+                  subLabel={`CTL ${productivity.ctl.toFixed(0)}`}
+                  value={productivity.tsb > 0 ? `+${productivity.tsb.toFixed(0)}` : productivity.tsb.toFixed(0)}
+                />
               </div>
             )}
           </div>
@@ -1168,41 +1150,47 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
               </p>
 
               {/* Zone Effort Tape Skyline */}
-              <BracketedIntervalTape
-                workoutSyntax={
-                  shouldOfferGuardrailSwap && orthopedicSummary
-                    ? orthopedicSummary.suggestedBikeWorkoutSyntax
-                    : todayScheduled?.workoutSyntax || activeRxSyntax
-                }
-                compact
-              />
+              <BracketedIntervalTape workoutSyntax={previewSyntax} compact />
 
-              {/* Hairline-Divided Step Preview (Zero Nested Sub-Cards) */}
+              {/* Hairline-Divided Step Preview (Zero Nested Sub-Cards; Full Track Sets Expandable) */}
               <div className="pt-2 border-t border-ap-cobalt/12 dark:border-white/10 divide-y divide-ap-cobalt/10 dark:divide-white/10 font-mono text-2xs text-ap-ink dark:text-[#ECF2EE]">
-                {(shouldOfferGuardrailSwap && orthopedicSummary
-                  ? orthopedicSummary.suggestedBikeWorkoutSyntax
-                  : todayScheduled?.workoutSyntax || activeRxSyntax
-                )
-                  .split('\n')
-                  .filter((line) => line.trim().length > 0)
-                  .slice(0, 4)
-                  .map((stepLine, idx) => {
-                    const readableLine = formatHumanReadableStepLine(
-                      stepLine,
-                      shouldOfferGuardrailSwap
-                        ? 'Cycling'
-                        : todayScheduled?.sportCategory || rxSport || 'Running',
-                      athleteProfile?.thresholdPaceSecsPerKm,
-                      distanceUnit,
-                      athleteProfile?.ftp
-                    );
-                    return (
-                      <div key={idx} className="py-1 first:pt-0 last:pb-0 truncate">
-                        {readableLine.replace(/^-\s*/, '· ')}
-                      </div>
-                    );
-                  })}
+                {visiblePreviewLines.map((stepLine, idx) => {
+                  const readableLine = formatHumanReadableStepLine(
+                    stepLine,
+                    shouldOfferGuardrailSwap
+                      ? 'Cycling'
+                      : todayScheduled?.sportCategory || rxSport || 'Running',
+                    athleteProfile?.thresholdPaceSecsPerKm,
+                    distanceUnit,
+                    athleteProfile?.ftp
+                  );
+                  return (
+                    <div key={idx} className="py-1 first:pt-0 last:pb-0 truncate">
+                      {readableLine.replace(/^-\s*/, '· ')}
+                    </div>
+                  );
+                })}
               </div>
+              {allPreviewLines.length > INITIAL_WORKOUT_PREVIEW_STEPS && (
+                <button
+                  type="button"
+                  data-testid="hero-toggle-all-steps-btn"
+                  aria-expanded={showAllWorkoutSteps}
+                  onClick={() => setShowAllWorkoutSteps((prev) => !prev)}
+                  className="text-2xs font-mono font-semibold text-ap-cobalt dark:text-ap-volt hover:underline inline-flex items-center gap-1 cursor-pointer min-h-[34px]"
+                >
+                  <span>
+                    {showAllWorkoutSteps
+                      ? 'Show fewer steps'
+                      : `Show all ${allPreviewLines.length} steps`}
+                  </span>
+                  {showAllWorkoutSteps ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </button>
+              )}
             </div>
 
             <div className="space-y-2 pt-1">
@@ -1223,55 +1211,22 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                           : `Swap Run → ${orthopedicSummary.suggestedBikeDurationMins}m Zero-Impact Ride`}
                       </span>
                     </button>
-
-                    <button
-                      type="button"
-                      aria-expanded={isWorkbenchExpanded}
-                      onClick={onToggleWorkbench}
-                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                      title="Open full Skyline Interval Workbench, Garmin Push & .FIT/.ZWO Export"
-                    >
-                      <Sliders className="w-3.5 h-3.5" />
-                      <span>Customize &amp; Export</span>
-                      {isWorkbenchExpanded ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                    {renderCustomizeExportBtn(false)}
                   </>
                 ) : todayScheduled ? (
                   <>
+                    {renderCustomizeExportBtn(true)}
                     <button
                       type="button"
-                      aria-expanded={isWorkbenchExpanded}
-                      onClick={onToggleWorkbench}
-                      className="ap-btn-primary px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 flex-1 justify-center cursor-pointer"
-                      title="Open full Skyline Interval Workbench, Garmin Push & .FIT/.ZWO Export"
+                      data-testid="hero-preview-easy-alt-btn"
+                      aria-expanded={showEasyAltDrawer}
+                      onClick={() => setShowEasyAltDrawer((prev) => !prev)}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      title="Preview an optional lower-strain alternative without overwriting Coach's prescribed session"
                     >
                       <Sliders className="w-3.5 h-3.5" />
-                      <span>Customize &amp; Export</span>
-                      {isWorkbenchExpanded ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      )}
+                      <span>Flag Soreness / Request Easy Swap</span>
                     </button>
-
-                    {onSyncMorphedToCalendar && (
-                      <button
-                        type="button"
-                        disabled={isSavingRx}
-                        onClick={handleCommitGapRx}
-                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                        title={`Replace today's scheduled workout with ${activeRxTitle} (${productivity.gapPrescription.recommendedDurationMins}m · ~${productivity.gapPrescription.recommendedTss} TSS)`}
-                      >
-                        <CalendarCheck className="w-3.5 h-3.5" />
-                        <span>
-                          {isSavingRx ? 'Swapping…' : 'Use Readiness Workout'}
-                        </span>
-                      </button>
-                    )}
                   </>
                 ) : (
                   <>
@@ -1283,27 +1238,10 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                         className="ap-btn-primary px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 flex-1 justify-center cursor-pointer"
                       >
                         <CalendarCheck className="w-3.5 h-3.5" />
-                        <span>
-                          {isSavingRx ? 'Scheduling…' : "Schedule Today's Workout"}
-                        </span>
+                        <span>{isSavingRx ? 'Scheduling…' : "Schedule Today's Workout"}</span>
                       </button>
                     )}
-
-                    <button
-                      type="button"
-                      aria-expanded={isWorkbenchExpanded}
-                      onClick={onToggleWorkbench}
-                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-2 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                      title="Open full Skyline Interval Workbench, Garmin Push & .FIT/.ZWO Export"
-                    >
-                      <Sliders className="w-3.5 h-3.5" />
-                      <span>Customize &amp; Export</span>
-                      {isWorkbenchExpanded ? (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      )}
-                    </button>
+                    {renderCustomizeExportBtn(false)}
                   </>
                 )}
 
@@ -1358,6 +1296,66 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
                     onSaveRun={onQuickLogRun}
                   />
                 )}
+
+              {showEasyAltDrawer && todayScheduled && (
+                <div
+                  data-testid="hero-easy-alternative-drawer"
+                  className="rounded-xl ap-card-inset p-3 space-y-2 border border-ap-frame/25 dark:border-ap-edge-dark"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="px-2 py-0.5 rounded ap-status-info font-mono text-2xs font-bold uppercase">
+                      Preview Easy Alternative
+                    </span>
+                    <span className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                      {productivity.gapPrescription.recommendedDurationMins}m · ~
+                      {productivity.gapPrescription.recommendedTss} TSS
+                    </span>
+                  </div>
+                  <div className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
+                    {activeRxTitle}
+                  </div>
+                  <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-snug">
+                    Coach&apos;s prescribed session (&ldquo;{todayScheduled.name}&rdquo;) stays
+                    untouched unless you explicitly confirm replacing it or ask your coach.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    {onOpenCoachWithPrompt && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenCoachWithPrompt(
+                            `Coach prescribed "${todayScheduled.name}" today, and my legs feel sore. Should I swap to "${activeRxTitle}" (${productivity.gapPrescription.recommendedDurationMins}m)?`
+                          )
+                        }
+                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold cursor-pointer"
+                      >
+                        Ask AI Coach First
+                      </button>
+                    )}
+                    {onSyncMorphedToCalendar && (
+                      <button
+                        type="button"
+                        data-testid="hero-confirm-easy-swap-btn"
+                        disabled={isSavingRx}
+                        onClick={async () => {
+                          await handleCommitGapRx();
+                          setShowEasyAltDrawer(false);
+                        }}
+                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold cursor-pointer"
+                      >
+                        {isSavingRx ? 'Swapping…' : "Confirm Replace Today's Plan"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowEasyAltDrawer(false)}
+                      className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 text-2xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark hover:underline cursor-pointer"
+                    >
+                      Keep Coach Plan
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {rxToast && (
                 <div className="rounded-lg ap-status-prime px-2.5 py-1.5 text-2xs font-medium">
@@ -1579,64 +1577,37 @@ export const CircadianFirstTouchHero: React.FC<CircadianFirstTouchHeroProps> = (
             </div>
 
             {/* Garmin 5-Zone HR (or 7-Zone Power) Time-in-Zone Pill Strip */}
-            {(sessionReceipt.powerZones7.length > 0 ||
-              sessionReceipt.hrZones5.length > 0) && (
+            {(sessionReceipt.powerZones7.length > 0 || sessionReceipt.hrZones5.length > 0) && (
               <div className="space-y-1.5 pt-1 border-t border-ap-cobalt/12 dark:border-white/10">
-                {sessionReceipt.hrZones5.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
-                      <span>Garmin 5-Zone HR Distribution</span>
-                      <span>
-                        {sessionReceipt.hrZones5
-                          .filter((z) => z.pct >= 6)
-                          .map((z) => `${z.zone} ${z.pct}%`)
-                          .join(' · ')}
-                      </span>
+                {[
+                  { title: 'Garmin 5-Zone HR Distribution', zones: sessionReceipt.hrZones5 },
+                  { title: '7-Zone Power Distribution', zones: sessionReceipt.powerZones7 },
+                ]
+                  .filter((dist) => dist.zones.length > 0)
+                  .map((dist) => (
+                    <div key={dist.title} className="space-y-1">
+                      <div className="flex items-center justify-between text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                        <span>{dist.title}</span>
+                        <span>
+                          {dist.zones
+                            .filter((z) => z.pct >= 6)
+                            .map((z) => `${z.zone} ${z.pct}%`)
+                            .join(' · ')}
+                        </span>
+                      </div>
+                      <div className="h-2 rounded-full overflow-hidden flex bg-slate-200/80 dark:bg-slate-800">
+                        {dist.zones.map((z) =>
+                          z.pct > 0 ? (
+                            <div
+                              key={z.zone}
+                              style={{ width: `${z.pct}%`, backgroundColor: z.colorHex }}
+                              title={`${z.zone} (${z.label}): ${z.pct}% (${Math.round(z.secs / 60)}m)`}
+                            />
+                          ) : null
+                        )}
+                      </div>
                     </div>
-                    <div className="h-2 rounded-full overflow-hidden flex bg-slate-200/80 dark:bg-slate-800">
-                      {sessionReceipt.hrZones5.map((z) =>
-                        z.pct > 0 ? (
-                          <div
-                            key={z.zone}
-                            style={{
-                              width: `${z.pct}%`,
-                              backgroundColor: z.colorHex,
-                            }}
-                            title={`${z.zone} (${z.label}): ${z.pct}% (${Math.round(z.secs / 60)}m)`}
-                          />
-                        ) : null
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {sessionReceipt.powerZones7.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
-                      <span>7-Zone Power Distribution</span>
-                      <span>
-                        {sessionReceipt.powerZones7
-                          .filter((z) => z.pct >= 6)
-                          .map((z) => `${z.zone} ${z.pct}%`)
-                          .join(' · ')}
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full overflow-hidden flex bg-slate-200/80 dark:bg-slate-800">
-                      {sessionReceipt.powerZones7.map((z) =>
-                        z.pct > 0 ? (
-                          <div
-                            key={z.zone}
-                            style={{
-                              width: `${z.pct}%`,
-                              backgroundColor: z.colorHex,
-                            }}
-                            title={`${z.zone} (${z.label}): ${z.pct}% (${Math.round(z.secs / 60)}m)`}
-                          />
-                        ) : null
-                      )}
-                    </div>
-                  </div>
-                )}
+                  ))}
               </div>
             )}
 

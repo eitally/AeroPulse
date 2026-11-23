@@ -46,12 +46,14 @@ import { CoachExecutionDigestPanel } from './CoachExecutionDigestPanel';
 import { getLocalDateIso } from '../physiology/trainingProductivityEngine';
 import {
   ChevronDown,
+  ClipboardText,
   Download,
   Globe,
   HeartPulse,
   HelpCircle,
   Layers,
   Shield,
+  Timer,
   Users,
 } from './icons/PhosphorIcons';
 
@@ -227,7 +229,26 @@ export interface CoachWorkspaceViewProps {
   onOpenRosterModal: () => void;
   onOpenPublicTeamHub?: (slugOrCode: string) => void;
   onOpenCoachGuide?: () => void;
+  onOpenDelegateTimingModal?: (preset?: {
+    meetTitle?: string;
+    meetDate?: string;
+    eventCode?: string;
+    heatLabel?: string;
+    runners?: Array<{ membershipId?: string; athleteName: string; hipOrLane?: string }>;
+  }) => void;
+  pendingTimingSubmissionsCount?: number;
   isSampleDemoMode?: boolean;
+}
+
+export function shouldShowPrimarySetupWizardChip(
+  activeTeam: TeamSummaryWithRole | null | undefined
+): boolean {
+  if (!activeTeam) return true;
+  const activeAthleteCount = (activeTeam.memberships || []).filter(
+    (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
+  ).length;
+  const broadcastCount = (activeTeam.broadcastWorkouts || []).length;
+  return activeAthleteCount <= 1 || broadcastCount === 0;
 }
 
 export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
@@ -270,6 +291,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   onOpenRosterModal,
   onOpenPublicTeamHub,
   onOpenCoachGuide,
+  onOpenDelegateTimingModal,
+  pendingTimingSubmissionsCount,
   isSampleDemoMode = false,
 }) => {
   const [openCreateTeamOnSwitch, setOpenCreateTeamOnSwitch] = useState<boolean>(false);
@@ -1018,6 +1041,14 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     return ids.size;
   }, [activeTeam?.injuryCases, activeTeam?.memberships, scopedConnectedAthletes, todayIso]);
 
+  const showPrimarySetupChip = shouldShowPrimarySetupWizardChip(activeTeam);
+  const effectivePendingTimingCount =
+    typeof pendingTimingSubmissionsCount === 'number'
+      ? pendingTimingSubmissionsCount
+      : (activeTeam?.pendingTimingSubmissions || []).filter(
+          (s) => s.reviewStatus === 'PENDING_COACH_APPROVAL'
+        ).length;
+
   return (
     <div className="space-y-3 max-w-full" data-testid="coach-workspace-view">
       {/* Unified Coach Mode Context Header — omitted on Stopwatch so athletes sit at 0px scroll */}
@@ -1113,14 +1144,16 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 </select>
               )}
 
-              <button
-                type="button"
-                data-testid="coach-open-wizard-btn"
-                onClick={() => setShowOnboardingWizard(true)}
-                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
-              >
-                60s Setup
-              </button>
+              {showPrimarySetupChip && (
+                <button
+                  type="button"
+                  data-testid="coach-open-wizard-btn"
+                  onClick={() => setShowOnboardingWizard(true)}
+                  className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
+                >
+                  60s Setup
+                </button>
+              )}
 
               <button
                 type="button"
@@ -1202,9 +1235,70 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         </section>
       )}
 
-      {/* 1. CLIPBOARD (COACH HOME — Opens at 0px scroll directly on Workout Builder) */}
+      {/* 1. CLIPBOARD (COACH HOME — Opens at 0px scroll directly on Today Quick Ops & Workout Builder) */}
       {subTab === 'CLIPBOARD' && (
         <div className="space-y-3">
+          <section
+            data-testid="coach-quick-ops-strip"
+            className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 flex flex-wrap items-center justify-between gap-2"
+          >
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <span className="px-2 py-0.5 rounded-md ap-status-info font-mono text-2xs font-bold uppercase tracking-wider">
+                Today · {todayIso}
+              </span>
+              <span className="text-xs font-extrabold text-ap-ink dark:text-ap-chalk">
+                3:15 PM Quick Ops
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="quick-ops-roll-call-btn"
+                onClick={() => {
+                  const target =
+                    document.querySelector('[data-testid="coach-roll-call-panel"]') ||
+                    document.querySelector('[data-testid="coach-daily-ops-panel"]');
+                  target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <ClipboardText className="w-3.5 h-3.5 ap-text-brand" />
+                <span>Take Roll Call</span>
+              </button>
+              <button
+                type="button"
+                data-testid="quick-ops-stopwatch-btn"
+                onClick={() => {
+                  setTracksideMode('STOPWATCH');
+                  setSubTab('STOPWATCH');
+                }}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-primary text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Timer className="w-3.5 h-3.5" weight="bold" />
+                <span>Track Stopwatch</span>
+              </button>
+              <button
+                type="button"
+                data-testid="quick-ops-delegate-timing-btn"
+                onClick={() => onOpenDelegateTimingModal?.()}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5 ap-text-brand" />
+                <span>Delegate Timing</span>
+              </button>
+              <button
+                type="button"
+                data-testid="quick-ops-pending-splits-btn"
+                onClick={() => onOpenDelegateTimingModal?.()}
+                className={`min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer ${
+                  effectivePendingTimingCount > 0 ? 'ap-status-caution font-bold' : 'ap-btn-secondary'
+                }`}
+              >
+                <span>Pending Splits ({effectivePendingTimingCount})</span>
+              </button>
+            </div>
+          </section>
+
           {flaggedTriageCount > 0 ? (
             <button
               type="button"
@@ -1559,6 +1653,19 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               />
             </Suspense>
           </WorkspaceErrorBoundary>
+
+          {!showPrimarySetupChip && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                data-testid="coach-open-wizard-btn"
+                onClick={() => setShowOnboardingWizard(true)}
+                className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl ap-card-inset text-xs font-mono font-semibold text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-ap-chalk cursor-pointer"
+              >
+                Launch 60s Setup Wizard (New Squad)
+              </button>
+            </div>
+          )}
 
           {activeTeam?.brand?.orgType === 'COLLEGIATE' && workspaceScope.showNcaaCara && (
           <section
