@@ -12,6 +12,7 @@ import {
   UserPlus,
 } from './icons/PhosphorIcons';
 import type {
+  TeamBillingPlanCode,
   TeamBrandConfig,
   TeamOrgType,
   TeamSummaryWithRole,
@@ -61,6 +62,8 @@ interface TeamManagementPanelProps {
   resendConfigured: boolean;
   isSampleDemoMode?: boolean;
   initialShowCreateStudio?: boolean;
+  initialOpenBillingPlan?: Exclude<TeamBillingPlanCode, 'FREE_FOUNDING'> | null;
+  onConsumedInitialBilling?: () => void;
   onSelectActiveTeam: (teamId: string | null) => void;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string | null) => void;
   onOpenClipboard?: () => void;
@@ -89,6 +92,8 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   resendConfigured,
   isSampleDemoMode = false,
   initialShowCreateStudio = false,
+  initialOpenBillingPlan = null,
+  onConsumedInitialBilling,
   onSelectActiveTeam,
   onTeamsUpdated,
   onOpenClipboard,
@@ -141,7 +146,18 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const [showJoinAgeFields, setShowJoinAgeFields] = useState(false);
   const [isLeavingTeam, setIsLeavingTeam] = useState(false);
   const [showBillingModal, setShowBillingModal] = useState(false);
+  const [billingInitialPlan, setBillingInitialPlan] = useState<
+    Exclude<TeamBillingPlanCode, 'FREE_FOUNDING'> | undefined
+  >(undefined);
   const [defaultSquadForImport, setDefaultSquadForImport] = useState('Varsity');
+
+  React.useEffect(() => {
+    if (initialOpenBillingPlan && activeTeam) {
+      setBillingInitialPlan(initialOpenBillingPlan);
+      setShowBillingModal(true);
+      onConsumedInitialBilling?.();
+    }
+  }, [initialOpenBillingPlan, activeTeam, onConsumedInitialBilling]);
 
   // Status & Feedback
   const [isSavingStudio, setIsSavingStudio] = useState(false);
@@ -273,7 +289,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
     setBannerMessage(null);
     const trimmedDistrict = districtName.trim().slice(0, 80);
     try {
-      if (isSampleDemoMode) {
+      if (isSampleDemoMode || (studioMode === 'EDIT' && isDemoTeam)) {
         const resolvedShortName =
           shortName.trim() || deriveShortNameFromTeamName(teamName);
         if (studioMode === 'EDIT' && activeTeam) {
@@ -551,7 +567,9 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const canManageGovernance =
     activeTeam?.myRole === 'HEAD_COACH' || activeTeam?.myRole === 'ORG_ADMIN';
   const isDemoTeam = Boolean(
-    isSampleDemoMode || activeTeam?.brand.teamId.startsWith('demo_team_')
+    isSampleDemoMode ||
+      activeTeam?.brand.teamId.startsWith('demo_team_') ||
+      activeTeam?.brand.teamId.startsWith('demo-team-')
   );
 
   return (
@@ -911,9 +929,18 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
 
                   <button
                     type="button"
-                    onClick={() =>
-                      openPrintableTeamPosterWindow(activeTeam.brand, activeJoinUrl)
-                    }
+                    onClick={() => {
+                      const opened = openPrintableTeamPosterWindow(
+                        activeTeam.brand,
+                        activeJoinUrl
+                      );
+                      if (!opened) {
+                        setBannerMessage({
+                          tone: 'info',
+                          text: 'Pop-up blocked — downloaded printable team QR poster HTML instead. Open the downloaded file to print or save as PDF.',
+                        });
+                      }
+                    }}
                     className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5 text-[#0284C7]" />
@@ -1077,10 +1104,14 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           <Suspense fallback={null}>
             <TeamBillingAndPoModal
               isOpen={showBillingModal}
-              onClose={() => setShowBillingModal(false)}
+              onClose={() => {
+                setShowBillingModal(false);
+                setBillingInitialPlan(undefined);
+              }}
               activeTeam={activeTeam}
               myTeams={myTeams}
               isSampleDemoMode={isSampleDemoMode}
+              initialPlanCode={billingInitialPlan}
               onTeamsUpdated={onTeamsUpdated}
             />
           </Suspense>

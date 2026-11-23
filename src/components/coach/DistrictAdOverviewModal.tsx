@@ -11,6 +11,9 @@ import { useModalDialog } from '../../hooks/useModalDialog';
 import {
   buildClientDistrictOverviewFromTeams,
   fetchDistrictOverviewApi,
+  formatBillingPlanLabel,
+  formatBillingStatusLabel,
+  formatOrgTypeLabel,
   openPrintableDistrictAdSummaryWindow,
 } from '../../utils/districtAdOverviewHelper';
 import type { DistrictOverviewReport, TeamSummaryWithRole } from '../../types';
@@ -22,6 +25,7 @@ export interface DistrictAdOverviewModalProps {
   activeTeamId: string | null;
   isSampleDemoMode?: boolean;
   onSelectActiveTeam: (teamId: string) => void;
+  onOpenDistrictBilling?: () => void;
 }
 
 export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = ({
@@ -31,6 +35,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
   activeTeamId,
   isSampleDemoMode = false,
   onSelectActiveTeam,
+  onOpenDistrictBilling,
 }) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const headingId = useId();
@@ -83,6 +88,9 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
       aria-modal="true"
       aria-labelledby={headingId}
       data-testid="district-ad-overview-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4"
     >
       <div
@@ -114,7 +122,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
                 aria-label="Filter by district"
                 value={districtFilter}
                 onChange={(e) => setDistrictFilter(e.target.value)}
-                className="min-h-[44px] sm:min-h-[38px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
+                className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
               >
                 <option value="">All Districts</option>
                 {report.availableDistrictNames.map((name) => (
@@ -129,7 +137,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
               type="button"
               data-testid="district-print-summary-btn"
               onClick={() => openPrintableDistrictAdSummaryWindow(report)}
-              className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+              className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
             >
               <FileText className="w-4 h-4" />
               <span>Print District AD Executive Summary</span>
@@ -199,12 +207,32 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
         </div>
 
         {!report.hasDistrictPlan && (
-          <div className="rounded-xl ap-status-info px-3.5 py-2 text-xs flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 shrink-0" />
-            <span>
-              District Multi-School Tier ($2,000/yr) unlocks unified district-wide ASB/PO billing,
-              CA SDPC NDPA coverage, and multi-campus compliance reporting.
-            </span>
+          <div className="rounded-xl ap-status-info px-3.5 py-2.5 text-xs flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-start gap-2 min-w-0 flex-1">
+              <ShieldCheck className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                District Multi-School Tier ($2,000/yr) unlocks unified district-wide ASB/PO billing,
+                CA SDPC NDPA coverage, and multi-campus compliance reporting.
+              </span>
+            </div>
+            <button
+              type="button"
+              data-testid="district-issue-po-btn"
+              onClick={() => {
+                onClose();
+                if (onOpenDistrictBilling) {
+                  onOpenDistrictBilling();
+                } else {
+                  const targetTeamId = activeTeamId || report.schools[0]?.teamId;
+                  if (targetTeamId) {
+                    onSelectActiveTeam(targetTeamId);
+                  }
+                }
+              }}
+              className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-1.5 text-xs font-bold shrink-0 cursor-pointer"
+            >
+              Issue $2,000 District PO
+            </button>
           </div>
         )}
 
@@ -216,7 +244,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
 
         {/* School Table */}
         <div className="overflow-x-auto rounded-xl border border-ap-frame/15 dark:border-ap-edge-dark">
-          <table className="w-full text-left border-collapse text-xs">
+          <table className="w-full min-w-[680px] text-left border-collapse text-xs">
             <thead>
               <tr className="bg-ap-inset/60 dark:bg-ap-carbon border-b border-ap-frame/15 dark:border-ap-edge-dark font-mono text-2xs uppercase text-ap-muted dark:text-ap-muted-dark">
                 <th className="py-2.5 px-3">School / Program</th>
@@ -249,7 +277,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
                           {school.teamName}
                         </div>
                         <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
-                          {school.shortName} · {school.orgType}
+                          {school.shortName} · {formatOrgTypeLabel(school.orgType)}
                           {school.districtName ? ` · ${school.districtName}` : ''}
                         </div>
                       </td>
@@ -289,7 +317,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
                         </div>
                       </td>
                       <td className="py-2.5 px-3 font-mono">
-                        <div className="font-bold">{school.billingPlanCode}</div>
+                        <div className="font-bold">{formatBillingPlanLabel(school.billingPlanCode)}</div>
                         <div
                           className={`text-2xs ${
                             school.renewalAlert
@@ -297,7 +325,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
                               : 'text-ap-muted dark:text-ap-muted-dark'
                           }`}
                         >
-                          {school.billingStatus}
+                          {formatBillingStatusLabel(school.billingStatus)}
                           {school.renewalAlert ? ' · Renewal Alert' : ''}
                         </div>
                       </td>
@@ -309,7 +337,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
                             onSelectActiveTeam(school.teamId);
                             onClose();
                           }}
-                          className={`min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-bold inline-flex items-center gap-1 cursor-pointer ${
+                          className={`min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-bold inline-flex items-center gap-1 cursor-pointer ${
                             isCurrent
                               ? 'ap-status-prime'
                               : 'ap-btn-secondary'

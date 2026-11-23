@@ -17,6 +17,7 @@ export interface CoachOnboardingWizardProps {
   isOpen: boolean;
   myTeams: TeamSummaryWithRole[];
   selfName?: string;
+  isSampleDemoMode?: boolean;
   onClose: () => void;
   onSetComplexityTier: (tier: CoachComplexityTier) => void;
   onTeamCreated: (teams: TeamSummaryWithRole[], activeTeamId: string) => void;
@@ -42,6 +43,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
   isOpen,
   myTeams,
   selfName,
+  isSampleDemoMode = false,
   onClose,
   onSetComplexityTier,
   onTeamCreated,
@@ -49,6 +51,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
 }) => {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [teamName, setTeamName] = useState<string>('');
+  const [districtName, setDistrictName] = useState<string>('');
   const [orgType, setOrgType] = useState<TeamOrgType>('HIGH_SCHOOL');
   const [colorPresetId, setColorPresetId] = useState<string>('mondo');
   const [preferredTier, setPreferredTier] = useState<CoachComplexityTier>('ESSENTIALS');
@@ -85,6 +88,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
 
   const handleCreateTeam = async () => {
     const trimmed = teamName.trim() || 'Varsity Track & Field';
+    const trimmedDistrict = districtName.trim().slice(0, 80);
     const shortName =
       trimmed.replace(/[^A-Za-z0-9 ]/g, '').trim().slice(0, 12).toUpperCase() || 'SQUAD TF';
     const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
@@ -95,6 +99,63 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
     onSetComplexityTier(orgType === 'COLLEGIATE' && preferredTier === 'PRO' ? 'PRO' : preferredTier);
 
     try {
+      if (isSampleDemoMode) {
+        const nowIso = new Date().toISOString();
+        const demoTeamId = `demo-team-${Date.now()}`;
+        const slugBase =
+          trimmed
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '') || 'demo-team';
+        const joinPrefix =
+          shortName.replace(/[^A-Z0-9]/gi, '').slice(0, 4).toUpperCase() || 'DEMO';
+        const resolvedCoach = selfName || 'Head Coach';
+        const created: TeamSummaryWithRole = {
+          brand: {
+            teamId: demoTeamId,
+            slug: slugBase,
+            joinCode: `${joinPrefix}-26`,
+            name: trimmed,
+            shortName,
+            ...(trimmedDistrict ? { districtName: trimmedDistrict } : {}),
+            orgType,
+            primarySport: 'Running',
+            primaryHex: activePreset.primaryHex,
+            secondaryHex: activePreset.secondaryHex,
+            defaultSafeSportShield,
+            enableParentGuardianCc: orgType === 'HIGH_SCHOOL',
+            coachDisplayName: resolvedCoach,
+            createdAt: nowIso,
+          },
+          myMembershipId: 'mem_demo_coach',
+          myRole: 'HEAD_COACH',
+          mySquadGroup: 'Varsity',
+          totalInvited: 1,
+          openedCount: 0,
+          activeCount: 1,
+          watchConnectedCount: 0,
+          broadcastWorkouts: [],
+          memberships: [
+            {
+              membershipId: 'mem_demo_coach',
+              teamId: demoTeamId,
+              role: 'HEAD_COACH',
+              squadGroup: 'Varsity',
+              invitedName: resolvedCoach,
+              isMinorU18: false,
+              status: 'ACTIVE',
+              sharingTier: 'FULL_STREAMS',
+              invitedAt: nowIso,
+              joinedAt: nowIso,
+            },
+          ],
+        };
+        setCreatedTeam(created);
+        onTeamCreated([...myTeams, created], created.brand.teamId);
+        setStep(3);
+        return;
+      }
+
       const resp = await fetch('/api/teams', {
         method: 'POST',
         credentials: 'include',
@@ -103,6 +164,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
           origin: originUrl,
           name: trimmed,
           shortName,
+          ...(trimmedDistrict ? { districtName: trimmedDistrict } : {}),
           orgType,
           primarySport: 'Running',
           primaryHex: activePreset.primaryHex,
@@ -149,6 +211,9 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
       aria-labelledby={headingId}
       tabIndex={-1}
       data-testid="coach-onboarding-wizard"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4"
     >
       <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-edge p-4 sm:p-6 space-y-4 shadow-2xl">
@@ -187,6 +252,22 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
                 value={teamName}
                 onChange={(e) => setTeamName(e.target.value)}
                 placeholder="e.g. Oakridge High Track & Field"
+                className="w-full min-h-[44px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 font-semibold text-ap-ink dark:text-ap-chalk"
+              />
+            </label>
+
+            <label className="block space-y-1">
+              <span className="font-bold text-ap-ink dark:text-ap-chalk">
+                District Name{' '}
+                <span className="font-normal text-ap-muted dark:text-ap-muted-dark">(optional)</span>
+              </span>
+              <input
+                type="text"
+                data-testid="wizard-district-name-input"
+                maxLength={80}
+                value={districtName}
+                onChange={(e) => setDistrictName(e.target.value)}
+                placeholder="e.g. San Jose Unified School District"
                 className="w-full min-h-[44px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 font-semibold text-ap-ink dark:text-ap-chalk"
               />
             </label>
@@ -233,6 +314,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
                     <button
                       key={p.id}
                       type="button"
+                      aria-pressed={selected}
                       onClick={() => setColorPresetId(p.id)}
                       className={`min-h-[44px] px-3 rounded-xl border text-xs font-semibold inline-flex items-center gap-2 cursor-pointer ${
                         selected
@@ -302,7 +384,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
               <button
                 type="button"
                 onClick={handleSelectAllGroups}
-                className="font-mono text-2xs font-bold text-ap-cobalt dark:text-ap-volt underline cursor-pointer"
+                className="min-h-[44px] sm:min-h-[32px] px-2 font-mono text-2xs font-bold text-ap-cobalt dark:text-ap-volt underline cursor-pointer"
               >
                 Select All 8
               </button>
@@ -341,7 +423,7 @@ export const CoachOnboardingWizard: React.FC<CoachOnboardingWizardProps> = ({
                   data-testid="wizard-retry-btn"
                   disabled={creating}
                   onClick={() => void handleCreateTeam()}
-                  className="ap-btn-secondary !min-h-[36px] px-3 py-1 text-xs font-bold shrink-0 cursor-pointer disabled:opacity-50"
+                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[32px] px-3 py-1 text-xs font-bold shrink-0 cursor-pointer disabled:opacity-50"
                 >
                   Retry
                 </button>

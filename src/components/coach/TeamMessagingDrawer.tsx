@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useModalDialog } from '../../hooks/useModalDialog';
 import {
   AlertTriangle,
   Bell,
@@ -104,7 +105,18 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   const [pushLoading, setPushLoading] = useState<boolean>(false);
   const [pushNotice, setPushNotice] = useState<string | null>(null);
   const iosStandaloneNeeded = useMemo(() => isIosStandaloneHintNeeded(), []);
-  const isSampleDemo = Boolean(activeTeam?.brand.teamId.startsWith('demo_team_'));
+  const isSampleDemo = Boolean(
+    activeTeam?.brand.teamId.startsWith('demo_team_') ||
+      activeTeam?.brand.teamId.startsWith('demo-team-')
+  );
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const headingId = useId();
+
+  useModalDialog({
+    isOpen: Boolean(isOpen && activeTeam),
+    onClose,
+    dialogRef,
+  });
 
   useEffect(() => {
     if (!isOpen || isSampleDemo) return;
@@ -530,18 +542,24 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={headingId}
+      tabIndex={-1}
       data-testid="team-messaging-drawer"
-      className="fixed inset-0 z-50 flex justify-end bg-black/60"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-stretch justify-end bg-black/60"
     >
-      <div className="w-full max-w-xl h-full bg-white dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border-l border-ap-edge flex flex-col shadow-2xl">
+      <div className="w-full max-w-xl h-full max-h-[92dvh] sm:max-h-none overflow-y-auto rounded-t-2xl sm:rounded-none bg-white dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border-l border-ap-edge flex flex-col shadow-2xl">
         {/* Header */}
         <div className="px-4 py-3 border-b border-ap-frame/15 dark:border-ap-edge-dark flex items-center justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4 ap-text-brand shrink-0" />
-              <h2 className="text-sm sm:text-base font-extrabold truncate">
+              <h2 id={headingId} className="text-sm sm:text-base font-extrabold truncate">
                 {activeTeam.brand.shortName || activeTeam.brand.name} · Team Messaging
               </h2>
             </div>
@@ -623,7 +641,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
               aria-pressed={pushEnabled}
               onClick={() => void handleToggleDevicePush()}
               className={`min-h-[44px] px-3.5 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                pushEnabled ? 'ap-nav-volt-active' : 'ap-btn-volt'
+                pushEnabled ? 'ap-nav-volt-active' : 'ap-btn-primary'
               }`}
             >
               {pushEnabled ? (

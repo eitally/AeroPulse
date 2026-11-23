@@ -55,7 +55,9 @@ export const CoachingStaffPanel: React.FC<CoachingStaffPanelProps> = ({
   onTeamsUpdated,
 }) => {
   const isDemoTeam = Boolean(
-    isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')
+    isSampleDemoMode ||
+      activeTeam.brand.teamId.startsWith('demo_team_') ||
+      activeTeam.brand.teamId.startsWith('demo-team-')
   );
   const canManageStaff =
     activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ORG_ADMIN';
@@ -307,7 +309,7 @@ export const CoachingStaffPanel: React.FC<CoachingStaffPanelProps> = ({
             type="button"
             data-testid="invite-coach-toggle-btn"
             onClick={() => setShowInviteForm((prev) => !prev)}
-            className="min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 rounded-xl ap-btn-volt text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0"
+            className="min-h-[44px] sm:min-h-[38px] px-3.5 py-1.5 rounded-xl ap-btn-primary text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <UserPlus className="w-4 h-4" />
             <span>{showInviteForm ? 'Close Staff Invite' : 'Add Specialty Coach'}</span>
@@ -519,7 +521,7 @@ export const CoachingStaffPanel: React.FC<CoachingStaffPanelProps> = ({
               type="submit"
               disabled={savingInvite}
               data-testid="invite-coach-submit-btn"
-              className="min-h-[44px] px-4 py-2 rounded-xl ap-btn-volt text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className="min-h-[44px] px-4 py-2 rounded-xl ap-btn-primary text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
             >
               {savingInvite ? (
                 <RefreshCw className="w-4 h-4 animate-spin" />
@@ -687,7 +689,7 @@ export const CoachingStaffPanel: React.FC<CoachingStaffPanelProps> = ({
                       disabled={savingEdit}
                       data-testid={`save-staff-ownership-${member.membershipId}`}
                       onClick={() => void handleSaveMemberOwnership(member)}
-                      className="min-h-[44px] sm:min-h-[38px] px-4 py-1.5 rounded-xl ap-btn-volt text-xs font-extrabold cursor-pointer disabled:opacity-50"
+                      className="min-h-[44px] sm:min-h-[38px] px-4 py-1.5 rounded-xl ap-btn-primary text-xs font-extrabold cursor-pointer disabled:opacity-50"
                     >
                       {savingEdit ? 'Saving…' : 'Save Coach Ownership'}
                     </button>

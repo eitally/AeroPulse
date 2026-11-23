@@ -336,11 +336,6 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               const notLoggedOut = !isBrowserSessionLoggedOut();
               if (justSignedIn || notLoggedOut) {
                 markSessionActiveHint();
-                emitFunnelEvent('auth_complete', {
-                  role: onboardingRole === 'COACH' ? 'COACH' : 'ATHLETE',
-                  isMinorUser: isMinorAthlete || isUnder13,
-                  dedupeSessionKey: 'auth_complete',
-                });
               }
             } catch {
               // ignore
@@ -686,9 +681,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         );
         return;
       }
-      if (isMinorAthlete && !activeBrand && !joinCodeInput.trim()) {
+      if (isMinorAthlete && !activeBrand) {
         setJoinError(
-          'Scholastic Youth Protection: Athletes under 18 must join through a school or club athletic team. Please enter your team join code.'
+          joinCodeInput.trim()
+            ? 'Please verify your team join code first so your school or club athletic team loads before continuing.'
+            : 'Scholastic Youth Protection: Athletes under 18 must join through a school or club athletic team. Please enter and verify your team join code.'
         );
         setShowTeamCodeDrawer(true);
         return;
@@ -778,6 +775,23 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
         void onSyncNow(syncWindow === 'all', syncWindow);
       }
 
+      const userBirthMonthYear = localUser?.birthMonthYear || currentUser?.birthMonthYear;
+      const userAgeResolved = userBirthMonthYear
+        ? resolveAthleteAgeTier({ birthMonthYear: userBirthMonthYear })
+        : null;
+      const isUserMinorFromRecord = Boolean(
+        userAgeResolved?.isMinorU18 ||
+          (localUser as (ThreshUser & { isMinorU18?: boolean }) | null)?.isMinorU18 ||
+          (currentUser as (ThreshUser & { isMinorU18?: boolean }) | null)?.isMinorU18
+      );
+      if (!isMinorAthlete && !isUnder13 && !isUserMinorFromRecord) {
+        emitFunnelEvent('auth_complete', {
+          role: onboardingRole === 'COACH' ? 'COACH' : 'ATHLETE',
+          isMinorUser: false,
+          dedupeSessionKey: 'auth_complete',
+        });
+      }
+
       if (status.stravaConnected) {
         await submitCalibrationEntry(
           onboardingRole === 'COACH' && !activeBrand ? 'COACH_MODE' : 'WORKSPACE',
@@ -859,6 +873,27 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     setIsEntering(true);
     setJoinError(null);
     try {
+      const userBirthMonthYear = localUser?.birthMonthYear || currentUser?.birthMonthYear;
+      const userAgeResolved = userBirthMonthYear
+        ? resolveAthleteAgeTier({ birthMonthYear: userBirthMonthYear })
+        : null;
+      const isUserMinorFromRecord = Boolean(
+        userAgeResolved?.isMinorU18 ||
+          (localUser as (ThreshUser & { isMinorU18?: boolean }) | null)?.isMinorU18 ||
+          (currentUser as (ThreshUser & { isMinorU18?: boolean }) | null)?.isMinorU18
+      );
+      if (!isMinorAthlete && !isUnder13 && !isUserMinorFromRecord) {
+        emitFunnelEvent('auth_complete', {
+          role:
+            onboardingRole === 'COACH' ||
+            entryTarget === 'COACH_MODE' ||
+            entryTarget === 'CREATE_TEAM'
+              ? 'COACH'
+              : 'ATHLETE',
+          isMinorUser: false,
+          dedupeSessionKey: 'auth_complete',
+        });
+      }
       await submitCalibrationEntry(entryTarget);
     } finally {
       setIsEntering(false);
@@ -873,7 +908,13 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
     isConnectingGarmin ||
     isConnectingIntervals;
 
-  const secondaryConnected = Boolean(isGarminConnected || status.intervalsConnected);
+  const secondaryConnected = Boolean(
+    isGarminConnected ||
+      status.intervalsConnected ||
+      status.wahooConnected ||
+      status.polarConnected ||
+      status.corosConnected
+  );
   const showByoStravaSection = Boolean(
     showCustomStravaKeys || (errorMessage && /STRAVA_CLIENT_ID|not configured/i.test(errorMessage))
   );

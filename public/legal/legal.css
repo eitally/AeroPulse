@@ -190,6 +190,18 @@ html.dark .legal-header {
   flex: 1;
 }
 
+.legal-shell a:not(.legal-btn),
+.legal-shell a:not(.legal-btn):visited {
+  color: var(--accent-link);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.legal-shell a:not(.legal-btn):hover {
+  opacity: 0.88;
+}
+
 .legal-hero {
   background: var(--bg-surface);
   border: 1px solid var(--border-hairline);
@@ -347,7 +359,8 @@ tr:last-child td {
   color: var(--text-muted);
 }
 
-.legal-footer a {
+.legal-footer a,
+.legal-footer a:visited {
   color: var(--accent-link);
   font-weight: 700;
   text-decoration: none;
@@ -373,7 +386,89 @@ tr:last-child td {
   }
 
   .legal-header {
+    position: static;
     padding: 0.65rem 0.85rem;
+  }
+
+  .legal-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+    max-width: 100%;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .legal-nav::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media print {
+  :root,
+  html.dark,
+  html.dark.theme-slate {
+    --bg-outer: #ffffff;
+    --bg-canvas: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-recessed: #ffffff;
+    --text-primary: #121413;
+    --text-secondary: #121413;
+    --text-muted: #44423c;
+    --border-hairline: #cfc9bc;
+    --accent-link: #121413;
+    --callout-bg: #ffffff;
+    --callout-border: #121413;
+  }
+
+  .legal-header,
+  .legal-footer,
+  .skip-link,
+  #adPrintBtn,
+  #procurementPrintBtn {
+    display: none !important;
+  }
+
+  html,
+  html.dark,
+  html.dark.theme-slate,
+  body {
+    background: #ffffff !important;
+    color: #121413 !important;
+  }
+
+  .legal-shell {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .legal-hero,
+  .legal-section,
+  .legal-callout,
+  .price-card {
+    background: #ffffff !important;
+    color: #121413 !important;
+    border-color: #cfc9bc !important;
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3,
+  p,
+  li,
+  td,
+  th,
+  .price-value,
+  .legal-meta {
+    color: #121413 !important;
+  }
+
+  .legal-shell a:not(.legal-btn),
+  .legal-shell a:not(.legal-btn):visited {
+    color: #121413 !important;
   }
 }
 

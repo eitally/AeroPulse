@@ -31,6 +31,7 @@ export interface TeamBillingAndPoModalProps {
   activeTeam: TeamSummaryWithRole | null;
   myTeams: TeamSummaryWithRole[];
   isSampleDemoMode?: boolean;
+  initialPlanCode?: Exclude<TeamBillingPlanCode, 'FREE_FOUNDING'>;
   onTeamsUpdated: (teams: TeamSummaryWithRole[], nextActiveTeamId?: string) => void;
 }
 
@@ -51,6 +52,7 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
   activeTeam,
   myTeams,
   isSampleDemoMode = false,
+  initialPlanCode,
   onTeamsUpdated,
 }) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -60,11 +62,12 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
   useModalDialog({ isOpen, onClose, dialogRef });
 
   const defaultPlan: Exclude<TeamBillingPlanCode, 'FREE_FOUNDING'> =
-    activeTeam?.billing?.planCode && activeTeam.billing.planCode !== 'FREE_FOUNDING'
+    initialPlanCode ||
+    (activeTeam?.billing?.planCode && activeTeam.billing.planCode !== 'FREE_FOUNDING'
       ? activeTeam.billing.planCode
       : activeTeam?.brand.orgType === 'COLLEGIATE'
         ? 'COLLEGIATE_1200'
-        : 'HS_250';
+        : 'HS_250');
 
   const [selectedPlan, setSelectedPlan] =
     useState<Exclude<TeamBillingPlanCode, 'FREE_FOUNDING'>>(defaultPlan);
@@ -99,7 +102,9 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
         poInvoices: [],
       }
     );
-    if (activeTeam.billing?.planCode && activeTeam.billing.planCode !== 'FREE_FOUNDING') {
+    if (initialPlanCode) {
+      setSelectedPlan(initialPlanCode);
+    } else if (activeTeam.billing?.planCode && activeTeam.billing.planCode !== 'FREE_FOUNDING') {
       setSelectedPlan(activeTeam.billing.planCode);
     } else {
       setSelectedPlan(
@@ -122,7 +127,7 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, activeTeam?.brand.teamId, isSampleDemoMode]);
+  }, [isOpen, activeTeam?.brand.teamId, isSampleDemoMode, initialPlanCode]);
 
   if (!isOpen || !activeTeam) return null;
 
@@ -175,7 +180,7 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
       );
       setNotice({
         tone: 'ok',
-        text: `Generated Net-30 demo invoice ${demoInvoice.invoiceNumber} ($${demoInvoice.amountUsd} USD). Ready for manual PDF download below (READY_MANUAL_LINK).`,
+        text: `Generated Net-30 demo invoice ${demoInvoice.invoiceNumber} ($${demoInvoice.amountUsd} USD). Click Print Net-30 Invoice & Vendor Sheet below to download.`,
       });
       setLastEmailStatus('READY_MANUAL_LINK');
       return;
@@ -208,10 +213,10 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
       });
       const deliverySuffix =
         deliveryStatus === 'SENT_RESEND'
-          ? `Email sent via Resend to ${resp.invoice.billingContactEmail} (SENT_RESEND).`
+          ? `Email sent to ${resp.invoice.billingContactEmail}.`
           : deliveryStatus === 'FAILED'
-            ? `Automated email failed — click Print Invoice & W-9 below to send manually (FAILED).`
-            : `Ready for manual PDF download/forwarding to ${resp.invoice.billingContactEmail} (READY_MANUAL_LINK).`;
+            ? `Automated email delivery was unavailable — click Print Net-30 Invoice & Vendor Sheet below to send manually.`
+            : `Ready to print or forward manually to ${resp.invoice.billingContactEmail}.`;
       setNotice({
         tone: 'ok',
         text: `Issued Net-30 School PO Invoice ${resp.invoice.invoiceNumber} ($${resp.invoice.amountUsd} USD, due ${resp.invoice.dueDate}). ${deliverySuffix}`,
@@ -275,6 +280,9 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
       aria-labelledby={headingId}
       tabIndex={-1}
       data-testid="team-billing-po-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 sm:p-5"
     >
       <div className="w-full max-w-3xl max-h-[92dvh] overflow-y-auto rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-frame/25 dark:border-ap-edge p-4 sm:p-6 space-y-4 shadow-2xl text-ap-ink dark:text-ap-chalk">
@@ -330,13 +338,14 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
             {lastEmailStatus && notice.tone === 'ok' && (
               <span
                 data-testid="billing-email-status-badge"
+                data-email-status={lastEmailStatus}
                 className="px-2 py-0.5 rounded font-mono text-2xs font-bold border border-current/25 shrink-0"
               >
                 {lastEmailStatus === 'SENT_RESEND'
-                  ? 'SENT_RESEND'
+                  ? 'Email Sent'
                   : lastEmailStatus === 'FAILED'
-                    ? 'FAILED'
-                    : 'READY_MANUAL_LINK'}
+                    ? 'Manual Send Needed'
+                    : 'Ready for Manual PDF'}
               </span>
             )}
           </div>
@@ -528,16 +537,22 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
                   </div>
                   <button
                     type="button"
-                    onClick={() =>
-                      openPrintableSchoolPoInvoiceWindow({
+                    onClick={() => {
+                      const opened = openPrintableSchoolPoInvoiceWindow({
                         invoice: inv,
                         teamName: activeTeam.brand.name,
-                      })
-                    }
-                    className="min-h-[38px] px-3 rounded-lg ap-btn-secondary text-2xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                      });
+                      if (!opened) {
+                        setNotice({
+                          tone: 'ok',
+                          text: `Pop-up blocked — downloaded printable HTML invoice (${inv.invoiceNumber}) instead. Open the downloaded file to print or save as PDF.`,
+                        });
+                      }
+                    }}
+                    className="!min-h-[44px] sm:!min-h-[38px] px-3 rounded-lg ap-btn-secondary text-2xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    <span>Print Invoice &amp; W-9</span>
+                    <span>Print Net-30 Invoice &amp; Vendor Sheet</span>
                   </button>
                 </div>
               ))}

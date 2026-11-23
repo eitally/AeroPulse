@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useRef } from 'react';
 import { ShieldCheck, X } from '../icons/PhosphorIcons';
+import { useModalDialog } from '../../hooks/useModalDialog';
 
 export interface CoppaExplainerModalProps {
   isOpen: boolean;
@@ -10,29 +11,25 @@ export const CoppaExplainerModal: React.FC<CoppaExplainerModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useModalDialog({ isOpen, onClose, dialogRef });
 
   if (!isOpen) return null;
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="coppa-explainer-title"
+      tabIndex={-1}
       data-testid="coppa-explainer-modal"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/65"
     >
-      <div className="w-full max-w-lg ap-card rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
+      <div className="w-full max-w-lg max-h-[92dvh] overflow-y-auto ap-card rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-ap-emerald shrink-0" weight="fill" />

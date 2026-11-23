@@ -273,6 +273,14 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   isSampleDemoMode = false,
 }) => {
   const [openCreateTeamOnSwitch, setOpenCreateTeamOnSwitch] = useState<boolean>(false);
+  const [openBillingPlanOnRoster, setOpenBillingPlanOnRoster] = useState<'DISTRICT_2000' | null>(
+    null
+  );
+  const isDemoTeam = Boolean(
+    isSampleDemoMode ||
+      activeTeam?.brand.teamId.startsWith('demo_team_') ||
+      activeTeam?.brand.teamId.startsWith('demo-team-')
+  );
   const [isExternalSyncOpen, setIsExternalSyncOpen] = useState<boolean>(() => {
     try {
       return typeof window !== 'undefined' && window.location.hash === '#coach-sync';
@@ -336,7 +344,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         activeTeam.myRole === 'ASSISTANT_COACH' ||
         activeTeam.myRole === 'ORG_ADMIN');
     if (canBroadcastTeam && activeTeam) {
-      if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')) {
+      if (isDemoTeam) {
         const newBroadcast = {
           broadcastId: `bw_demo_${Date.now()}`,
           teamId: activeTeam.brand.teamId,
@@ -455,7 +463,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           id.startsWith('bw_'))
     );
     if (canBroadcastTeam && activeTeam && isTeamBroadcast) {
-      if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')) {
+      if (isDemoTeam) {
         const updatedBroadcasts = (activeTeam.broadcastWorkouts || []).map((bw) =>
           bw.broadcastId === id
             ? {
@@ -524,7 +532,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
         activeTeam.myRole === 'ASSISTANT_COACH' ||
         activeTeam.myRole === 'ORG_ADMIN');
     if (canBroadcastTeam && activeTeam) {
-      if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')) {
+      if (isDemoTeam) {
         const nowIso = new Date().toISOString();
         const nowTs = Date.now();
         const createdBroadcasts: TeamBroadcastWorkout[] = items.map((item, idx) => ({
@@ -626,6 +634,69 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
       }
     }
     await onBatchCreatePlannedEvents(items);
+  };
+
+  const handleTeamPlanDelete = async (id: string) => {
+    setTeamPlanError(null);
+    const canBroadcastTeam = Boolean(
+      activeTeam &&
+        (activeTeam.myRole === 'HEAD_COACH' ||
+          activeTeam.myRole === 'ASSISTANT_COACH' ||
+          activeTeam.myRole === 'ORG_ADMIN')
+    );
+    const isTeamBroadcast = Boolean(
+      activeTeam &&
+        (activeTeam.broadcastWorkouts?.some((bw) => bw.broadcastId === id) ||
+          id.startsWith('bw_'))
+    );
+    if (canBroadcastTeam && activeTeam && isTeamBroadcast && isDemoTeam) {
+      const updatedTeam: TeamSummaryWithRole = {
+        ...activeTeam,
+        broadcastWorkouts: (activeTeam.broadcastWorkouts || []).filter(
+          (bw) => bw.broadcastId !== id
+        ),
+      };
+      onTeamsUpdated(
+        myTeams.map((t) =>
+          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+        ),
+        updatedTeam.brand.teamId
+      );
+      await onDeletePlannedEvent(id);
+      return;
+    }
+    await onDeletePlannedEvent(id);
+  };
+
+  const handleTeamPlanBlockDelete = async (planBlockId: string) => {
+    setTeamPlanError(null);
+    const canBroadcastTeam = Boolean(
+      activeTeam &&
+        (activeTeam.myRole === 'HEAD_COACH' ||
+          activeTeam.myRole === 'ASSISTANT_COACH' ||
+          activeTeam.myRole === 'ORG_ADMIN')
+    );
+    const hasDemoTeamBlock = Boolean(
+      canBroadcastTeam &&
+        activeTeam &&
+        isDemoTeam &&
+        activeTeam.broadcastWorkouts?.some((bw) => bw.planBlockId === planBlockId)
+    );
+    if (hasDemoTeamBlock && activeTeam) {
+      const updatedTeam: TeamSummaryWithRole = {
+        ...activeTeam,
+        broadcastWorkouts: (activeTeam.broadcastWorkouts || []).filter(
+          (bw) => bw.planBlockId !== planBlockId
+        ),
+      };
+      onTeamsUpdated(
+        myTeams.map((t) =>
+          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+        ),
+        updatedTeam.brand.teamId
+      );
+    }
+    await onDeletePlanBlock?.(planBlockId);
   };
   const connectedAthletesOnly = useMemo(
     () =>
@@ -948,11 +1019,11 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
   }, [activeTeam?.injuryCases, activeTeam?.memberships, scopedConnectedAthletes, todayIso]);
 
   return (
-    <div className="space-y-3" data-testid="coach-workspace-view">
+    <div className="space-y-3 max-w-full" data-testid="coach-workspace-view">
       {/* Unified Coach Mode Context Header — omitted on Stopwatch so athletes sit at 0px scroll */}
       {subTab !== 'STOPWATCH' && (
-        <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 sm:py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+        <section className="rounded-2xl liquid-glass px-3.5 py-2.5 sm:px-4 sm:py-3 max-w-full">
+          <div className="flex flex-wrap items-center justify-between gap-2 max-w-full">
             <div className="flex flex-wrap items-center gap-2 min-w-0">
               <h1 className="text-base sm:text-lg font-bold text-ap-ink dark:text-ap-chalk tracking-tight truncate">
                 {activeTeam ? `${activeTeam.brand.name} · Coach` : 'Coach Workspace'}
@@ -964,7 +1035,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 max-w-full">
               <div
                 role="group"
                 aria-label="Coach Workspace Complexity"
@@ -1003,7 +1074,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   value={activeTeamId || ''}
                   onChange={(e) => onSelectActiveTeam(e.target.value || null)}
                   aria-label="Select Team in Coach Workspace"
-                  className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
+                  className="h-[44px] sm:h-[36px] min-h-[44px] sm:min-h-[36px] py-1.5 leading-tight max-w-full rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
                 >
                   {myTeams.map((t) => (
                     <option key={t.brand.teamId} value={t.brand.teamId}>
@@ -1020,7 +1091,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                   aria-label="Coach Scope Lens"
                   value={coachLensId}
                   onChange={(e) => setCoachLensId(e.target.value)}
-                  className="min-h-[44px] sm:min-h-[36px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
+                  className="h-[44px] sm:h-[36px] min-h-[44px] sm:min-h-[36px] py-1.5 leading-tight max-w-full rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold text-ap-ink dark:text-ap-chalk"
                 >
                   {isScopedSelfCoach && (
                     <option value="MY_SCOPE">
@@ -1330,8 +1401,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 onSelectActivity={onSelectActivityAndOpenTab}
                 onCreatePlannedEvent={handleTeamPlanCreate}
                 onUpdatePlannedEvent={handleTeamPlanUpdate}
-                onDeletePlannedEvent={onDeletePlannedEvent}
-                onDeletePlanBlock={onDeletePlanBlock}
+                onDeletePlannedEvent={handleTeamPlanDelete}
+                onDeletePlanBlock={onDeletePlanBlock || isDemoTeam ? handleTeamPlanBlockDelete : undefined}
                 onBatchCreatePlannedEvents={handleTeamPlanBatchCreate}
                 onOpenTodayWorkout={onOpenAthleteToday}
                 onOpenAthleteProfileModal={onOpenProfileModal}
@@ -1478,6 +1549,8 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 resendConfigured={resendConfigured}
                 isSampleDemoMode={isSampleDemoMode}
                 initialShowCreateStudio={openCreateTeamOnSwitch}
+                initialOpenBillingPlan={openBillingPlanOnRoster}
+                onConsumedInitialBilling={() => setOpenBillingPlanOnRoster(null)}
                 onSelectActiveTeam={onSelectActiveTeam}
                 onTeamsUpdated={onTeamsUpdated}
                 onOpenClipboard={() => setSubTab('CLIPBOARD')}
@@ -1727,6 +1800,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               isOpen={showOnboardingWizard}
               myTeams={myTeams}
               selfName={primaryAthleteDisplayName}
+              isSampleDemoMode={isSampleDemoMode}
               onClose={() => setShowOnboardingWizard(false)}
               onSetComplexityTier={(tier) => setComplexityTier(tier)}
               onTeamCreated={(teams, createdId) => {
@@ -1800,6 +1874,17 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               activeTeamId={activeTeamId}
               isSampleDemoMode={isSampleDemoMode}
               onSelectActiveTeam={(teamId) => onSelectActiveTeam(teamId)}
+              onOpenDistrictBilling={() => {
+                setOpenCreateTeamOnSwitch(false);
+                if (!activeTeamId) {
+                  const firstGoverned = myTeams.find(
+                    (t) => t.myRole === 'HEAD_COACH' || t.myRole === 'ORG_ADMIN'
+                  );
+                  if (firstGoverned) onSelectActiveTeam(firstGoverned.brand.teamId);
+                }
+                setOpenBillingPlanOnRoster('DISTRICT_2000');
+                setSubTab('ROSTER');
+              }}
             />
           </Suspense>
         </WorkspaceErrorBoundary>

@@ -227,9 +227,9 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     .split(/\s+/)
     .filter(Boolean);
   const wahooCanPushWorkouts = Boolean(
-    extStatus.wahooCanPushWorkouts ||
-      wahooScopeTokens.includes('workouts_write') ||
-      wahooScopeTokens.includes('plans_write')
+    extStatus.wahooCanPushWorkouts ??
+      (wahooScopeTokens.includes('workouts_write') &&
+        wahooScopeTokens.includes('plans_write'))
   );
 
   const totalWorkouts = persistedWorkoutCount || status.totalActivitiesCount || 0;
@@ -539,9 +539,10 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       <button
                         key={opt.id}
                         type="button"
+                        aria-pressed={active}
                         disabled={isSavingPolicy || isSyncing}
                         onClick={() => handleSaveSyncPolicy(opt.id, includeGearAndProfile)}
-                        className={`text-left rounded-xl p-2.5 border transition-all cursor-pointer ${
+                        className={`min-h-[44px] text-left rounded-xl p-2.5 border transition-all cursor-pointer ${
                           active
                             ? 'border-ap-clay dark:border-ap-volt bg-ap-clay/8 dark:bg-ap-volt/10'
                             : 'border-stone-200 dark:border-white/10 hover:border-ap-clay/60 dark:hover:border-ap-volt/60'
@@ -558,7 +559,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   })}
                 </div>
 
-                <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
+                <label className="min-h-[44px] sm:min-h-[32px] flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer pt-1">
                   <input
                     type="checkbox"
                     checked={includeGearAndProfile}
@@ -607,7 +608,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     <button
                       type="button"
                       onClick={() => copyToClipboard(activeDomainOnly, 'domain')}
-                      className="inline-flex items-center gap-1 font-semibold ap-text-brand cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[32px] px-2 inline-flex items-center gap-1 font-semibold ap-text-brand cursor-pointer"
                     >
                       {copiedLabel === 'domain' ? (
                         <>
@@ -843,7 +844,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     <button
                       type="button"
                       onClick={onDisconnectIntervals}
-                      className="ap-btn-secondary !min-h-[38px] !px-3 text-xs cursor-pointer text-rose-600 dark:text-rose-300"
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] !px-3 text-xs cursor-pointer text-rose-700 dark:text-rose-300"
                     >
                       Disconnect
                     </button>
@@ -861,7 +862,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                           type="button"
                           data-testid="intervals-upgrade-scope-btn"
                           onClick={() => onLaunchIntervalsOAuth?.()}
-                          className="ap-btn-primary !min-h-[38px] px-3 py-1.5 rounded-lg font-semibold text-xs cursor-pointer"
+                          className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3 py-1.5 rounded-lg font-semibold text-xs cursor-pointer"
                         >
                           Upgrade Scope to Watch Push
                         </button>
@@ -1000,7 +1001,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     <button
                       type="button"
                       onClick={() => onDisconnectWahoo?.()}
-                      className="text-xs text-rose-600 dark:text-rose-300 hover:underline font-medium cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[36px] px-2.5 inline-flex items-center text-xs text-rose-700 dark:text-rose-300 hover:underline font-medium cursor-pointer"
                     >
                       Disconnect
                     </button>
@@ -1017,7 +1018,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         data-testid="wahoo-upgrade-permissions-btn"
                         disabled={!onLaunchWahooOAuth}
                         onClick={() => onLaunchWahooOAuth?.()}
-                        className="ap-btn-primary !min-h-[38px] px-3 py-1.5 rounded-lg font-semibold text-xs cursor-pointer disabled:opacity-50"
+                        className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3 py-1.5 rounded-lg font-semibold text-xs cursor-pointer disabled:opacity-50"
                       >
                         Upgrade Wahoo Permissions
                       </button>
@@ -1099,7 +1100,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => onDisconnectPolar?.()}
-                    className="text-xs text-rose-500 hover:text-rose-600 font-medium cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[36px] px-2.5 inline-flex items-center text-xs text-rose-700 dark:text-rose-300 hover:underline font-medium cursor-pointer"
                   >
                     Disconnect
                   </button>
@@ -1173,7 +1174,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   <button
                     type="button"
                     onClick={() => onDisconnectCoros?.()}
-                    className="text-xs text-rose-600 dark:text-rose-300 hover:underline font-medium cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[36px] px-2.5 inline-flex items-center text-xs text-rose-700 dark:text-rose-300 hover:underline font-medium cursor-pointer"
                   >
                     Disconnect
                   </button>
@@ -1435,7 +1436,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       type="button"
                       onClick={onRebuildPersistedArchive}
                       disabled={isSyncing}
-                      className="ml-2 font-semibold ap-text-brand hover:underline cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[32px] px-2 ml-1 font-semibold ap-text-brand hover:underline cursor-pointer"
                     >
                       Rebuild Local Cache
                     </button>

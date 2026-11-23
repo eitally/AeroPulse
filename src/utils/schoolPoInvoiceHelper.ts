@@ -113,13 +113,39 @@ export function createStripeCheckoutApi(
   });
 }
 
-function escapeHtmlSafe(raw: string): string {
-  return raw
+function escapeHtmlSafe(raw: unknown): string {
+  return String(raw ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function triggerHtmlBlobDownload(html: string, filename: string): boolean {
+  if (typeof document === 'undefined' || typeof Blob === 'undefined') return false;
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return false;
+  try {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = 'none';
+    document.body?.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore revoke failures
+      }
+    }, 1000);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function buildSchoolPoInvoicePrintHtml(params: {
@@ -156,7 +182,7 @@ export function buildSchoolPoInvoicePrintHtml(params: {
       <div>
         <div class="kicker">MeetReady · School &amp; District Athletics Invoice</div>
         <h1>Invoice ${escapeHtmlSafe(invoice.invoiceNumber)}</h1>
-        <div style="font-size:13px;color:#57544D;margin-top:4px;">Remit To: MeetReady Athletics · procurement@meetready.app</div>
+        <div style="font-size:13px;color:#57544D;margin-top:4px;">Vendor: MeetReady Athletics LLC · AP Desk: procurement@meetready.app</div>
       </div>
       <div class="meta">
         <div><strong>Issued:</strong> ${escapeHtmlSafe(invoice.issuedAt.slice(0, 10))}</div>
@@ -201,7 +227,8 @@ export function buildSchoolPoInvoicePrintHtml(params: {
 
     <section class="box" style="margin-top:16px;break-inside:avoid;">
       <div class="kicker" style="margin-bottom:6px;">Procurement &amp; IRS W-9 Vendor Summary</div>
-      <div><strong>Vendor / Payee:</strong> MeetReady Athletics (Track, Field &amp; Cross Country Platform)</div>
+      <div><strong>Vendor / Payee:</strong> MeetReady Athletics LLC (Track, Field &amp; Cross Country Platform)</div>
+      <div><strong>Remittance &amp; ACH Routing:</strong> Remit check or ACH per countersigned W-9 vendor packet · AP Desk: <strong>procurement@meetready.app</strong></div>
       <div><strong>IRS Form W-9 &amp; Tax ID:</strong> Signed W-9 PDF &amp; Vendor Setup Sheet furnished same-day via <strong>procurement@meetready.app</strong></div>
       <div><strong>Student Data Privacy:</strong> California SDPC NDPA · CA AB-1584 / SOPIPA · FERPA School Official Addendum · HECVAT Lite</div>
       <div><strong>Payment Methods:</strong> District / ASB Check, ACH Transfer, or P-Card · Net-30 Terms · Students &amp; Parents $0 Forever</div>
@@ -209,8 +236,8 @@ export function buildSchoolPoInvoicePrintHtml(params: {
     </section>
 
     <div class="box" style="margin-top:14px;break-inside:avoid;">
-      <strong>Payment &amp; District Onboarding Instructions:</strong><br/>
-      1. Remit ASB check, ACH, or district check referencing Invoice <strong>${escapeHtmlSafe(invoice.invoiceNumber)}</strong> to <strong>procurement@meetready.app</strong>.<br/>
+      <strong>Vendor &amp; Remittance Instructions:</strong><br/>
+      1. Remit ASB check, district check, or ACH referencing Invoice <strong>${escapeHtmlSafe(invoice.invoiceNumber)}</strong> per your countersigned W-9 vendor packet (MeetReady Athletics LLC · AP Desk: <strong>procurement@meetready.app</strong>).<br/>
       2. Need a signed IRS Form W-9, HECVAT Lite summary, or countersigned California SDPC NDPA? Download or request same-day countersignature at <strong>https://meetready.app/procurement</strong>.
     </div>
 
@@ -227,10 +254,27 @@ export function openPrintableSchoolPoInvoiceWindow(params: {
   teamName: string;
 }): boolean {
   if (typeof window === 'undefined') return false;
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=820,height=900');
-  if (!popup) return false;
+  const html = buildSchoolPoInvoicePrintHtml(params);
+  const popup = window.open('', '_blank', 'width=820,height=900');
+  if (!popup) {
+    const safeInvoiceNum = (params.invoice.invoiceNumber || 'invoice')
+      .replace(/[^A-Za-z0-9_-]/g, '-')
+      .toLowerCase();
+    triggerHtmlBlobDownload(html, `meetready-${safeInvoiceNum}.html`);
+    return false;
+  }
   popup.document.open();
-  popup.document.write(buildSchoolPoInvoicePrintHtml(params));
+  popup.document.write(html);
   popup.document.close();
+  try {
+    popup.opener = null;
+  } catch {
+    // ignore read-only opener implementations
+  }
+  try {
+    popup.focus?.();
+  } catch {
+    // ignore focus errors
+  }
   return true;
 }

@@ -4,7 +4,6 @@ import {
   ExternalLink,
   Lightning,
   RefreshCw,
-  Upload,
 } from '../icons/PhosphorIcons';
 import type {
   ConnectionStatus,
@@ -340,130 +339,114 @@ export const AuthOptionalAddonsStep: React.FC<AuthOptionalAddonsStepProps> = ({
                     </div>
                   )}
                 </div>
-              </div>
-
-              {/* Wahoo Option */}
-              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-sky-500/10 text-sky-500 font-bold text-xs flex items-center justify-center">
-                      W
-                    </div>
+                {/* Optional Card 3: Wahoo Cloud API */}
+                <div className="liquid-glass rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>Wahoo Cloud API</span>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Wahoo Cloud API
+                        </h2>
                         {status.wahooConnected ? (
-                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                            Connected ({status.wahooAthleteName || 'Wahoo'})
+                          <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
+                            Connected ({status.wahooAthleteName || 'Wahoo'}) ✓
                           </span>
                         ) : (
-                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                          <span className="px-2 py-0.5 rounded-md text-2xs font-mono uppercase bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300">
                             Optional
                           </span>
                         )}
-                      </h4>
-                      <p className="text-2xs text-slate-500 dark:text-slate-400">
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                         ELEMNT bike computer rides, KICKR sessions &amp; FIT files.
                       </p>
                     </div>
+                    {!status.wahooConnected && onLaunchWahooOAuth && (
+                      <button
+                        type="button"
+                        onClick={() => onLaunchWahooOAuth?.()}
+                        disabled={busy}
+                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] text-xs shrink-0 cursor-pointer"
+                      >
+                        Connect
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {!status.wahooConnected && onLaunchWahooOAuth && (
-                  <button
-                    type="button"
-                    onClick={() => onLaunchWahooOAuth?.()}
-                    disabled={busy}
-                    className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
-                  >
-                    <Lightning className="w-4 h-4 shrink-0" />
-                    <span>1-Click Connect with Wahoo (OAuth 2.0)</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Polar Option */}
-              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-rose-500/10 text-rose-500 font-bold text-xs flex items-center justify-center">
-                      P
-                    </div>
+                {/* Optional Card 4: Polar AccessLink */}
+                <div className="liquid-glass rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>Polar AccessLink</span>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                          Polar AccessLink
+                        </h2>
                         {status.polarConnected ? (
-                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
-                            Connected ({status.polarAthleteName || 'Polar'})
+                          <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
+                            Connected ({status.polarAthleteName || 'Polar'}) ✓
                           </span>
                         ) : (
-                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                          <span className="px-2 py-0.5 rounded-md text-2xs font-mono uppercase bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300">
                             Optional
                           </span>
                         )}
-                      </h4>
-                      <p className="text-2xs text-slate-500 dark:text-slate-400">
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                         Grit X, Vantage, Pacer, H10 &amp; running load telemetry.
                       </p>
                     </div>
+                    {!status.polarConnected && onLaunchPolarOAuth && (
+                      <button
+                        type="button"
+                        onClick={() => onLaunchPolarOAuth?.()}
+                        disabled={busy}
+                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] text-xs shrink-0 cursor-pointer"
+                      >
+                        Connect
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                {!status.polarConnected && onLaunchPolarOAuth && (
-                  <button
-                    type="button"
-                    onClick={() => onLaunchPolarOAuth?.()}
-                    disabled={busy}
-                    className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
-                  >
-                    <Lightning className="w-4 h-4 shrink-0" />
-                    <span>1-Click Connect with Polar (OAuth 2.0)</span>
-                  </button>
-                )}
-              </div>
-
-              {/* COROS Option */}
-              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-700 dark:text-orange-300 font-bold text-xs flex items-center justify-center">
-                      C
-                    </div>
+                {/* Optional Card 5: COROS Open API */}
+                <div className="liquid-glass rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                        <span>COROS Open API</span>
+                      <div className="flex items-center gap-2">
+                        <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                          COROS Open API
+                        </h2>
                         {status.corosConnected ? (
-                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium">
-                            Connected ({status.corosAthleteName || 'COROS'})
+                          <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
+                            Connected ({status.corosAthleteName || 'COROS'}) ✓
                           </span>
                         ) : (
-                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                          <span className="px-2 py-0.5 rounded-md text-2xs font-mono uppercase bg-slate-200/70 dark:bg-white/10 text-slate-600 dark:text-slate-300">
                             Optional
                           </span>
                         )}
-                      </h4>
-                      <p className="text-2xs text-slate-600 dark:text-slate-300">
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                         PACE, APEX, VERTIX, DURA 2-way workout sync &amp; track push.
                       </p>
                     </div>
+                    {!status.corosConnected && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onLaunchCorosOAuth
+                            ? void onLaunchCorosOAuth()
+                            : void launchFallbackOAuth('/api/coros/auth/url', 'COROS')
+                        }
+                        disabled={busy}
+                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] text-xs shrink-0 cursor-pointer"
+                      >
+                        Connect
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {!status.corosConnected && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onLaunchCorosOAuth
-                        ? void onLaunchCorosOAuth()
-                        : void launchFallbackOAuth('/api/coros/auth/url', 'COROS')
-                    }
-                    disabled={busy}
-                    className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
-                  >
-                    <Lightning className="w-4 h-4 shrink-0" />
-                    <span>1-Click Connect with COROS (OAuth 2.0)</span>
-                  </button>
-                )}
               </div>
 
               <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 text-2xs text-slate-600 dark:text-slate-300 flex items-center justify-between flex-wrap gap-2">

@@ -15,11 +15,37 @@ export {
   generateQrMatrix,
 };
 
+function triggerHtmlBlobDownload(html: string, filename: string): boolean {
+  if (typeof document === 'undefined' || typeof Blob === 'undefined') return false;
+  if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') return false;
+  try {
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = 'none';
+    document.body?.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore revoke failures
+      }
+    }, 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function openPrintableTeamPosterWindow(
   brand: TeamBrandConfig,
   joinUrl: string
-): void {
-  if (typeof window === 'undefined') return;
+): boolean {
+  if (typeof window === 'undefined') return false;
   const palette = computeAccessibleTeamPalette(brand.primaryHex, brand.secondaryHex);
   const defaults = getOrgTypeSafeguardingDefaults(brand.orgType);
   // Force high-contrast pure black ink (#080A09) on white with EC-M error correction for reliable locker-room/copier scanning
@@ -102,12 +128,28 @@ export function openPrintableTeamPosterWindow(
 </body>
 </html>`;
 
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=840,height=920');
-  if (popup) {
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
+  const popup = window.open('', '_blank', 'width=840,height=920');
+  if (!popup) {
+    const safeSlug = (brand.slug || brand.shortName || 'team')
+      .replace(/[^A-Za-z0-9_-]/g, '-')
+      .toLowerCase();
+    triggerHtmlBlobDownload(html, `meetready-${safeSlug}-join-poster.html`);
+    return false;
   }
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+  try {
+    popup.opener = null;
+  } catch {
+    // ignore read-only opener implementations
+  }
+  try {
+    popup.focus?.();
+  } catch {
+    // ignore focus errors
+  }
+  return true;
 }
 
 export interface PrintablePodClipboardParams {
@@ -273,13 +315,26 @@ export function buildPrintablePodClipboardHtml(params: PrintablePodClipboardPara
 </html>`;
 }
 
-export function openPrintablePodClipboardWindow(params: PrintablePodClipboardParams): void {
-  if (typeof window === 'undefined') return;
+export function openPrintablePodClipboardWindow(params: PrintablePodClipboardParams): boolean {
+  if (typeof window === 'undefined') return false;
   const html = buildPrintablePodClipboardHtml(params);
-  const popup = window.open('', '_blank', 'noopener,noreferrer,width=1060,height=780');
-  if (popup) {
-    popup.document.open();
-    popup.document.write(html);
-    popup.document.close();
+  const popup = window.open('', '_blank', 'width=1060,height=780');
+  if (!popup) {
+    const safeDate = (params.dateStr || 'workout').replace(/[^A-Za-z0-9_-]/g, '-');
+    return triggerHtmlBlobDownload(html, `meetready-pod-clipboard-${safeDate}.html`);
   }
+  popup.document.open();
+  popup.document.write(html);
+  popup.document.close();
+  try {
+    popup.opener = null;
+  } catch {
+    // ignore read-only opener implementations
+  }
+  try {
+    popup.focus?.();
+  } catch {
+    // ignore focus errors
+  }
+  return true;
 }

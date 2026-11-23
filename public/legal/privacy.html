@@ -101,7 +101,7 @@
         <li><strong>Zero Advertising &amp; Zero Data Sales:</strong> Student and athlete records are never sold, rented, or used for targeted advertising, behavioral profiling, or third-party ad networks.</li>
         <li><strong>School Official &amp; LEA Ownership:</strong> When provisioned by a school or district, pupil records remain under the legal control of the Educational Agency in compliance with FERPA and California Education Code § 49073.1 (AB-1584) / SOPIPA.</li>
         <li><strong>FERPA Directory Opt-Out:</strong> Coaches and school administrators control public meet leaderboard opt-outs for <code>/team/:slug</code>; public hubs never expose athlete emails, phone numbers, guardian emails, GPS routes, HRV, sleep, RPE, or weight.</li>
-        <li><strong>First-Party Anonymous Aggregate Conversion Counters:</strong> MeetReady records strictly anonymous, first-party aggregate funnel event counts (such as landing views, demo entry, coach sign-up, team creation, or school PO generation) via <code>POST /api/analytics/event</code>. Counters use zero tracking cookies, store zero PII (never email, name, user ID, team ID, or user agent), perform zero IP address storage, and are unconditionally excluded from all minor/student accounts.</li>
+        <li><strong>First-Party Anonymous Aggregate Conversion Counters:</strong> MeetReady records strictly anonymous, first-party aggregate funnel event counts (such as pre-authentication public page landing views, demo entry, coach sign-up, team creation, or school PO generation) via <code>POST /api/analytics/event</code>. Counters use zero tracking cookies, store zero PII (never email, name, user ID, team ID, or user agent), perform zero IP address storage, and are unconditionally excluded from all authenticated minor/student accounts.</li>
       </ul>
     </section>
 
@@ -119,7 +119,7 @@
       <h2>5. Security Controls, Encryption &amp; Permanent Erasure</h2>
       <ul>
         <li><strong>Encryption:</strong> Credentials and tenant vaults are encrypted at rest with AES-256-GCM; PostgreSQL connections enforce strict verified TLS in production; FIDO2/WebAuthn Passkeys verify cryptographic signatures before issuing sessions.</li>
-        <li><strong>Self-Serve Deletion:</strong> Athletes can revoke Strava/wearable connectors or execute permanent erasure via <strong>Account &amp; Privacy → Delete My Account</strong>, which wipes session cookies, team memberships, and encrypted vault state (preventing deletion only if a sole active Head Coach has not transferred ownership).</li>
+        <li><strong>Self-Serve Deletion:</strong> Athletes can revoke Strava/wearable connectors or execute permanent erasure via <strong>Account, Teams &amp; Privacy → Delete My Account</strong>, which wipes session cookies, team memberships, and encrypted vault state (preventing deletion only if a sole active Head Coach has not transferred ownership).</li>
       </ul>
       <p>Privacy &amp; procurement inquiries: <a href="mailto:privacy@meetready.app">privacy@meetready.app</a> · <a href="/procurement">District &amp; NCAA Procurement Pack</a></p>
     </section>

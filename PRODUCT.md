@@ -45,7 +45,7 @@ MeetReady combines in one workflow:
 - **Athlete-controlled coach sharing & youth safeguarding**: Team athletes explicitly select their `CoachDataSharingTier` (`SUMMARY_ONLY`, `FULL_STREAMS`, or `LOAD_ONLY`). `HIGH_SCHOOL` rosters default U18 Safe-Sport weight shielding (`isMinorU18: true`) and Parent/Guardian CC `ON`; `COLLEGIATE` rosters default standard college grad years to adult settings unless an incoming U18 recruit year is specified.
 - **Strict performance & security gates**: Production builds (`npm run build && npm run check:bundle`) enforce a hard `< 220 KB` gzipped ceiling on the entry JS chunk (`scripts/checkBundleBudget.mjs`), zero leaked `.env` or screenshot files in `dist/`, and zero hardcoded personal API credentials.
 - **Canonical domain terminology**: Preserve exact physiological and regulatory terms (`CTL`, `ATL`, `TSB`, `TSS`, `rTSS`, `NP`, `IF`, `EF`, `Pa:Hr`, `CP`, `W'`, `VDOT`, `FAT`, `ACWR`, `CARA`, `RED-S`) rather than paraphrasing them into vague fitness jargon.
-- **Transparent institutional & individual access**: Core access is free forever for individual athletes and parents (`$0/yr`), with transparent flat-rate PO/ASB institutional licensing for High School programs (`$250/yr`), Collegiate programs (`$1,200/yr`), Club Coaches (`$49/mo`), and School Districts (`$2,000/yr`) published on `/procurement`.
+- **Transparent institutional & individual access**: Core access is free forever for individual athletes and parents (`$0/yr`), with transparent flat-rate PO/ASB institutional licensing for High School programs & youth/community clubs (`$250/yr`), Collegiate programs (`$1,200/yr`), and School Districts (`$2,000/yr`) published on `/procurement`.
 
 ## Brand Commitments
 

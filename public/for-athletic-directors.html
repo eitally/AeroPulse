@@ -206,7 +206,7 @@
           stored.referrer = ref;
           sessionStorage.setItem(KEY, JSON.stringify(stored));
         }
-        var lvKey = 'meetready_funnel_lv_' + (window.location.pathname || '/');
+        var lvKey = 'meetready_funnel_dedupe_v1:landing_view';
         if (!sessionStorage.getItem(lvKey) && typeof fetch === 'function') {
           sessionStorage.setItem(lvKey, '1');
           var refHost = '';

@@ -19,6 +19,55 @@ const PLAN_AMOUNT_USD: Record<TeamBillingPlanCode, number> = {
   DISTRICT_2000: 2000,
 };
 
+export function formatOrgTypeLabel(orgType: string): string {
+  switch (orgType) {
+    case 'HIGH_SCHOOL':
+      return 'High School';
+    case 'COLLEGIATE':
+      return 'Collegiate';
+    case 'RUNNING_CLUB':
+      return 'Track & XC Club';
+    case 'CYCLING_CLUB':
+      return 'Cycling Club';
+    case 'COACH_SQUAD':
+      return 'Coaching Group';
+    default:
+      return String(orgType || '').replace(/_/g, ' ');
+  }
+}
+
+export function formatBillingPlanLabel(planCode: TeamBillingPlanCode | string): string {
+  switch (planCode) {
+    case 'FREE_FOUNDING':
+      return 'Founding Pilot ($0)';
+    case 'HS_250':
+      return 'High School ($250/yr)';
+    case 'COLLEGIATE_1200':
+      return 'Collegiate ($1,200/yr)';
+    case 'DISTRICT_2000':
+      return 'District Tier ($2,000/yr)';
+    default:
+      return String(planCode || '').replace(/_/g, ' ');
+  }
+}
+
+export function formatBillingStatusLabel(status: TeamBillingStatus | string): string {
+  switch (status) {
+    case 'PILOT':
+      return 'Founding Pilot';
+    case 'PO_ISSUED':
+      return 'Net-30 PO Issued';
+    case 'ACTIVE_PAID':
+      return 'Active Paid';
+    case 'RENEWAL_DUE':
+      return 'Renewal Due';
+    case 'PAST_DUE':
+      return 'Past Due';
+    default:
+      return String(status || '').replace(/_/g, ' ');
+  }
+}
+
 export async function fetchDistrictOverviewApi(districtName?: string): Promise<{
   ok: boolean;
   report: DistrictOverviewReport;
@@ -209,6 +258,7 @@ export function buildClientDistrictOverviewFromTeams(
     };
   });
 
+  const seenDistrictCommitKeys = new Set<string>();
   const totalsAcc = schools.reduce(
     (acc, s) => {
       acc.totalAthletes += s.totalAthletes;
@@ -230,7 +280,19 @@ export function buildClientDistrictOverviewFromTeams(
           s.billingStatus === 'RENEWAL_DUE' ||
           s.billingStatus === 'PAST_DUE')
       ) {
-        acc.totalAnnualCommittedUsd += PLAN_AMOUNT_USD[s.billingPlanCode] || 0;
+        if (s.billingPlanCode === 'DISTRICT_2000') {
+          const districtKey = (
+            s.districtName?.trim() ||
+            s.billingSchoolOrDistrictName?.trim() ||
+            s.teamId
+          ).toLowerCase();
+          if (!seenDistrictCommitKeys.has(districtKey)) {
+            seenDistrictCommitKeys.add(districtKey);
+            acc.totalAnnualCommittedUsd += PLAN_AMOUNT_USD.DISTRICT_2000;
+          }
+        } else {
+          acc.totalAnnualCommittedUsd += PLAN_AMOUNT_USD[s.billingPlanCode] || 0;
+        }
       }
       return acc;
     },
@@ -291,12 +353,12 @@ export function buildDistrictAdExecutiveSummaryHtml(report: DistrictOverviewRepo
   const schoolRowsHtml = report.schools
     .map(
       (s) => `<tr>
-        <td><strong>${escapeHtmlSafe(s.teamName)}</strong><br/><span class="muted">${escapeHtmlSafe(s.shortName)} · ${escapeHtmlSafe(s.orgType)}${s.districtName ? ` · ${escapeHtmlSafe(s.districtName)}` : ''}</span></td>
+        <td><strong>${escapeHtmlSafe(s.teamName)}</strong><br/><span class="muted">${escapeHtmlSafe(s.shortName)} · ${escapeHtmlSafe(formatOrgTypeLabel(s.orgType))}${s.districtName ? ` · ${escapeHtmlSafe(s.districtName)}` : ''}</span></td>
         <td class="num">${s.activeAthletes} / ${s.totalAthletes}<br/><span class="muted">${s.totalCoachesAndStaff} staff</span></td>
         <td class="num">${s.activeAtInjuries} AT · ${s.modifiedAttendanceToday} Mod</td>
         <td class="num">${s.safeSportRedFlags} Red / ${s.safeSportAmberFlags} Amber<br/><span class="muted">${s.guardianCcCompliancePct}% consent</span></td>
         <td class="num">${s.avgCaraHours7d}h avg (max ${s.maxCaraHours7d}h)</td>
-        <td>${escapeHtmlSafe(s.billingPlanCode)}<br/><span class="muted">${escapeHtmlSafe(s.billingStatus)}${s.poNumber ? ` · PO ${escapeHtmlSafe(s.poNumber)}` : ''}</span></td>
+        <td>${escapeHtmlSafe(formatBillingPlanLabel(s.billingPlanCode))}<br/><span class="muted">${escapeHtmlSafe(formatBillingStatusLabel(s.billingStatus))}${s.poNumber ? ` · PO ${escapeHtmlSafe(s.poNumber)}` : ''}</span></td>
       </tr>`
     )
     .join('\n');
@@ -378,7 +440,16 @@ export function openPrintableDistrictAdSummaryWindow(report: DistrictOverviewRep
   popup.document.open();
   popup.document.write(buildDistrictAdExecutiveSummaryHtml(report));
   popup.document.close();
-  popup.focus();
-  popup.print();
+  try {
+    popup.opener = null;
+  } catch {
+    // ignore read-only opener implementations
+  }
+  try {
+    popup.focus();
+    popup.print();
+  } catch {
+    // ignore focus/print errors in headless contexts
+  }
   return true;
 }

@@ -616,7 +616,7 @@ describe('Sprint 3B: Funnel Telemetry, Support Diagnostics & Commercialization P
           onClose: () => {},
           status: makeBaseStatus({
             wahooConnected: true,
-            wahooScope: 'user_read workouts_read workouts_write',
+            wahooScope: 'user_read workouts_read workouts_write plans_write',
           }),
           onConnectIntervals: async () => {},
           onDisconnectIntervals: async () => {},
@@ -783,7 +783,9 @@ describe('Sprint 3B: Funnel Telemetry, Support Diagnostics & Commercialization P
       expect(procurementHtml).not.toContain('$49/mo');
       expect(procurementHtml).not.toContain('Private Club');
       expect(procurementHtml).toContain('$250 / yr');
-      expect(procurementHtml).toContain('onclick="window.print()"');
+      expect(procurementHtml).not.toContain('onclick="window.print()"');
+      expect(procurementHtml).toContain('id="procurementPrintBtn"');
+      expect(procurementHtml).toContain("addEventListener('click'");
       expect(procurementHtml).toContain('Print Procurement Pack (PDF)');
       expect(procurementHtml).toContain('/api/analytics/event');
       expect(procurementHtml).toContain('landing_view');

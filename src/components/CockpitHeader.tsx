@@ -255,9 +255,9 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
   return (
     <header className="sticky top-0 z-40 w-full liquid-glass-header">
       <div className="ap-container py-1.5 sm:py-2">
-        <div className="flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2">
+        <div className="flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2 min-w-0">
           {/* 1. Brand Wordmark (Co-Branded when Team Active) + Multi-Team Switcher + Telemetry Sync Pill */}
-          <div className="flex items-center gap-1.5 2xl:gap-2.5 min-w-0 shrink">
+          <div className="flex items-center gap-1.5 xl:gap-2 shrink-0">
             <a
               href="#fitness"
               aria-label={
@@ -273,10 +273,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
             >
               {activeTeam?.brand ? (
                 <>
-                  <span className="inline-flex min-[410px]:hidden">
+                  <span className="inline-flex xl:hidden">
                     <AeroPulseLogo size="sm" mode="mark-only" teamBrand={activeTeam.brand} />
                   </span>
-                  <span className="hidden min-[410px]:inline-flex">
+                  <span className="hidden xl:inline-flex">
                     <AeroPulseLogo size="sm" teamBrand={activeTeam.brand} />
                   </span>
                 </>
@@ -324,8 +324,8 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 {activeTab === 'coach' ? (
                   <>
                     <ChevronLeft className="w-3.5 h-3.5" />
-                    <span className="sm:hidden">Exit</span>
-                    <span className="hidden sm:inline">My Training</span>
+                    <span className="lg:hidden">Exit</span>
+                    <span className="hidden lg:inline">My Training</span>
                   </>
                 ) : (
                   <>
@@ -423,7 +423,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           {/* 2. Center: 4-Pillar Athlete Nav (Today | Training Calendar | Progress | Plan Builder) OR Coach Mode 4 Tabs */}
           <nav
             aria-label="Primary workspaces"
-            className="hidden md:flex items-center gap-1 px-1 py-1 shrink-0"
+            className="hidden md:flex items-center justify-center gap-0.5 lg:gap-1 px-1 py-1 min-w-0"
           >
             {activeTab === 'coach' && onSelectCoachSubTab ? (
               (
@@ -443,7 +443,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     data-testid={`coach-subtab-${item.id.toLowerCase()}`}
                     aria-current={isActive ? 'page' : undefined}
                     onClick={() => onSelectCoachSubTab(item.id)}
-                    className={`min-h-[38px] inline-flex items-center px-2.5 lg:px-3 py-1 text-xs transition-all whitespace-nowrap shrink-0 cursor-pointer ap-track-tab ${
+                    className={`min-h-[38px] inline-flex items-center px-1.5 lg:px-2.5 xl:px-3 py-1 text-2xs lg:text-xs transition-all whitespace-nowrap shrink-0 cursor-pointer ap-track-tab ${
                       isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
                     }`}
                   >
@@ -501,7 +501,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                       e.preventDefault();
                       setActiveTab(item.id);
                     }}
-                    className={`min-h-[38px] inline-flex items-center px-2 2xl:px-3 py-1 text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
+                    className={`min-h-[38px] inline-flex items-center px-1.5 lg:px-2 2xl:px-3 py-1 text-2xs lg:text-xs transition-all whitespace-nowrap shrink-0 ap-track-tab ${
                       isActive ? 'ap-nav-volt-active' : 'ap-track-tab-idle'
                     }`}
                   >
@@ -521,7 +521,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           {/* Right: Live Floating Stopwatch Pill + Athlete Switcher + Data Sources + AI Coach + Theme + Account */}
           <div className="flex items-center gap-1 shrink-0">
             {activeTab !== 'stopwatch' && !(activeTab === 'coach' && coachSubTab === 'STOPWATCH') && (
-              <div className="hidden sm:inline-flex shrink-0">
+              <div className="hidden lg:inline-flex shrink-0">
                 <TracksideLiveHeaderPill
                   onOpenTracksidePad={() => {
                     if (activeTab === 'coach' && onSelectCoachSubTab) {
@@ -570,12 +570,12 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                 data-testid="open-team-messages-btn"
                 onClick={onOpenTeamMessages}
                 aria-label="Open Team Messaging"
-                className="relative min-h-[44px] w-[44px] sm:w-auto sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 py-1 sm:px-3 rounded-lg ap-btn-secondary text-xs font-semibold whitespace-nowrap cursor-pointer shrink-0"
+                className="relative min-h-[44px] w-[44px] lg:w-auto sm:min-h-[36px] inline-flex items-center justify-center gap-1.5 py-1 lg:px-2.5 xl:px-3 rounded-lg ap-btn-secondary text-xs font-semibold whitespace-nowrap cursor-pointer shrink-0"
               >
                 <MessageSquare className="w-4 h-4 sm:w-3.5 sm:h-3.5 ap-text-brand" />
-                <span className="hidden sm:inline">Team Chat</span>
+                <span className="hidden lg:inline">Team Chat</span>
                 {(activeTeam.teamMessages?.length || 0) > 0 && (
-                  <span className="hidden sm:inline px-1.5 py-0.2 rounded-full text-2xs font-mono font-bold bg-[#EDE9DF] text-[#121413] dark:bg-[#242826] dark:text-[#D8FF2A]">
+                  <span className="hidden lg:inline px-1.5 py-0.5 rounded-full text-2xs font-mono font-bold bg-[#EDE9DF] text-[#121413] dark:bg-[#242826] dark:text-[#D8FF2A]">
                     {activeTeam.teamMessages!.length}
                   </span>
                 )}
@@ -587,10 +587,10 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
               type="button"
               onClick={onOpenCoach}
               aria-label="Open AI Coach"
-              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] sm:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2.5 2xl:px-3.5 rounded-lg bg-[#121413] hover:bg-[#242826] text-[#F6F3EC] dark:bg-[#1A1D1B] dark:hover:bg-[#242826] dark:text-[#D8FF2A] border border-[#121413] dark:border-white/25 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
+              className="min-h-[44px] sm:min-h-[36px] min-w-[44px] lg:min-w-0 inline-flex items-center justify-center gap-1.5 py-1 px-2 lg:px-2.5 2xl:px-3.5 rounded-lg bg-[#121413] hover:bg-[#242826] text-[#F6F3EC] dark:bg-[#1A1D1B] dark:hover:bg-[#242826] dark:text-[#D8FF2A] border border-[#121413] dark:border-white/25 text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer"
             >
               <Bot className="w-4 h-4 sm:w-3.5 sm:h-3.5" weight="fill" />
-              <span className="hidden sm:inline">AI Coach</span>
+              <span className="hidden lg:inline">AI Coach</span>
             </button>
 
             {/* 1-Click Theme Toggle */}
@@ -631,7 +631,7 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
                     {primaryAthleteInitials}
                   </span>
                 )}
-                <span className="hidden xl:inline max-w-[90px] truncate">
+                <span className="hidden 2xl:inline max-w-[90px] truncate">
                   {currentUser?.name || primaryAthleteDisplayName}
                 </span>
                 <ChevronDown
@@ -1006,15 +1006,15 @@ export const CockpitHeader: React.FC<CockpitHeaderProps> = ({
           </div>
         </div>
 
-        {/* Mobile & Compact (< xl) Context Strip: suppressed in live stopwatch timing to preserve viewport */}
+        {/* Mobile (< md) Context Strip: strictly hidden on >= md/lg and during live stopwatch timing */}
         {activeTab !== 'stopwatch' &&
           !(activeTab === 'coach' && coachSubTab === 'STOPWATCH') &&
           ((activeTab !== 'coach' && hasActiveStopwatchPill) ||
             myTeams.length > 0 ||
             activeViewedAthleteId !== 'SELF') && (
-          <div className="xl:hidden mt-2 pt-2 border-t border-ap-frame/15 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          <div className="md:hidden mt-2 pt-2 border-t border-ap-frame/15 dark:border-white/10 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {activeTab !== 'coach' && (
-              <div className="sm:hidden shrink-0">
+              <div className="shrink-0">
                 <TracksideLiveHeaderPill
                   onOpenTracksidePad={() => setActiveTab('stopwatch')}
                   showIdleLauncher={false}

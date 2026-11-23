@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Check,
   Copy,
+  Download,
   ExternalLink,
   Lock,
   MessageSquare,
@@ -29,6 +30,12 @@ import {
   updateMemberRoleApi,
   updateMemberStatusApi,
 } from '../../utils/teamLifecycleApi';
+
+function sanitizeCsvCell(raw: unknown): string {
+  const text = String(raw ?? '').replace(/[\r\n]+/g, ' ').trim();
+  const guarded = /^[=+\-@\t]/.test(text) ? `'${text}` : text;
+  return `"${guarded.replace(/"/g, '""')}"`;
+}
 
 export interface TeamRosterAndAuditSectionProps {
   activeTeam: TeamSummaryWithRole;
@@ -93,7 +100,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
 
   const handleCopyParentConsentLink = async (membershipId: string) => {
     if (!activeTeam) return;
-    if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo-team-')) {
+    if (isDemoTeam) {
       onCopyText(
         `parent-${membershipId}`,
         `${originUrl}/api/teams/parent-consent?token=demo-${membershipId}`
@@ -289,6 +296,59 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
     .map((m) => m.graduationYear as number);
   const targetGradYear = gradYears.length > 0 ? Math.min(...gradYears) : null;
 
+  const handleExportRosterCsv = () => {
+    const header = [
+      'Name',
+      'Role',
+      'SquadGroup',
+      'EventGroup',
+      'Status',
+      'Email',
+      'GradYear',
+      'SeedMark',
+      'ParentConsent',
+      'Verdict',
+      'CTL',
+      'TSB',
+    ].join(',');
+    const rows = filteredMemberships.map((m) =>
+      [
+        sanitizeCsvCell(m.invitedName),
+        sanitizeCsvCell(m.role),
+        sanitizeCsvCell(m.squadGroup),
+        sanitizeCsvCell(m.eventGroup || ''),
+        sanitizeCsvCell(m.status),
+        sanitizeCsvCell(m.invitedEmail || ''),
+        sanitizeCsvCell(m.graduationYear ?? ''),
+        sanitizeCsvCell(m.seedMarkOrFtp || ''),
+        sanitizeCsvCell(m.isMinorU18 ? m.parentConsentStatus || 'PENDING' : 'NOT_REQUIRED'),
+        sanitizeCsvCell(m.liveSnapshot?.verdictLabel || ''),
+        sanitizeCsvCell(
+          typeof m.liveSnapshot?.ctl === 'number' ? Math.round(m.liveSnapshot.ctl) : ''
+        ),
+        sanitizeCsvCell(
+          typeof m.liveSnapshot?.tsb === 'number' ? Math.round(m.liveSnapshot.tsb) : ''
+        ),
+      ].join(',')
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${activeTeam.brand.slug || 'team'}-roster.csv`;
+    document.body?.appendChild(a);
+    a.click();
+    a.remove();
+    window.setTimeout(() => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {
+        // ignore revoke failures
+      }
+    }, 1000);
+  };
+
   return (
     <div className="rounded-2xl liquid-glass border border-stone-200/90 dark:border-white/10 overflow-hidden">
       <div className="px-5 py-3 border-b border-stone-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2">
@@ -304,7 +364,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
               type="button"
               data-testid="roster-awaiting-parent-pill"
               onClick={() => setRosterAwaitingParentOnly((prev) => !prev)}
-              className={`px-2 py-0.5 rounded-full text-2xs font-mono font-bold cursor-pointer ${
+              className={`min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-full text-2xs font-mono font-bold cursor-pointer ${
                 rosterAwaitingParentOnly ? 'ap-nav-volt-active' : 'ap-status-caution'
               }`}
             >
@@ -314,6 +374,17 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {isActiveTeamCoach && filteredMemberships.length > 0 && (
+            <button
+              type="button"
+              data-testid="roster-export-csv-btn"
+              onClick={handleExportRosterCsv}
+              className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5 ap-text-brand" />
+              <span>Export Roster CSV</span>
+            </button>
+          )}
           {canManageGovernance && (
             <button
               type="button"
@@ -413,13 +484,13 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
           value={rosterSearchQuery}
           onChange={(e) => setRosterSearchQuery(e.target.value)}
           placeholder="Search roster..."
-          className="flex-1 min-w-[170px] min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 text-xs text-slate-900 dark:text-slate-100"
+          className="flex-1 min-w-[170px] min-h-[44px] sm:min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-3 text-xs text-slate-900 dark:text-slate-100"
         />
         <select
           aria-label="Filter roster by event group"
           value={rosterEventFilter}
           onChange={(e) => setRosterEventFilter(e.target.value)}
-          className="min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 text-xs font-mono text-slate-800 dark:text-slate-100"
+          className="min-h-[44px] sm:min-h-[38px] rounded-xl border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2.5 text-xs font-mono text-slate-800 dark:text-slate-100"
         >
           <option value="ALL">All Events</option>
           {COACH_EVENT_GROUP_OPTIONS.map((opt) => (
@@ -432,7 +503,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
           type="button"
           aria-pressed={rosterAwaitingParentOnly}
           onClick={() => setRosterAwaitingParentOnly((prev) => !prev)}
-          className={`min-h-[38px] px-3 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
+          className={`min-h-[44px] sm:min-h-[38px] px-3 rounded-xl text-xs font-mono font-semibold cursor-pointer ${
             rosterAwaitingParentOnly
               ? 'ap-nav-volt-active'
               : 'ap-card-inset text-slate-700 dark:text-slate-200'
@@ -443,7 +514,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-left text-xs border-collapse">
+        <table className="w-full min-w-[680px] text-left text-xs border-collapse">
           <thead className="bg-stone-100 dark:bg-ap-carbon text-2xs font-mono uppercase text-slate-500">
             <tr>
               <th className="py-2.5 px-4">Member</th>
@@ -497,7 +568,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                       <span>{m.invitedName}</span>
                       {m.isMinorU18 && (
                         <span
-                          className="px-1.5 py-0.2 rounded text-2xs font-mono ap-status-prime"
+                          className="px-1.5 py-0.5 rounded text-2xs font-mono ap-status-prime"
                           title="Safe-Sport Weight Shield Active"
                         >
                           Safe-Sport
@@ -505,7 +576,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                       )}
                       {m.role === 'ATHLETE' && m.isMinorU18 && (
                         <span
-                          className={`px-1.5 py-0.2 rounded text-2xs font-mono ${
+                          className={`px-1.5 py-0.5 rounded text-2xs font-mono ${
                             m.parentConsentStatus === 'ACKNOWLEDGED'
                               ? 'ap-status-prime'
                               : 'ap-status-caution'
@@ -571,7 +642,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                                 )
                               );
                             }}
-                            className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                            className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                           >
                             <option value="ATHLETE">Athlete</option>
                             <option value="ASSISTANT_COACH">Assistant Coach</option>
@@ -582,7 +653,22 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                             <button
                               type="button"
                               disabled={isRowBusy}
-                              onClick={() =>
+                              onClick={() => {
+                                if (isDemoTeam) {
+                                  applyUpdatedTeamSummary({
+                                    ...activeTeam,
+                                    memberships: activeTeam.memberships.map((mem) =>
+                                      mem.membershipId === m.membershipId
+                                        ? { ...mem, role: 'HEAD_COACH' }
+                                        : mem
+                                    ),
+                                  });
+                                  onBannerMessage({
+                                    tone: 'success',
+                                    text: `Promoted ${m.invitedName} to Co-Head Coach in demo mode.`,
+                                  });
+                                  return;
+                                }
                                 void runMemberMutation(
                                   m.membershipId,
                                   () =>
@@ -592,9 +678,9 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                                       originUrl
                                     ),
                                   'Head Coach ownership transferred successfully.'
-                                )
-                              }
-                              className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 text-2xs font-mono cursor-pointer disabled:opacity-50"
+                                );
+                              }}
+                              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 text-2xs font-mono cursor-pointer disabled:opacity-50"
                             >
                               Make Head Coach
                             </button>
@@ -614,6 +700,24 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                               onClick={() => {
                                 const curr = m.coachEventGroups || [];
                                 const next = active ? curr.filter((g) => g !== opt.id) : [...curr, opt.id];
+                                if (isDemoTeam) {
+                                  applyUpdatedTeamSummary({
+                                    ...activeTeam,
+                                    memberships: activeTeam.memberships.map((mem) =>
+                                      mem.membershipId === m.membershipId
+                                        ? {
+                                            ...mem,
+                                            coachEventGroups: next.length > 0 ? next : undefined,
+                                          }
+                                        : mem
+                                    ),
+                                  });
+                                  onBannerMessage({
+                                    tone: 'success',
+                                    text: `Updated coached event groups for ${m.invitedName}.`,
+                                  });
+                                  return;
+                                }
                                 void runMemberMutation(
                                   m.membershipId,
                                   () =>
@@ -625,7 +729,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                                   `Updated coached event groups for ${m.invitedName}.`
                                 );
                               }}
-                              className={`px-1.5 py-0.5 rounded text-2xs font-mono cursor-pointer ${
+                              className={`min-h-[44px] sm:min-h-[28px] px-2 py-0.5 rounded text-2xs font-mono cursor-pointer ${
                                 active ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian font-bold' : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
                               }`}
                             >
@@ -641,6 +745,17 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                         value={m.eventGroup || ''}
                         onChange={async (e) => {
                           const val = (e.target.value || null) as CoachEventGroup | null;
+                          if (isDemoTeam) {
+                            applyUpdatedTeamSummary({
+                              ...activeTeam,
+                              memberships: activeTeam.memberships.map((mem) =>
+                                mem.membershipId === m.membershipId
+                                  ? { ...mem, eventGroup: val ?? undefined }
+                                  : mem
+                              ),
+                            });
+                            return;
+                          }
                           try {
                             const res = await fetch(
                               `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/members/${encodeURIComponent(m.membershipId)}/event-group`,
@@ -665,7 +780,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                             // ignore offline event-group change error
                           }
                         }}
-                        className="mt-1 min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                        className="mt-1 min-h-[44px] sm:min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                       >
                         <option value="">All Events</option>
                         {COACH_EVENT_GROUP_OPTIONS.map((opt) => (
@@ -711,9 +826,19 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                         <select
                           aria-label={`Status for ${m.invitedName}`}
                           disabled={isRowBusy}
-                          value={m.status}
+                          value={
+                            m.status === 'INVITED' || m.status === 'OPENED'
+                              ? ''
+                              : m.status
+                          }
                           onChange={(e) => {
-                            const nextStatus = e.target.value as typeof m.status;
+                            const nextStatus = e.target.value as
+                              | 'ACTIVE'
+                              | 'INJURED'
+                              | 'OFF_SEASON'
+                              | 'ALUMNI'
+                              | 'REVOKED';
+                            if (!nextStatus) return;
                             if (isDemoTeam) {
                               applyUpdatedTeamSummary({
                                 ...activeTeam,
@@ -734,10 +859,14 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                               )
                             );
                           }}
-                          className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
+                          className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-800 dark:text-slate-100"
                         >
+                          {(m.status === 'INVITED' || m.status === 'OPENED') && (
+                            <option value="" disabled>
+                              {m.status === 'OPENED' ? 'Link Opened' : 'Invited (Pending)'}
+                            </option>
+                          )}
                           <option value="ACTIVE">Joined</option>
-                          <option value="INVITED">Invited</option>
                           <option value="INJURED">Injured</option>
                           <option value="OFF_SEASON">Off-Season</option>
                           <option value="ALUMNI">Alumni</option>
@@ -775,7 +904,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                           onClick={() =>
                             onCopyText(m.membershipId, joinLink)
                           }
-                          className="px-2 py-1 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300 text-2xs font-mono inline-flex items-center gap-1 cursor-pointer"
+                          className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300 text-2xs font-mono inline-flex items-center gap-1 cursor-pointer"
                         >
                           {copiedId === m.membershipId ? (
                             <>
@@ -795,7 +924,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                             type="button"
                             disabled={copyingParentLinkId === m.membershipId}
                             onClick={() => void handleCopyParentConsentLink(m.membershipId)}
-                            className="px-2 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-2xs font-mono inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border border-amber-500/30 text-2xs font-mono inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
                           >
                             <ShieldCheck className="w-3 h-3" />
                             <span>
@@ -811,7 +940,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                         {allowDirectSms && smsHref && (
                           <a
                             href={smsHref}
-                            className="px-2 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-2xs font-mono inline-flex items-center gap-1"
+                            className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-800 dark:text-emerald-300 border border-emerald-500/30 text-2xs font-mono inline-flex items-center gap-1"
                             title="Open native Messages / SMS pre-filled with Magic Join Link"
                           >
                             <MessageSquare className="w-3 h-3" />
@@ -824,7 +953,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                             <button
                               type="button"
                               onClick={() => handleResendPending(m.membershipId)}
-                              className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono cursor-pointer"
+                              className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono cursor-pointer"
                             >
                               Nudge
                             </button>
@@ -832,7 +961,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                             mailtoHref && (
                               <a
                                 href={mailtoHref}
-                                className="px-2 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono inline-flex items-center gap-1"
+                                className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg bg-blue-500/15 hover:bg-blue-500/25 text-blue-700 dark:text-sky-300 border border-blue-500/30 text-2xs font-mono inline-flex items-center gap-1"
                               >
                                 <ExternalLink className="w-3 h-3" />
                                 <span>Email</span>
@@ -862,7 +991,7 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                                   e.target.value = '';
                                 }
                               }}
-                              className="min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-700 dark:text-slate-200"
+                              className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-ap-turf px-2 py-0.5 text-2xs font-mono text-slate-700 dark:text-slate-200"
                             >
                               <option value="">Merge into…</option>
                               {activeMergeTargets.map((target) => (
