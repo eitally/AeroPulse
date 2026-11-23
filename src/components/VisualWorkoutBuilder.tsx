@@ -1,7 +1,9 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Activity,
+  AlertTriangle,
   Bike,
+  Check,
   ChevronDown,
   Download,
   Dumbbell,
@@ -20,9 +22,11 @@ import type {
   PlannedWorkoutEvent,
   PracticeVenueCategory,
   SportCategory,
+  TeamSummaryWithRole,
   TrackWorkoutSpec,
   WorkoutSessionSlot,
 } from '../types';
+import { useTeamCoach, type TeamCoachContextValue } from '../contexts/TeamCoachContext';
 import {
   DEFAULT_PRACTICE_VENUE_PRESETS,
   formatPracticeTime12h,
@@ -98,6 +102,7 @@ export interface VisualWorkoutBuilderProps {
   athleteFtp?: number;
   distanceUnit: DistanceUnit;
   initialEvent?: PlannedWorkoutEvent | null;
+  activeTeam?: TeamSummaryWithRole | null;
   submitLabel?: string;
   compact?: boolean;
   onSave: (payload: VisualWorkoutSavePayload) => Promise<void> | void;
@@ -404,6 +409,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
   athleteFtp = 250,
   distanceUnit,
   initialEvent,
+  activeTeam: activeTeamProp,
   submitLabel,
   compact = false,
   onSave,
@@ -411,6 +417,14 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
   onOpenTracksideStopwatch,
 }) => {
   const formId = useId();
+  const exportDetailsRef = useRef<HTMLDetailsElement | null>(null);
+  let teamCtx: TeamCoachContextValue | null = null;
+  try {
+    teamCtx = useTeamCoach();
+  } catch {
+    teamCtx = null;
+  }
+  const effectiveActiveTeam = activeTeamProp ?? teamCtx?.activeTeam ?? null;
   const safeFtp = Math.max(80, Math.round(athleteProfile?.ftp || athleteFtp || 250));
   const safeThresholdPace = Math.max(95, athleteProfile?.thresholdPaceSecsPerKm || 250);
   const safeLthr = Math.max(110, athleteProfile?.runLthr || athleteProfile?.lthr || 170);
@@ -456,7 +470,10 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
   const [rawSyntaxOverride, setRawSyntaxOverride] = useState<string | null>(
     initialEvent?.workoutSyntax || null
   );
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<{
+    text: string;
+    tone: 'ok' | 'warn';
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Re-hydrate cleanly when switching into editing another existing event or date
@@ -567,7 +584,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
     const hydrated = hydrateBlocksFromSyntax(clean, targetSport, safeThresholdPace);
     if (!hydrated || (hydrated.sets.length === 0 && !hydrated.warmup.enabled && !hydrated.cooldown.enabled)) {
       setRawSyntaxOverride(clean);
-      setStatusMessage('Loaded raw text into Advanced Syntax.');
+      setStatusMessage({ text: 'Loaded raw text into Advanced Syntax.', tone: 'ok' });
       return;
     }
     setWarmup(hydrated.warmup);
@@ -581,7 +598,10 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
         .join(' + ');
       setBuilderName(autoTitle);
     }
-    setStatusMessage(`Parsed ${hydrated.sets.length} block${hydrated.sets.length === 1 ? '' : 's'} into visual editor.`);
+    setStatusMessage({
+      text: `Parsed ${hydrated.sets.length} block${hydrated.sets.length === 1 ? '' : 's'} into visual editor.`,
+      tone: 'ok',
+    });
   };
 
   const sportPresets = useMemo(() => {
@@ -685,7 +705,14 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
     }
   };
 
+  const closeExportDetails = () => {
+    if (exportDetailsRef.current) {
+      exportDetailsRef.current.open = false;
+    }
+  };
+
   const handleExportFitClick = () => {
+    closeExportDetails();
     exportWorkoutAsFit({
       name: builderName,
       sport: builderSport,
@@ -695,10 +722,11 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       thresholdPaceSecsPerKm: safeThresholdPace,
       dateIso: builderDate,
     });
-    setStatusMessage('Downloaded Garmin .FIT workout file.');
+    setStatusMessage({ text: 'Downloaded Garmin .FIT workout file.', tone: 'ok' });
   };
 
   const handleExportZwoClick = () => {
+    closeExportDetails();
     exportWorkoutAsZwo({
       name: builderName,
       sport: builderSport,
@@ -708,10 +736,11 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       thresholdPaceSecsPerKm: safeThresholdPace,
       dateIso: builderDate,
     });
-    setStatusMessage('Downloaded Zwift .ZWO workout file.');
+    setStatusMessage({ text: 'Downloaded Zwift .ZWO workout file.', tone: 'ok' });
   };
 
   const handleExportErgClick = () => {
+    closeExportDetails();
     exportWorkoutAsErg({
       name: builderName,
       sport: builderSport,
@@ -720,10 +749,11 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       thresholdPaceSecsPerKm: safeThresholdPace,
       dateIso: builderDate,
     });
-    setStatusMessage(`Downloaded .ERG file calibrated to ${safeFtp}W FTP.`);
+    setStatusMessage({ text: `Downloaded .ERG file calibrated to ${safeFtp}W FTP.`, tone: 'ok' });
   };
 
   const handleShareWorkoutClick = () => {
+    closeExportDetails();
     openShareWorkoutRoute({
       kind: 'WORKOUT',
       version: 1,
@@ -741,6 +771,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
   };
 
   const handlePushGarminClick = async () => {
+    closeExportDetails();
     const res = await pushWorkoutDirectToGarmin({
       name: builderName,
       sport: builderSport,
@@ -751,10 +782,11 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       thresholdPaceSecsPerKm: safeThresholdPace,
       dateIso: builderDate,
     });
-    setStatusMessage(res.message);
+    setStatusMessage({ text: res.message, tone: res.pushed ? 'ok' : 'warn' });
   };
 
   const handlePushCorosClick = async () => {
+    closeExportDetails();
     const res = await pushWorkoutToCoros({
       name: builderName,
       sport: builderSport,
@@ -765,10 +797,11 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       thresholdPaceSecsPerKm: safeThresholdPace,
       dateIso: builderDate,
     });
-    setStatusMessage(res.message);
+    setStatusMessage({ text: res.message, tone: res.pushed ? 'ok' : 'warn' });
   };
 
   const handlePushWahooClick = async () => {
+    closeExportDetails();
     const res = await pushWorkoutToWahoo({
       name: builderName,
       sport: builderSport,
@@ -779,10 +812,11 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       thresholdPaceSecsPerKm: safeThresholdPace,
       dateIso: builderDate,
     });
-    setStatusMessage(res.message);
+    setStatusMessage({ text: res.message, tone: res.pushed ? 'ok' : 'warn' });
   };
 
   const handlePushIntervalsBridgeClick = async () => {
+    closeExportDetails();
     const res = await pushWorkoutToIntervalsBridge({
       name: builderName,
       sport: builderSport,
@@ -793,7 +827,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       thresholdPaceSecsPerKm: safeThresholdPace,
       dateIso: builderDate,
     });
-    setStatusMessage(res.message);
+    setStatusMessage({ text: res.message, tone: res.pushed ? 'ok' : 'warn' });
   };
 
   const handleOpenStopwatchClick = () => {
@@ -1041,6 +1075,59 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             </button>
           ))}
         </div>
+
+        {(effectiveActiveTeam?.workoutLibrary?.length ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center gap-2 pt-1.5 border-t border-stone-200/70 dark:border-white/10">
+            <label
+              htmlFor={`${formId}-team-library`}
+              className="text-2xs font-mono text-slate-600 dark:text-slate-300 shrink-0"
+            >
+              Team Library:
+            </label>
+            <select
+              id={`${formId}-team-library`}
+              data-testid="visual-builder-team-library-select"
+              defaultValue=""
+              onChange={(e) => {
+                const tpl = effectiveActiveTeam?.workoutLibrary?.find(
+                  (item) => item.id === e.target.value
+                );
+                if (!tpl) return;
+                const targetSport = tpl.sportCategory || builderSport;
+                setBuilderSport(targetSport);
+                setBuilderName(tpl.name);
+                if (tpl.description) setNotes(tpl.description);
+                const hydrated = hydrateBlocksFromSyntax(
+                  tpl.workoutSyntax,
+                  targetSport,
+                  safeThresholdPace
+                );
+                if (hydrated) {
+                  setWarmup(hydrated.warmup);
+                  setSets(hydrated.sets);
+                  setCooldown(hydrated.cooldown);
+                  setIsTrackOvalMode(hydrated.hasTrackDistances && targetSport === 'Running');
+                  setRawSyntaxOverride(null);
+                } else {
+                  setRawSyntaxOverride(tpl.workoutSyntax);
+                }
+                setStatusMessage({
+                  text: `Loaded "${tpl.name}" from Team Library.`,
+                  tone: 'ok',
+                });
+                e.target.value = '';
+              }}
+              className="flex-1 min-w-[180px] min-h-[44px] sm:min-h-[34px] rounded-lg border border-stone-200 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 text-2xs font-semibold text-slate-800 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="">Load from Team Library…</option>
+              {effectiveActiveTeam!.workoutLibrary!.map((tpl) => (
+                <option key={tpl.id} value={tpl.id}>
+                  {tpl.name} ({tpl.category})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="flex flex-col sm:flex-row gap-2">
           <input
@@ -1530,10 +1617,13 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   setSets(hydrated.sets);
                   setCooldown(hydrated.cooldown);
                   setRawSyntaxOverride(null);
-                  setStatusMessage('Synced raw syntax back into visual blocks.');
+                  setStatusMessage({
+                    text: 'Synced raw syntax back into visual blocks.',
+                    tone: 'ok',
+                  });
                 }
               }}
-              className="min-h-[36px] px-3 py-1 rounded-lg ap-btn-secondary text-2xs font-semibold cursor-pointer"
+              className="min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-lg ap-btn-secondary text-2xs font-semibold cursor-pointer"
             >
               Sync Text → Visual Blocks
             </button>
@@ -1559,15 +1649,26 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       </div>
 
       {statusMessage && (
-        <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300 font-medium">
-          {statusMessage}
+        <div
+          role="status"
+          data-testid="visual-builder-status-banner"
+          className={`rounded-lg px-3 py-2 text-xs font-medium flex items-center gap-2 ${
+            statusMessage.tone === 'warn' ? 'ap-status-caution' : 'ap-status-prime'
+          }`}
+        >
+          {statusMessage.tone === 'warn' ? (
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+          ) : (
+            <Check className="w-4 h-4 shrink-0" />
+          )}
+          <span>{statusMessage.text}</span>
         </div>
       )}
 
       {/* Footer Actions: Export Menu (.FIT / .ZWO / .ERG / Garmin Push / Share) + Stopwatch + Save */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
         <div className="flex flex-wrap items-center gap-1.5">
-          <details className="relative">
+          <details ref={exportDetailsRef} className="relative">
             <summary className="list-none min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-semibold inline-flex items-center gap-1.5 cursor-pointer select-none">
               <Download className="w-3.5 h-3.5" />
               <span>Export / Push ▾</span>

@@ -1,7 +1,17 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { computeStravaActivityLoadV2, STRAVA_LOAD_MODEL_VERSION } from '../physiology/stravaLoadCalibration';
 import { formatLocalWallClockIso } from '../utils/stopwatchActivitySynthesizer';
-import type { AthleteProfile, DistanceUnit, TrackFootwearClass, UnifiedActivity } from '../types';
+import {
+  useTelemetryWorkspace,
+  type TelemetryWorkspaceContextValue,
+} from '../contexts/TelemetryWorkspaceContext';
+import type {
+  AthleteGearItem,
+  AthleteProfile,
+  DistanceUnit,
+  TrackFootwearClass,
+  UnifiedActivity,
+} from '../types';
 import { CheckCircle2, Plus, Timer } from './icons/PhosphorIcons';
 
 interface QuickRunLoggerCardProps {
@@ -9,6 +19,7 @@ interface QuickRunLoggerCardProps {
   athleteProfile: AthleteProfile;
   onSaveRun: (activity: UnifiedActivity) => void;
   compact?: boolean;
+  gearItems?: AthleteGearItem[];
 }
 
 const FOOTWEAR_OPTIONS: Array<{ id: TrackFootwearClass; label: string }> = [
@@ -22,15 +33,39 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
   athleteProfile,
   onSaveRun,
   compact = false,
+  gearItems: gearItemsProp,
 }) => {
   const formId = useId();
+  let wsCtx: TelemetryWorkspaceContextValue | null = null;
+  try {
+    wsCtx = useTelemetryWorkspace();
+  } catch {
+    wsCtx = null;
+  }
+  const effectiveGearItems = gearItemsProp ?? wsCtx?.effectiveGearItems ?? [];
+  const activeShoes = useMemo(
+    () => effectiveGearItems.filter((g) => g.type === 'SHOE' && !g.retired),
+    [effectiveGearItems]
+  );
+  const defaultShoeId = useMemo(
+    () => activeShoes.find((g) => g.primary)?.id || activeShoes[0]?.id || '',
+    [activeShoes]
+  );
+
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState('Easy Run');
   const [distanceInput, setDistanceInput] = useState(distanceUnit === 'mi' ? '4.0' : '6.5');
   const [durationMinsInput, setDurationMinsInput] = useState('32');
   const [rpe, setRpe] = useState(5);
   const [footwearClass, setFootwearClass] = useState<TrackFootwearClass>('DAILY_TRAINER');
+  const [selectedGearId, setSelectedGearId] = useState<string>(defaultShoeId);
   const [savedToast, setSavedToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedGearId && defaultShoeId) {
+      setSelectedGearId(defaultShoeId);
+    }
+  }, [defaultShoeId, selectedGearId]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +98,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
 
     const speedMPerMin = movingTimeSecs > 0 ? (distanceMeters / movingTimeSecs) * 60 : 200;
     const estEf = Number((speedMPerMin / Math.max(100, estAvgHr)).toFixed(2));
+    const selectedShoe = activeShoes.find((g) => g.id === selectedGearId) || null;
     const startDateLocal = formatLocalWallClockIso();
     const activity: UnifiedActivity = {
       id: `manual-run-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -86,6 +122,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
       secondHalfEf: estEf,
       zoneSecs: { hr: [0, movingTimeSecs, 0, 0, 0, 0, 0] },
       footwearClass,
+      ...(selectedShoe ? { gearId: selectedShoe.id, gearName: selectedShoe.name } : {}),
       stravaPrCount: 0,
       segmentEfforts: [],
       sourceBadges: [],
@@ -93,6 +130,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
         rpe,
         feelRating: rpe >= 8 ? 'HEAVY' : rpe <= 4 ? 'STRONG' : 'NORMAL',
         footwearClass,
+        ...(selectedShoe ? { gearId: selectedShoe.id, gearName: selectedShoe.name } : {}),
         notes: 'Logged via watchless Quick Run entry',
         loggedAt: new Date().toISOString(),
       },
@@ -209,12 +247,36 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
 
       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
         <div className="flex flex-wrap items-center gap-1.5">
+          {activeShoes.length > 0 && (
+            <select
+              data-testid="quick-log-shoe-select"
+              aria-label="Shoe or spike used"
+              value={selectedGearId}
+              onChange={(e) => {
+                const nextId = e.target.value;
+                setSelectedGearId(nextId);
+                const chosen = activeShoes.find((g) => g.id === nextId);
+                if (chosen?.footwearClass) {
+                  setFootwearClass(chosen.footwearClass);
+                }
+              }}
+              className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-2xs font-semibold text-slate-800 dark:text-slate-100 cursor-pointer"
+            >
+              <option value="">Shoe Closet (Optional)</option>
+              {activeShoes.map((shoe) => (
+                <option key={shoe.id} value={shoe.id}>
+                  {shoe.name}
+                  {shoe.primary ? ' (Primary)' : ''}
+                </option>
+              ))}
+            </select>
+          )}
           {FOOTWEAR_OPTIONS.map((fw) => (
             <button
               key={fw.id}
               type="button"
               onClick={() => setFootwearClass(fw.id)}
-              className={`min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-semibold cursor-pointer ${
+              className={`min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-2xs font-semibold cursor-pointer ${
                 footwearClass === fw.id
                   ? 'ap-nav-volt-active'
                   : 'bg-white dark:bg-ap-carbon border border-stone-300 dark:border-ap-edge-dark text-slate-700 dark:text-slate-300'

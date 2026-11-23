@@ -653,13 +653,29 @@ export default function App() {
       setBillingNotice({ tone: 'info', text: 'Stripe checkout cancelled — your Net-30 PO and current team plan remain unchanged.' });
       return;
     }
-    setBillingNotice({ tone: 'success', text: 'Annual program billing activated via Stripe. Refreshing your team plan status…' });
-    if (!isSampleDemoMode) {
+    setBillingNotice({ tone: 'success', text: 'Stripe checkout completed — verifying annual plan activation…' });
+    if (isSampleDemoMode) return;
+    let cancelled = false;
+    let timerId: number | null = null;
+    const pollBilling = (attempt: number) => {
       fetch(`/api/teams/mine?origin=${encodeURIComponent(window.location.origin)}`, { credentials: 'include' })
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (Array.isArray(d?.teams)) setMyTeams(d.teams); })
-        .catch(() => null);
-    }
+        .then((d: { teams?: TeamSummaryWithRole[] } | null) => {
+          if (cancelled) return;
+          const teams = Array.isArray(d?.teams) ? d.teams : [];
+          if (teams.length > 0) setMyTeams(teams);
+          if (teams.some((t) => t.billing?.status === 'ACTIVE_PAID')) {
+            setBillingNotice({ tone: 'success', text: 'Annual program billing activated (Active Paid).' });
+          } else if (attempt < 3) {
+            timerId = window.setTimeout(() => pollBilling(attempt + 1), 2000);
+          } else {
+            setBillingNotice({ tone: 'info', text: 'Stripe return received — plan activation is still finalizing. Refresh shortly if still Pilot.' });
+          }
+        })
+        .catch(() => { if (!cancelled && attempt < 3) timerId = window.setTimeout(() => pollBilling(attempt + 1), 2000); });
+    };
+    pollBilling(1);
+    return () => { cancelled = true; if (timerId !== null) window.clearTimeout(timerId); };
   }, [initialIsSampleQuery, isSampleDemoMode, setMyTeams]);
 
   const effectiveTeams = isSampleDemoMode ? sampleDemoTeams : myTeams;
@@ -935,6 +951,7 @@ export default function App() {
     athleteProfileRef,
     redactedStravaCountRef,
     sampleDemoProfile,
+    sampleDemoActivities,
     setActivities,
     setWellnessDays,
     setGearItems,

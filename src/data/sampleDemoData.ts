@@ -9,7 +9,9 @@ import type {
   SessionCheckInRecord,
   TargetGoal,
   TeamAnnouncementRecord,
+  TeamAttendanceRecord,
   TeamBroadcastWorkout,
+  TeamInjuryCaseRecord,
   TeamMembershipRecord,
   TeamMessageRecord,
   TeamMessagingPolicy,
@@ -781,7 +783,7 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
       seedMarkOrFtp: `${spec.raceEventLabel} ${spec.displayFatTime}`,
       externalSource: 'ATHLETIC_NET',
       externalAthleteId: `anet-wg-${spec.idNum}`,
-      status: 'ACTIVE',
+      status: spec.painFlag ? 'INJURED' : 'ACTIVE',
       invitedAt: `${shiftDateIso(todayIso, -40)}T09:00:00Z`,
       joinedAt: `${shiftDateIso(todayIso, -38)}T16:10:00Z`,
       sharingTier: 'SUMMARY_ONLY',
@@ -1210,6 +1212,62 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
     },
   ];
 
+  const injuryCases: TeamInjuryCaseRecord[] = [
+    {
+      id: 'demo-inj-maya-shin',
+      teamId,
+      membershipId: 'demo-mem-ath-02',
+      athleteName: 'Maya Chen',
+      bodyRegion: 'SHIN',
+      severity: 'MODERATE',
+      rtpStage: 'MODIFIED',
+      restrictions:
+        'No track intervals or spikes; stationary bike spin (Z1/Z2) + post-session ice cup.',
+      coachGuidance:
+        'Zero-impact aerobic flush during track day; check in with Athletic Trainer after 6th period.',
+      targetReturnDate: shiftDateIso(todayIso, 7),
+      createdAt: `${todayIso}T08:05:00.000Z`,
+      updatedAt: `${todayIso}T08:15:00.000Z`,
+      updatedByName: 'Athletic Trainer',
+    },
+  ];
+
+  const attendanceByDate: Record<string, Record<string, TeamAttendanceRecord>> = {
+    [todayIso]: {
+      'demo-mem-ath-01': {
+        date: todayIso,
+        membershipId: 'demo-mem-ath-01',
+        status: 'PRESENT',
+        verifiedOnSite: true,
+        distanceMeters: 18,
+        venueId: 'venue-wghs-track',
+        venueName: 'Willow Glen High School Track',
+        method: 'GPS_GEOFENCE',
+        checkedInAt: `${todayIso}T15:10:00Z`,
+        updatedAt: `${todayIso}T15:10:00Z`,
+      },
+      'demo-mem-ath-02': {
+        date: todayIso,
+        membershipId: 'demo-mem-ath-02',
+        status: 'INJURED_MODIFIED',
+        note: 'AT Modified · Stationary bike spin (Z1/Z2)',
+        updatedAt: `${todayIso}T15:08:00Z`,
+      },
+      'demo-mem-ath-04': {
+        date: todayIso,
+        membershipId: 'demo-mem-ath-04',
+        status: 'PRESENT',
+        verifiedOnSite: true,
+        distanceMeters: 34,
+        venueId: 'venue-wghs-track',
+        venueName: 'Willow Glen High School Track',
+        method: 'GPS_GEOFENCE',
+        checkedInAt: `${todayIso}T15:12:00Z`,
+        updatedAt: `${todayIso}T15:12:00Z`,
+      },
+    },
+  };
+
   return {
     brand: {
       teamId,
@@ -1255,17 +1313,284 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
     myMembershipId: 'demo-mem-coach',
     totalInvited: athleteMembers.length,
     openedCount: athleteMembers.length,
-    activeCount: athleteMembers.length,
+    activeCount: athleteMembers.filter((m) => m.status === 'ACTIVE').length,
     watchConnectedCount: 11,
     memberships: [coachMember, ...staffMembers, ...athleteMembers],
     broadcastWorkouts,
     workoutLibrary,
     workoutComments,
     guardianSafetyAlerts,
+    injuryCases,
+    attendanceByDate,
     announcements,
     fieldMarkLogs,
     teamMessages,
     messagingPolicy,
+  };
+}
+
+export function buildSampleDemoLincolnSchool(baseDateIso?: string): TeamSummaryWithRole {
+  const todayIso = baseDateIso || getLocalDateIso();
+  const teamId = 'demo_team_lincoln_hs_txc';
+  const coachMember: TeamMembershipRecord = {
+    membershipId: 'demo-mem-lincoln-coach',
+    teamId,
+    role: 'HEAD_COACH',
+    squadGroup: 'Coaching Staff',
+    coachSpecialtyTitle: 'Head Track & XC Coach',
+    invitedName: 'Coach Rivera',
+    invitedEmail: 'rivera@lincoln-track.example.org',
+    isMinorU18: false,
+    status: 'ACTIVE',
+    invitedAt: `${shiftDateIso(todayIso, -40)}T08:00:00Z`,
+    joinedAt: `${shiftDateIso(todayIso, -40)}T08:15:00Z`,
+  };
+  const athleticTrainer: TeamMembershipRecord = {
+    membershipId: 'demo-mem-lincoln-at',
+    teamId,
+    role: 'ATHLETIC_TRAINER',
+    squadGroup: 'Sports Medicine',
+    coachSpecialtyTitle: 'Head Athletic Trainer',
+    invitedName: 'Jordan Taylor, ATC',
+    invitedEmail: 'trainer@lincoln-track.example.org',
+    isMinorU18: false,
+    status: 'ACTIVE',
+    invitedAt: `${shiftDateIso(todayIso, -40)}T08:00:00Z`,
+    joinedAt: `${shiftDateIso(todayIso, -40)}T08:30:00Z`,
+  };
+  const lincolnSpecs: ReadonlyArray<{
+    idNum: string;
+    name: string;
+    eventGroup: CoachEventGroup;
+    gradYear: number;
+    birthMonthYear: string;
+    eventLabel: string;
+    distanceMeters: number;
+    fatSecs: number;
+    displayFat: string;
+    ctl: number;
+    atl: number;
+    vdot: number;
+    paceSecs: number;
+  }> = [
+    {
+      idNum: '01',
+      name: 'Jordan Kim',
+      eventGroup: 'DISTANCE',
+      gradYear: 2027,
+      birthMonthYear: '2009-03',
+      eventLabel: '3200m',
+      distanceMeters: 3200,
+      fatSecs: 598.4,
+      displayFat: '9:58.40',
+      ctl: 52,
+      atl: 50,
+      vdot: 57.4,
+      paceSecs: 230,
+    },
+    {
+      idNum: '02',
+      name: 'Brianna Ortiz',
+      eventGroup: 'SPRINTS',
+      gradYear: 2026,
+      birthMonthYear: '2008-07',
+      eventLabel: '400m',
+      distanceMeters: 400,
+      fatSecs: 58.92,
+      displayFat: '58.92',
+      ctl: 44,
+      atl: 42,
+      vdot: 53.0,
+      paceSecs: 245,
+    },
+    {
+      idNum: '03',
+      name: 'Tyler Washington',
+      eventGroup: 'MID_DISTANCE',
+      gradYear: 2027,
+      birthMonthYear: '2009-06',
+      eventLabel: '800m',
+      distanceMeters: 800,
+      fatSecs: 119.6,
+      displayFat: '1:59.60',
+      ctl: 50,
+      atl: 48,
+      vdot: 59.1,
+      paceSecs: 222,
+    },
+    {
+      idNum: '04',
+      name: 'Hannah Reyes',
+      eventGroup: 'HURDLES',
+      gradYear: 2028,
+      birthMonthYear: '2010-01',
+      eventLabel: '300mH',
+      distanceMeters: 300,
+      fatSecs: 46.85,
+      displayFat: '46.85',
+      ctl: 41,
+      atl: 39,
+      vdot: 51.2,
+      paceSecs: 252,
+    },
+  ];
+  const athletes: TeamMembershipRecord[] = lincolnSpecs.map((spec, idx) => {
+    const membershipId = `demo-mem-lhs-${spec.idNum}`;
+    const raceAct = buildDemoAthleteActivity(
+      `demo-lhs-race-${spec.idNum}`,
+      shiftDateIso(todayIso, -7),
+      `SJUSD Dual Meet — ${spec.eventLabel}`,
+      spec.distanceMeters,
+      Math.round(spec.fatSecs),
+      Math.max(30, Math.round(spec.fatSecs / 12)),
+      spec.paceSecs,
+      {
+        meetName: 'SJUSD City Dual #1',
+        eventLabel: spec.eventLabel,
+        eventDistanceMeters: spec.distanceMeters,
+        fatTimeSecs: spec.fatSecs,
+        displayFatTime: spec.displayFat,
+        vdotScore: spec.vdot,
+        placeFinish: `#${idx + 1}`,
+      }
+    );
+    const easyRun = buildDemoAthleteActivity(
+      `demo-lhs-easy-${spec.idNum}`,
+      shiftDateIso(todayIso, -1),
+      'Aerobic Track Warmup & Strides',
+      6400,
+      1920,
+      54,
+      spec.paceSecs
+    );
+    const wellness: UnifiedWellnessDay[] = [0, -1].map((offset) => ({
+      date: shiftDateIso(todayIso, offset),
+      ctl: spec.ctl,
+      atl: spec.atl,
+      tsb: spec.ctl - spec.atl,
+      rampRate: 2.1,
+      hrvRMSSD: 70,
+      hrvBaseline7d: 71,
+      hrvNormalBandLow: 63,
+      hrvNormalBandHigh: 79,
+      hrvStatus: 'Balanced',
+      restingHR: 52,
+      sleepSecs: 28200,
+      sleepScore: 84,
+      weightKg: 0,
+      readinessStatus: 'Optimal',
+      dailyLoad: 54,
+    }));
+    return {
+      membershipId,
+      teamId,
+      role: 'ATHLETE',
+      squadGroup: 'Varsity',
+      eventGroup: spec.eventGroup,
+      invitedName: spec.name,
+      invitedEmail: `${spec.name.toLowerCase().replace(/\s+/g, '.')}@lincoln.example.org`,
+      parentGuardianEmail: `guardian.${spec.name.toLowerCase().split(' ')[1]}@family.example.org`,
+      graduationYear: spec.gradYear,
+      birthMonthYear: spec.birthMonthYear,
+      isMinorU18: true,
+      parentConsentStatus: 'ACKNOWLEDGED',
+      seedMarkOrFtp: `${spec.eventLabel} ${spec.displayFat}`,
+      status: 'ACTIVE',
+      invitedAt: `${shiftDateIso(todayIso, -35)}T09:00:00Z`,
+      joinedAt: `${shiftDateIso(todayIso, -34)}T15:30:00Z`,
+      sharingTier: 'SUMMARY_ONLY',
+      coachRecordedActivities: [raceAct],
+      liveSnapshot: {
+        updatedAt: `${todayIso}T08:00:00Z`,
+        hasConnectedWatch: true,
+        verdictLabel: 'Prime Readiness',
+        readinessScore: 84,
+        ctl: spec.ctl,
+        atl: spec.atl,
+        tsb: spec.ctl - spec.atl,
+        acuteLoad7d: Math.round(spec.atl * 6.0),
+        lowAerobicPct: 78,
+        highAerobicPct: 16,
+        neuromuscularPct: 6,
+        caraHours7d: 6.4,
+        thresholdPaceSecsPerKm: spec.paceSecs,
+        safeSportHideWeight: true,
+        birthMonthYear: spec.birthMonthYear,
+        sharingTier: 'SUMMARY_ONLY',
+        wellnessDays: wellness,
+        activities: [easyRun, raceAct],
+        safeSportWatch: {
+          trafficLight: 'GREEN_CLEAR',
+          coachSafeSummaryLabel: 'Healthy Baseline',
+        },
+      },
+    };
+  });
+
+  return {
+    brand: {
+      teamId,
+      slug: 'lincoln-high-school-track-xc',
+      joinCode: 'LHST26',
+      name: 'Lincoln High School Track & XC',
+      shortName: 'Lincoln XC',
+      mascotOrMotto: 'Lions Track & XC',
+      districtName: 'San Jose Unified School District',
+      practiceVenues: [
+        {
+          id: 'venue-lhs-track',
+          name: 'Lincoln High School Stadium Track',
+          category: 'TRACK',
+          latitude: 37.3318,
+          longitude: -121.9154,
+          radiusMeters: 250,
+          enabled: true,
+        },
+      ],
+      orgType: 'HIGH_SCHOOL',
+      primarySport: 'Running',
+      primaryHex: '#1D4ED8',
+      secondaryHex: '#FBBF24',
+      defaultSafeSportShield: true,
+      enableParentGuardianCc: true,
+      coachDisplayName: 'Coach Rivera',
+      planTier: 'FOUNDING_TEAM',
+      createdAt: `${shiftDateIso(todayIso, -40)}T08:00:00Z`,
+    },
+    myRole: 'HEAD_COACH',
+    mySquadGroup: 'Coaching Staff',
+    myCoachSpecialtyTitle: 'Head Track & XC Coach',
+    myMembershipId: 'demo-mem-lincoln-coach',
+    totalInvited: athletes.length,
+    openedCount: athletes.length,
+    activeCount: athletes.length,
+    watchConnectedCount: athletes.length,
+    memberships: [coachMember, athleticTrainer, ...athletes],
+    broadcastWorkouts: [],
+    workoutLibrary: [],
+    injuryCases: [],
+    attendanceByDate: {
+      [todayIso]: {
+        'demo-mem-lhs-01': {
+          date: todayIso,
+          membershipId: 'demo-mem-lhs-01',
+          status: 'PRESENT',
+          verifiedOnSite: true,
+          distanceMeters: 22,
+          venueId: 'venue-lhs-track',
+          venueName: 'Lincoln High School Stadium Track',
+          method: 'GPS_GEOFENCE',
+          checkedInAt: `${todayIso}T15:05:00Z`,
+          updatedAt: `${todayIso}T15:05:00Z`,
+        },
+      },
+    },
+    billing: {
+      planCode: 'DISTRICT_2000',
+      status: 'ACTIVE_PAID',
+      schoolOrDistrictName: 'San Jose Unified School District',
+      billingContactEmail: 'athletics@sjusd.example.org',
+    },
   };
 }
 
@@ -1785,6 +2110,9 @@ export function buildSampleDemoDataset(anchorDateIso?: string): SampleDemoDatase
     plannedEvents,
     targetGoals,
     gearItems: buildSampleDemoGearItems(todayIso),
-    demoTeams: [buildSampleDemoCoachSquad(todayIso)],
+    demoTeams: [
+      buildSampleDemoCoachSquad(todayIso),
+      buildSampleDemoLincolnSchool(todayIso),
+    ],
   };
 }

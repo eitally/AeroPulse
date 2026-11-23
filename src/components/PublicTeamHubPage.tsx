@@ -319,6 +319,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
   const handleDownloadFallbackIcs = () => {
     if (!payload?.brand) return;
     const allMeets = [...payload.upcomingMeets, ...payload.recentSchedule];
+    const dtStamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
     const lines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
@@ -326,7 +327,14 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
       `X-WR-CALNAME:${payload.brand.name.replace(/[,;\n]/g, ' ')} Meet Schedule`,
     ];
     for (const meet of allMeets) {
-      const ymd = meet.date.replace(/-/g, '');
+      const cleanDate = meet.date.slice(0, 10);
+      const [yStr, mStr, dStr] = cleanDate.split('-');
+      const y = Number(yStr) || 2026;
+      const m = Number(mStr) || 1;
+      const d = Number(dStr) || 1;
+      const ymd = `${String(y).padStart(4, '0')}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`;
+      const nextDt = new Date(Date.UTC(y, m - 1, d + 1));
+      const nextDayYmd = `${nextDt.getUTCFullYear()}${String(nextDt.getUTCMonth() + 1).padStart(2, '0')}${String(nextDt.getUTCDate()).padStart(2, '0')}`;
       const safeTitle = `${payload.brand.shortName || 'Team'} · ${meet.name}`.replace(
         /[,;\n]/g,
         ' '
@@ -335,7 +343,9 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
       lines.push(
         'BEGIN:VEVENT',
         `UID:${meet.id}@meetready.app`,
+        `DTSTAMP:${dtStamp}`,
         `DTSTART;VALUE=DATE:${ymd}`,
+        `DTEND;VALUE=DATE:${nextDayYmd}`,
         `SUMMARY:${safeTitle}`,
         ...(safeLoc ? [`LOCATION:${safeLoc}`] : []),
         'END:VEVENT'
@@ -368,7 +378,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
     if (isDemoQuery) {
       setSubscribeNotice({
         tone: 'ok',
-        text: `Demo preview: ${cleanEmail} would receive a confirmation link for ${payload.brand.shortName} meet & weather updates.`,
+        text: `Demo preview: ${cleanEmail} would receive a confirmation link for ${payload.brand.shortName} schedule changes, weather alerts & meet updates.`,
       });
       setSubscribeEmail('');
       return;
@@ -585,7 +595,15 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                     >
                       <div className="flex items-center justify-between gap-2 font-mono text-2xs">
                         <span className="font-bold text-ap-cobalt dark:text-ap-volt">
-                          [{ann.category}] {ann.title}
+                          [
+                          {ann.category === 'MEET_LOGISTICS'
+                            ? 'Meet Logistics'
+                            : ann.category === 'SCHEDULE_CHANGE'
+                              ? 'Schedule Change'
+                              : ann.category === 'WEATHER'
+                                ? 'Weather'
+                                : 'General'}
+                          ] {ann.title}
                         </span>
                         <span className="text-ap-muted dark:text-ap-muted-dark">
                           {ann.createdAt.slice(0, 10)}
@@ -733,7 +751,7 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                   <h2 className="text-sm font-bold">Parent Email Updates</h2>
                 </div>
                 <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-relaxed">
-                  Get weather changes, meet bus updates &amp; official results. Zero minor PII · 1-click unsubscribe anytime.
+                  Get team schedule changes, weather alerts &amp; meet updates. Zero minor PII · 1-click unsubscribe anytime.
                 </p>
                 <form
                   onSubmit={(e) => void handleSubscribeParentEmail(e)}
@@ -1001,7 +1019,10 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-ap-chalk">MeetReady Safe-Sport Team Hub</span>
             <span className="text-ap-muted-dark" aria-hidden="true">·</span>
-            <a href="/?role=coach" className="font-bold text-ap-volt hover:underline">
+            <a
+              href="/?role=coach&utm_source=parent_hub&utm_medium=footer&utm_campaign=team_hub"
+              className="font-bold text-ap-volt hover:underline"
+            >
               Coaching Track, Field or XC? Start a Free Founding Season Pilot →
             </a>
           </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,6 +9,7 @@ import {
   Trophy,
   X,
 } from '../icons/PhosphorIcons';
+import { useModalDialog } from '../../hooks/useModalDialog';
 import {
   ALL_MEET_DAY_EVENTS,
   MEET_DIVISION_CHOICES,
@@ -66,24 +67,109 @@ function resolveCompetitionGender(
   return undefined;
 }
 
-function buildInitialMeetEntries(
+function isDemoMeetTeamId(teamId?: string | null): boolean {
+  if (!teamId) return false;
+  return teamId.startsWith('demo_team_') || teamId.startsWith('demo-team-');
+}
+
+function matchMeetEventCodeFromText(
+  rawLabel: string | undefined,
+  gender?: MeetGenderDivision
+): { code: string; trailingMark?: string } | null {
+  if (!rawLabel) return null;
+  const trimmed = rawLabel.trim();
+  if (!trimmed) return null;
+  const orderedSpecs = [...ALL_MEET_DAY_EVENTS].sort(
+    (a, b) => b.code.length - a.code.length
+  );
+  for (const spec of orderedSpecs) {
+    const escaped = spec.code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^${escaped}(?:\\s+(.*))?$`, 'i');
+    const m = trimmed.match(re);
+    if (m) {
+      let code = spec.code;
+      if (code === '110mH' && gender === 'F') code = '100mH';
+      if (code === '100mH' && gender === 'M') code = '110mH';
+      return { code, trailingMark: m[1]?.trim() || undefined };
+    }
+  }
+  return null;
+}
+
+export function buildEntriesFromRosterMarks(
+  activeTeam: TeamSummaryWithRole | null
+): MeetEntryRecord[] {
+  if (!activeTeam) return [];
+  const members = (activeTeam.memberships || []).filter(
+    (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
+  );
+  const seeded: MeetEntryRecord[] = [];
+  for (const m of members) {
+    const gender = resolveCompetitionGender(m.genderDivision, undefined, m.squadGroup);
+    const division = inferDivisionFromSquadGroup(m.squadGroup) || 'Varsity';
+    let addedForMember = false;
+
+    for (const act of m.coachRecordedActivities || []) {
+      const race = act.officialRaceData;
+      if (!race?.eventLabel || !race?.displayFatTime) continue;
+      const matched = matchMeetEventCodeFromText(race.eventLabel, gender);
+      if (!matched) continue;
+      seeded.push({
+        id: `roster-${m.membershipId}-${matched.code}-${seeded.length}`,
+        athleteId: m.membershipId,
+        athleteName: m.invitedName,
+        ...(gender ? { genderDivision: gender } : {}),
+        division,
+        graduationYear: m.graduationYear,
+        eventCode: matched.code,
+        seedMark: race.displayFatTime,
+      });
+      addedForMember = true;
+      break;
+    }
+
+    if (!addedForMember && m.seedMarkOrFtp) {
+      const parsed = matchMeetEventCodeFromText(m.seedMarkOrFtp, gender);
+      if (parsed && parsed.trailingMark) {
+        seeded.push({
+          id: `roster-${m.membershipId}-${parsed.code}-${seeded.length}`,
+          athleteId: m.membershipId,
+          athleteName: m.invitedName,
+          ...(gender ? { genderDivision: gender } : {}),
+          division,
+          graduationYear: m.graduationYear,
+          eventCode: parsed.code,
+          seedMark: parsed.trailingMark,
+        });
+      }
+    }
+  }
+  return seeded;
+}
+
+export function buildInitialMeetEntries(
   activeTeam: TeamSummaryWithRole | null,
   connectedAthletes: ConnectedAthleteRecord[]
 ): MeetEntryRecord[] {
+  if (activeTeam && !isDemoMeetTeamId(activeTeam.brand.teamId)) {
+    return [];
+  }
+
+  const eligibleMembers = (activeTeam?.memberships || []).filter(
+    (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
+  );
+
   const rosterSource =
-    (activeTeam?.memberships || []).filter((m) => m.role === 'ATHLETE' && m.status !== 'REVOKED')
-      .length > 0
-      ? (activeTeam?.memberships || [])
-          .filter((m) => m.role === 'ATHLETE' && m.status !== 'REVOKED')
-          .map((m) => ({
-            id: m.membershipId,
-            name: m.invitedName,
-            gender: resolveCompetitionGender(m.genderDivision, undefined, m.squadGroup),
-            division: inferDivisionFromSquadGroup(m.squadGroup),
-            gradYear: m.graduationYear,
-            eventGroup: m.eventGroup,
-            seed: m.seedMarkOrFtp,
-          }))
+    eligibleMembers.length > 0
+      ? eligibleMembers.map((m) => ({
+          id: m.membershipId,
+          name: m.invitedName,
+          gender: resolveCompetitionGender(m.genderDivision, undefined, m.squadGroup),
+          division: inferDivisionFromSquadGroup(m.squadGroup),
+          gradYear: m.graduationYear,
+          eventGroup: m.eventGroup,
+          seed: m.seedMarkOrFtp,
+        }))
       : connectedAthletes.map((a) => ({
           id: a.id,
           name: a.name,
@@ -103,13 +189,14 @@ function buildInitialMeetEntries(
   const seeded: MeetEntryRecord[] = [];
   rosterSource.slice(0, 10).forEach((ath, idx) => {
     const group = ath.eventGroup || 'DISTANCE';
+    const hurdlesCode = ath.gender === 'F' ? '100mH' : '110mH';
     const defaultEv =
       group === 'SPRINTS'
         ? idx % 2 === 0
           ? { code: '100m', mark: '11.24' }
           : { code: '400m', mark: '50.80' }
         : group === 'HURDLES'
-          ? { code: '110mH', mark: '14.85' }
+          ? { code: hurdlesCode, mark: ath.gender === 'F' ? '15.10' : '14.85' }
           : group === 'JUMPS'
             ? { code: 'LJ', mark: "21' 2\"" }
             : group === 'POLE_VAULT'
@@ -123,7 +210,7 @@ function buildInitialMeetEntries(
       id: `init-${ath.id}-${defaultEv.code}`,
       athleteId: ath.id,
       athleteName: ath.name,
-      genderDivision: ath.gender || (idx % 2 === 0 ? 'M' : 'F'),
+      ...(ath.gender ? { genderDivision: ath.gender } : {}),
       division: ath.division || 'Varsity',
       graduationYear: ath.gradYear,
       eventCode: defaultEv.code,
@@ -131,7 +218,7 @@ function buildInitialMeetEntries(
     });
   });
 
-  if (seeded.length === 0) {
+  if (seeded.length === 0 && !activeTeam) {
     seeded.push(
       {
         id: 'sample-1',
@@ -183,20 +270,37 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   myTeams,
   onTeamsUpdated,
 }) => {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  const headingId = useId();
+  useModalDialog({ isOpen, onClose, dialogRef });
+
   const teamScopeKey = activeTeam?.brand.teamId || 'local';
   const isLiveServerTeam = Boolean(
-    activeTeam && !activeTeam.brand.teamId.startsWith('demo_team_')
+    activeTeam && !isDemoMeetTeamId(activeTeam.brand.teamId)
   );
 
-  const [activePacketId, setActivePacketId] = useState<string>('');
-  const [savedPackets, setSavedPackets] = useState<MeetDayPacketRecord[]>([]);
-  const [meetTitle, setMeetTitle] = useState<string>('League Dual / Saturday Invitational');
-  const [meetDate, setMeetDate] = useState<string>(() => getLocalDateIso());
+  const initialInlinePacket = activeTeam?.meetDayPackets?.[0] || null;
+  const [activePacketId, setActivePacketId] = useState<string>(
+    () => initialInlinePacket?.packetId || ''
+  );
+  const [savedPackets, setSavedPackets] = useState<MeetDayPacketRecord[]>(
+    () => activeTeam?.meetDayPackets || []
+  );
+  const [meetTitle, setMeetTitle] = useState<string>(
+    () => initialInlinePacket?.meetTitle || 'League Dual / Saturday Invitational'
+  );
+  const [meetDate, setMeetDate] = useState<string>(
+    () => initialInlinePacket?.meetDate || getLocalDateIso()
+  );
   const [subTab, setSubTab] = useState<'ENTRIES' | 'HEATS' | 'FLIGHTS'>('ENTRIES');
   const [entries, setEntries] = useState<MeetEntryRecord[]>(() =>
-    buildInitialMeetEntries(activeTeam, connectedAthletes)
+    initialInlinePacket
+      ? packetEntriesToMeetEntries(initialInlinePacket.entries)
+      : buildInitialMeetEntries(activeTeam, connectedAthletes)
   );
-  const [partitionByDivision, setPartitionByDivision] = useState<boolean>(true);
+  const [partitionByDivision, setPartitionByDivision] = useState<boolean>(
+    () => (initialInlinePacket ? initialInlinePacket.partitionByDivision !== false : true)
+  );
   const [genderFilter, setGenderFilter] = useState<'ALL' | 'M' | 'F'>('ALL');
   const [divisionFilter, setDivisionFilter] = useState<string>('ALL');
 
@@ -269,9 +373,20 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
     }
   }, [isOpen, teamScopeKey, isLiveServerTeam, activeTeam, connectedAthletes]);
 
+  const injuredMemberIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of activeTeam?.memberships || []) {
+      if (m.status === 'INJURED') ids.add(m.membershipId);
+    }
+    for (const c of activeTeam?.injuryCases || []) {
+      if (c.rtpStage === 'OUT' || c.rtpStage === 'MODIFIED') ids.add(c.membershipId);
+    }
+    return ids;
+  }, [activeTeam?.memberships, activeTeam?.injuryCases]);
+
   const athleteChoices = useMemo(() => {
     const members = (activeTeam?.memberships || [])
-      .filter((m) => m.role === 'ATHLETE' && m.status !== 'REVOKED')
+      .filter((m) => m.role === 'ATHLETE' && m.status !== 'REVOKED' && m.status !== 'ALUMNI')
       .map((m) => ({
         id: m.membershipId,
         name: m.invitedName,
@@ -281,7 +396,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
       }));
     if (members.length > 0) return members;
     if (connectedAthletes.length > 0) {
-      return connectedAthletes.map((a, idx) => ({
+      return connectedAthletes.map((a) => ({
         id: a.id,
         name: a.name,
         gender:
@@ -289,7 +404,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
             a.genderDivision,
             a.athleteProfile?.competitionGender,
             a.location
-          ) || (idx % 2 === 0 ? ('M' as const) : ('F' as const)),
+          ) || ('M' as const),
         division: 'Varsity',
         gradYear: undefined,
       }));
@@ -329,9 +444,20 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
   const nfhsAudit = useMemo(() => validateNfhsFourEventLimits(entries, 4), [entries]);
   const violations = useMemo(() => nfhsAudit.filter((r) => r.overLimit), [nfhsAudit]);
 
+  const activeHeatDefaultLanes = useMemo(
+    () => ALL_MEET_DAY_EVENTS.find((e) => e.code === selectedHeatEvent)?.defaultLanes || 8,
+    [selectedHeatEvent]
+  );
+
   const trackHeats = useMemo(
-    () => seedTrackHeats(filteredEntries, selectedHeatEvent, 8, partitionByDivision),
-    [filteredEntries, selectedHeatEvent, partitionByDivision]
+    () =>
+      seedTrackHeats(
+        filteredEntries,
+        selectedHeatEvent,
+        activeHeatDefaultLanes,
+        partitionByDivision
+      ),
+    [filteredEntries, selectedHeatEvent, activeHeatDefaultLanes, partitionByDivision]
   );
   const fieldFlights = useMemo(
     () => seedFieldFlights(filteredEntries, selectedFlightEvent, 12, partitionByDivision),
@@ -566,9 +692,15 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={headingId}
+      tabIndex={-1}
       data-testid="meet-day-packet-modal"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-2 sm:p-4"
     >
       <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-ap-chalk dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border border-ap-edge flex flex-col shadow-2xl overflow-hidden">
@@ -577,7 +709,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
           <div className="min-w-0 flex-1 space-y-1.5">
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 ap-text-brand shrink-0" />
-              <h2 className="text-sm sm:text-lg font-extrabold tracking-tight truncate">
+              <h2 id={headingId} className="text-sm sm:text-lg font-extrabold tracking-tight truncate">
                 Meet-Day Entries, Heats, Flights &amp; NFHS 4-Event Check
               </h2>
             </div>
@@ -712,14 +844,20 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
             <button
               type="button"
               data-testid="meet-print-packet-btn"
-              onClick={() =>
-                openPrintableMeetDayPacketWindow({
+              onClick={() => {
+                const opened = openPrintableMeetDayPacketWindow({
                   teamName: activeTeam?.brand.name || 'MeetReady Track & Field',
                   meetTitle,
                   entries: filteredEntries,
                   partitionByDivision,
-                })
-              }
+                });
+                if (!opened) {
+                  setPacketFeedback({
+                    tone: 'caution',
+                    text: 'Print window was blocked by the browser. Allow pop-ups for MeetReady to open the printable Meet Packet.',
+                  });
+                }
+              }}
               className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-2xs sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
             >
               <ClipboardText className="w-3.5 h-3.5" />
@@ -738,7 +876,11 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 packetFeedback.tone === 'prime' ? 'ap-status-prime' : 'ap-status-caution'
               }`}
             >
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              {packetFeedback.tone === 'prime' ? (
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              )}
               <span>{packetFeedback.text}</span>
             </div>
           )}
@@ -772,6 +914,48 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
 
           {subTab === 'ENTRIES' && (
             <>
+              {activeTeam && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl ap-card-inset px-3 py-2">
+                  <span className="text-2xs text-ap-muted dark:text-ap-muted-dark">
+                    {entries.length === 0
+                      ? 'Start from a clean slate or pull verified athlete seed marks on file.'
+                      : 'Seed missing roster athletes using verified marks or official race results.'}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="meet-seed-roster-marks-btn"
+                    onClick={() => {
+                      const rosterEntries = buildEntriesFromRosterMarks(activeTeam);
+                      if (rosterEntries.length === 0) {
+                        setPacketFeedback({
+                          tone: 'caution',
+                          text: 'No verified roster seed marks or official results found yet. Add entries manually or sync Athletic.net / TFRRS marks.',
+                        });
+                        return;
+                      }
+                      setEntries((prev) => {
+                        const existingKeys = new Set(
+                          prev.map((e) => `${e.athleteId}:${e.eventCode}`)
+                        );
+                        const merged = [
+                          ...prev,
+                          ...rosterEntries.filter(
+                            (r) => !existingKeys.has(`${r.athleteId}:${r.eventCode}`)
+                          ),
+                        ];
+                        return merged;
+                      });
+                      setPacketFeedback({
+                        tone: 'prime',
+                        text: `Seeded ${rosterEntries.length} verified roster mark${rosterEntries.length === 1 ? '' : 's'}.`,
+                      });
+                    }}
+                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
+                  >
+                    Seed from Roster Marks
+                  </button>
+                </div>
+              )}
               <form
                 onSubmit={handleAddEntry}
                 className="rounded-xl ap-card-inset p-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-end"
@@ -904,6 +1088,14 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                       <span className="font-bold text-ap-ink dark:text-ap-chalk font-sans">
                         {entry.athleteName}
                       </span>
+                      {injuredMemberIds.has(entry.athleteId) && (
+                        <span
+                          data-testid={`meet-entry-injured-${entry.athleteId}`}
+                          className="px-1.5 py-0.5 rounded ap-status-strained font-bold text-2xs"
+                        >
+                          [INJURED — AT RTP]
+                        </span>
+                      )}
                       <select
                         aria-label={`Gender for ${entry.athleteName} ${entry.eventCode}`}
                         value={entry.genderDivision || 'M'}

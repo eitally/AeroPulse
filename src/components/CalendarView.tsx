@@ -38,11 +38,13 @@ import {
   PracticeVenueCategory,
   SportCategory,
   TargetGoal,
+  TeamSummaryWithRole,
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
   WorkoutSessionSlot,
 } from '../types';
+import { useTeamCoach, type TeamCoachContextValue } from '../contexts/TeamCoachContext';
 import { formatDistance, formatPace } from '../utils/formatters';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import {
@@ -154,6 +156,7 @@ interface CalendarViewProps {
   onOpenOfficialRaceModal?: () => void;
   onOpenCoachWithPrompt: (prompt: string) => void;
   onOpenTracksideStopwatch?: () => void;
+  activeTeam?: TeamSummaryWithRole | null;
 }
 
 
@@ -180,7 +183,27 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   onOpenOfficialRaceModal,
   onOpenCoachWithPrompt,
   onOpenTracksideStopwatch,
+  activeTeam: activeTeamProp,
 }) => {
+  let teamCtx: TeamCoachContextValue | null = null;
+  try {
+    teamCtx = useTeamCoach();
+  } catch {
+    teamCtx = null;
+  }
+  const effectiveActiveTeam = activeTeamProp ?? teamCtx?.activeTeam ?? null;
+
+  const athleteOpenRtpCase = useMemo(() => {
+    const cases = effectiveActiveTeam?.injuryCases || [];
+    if (cases.length === 0) return null;
+    return (
+      cases.find(
+        (c) =>
+          c.membershipId === effectiveActiveTeam?.myMembershipId &&
+          (c.rtpStage === 'OUT' || c.rtpStage === 'MODIFIED')
+      ) || null
+    );
+  }, [effectiveActiveTeam?.injuryCases, effectiveActiveTeam?.myMembershipId]);
   const [sportFilter, setSportFilter] = useState<SportCategory | 'ALL'>(selectedSport);
   useEffect(() => {
     setSportFilter(selectedSport);
@@ -240,7 +263,10 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   const [copyWeekIndex, setCopyWeekIndex] = useState<number | null>(null);
   const [movingEventId, setMovingEventId] = useState<string | null>(null);
   const [moveTargetDate, setMoveTargetDate] = useState<string>('');
-  const [watchPushBanner, setWatchPushBanner] = useState<string | null>(null);
+  const [watchPushBanner, setWatchPushBanner] = useState<{
+    text: string;
+    tone: 'ok' | 'warn';
+  } | null>(null);
   const builderDialogRef = useRef<HTMLDivElement>(null);
 
   const activePlanBlock = useMemo(() => {
@@ -772,6 +798,17 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
               benchmarks="Polarized weeks: 75–85% in Z1–Z2; 15–20% in Z4–Z6."
               coachingAction="Keep easy days in Z1/Z2 green so key sessions hit Z4–Z6 targets."
             />
+            {athleteOpenRtpCase && (
+              <span
+                data-testid="calendar-at-rtp-badge"
+                title={athleteOpenRtpCase.restrictions}
+                className={`px-2 py-0.5 rounded-md font-mono text-2xs font-bold inline-flex items-center gap-1 ${
+                  athleteOpenRtpCase.rtpStage === 'OUT' ? 'ap-status-strained' : 'ap-status-caution'
+                }`}
+              >
+                AT RTP: {athleteOpenRtpCase.rtpStage} · {athleteOpenRtpCase.bodyRegion}
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2 max-w-full">
@@ -1128,9 +1165,19 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
       </section>
 
       {watchPushBanner && (
-        <div role="status" className="rounded-xl ap-status-prime px-4 py-2 text-xs font-medium flex items-center justify-between gap-2">
-          <span>{watchPushBanner}</span>
-          <button type="button" onClick={() => setWatchPushBanner(null)} className="font-mono text-2xs underline cursor-pointer">
+        <div
+          role="status"
+          data-testid="calendar-watch-push-banner"
+          className={`rounded-xl px-4 py-2 text-xs font-medium flex items-center justify-between gap-2 ${
+            watchPushBanner.tone === 'warn' ? 'ap-status-caution' : 'ap-status-prime'
+          }`}
+        >
+          <span>{watchPushBanner.text}</span>
+          <button
+            type="button"
+            onClick={() => setWatchPushBanner(null)}
+            className="min-h-[44px] sm:min-h-[34px] px-2 font-mono text-2xs underline cursor-pointer"
+          >
             Dismiss
           </button>
         </div>
@@ -1153,6 +1200,9 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
           onUpdatePlannedEvent={onUpdatePlannedEvent}
           onDeletePlannedEvent={onDeletePlannedEvent}
           onBatchCreatePlannedEvents={onBatchCreatePlannedEvents}
+          onWatchPushResult={(msg, pushed) =>
+            setWatchPushBanner({ text: msg, tone: pushed ? 'ok' : 'warn' })
+          }
           onOpenCoachWithPrompt={onOpenCoachWithPrompt}
           onOpenTracksideStopwatch={onOpenTracksideStopwatch}
           onOpenBuilderForDate={handleOpenBuilderForDate}
@@ -2014,7 +2064,12 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                                       thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 250,
                                                       dateIso: ev.date.slice(0, 10),
                                                     }}
-                                                    onPushResult={(msg) => setWatchPushBanner(msg)}
+                                                    onPushResult={(msg, pushed) =>
+                                                      setWatchPushBanner({
+                                                        text: msg,
+                                                        tone: pushed ? 'ok' : 'warn',
+                                                      })
+                                                    }
                                                   />
                                                   <button
                                                     type="button"
@@ -2175,6 +2230,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
               athleteFtp={athleteFtp}
               distanceUnit={distanceUnit}
               initialEvent={editingPlannedEvent}
+              activeTeam={effectiveActiveTeam}
               submitLabel={editingPlannedEvent ? 'Save Changes' : 'Save to Calendar'}
               onSave={handleSaveVisualBuilderWorkout}
               onCancel={() => {

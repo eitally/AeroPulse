@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  Download,
   HeartPulse,
   Lock,
   Plus,
@@ -65,6 +66,57 @@ function rtpStageStatusClass(stage: TeamInjuryRtpStage): string {
   return 'ap-status-info';
 }
 
+function escapeClearanceCsvCell(value: unknown): string {
+  const raw = String(value ?? '');
+  const trimmed = raw.trimStart();
+  const safe =
+    trimmed.startsWith('=') ||
+    trimmed.startsWith('+') ||
+    trimmed.startsWith('-') ||
+    trimmed.startsWith('@') ||
+    trimmed.startsWith('\t') ||
+    trimmed.startsWith('\r')
+      ? `'${raw}`
+      : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+export function buildDailyClearanceCsv(
+  cases: TeamInjuryCaseRecord[],
+  teamName: string,
+  dateIso: string
+): string {
+  const headers = [
+    'Team',
+    'Date',
+    'Athlete',
+    'Body Region',
+    'Severity',
+    'RTP Stage',
+    'Coach Restrictions',
+    'Coach Guidance',
+    'Target Return Date',
+    'Updated By',
+  ];
+  const rows = cases.map((c) =>
+    [
+      teamName,
+      dateIso,
+      c.athleteName,
+      c.bodyRegion,
+      c.severity,
+      c.rtpStage,
+      c.restrictions || '',
+      c.coachGuidance || '',
+      c.targetReturnDate || '',
+      c.updatedByName || 'Athletic Trainer',
+    ]
+      .map(escapeClearanceCsvCell)
+      .join(',')
+  );
+  return [headers.map(escapeClearanceCsvCell).join(','), ...rows].join('\n');
+}
+
 function heatTileClass(
   heatLevel: 'NONE' | 'LOW' | 'ELEVATED' | 'HOTSPOT',
   selected: boolean
@@ -89,6 +141,13 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
   const formId = useId();
 
   useModalDialog({ isOpen, onClose, dialogRef });
+
+  const activeTeamRef = useRef(activeTeam);
+  activeTeamRef.current = activeTeam;
+  const myTeamsRef = useRef(myTeams);
+  myTeamsRef.current = myTeams;
+  const onTeamsUpdatedRef = useRef(onTeamsUpdated);
+  onTeamsUpdatedRef.current = onTeamsUpdated;
 
   const isAthleticTrainer = activeTeam?.myRole === 'ATHLETIC_TRAINER';
   const [heatmapWindow, setHeatmapWindow] = useState<7 | 30>(7);
@@ -139,17 +198,23 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
     }
 
     if (isSampleDemoMode) return;
+    const targetTeamId = activeTeam.brand.teamId;
     let cancelled = false;
     setIsLoadingCases(true);
-    fetchTeamInjuriesApi(activeTeam.brand.teamId)
+    fetchTeamInjuriesApi(targetTeamId)
       .then((res) => {
         if (cancelled) return;
+        const latestTeams = myTeamsRef.current;
+        const latestTeam =
+          latestTeams.find((t) => t.brand.teamId === targetTeamId) ||
+          (activeTeamRef.current?.brand.teamId === targetTeamId ? activeTeamRef.current : null);
+        if (!latestTeam) return;
         const updatedTeam: TeamSummaryWithRole = {
-          ...activeTeam,
+          ...latestTeam,
           injuryCases: res.cases || [],
         };
-        onTeamsUpdated(
-          myTeams.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t)),
+        onTeamsUpdatedRef.current(
+          latestTeams.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t)),
           updatedTeam.brand.teamId
         );
       })
@@ -163,8 +228,6 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
     return () => {
       cancelled = true;
     };
-    // Only re-fetch when modal opens or active team changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeTeam?.brand.teamId, isSampleDemoMode]);
 
   const effectiveCases = useMemo<TeamInjuryCaseRecord[]>(() => {
@@ -259,14 +322,43 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
       }
       return m;
     });
+    const latestTeams = myTeamsRef.current;
+    const baseTeam =
+      latestTeams.find((t) => t.brand.teamId === activeTeam.brand.teamId) || activeTeam;
     const updatedTeam: TeamSummaryWithRole = {
-      ...activeTeam,
+      ...baseTeam,
       memberships: nextMemberships,
       injuryCases: nextCases,
     };
-    onTeamsUpdated(
-      myTeams.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t)),
+    onTeamsUpdatedRef.current(
+      latestTeams.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t)),
       updatedTeam.brand.teamId
+    );
+  };
+
+  const handleExportDailyClearance = () => {
+    if (!activeTeam) return;
+    const todayIso = getLocalDateIso();
+    const sanitized = stripClinicalNotesForRole(visibleCases, 'HEAD_COACH');
+    const csv = buildDailyClearanceCsv(
+      sanitized,
+      activeTeam.brand.shortName || activeTeam.brand.name,
+      todayIso
+    );
+    const slug = (activeTeam.brand.slug || activeTeam.brand.shortName || 'team')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${slug}-daily-clearance-${todayIso}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    setStatusBanner(
+      `Exported daily RTP clearance CSV (${sanitized.length} row${sanitized.length === 1 ? '' : 's'}, clinical notes excluded).`
     );
   };
 
@@ -327,10 +419,10 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
         ...(formTargetReturnDate ? { targetReturnDate: formTargetReturnDate } : {}),
       });
       if (resp.teams && resp.teams.length > 0) {
-        onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
+        onTeamsUpdatedRef.current(resp.teams, activeTeam.brand.teamId);
       } else if (resp.team) {
-        onTeamsUpdated(
-          myTeams.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
+        onTeamsUpdatedRef.current(
+          myTeamsRef.current.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
           resp.team.brand.teamId
         );
       }
@@ -379,10 +471,10 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
         ...(c.targetReturnDate ? { targetReturnDate: c.targetReturnDate } : {}),
       });
       if (resp.teams && resp.teams.length > 0) {
-        onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
+        onTeamsUpdatedRef.current(resp.teams, activeTeam.brand.teamId);
       } else if (resp.team) {
-        onTeamsUpdated(
-          myTeams.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
+        onTeamsUpdatedRef.current(
+          myTeamsRef.current.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
           resp.team.brand.teamId
         );
       }
@@ -409,10 +501,10 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
     try {
       const resp = await deleteTeamInjuryCaseApi(activeTeam.brand.teamId, c.id);
       if (resp.teams && resp.teams.length > 0) {
-        onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
+        onTeamsUpdatedRef.current(resp.teams, activeTeam.brand.teamId);
       } else if (resp.team) {
-        onTeamsUpdated(
-          myTeams.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
+        onTeamsUpdatedRef.current(
+          myTeamsRef.current.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
           resp.team.brand.teamId
         );
       }
@@ -432,6 +524,9 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
       aria-labelledby={headingId}
       tabIndex={-1}
       data-testid="athletic-trainer-injury-hub"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-3 sm:p-5"
     >
       <div className="w-full max-w-5xl max-h-[92dvh] overflow-y-auto rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-frame/25 dark:border-ap-edge p-4 sm:p-6 space-y-4 shadow-2xl text-ap-ink dark:text-ap-chalk">
@@ -457,7 +552,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                 <Lock className="w-3 h-3" />
                 <span>
                   {isAthleticTrainer
-                    ? 'ATHLETIC_TRAINER Clinical Access'
+                    ? 'Athletic Trainer Clinical Access'
                     : 'Coach RTP View · Clinical Notes Masked'}
                 </span>
               </span>
@@ -470,7 +565,16 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
             </p>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              data-testid="injury-hub-export-clearance-btn"
+              onClick={handleExportDailyClearance}
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-4 h-4" />
+              <span>Export Clearance CSV</span>
+            </button>
             <button
               type="button"
               data-testid="injury-hub-new-case-btn"
@@ -563,7 +667,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
               <button
                 type="button"
                 onClick={() => setShowCaseForm(false)}
-                className="min-h-[36px] px-2.5 rounded-lg text-xs font-mono text-ap-muted dark:text-ap-muted-dark hover:underline cursor-pointer"
+                className="min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg text-xs font-mono text-ap-muted dark:text-ap-muted-dark hover:underline cursor-pointer"
               >
                 Cancel
               </button>
@@ -724,7 +828,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                   htmlFor={`${formId}-clinical`}
                   className="block text-2xs font-mono uppercase text-emerald-700 dark:text-emerald-300 mb-1"
                 >
-                  Private Clinical Notes (ATHLETIC_TRAINER Only — Never Shown to Coaches)
+                  Private Clinical Notes (Athletic Trainer Only — Never Shown to Coaches)
                 </label>
                 <textarea
                   id={`${formId}-clinical`}
@@ -784,7 +888,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                 data-testid="heatmap-window-7d"
                 aria-pressed={heatmapWindow === 7}
                 onClick={() => setHeatmapWindow(7)}
-                className={`min-h-[36px] px-2.5 rounded-md cursor-pointer ${
+                className={`min-h-[44px] sm:min-h-[36px] px-2.5 rounded-md cursor-pointer ${
                   heatmapWindow === 7
                     ? 'ap-nav-volt-active'
                     : 'text-ap-muted dark:text-ap-muted-dark'
@@ -797,7 +901,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                 data-testid="heatmap-window-30d"
                 aria-pressed={heatmapWindow === 30}
                 onClick={() => setHeatmapWindow(30)}
-                className={`min-h-[36px] px-2.5 rounded-md cursor-pointer ${
+                className={`min-h-[44px] sm:min-h-[36px] px-2.5 rounded-md cursor-pointer ${
                   heatmapWindow === 30
                     ? 'ap-nav-volt-active'
                     : 'text-ap-muted dark:text-ap-muted-dark'
@@ -844,7 +948,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                       type="button"
                       aria-label={`Log ${reg.label} case`}
                       onClick={() => openNewCaseForm({ bodyRegion: reg.region })}
-                      className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-bold cursor-pointer"
+                      className="min-h-[44px] min-w-[44px] sm:min-h-[28px] sm:min-w-[28px] px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-bold inline-flex items-center justify-center cursor-pointer"
                     >
                       +
                     </button>
@@ -875,7 +979,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                       type="button"
                       data-testid={`rtp-filter-${stage}`}
                       onClick={() => setStageFilter(stage)}
-                      className={`min-h-[36px] px-2.5 rounded-lg text-2xs font-mono font-bold cursor-pointer ${
+                      className={`min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg text-2xs font-mono font-bold cursor-pointer ${
                         active
                           ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
                           : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
@@ -889,7 +993,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                   <button
                     type="button"
                     onClick={() => setSelectedRegionFilter('ALL')}
-                    className="min-h-[36px] px-2 rounded-lg ap-status-info text-2xs font-mono font-bold cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[36px] px-2 rounded-lg ap-status-info text-2xs font-mono font-bold cursor-pointer"
                   >
                     Region: {selectedRegionFilter} ×
                   </button>
@@ -942,7 +1046,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                         <button
                           type="button"
                           onClick={() => openEditCaseForm(c)}
-                          className="min-h-[36px] px-2.5 rounded-lg ap-btn-secondary text-2xs font-semibold cursor-pointer"
+                          className="min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg ap-btn-secondary text-2xs font-semibold cursor-pointer"
                         >
                           Edit
                         </button>
@@ -950,7 +1054,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                           type="button"
                           aria-label={`Delete injury case for ${c.athleteName}`}
                           onClick={() => void handleDeleteCase(c)}
-                          className="min-h-[36px] min-w-[36px] rounded-lg ap-card-inset text-rose-600 dark:text-rose-400 inline-flex items-center justify-center cursor-pointer"
+                          className="min-h-[44px] min-w-[44px] sm:min-h-[36px] sm:min-w-[36px] rounded-lg ap-card-inset text-rose-600 dark:text-rose-400 inline-flex items-center justify-center cursor-pointer"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1000,7 +1104,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                               disabled={isSaving || active}
                               data-testid={`rtp-move-${c.id}-${stage}`}
                               onClick={() => void handleQuickStageUpdate(c, stage)}
-                              className={`min-h-[36px] px-2.5 rounded-lg text-2xs font-mono font-bold cursor-pointer disabled:cursor-default ${
+                              className={`min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg text-2xs font-mono font-bold cursor-pointer disabled:cursor-default ${
                                 active
                                   ? 'bg-ap-obsidian text-white dark:bg-ap-volt dark:text-ap-obsidian'
                                   : 'ap-card-inset text-ap-ink dark:text-ap-chalk hover:border-ap-clay'
@@ -1060,7 +1164,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
                               : undefined,
                           })
                         }
-                        className="w-full min-h-[36px] rounded-lg ap-btn-secondary text-2xs font-bold cursor-pointer"
+                        className="w-full min-h-[44px] sm:min-h-[36px] rounded-lg ap-btn-secondary text-2xs font-bold cursor-pointer"
                       >
                         Open RTP Case →
                       </button>

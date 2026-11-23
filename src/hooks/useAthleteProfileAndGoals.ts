@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef } from 'react';
 import type {
   AnnualMileageGoal,
   AthleteGearItem,
@@ -31,6 +31,7 @@ interface UseAthleteProfileAndGoalsParams {
   athleteProfileRef: React.MutableRefObject<AthleteProfile>;
   redactedStravaCountRef: React.MutableRefObject<number>;
   sampleDemoProfile: AthleteProfile;
+  sampleDemoActivities?: UnifiedActivity[];
   setActivities: React.Dispatch<React.SetStateAction<UnifiedActivity[]>>;
   setWellnessDays: React.Dispatch<React.SetStateAction<UnifiedWellnessDay[]>>;
   setGearItems: React.Dispatch<React.SetStateAction<AthleteGearItem[]>>;
@@ -64,6 +65,7 @@ export function useAthleteProfileAndGoals({
   athleteProfileRef,
   redactedStravaCountRef,
   sampleDemoProfile,
+  sampleDemoActivities,
   setActivities,
   setWellnessDays,
   setGearItems,
@@ -400,18 +402,20 @@ export function useAthleteProfileAndGoals({
     [isSampleDemoMode, gearItemsRef, setSampleDemoGearItems, setGearItems]
   );
 
+  const sampleDemoActivitiesRef = useRef<UnifiedActivity[]>(sampleDemoActivities || []);
+  sampleDemoActivitiesRef.current = sampleDemoActivities || [];
+
   const applyImportedActivities = useCallback(
     (incomingActs: UnifiedActivity[]) => {
       if (!incomingActs || incomingActs.length === 0) return;
       const todayIso = getLocalDateIso();
       if (isSampleDemoMode) {
-        setSampleDemoActivities((prev) => {
-          const merged = mergeActivitiesNonDestructive(prev, incomingActs);
-          setSampleDemoWellnessDays((prevW) =>
-            recomputeWellnessDaysWithActivityImport(prevW, merged, todayIso, sampleDemoProfile)
-          );
-          return merged;
-        });
+        const merged = mergeActivitiesNonDestructive(sampleDemoActivitiesRef.current, incomingActs);
+        sampleDemoActivitiesRef.current = merged;
+        setSampleDemoActivities(merged);
+        setSampleDemoWellnessDays((prevW) =>
+          recomputeWellnessDaysWithActivityImport(prevW, merged, todayIso, sampleDemoProfile)
+        );
         return;
       }
       const merged = mergeActivitiesNonDestructive(activitiesRef.current, incomingActs);

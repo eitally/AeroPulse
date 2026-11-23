@@ -161,7 +161,8 @@ function safeReadLocalStorageFlag(key: string): boolean {
     return false;
   }
   try {
-    return storage.getItem(key) === '1';
+    const val = storage.getItem(key);
+    return val === '1' || val === 'true';
   } catch {
     return false;
   }

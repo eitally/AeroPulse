@@ -419,9 +419,35 @@ export function buildDemoSeedInjuryCases(
   const athletes = (team?.memberships || []).filter(
     (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED'
   );
-  const first = athletes[0];
-  const second = athletes[1] || athletes[0];
-  const third = athletes[2] || athletes[0];
+  const hasActivePainCheckIn = (
+    m: TeamMembershipRecord,
+    preferredArea?: SessionCheckInRecord['painArea']
+  ): boolean =>
+    (m.liveSnapshot?.sessionCheckIns || []).some(
+      (ci) => ci.painFlag && (!preferredArea || ci.painArea === preferredArea)
+    );
+  const usedIds = new Set<string>();
+  const pickAthleteForRegion = (
+    preferredArea: SessionCheckInRecord['painArea'],
+    fallbackIdx: number
+  ): TeamMembershipRecord | undefined => {
+    const exactMatch = athletes.find(
+      (m) => !usedIds.has(m.membershipId) && hasActivePainCheckIn(m, preferredArea)
+    );
+    const anyPainMatch = exactMatch
+      ? undefined
+      : athletes.find((m) => !usedIds.has(m.membershipId) && hasActivePainCheckIn(m));
+    const fallback =
+      athletes[fallbackIdx] && !usedIds.has(athletes[fallbackIdx].membershipId)
+        ? athletes[fallbackIdx]
+        : athletes.find((m) => !usedIds.has(m.membershipId)) || athletes[fallbackIdx] || athletes[0];
+    const chosen = exactMatch || anyPainMatch || fallback;
+    if (chosen) usedIds.add(chosen.membershipId);
+    return chosen;
+  };
+  const first = pickAthleteForRegion('SHIN', 0);
+  const second = pickAthleteForRegion('HAMSTRING', 1) || first;
+  const third = pickAthleteForRegion('ANKLE', 2) || second || first;
   const todayIso = getLocalDateIso();
   const returnIn7d = shiftIsoDateDays(todayIso, 7);
   const returnIn3d = shiftIsoDateDays(todayIso, 3);

@@ -48,7 +48,7 @@ export const CalendarWatchPushItems: React.FC<CalendarWatchPushItemsProps> = ({
   options,
   onPushResult,
   onAfterClick,
-  itemClassName = 'w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer',
+  itemClassName = 'w-full min-h-[44px] sm:min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer',
   testIdPrefix = 'calendar-push',
 }) => {
   const handlePush = async (target: WearablePushTarget) => {

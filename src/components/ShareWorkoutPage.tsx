@@ -67,8 +67,35 @@ function parsePaceStringToSecsPerKm(raw: string): number | null {
   return null;
 }
 
+export function resolvePresetSharedWorkoutFromSearch(search: string): SharedWorkoutPayload | null {
+  try {
+    const params = new URLSearchParams(search);
+    const preset = (params.get('preset') || '').trim().toLowerCase();
+    if (preset === '8x400') {
+      return {
+        kind: 'WORKOUT',
+        version: 1,
+        title: '8 × 400m Track Intervals (Zero-Login Specimen)',
+        sport: 'Running',
+        date: new Date().toISOString().slice(0, 10),
+        workoutSyntax:
+          'Warmup\n- 15m 68% Pace\n\nMain Set\n- 8x 400m @ mile pace w/ 200m jog\n\nCooldown\n- 10m 62% Pace',
+        plannedDurationSecs: 2700,
+        plannedLoad: 68,
+        description:
+          'Zero-login MeetReady track split recalculator specimen (8 × 400m @ mile effort with 200m float jog).',
+        defaultUnit: 'mi',
+        referenceThresholdPaceSecsPerKm: 245,
+      };
+    }
+  } catch {
+    // ignore malformed query string
+  }
+  return null;
+}
+
 export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
-  sharedWorkout,
+  sharedWorkout: rawSharedWorkout,
   isDark,
   onToggleDark,
   hasActiveWorkspace,
@@ -79,6 +106,14 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
   onExitToSignIn,
   onExitToWorkspace,
 }) => {
+  const sharedWorkout = useMemo<SharedWorkoutPayload | null>(() => {
+    if (rawSharedWorkout) return rawSharedWorkout;
+    if (typeof window !== 'undefined') {
+      return resolvePresetSharedWorkoutFromSearch(window.location.search);
+    }
+    return null;
+  }, [rawSharedWorkout]);
+
   const [ftpWatts, setFtpWatts] = useState<number>(
     Math.round(sharedWorkout?.referenceFtpWatts || initialFtpWatts || 260)
   );

@@ -49,9 +49,23 @@ export function captureLandingAttribution(): CoachLandingAttribution | null {
     }
 
     if (hasParam) {
-      if (referrerHost) fresh.referrerHost = referrerHost;
-      fresh.landing_path = `${window.location.pathname}${window.location.hash ? window.location.hash.slice(0, 48) : ''}`.slice(0, 120);
-      fresh.capturedAt = new Date().toISOString();
+      let existingParsed: CoachLandingAttribution | null = null;
+      if (existingRaw) {
+        try {
+          existingParsed = JSON.parse(existingRaw) as CoachLandingAttribution;
+        } catch {
+          existingParsed = null;
+        }
+      }
+      if (existingParsed?.referrerHost) {
+        fresh.referrerHost = existingParsed.referrerHost;
+      } else if (referrerHost) {
+        fresh.referrerHost = referrerHost;
+      }
+      fresh.landing_path =
+        existingParsed?.landing_path ||
+        `${window.location.pathname}${window.location.hash ? window.location.hash.slice(0, 48) : ''}`.slice(0, 120);
+      fresh.capturedAt = existingParsed?.capturedAt || new Date().toISOString();
       window.sessionStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(fresh));
       return fresh;
     }

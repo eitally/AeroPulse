@@ -745,7 +745,10 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             ? selectedAthleteIds.map((id) => id.replace(/^team-mem-/, ''))
             : undefined;
 
-        if (activeTeam.brand.teamId.startsWith('demo_team_')) {
+        if (
+          activeTeam.brand.teamId.startsWith('demo_team_') ||
+          activeTeam.brand.teamId.startsWith('demo-team-')
+        ) {
           const newBroadcast: TeamBroadcastWorkout = {
             broadcastId: `bw_demo_${Date.now()}`,
             teamId: activeTeam.brand.teamId,
@@ -767,6 +770,19 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             pushedByCoachName: activeTeam.brand.coachDisplayName || 'Coach',
             createdAt: new Date().toISOString(),
           };
+          const sameBroadcastTargetScope = (bw: TeamBroadcastWorkout): boolean => {
+            const existingGroups = bw.targetEventGroups || [];
+            const incomingGroups = targetEventGroups || [];
+            const existingIds = bw.targetMembershipIds || [];
+            const incomingIds = targetMembershipIds || [];
+            const existingWholeTeam = existingGroups.length === 0 && existingIds.length === 0;
+            const incomingWholeTeam = incomingGroups.length === 0 && incomingIds.length === 0;
+            if (existingWholeTeam && incomingWholeTeam) return true;
+            if (existingWholeTeam || incomingWholeTeam) return false;
+            const groupOverlap = incomingGroups.some((g) => existingGroups.includes(g));
+            const memberOverlap = incomingIds.some((id) => existingIds.includes(id));
+            return groupOverlap || memberOverlap;
+          };
           const updatedTeam: TeamSummaryWithRole = {
             ...activeTeam,
             broadcastWorkouts: [
@@ -775,7 +791,9 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                   !(
                     sessionSlot === 'SINGLE' &&
                     bw.date === workoutDate &&
-                    !bw.isOfficialMeet
+                    !bw.isOfficialMeet &&
+                    (bw.sessionSlot || 'SINGLE') === 'SINGLE' &&
+                    sameBroadcastTargetScope(bw)
                   )
               ),
               newBroadcast,

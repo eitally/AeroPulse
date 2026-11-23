@@ -40,6 +40,7 @@ import {
   type CalendarWeekSummary,
 } from './calendarEffortUtils';
 import { CalendarCopyWeekPopover } from './CalendarCopyWeekPopover';
+import { CalendarWatchPushItems } from './CalendarWatchPushItems';
 import {
   buildCopiedWeekBatchItems,
   buildReschedulePlannedEventPatch,
@@ -87,6 +88,7 @@ export interface CalendarMobileAgendaProps {
   handleExportPlannedZwo: (ev: PlannedWorkoutEvent) => void;
   handleExportPlannedErg: (ev: PlannedWorkoutEvent) => void;
   handleSharePlannedWorkout: (ev: PlannedWorkoutEvent) => void;
+  onWatchPushResult?: (message: string, pushed: boolean) => void;
   getSportIcon: (sport: SportCategory, className?: string) => React.ReactNode;
 }
 
@@ -113,13 +115,45 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
   handleExportPlannedZwo,
   handleExportPlannedErg,
   handleSharePlannedWorkout,
+  onWatchPushResult,
   getSportIcon,
 }) => {
   const [copyWeekIndex, setCopyWeekIndex] = useState<number | null>(null);
   const [movingEventId, setMovingEventId] = useState<string | null>(null);
   const [moveTargetDate, setMoveTargetDate] = useState<string>('');
+  const [localPushBanner, setLocalPushBanner] = useState<{
+    text: string;
+    tone: 'ok' | 'warn';
+  } | null>(null);
+
+  const emitPushResult = (message: string, pushed: boolean) => {
+    if (onWatchPushResult) {
+      onWatchPushResult(message, pushed);
+    } else {
+      setLocalPushBanner({ text: message, tone: pushed ? 'ok' : 'warn' });
+    }
+  };
+
   return (
-    <section className="xl:hidden space-y-3">
+    <section className="xl:hidden space-y-3" data-testid="calendar-mobile-agenda">
+      {!onWatchPushResult && localPushBanner && (
+        <div
+          role="status"
+          data-testid="mobile-calendar-push-toast"
+          className={`rounded-xl px-3.5 py-2 text-xs font-medium flex items-center justify-between gap-2 ${
+            localPushBanner.tone === 'warn' ? 'ap-status-caution' : 'ap-status-prime'
+          }`}
+        >
+          <span>{localPushBanner.text}</span>
+          <button
+            type="button"
+            onClick={() => setLocalPushBanner(null)}
+            className="min-h-[44px] sm:min-h-[34px] px-2 font-mono text-2xs underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
           {calendarWeeks.map((week) => {
             const eow = week.endOfWeekWellness;
             const tsbVal = eow ? Math.round(eow.tsb) : null;
@@ -145,8 +179,8 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                         W{week.isoWeekNum}
                       </span>
                       <span className="text-2xs font-mono text-slate-600 dark:text-slate-300">
-                        {formatHeaderDate(week.days[0].dateStr)} –{' '}
-                        {formatHeaderDate(week.days[6].dateStr)}
+                        {formatHeaderDate(week.days[0]?.dateStr || todayIso)} –{' '}
+                        {formatHeaderDate(week.days[week.days.length - 1]?.dateStr || todayIso)}
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -169,7 +203,7 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                         type="button"
                         onClick={() =>
                           onOpenCoachWithPrompt?.(
-                            `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
+                            `Analyze Week ${week.isoWeekNum} (${week.days[0]?.dateStr || todayIso} to ${week.days[week.days.length - 1]?.dateStr || todayIso}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
                           )
                         }
                         className="min-h-[44px] sm:min-h-[32px] inline-flex items-center px-3 sm:px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-sky-400 text-2xs font-semibold"
@@ -493,12 +527,28 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                                           <Download className="w-3.5 h-3.5" weight="bold" />
                                           <span>Export ▾</span>
                                         </summary>
-                                        <div className="absolute right-0 bottom-full mb-1 z-30 w-36 rounded-xl liquid-glass p-1 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                        <div className="absolute right-0 bottom-full mb-1 z-30 w-52 rounded-xl liquid-glass p-1 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                          <CalendarWatchPushItems
+                                            options={{
+                                              name: ev.name,
+                                              sport: ev.sportCategory,
+                                              workoutSyntax: ev.workoutSyntax,
+                                              description: ev.description,
+                                              ftpWatts: athleteProfile?.ftp || athleteFtp || 280,
+                                              lthrBpm: athleteProfile?.lthr || 170,
+                                              thresholdPaceSecsPerKm:
+                                                athleteProfile?.thresholdPaceSecsPerKm || 250,
+                                              dateIso: ev.date.slice(0, 10),
+                                            }}
+                                            onPushResult={emitPushResult}
+                                            itemClassName="w-full min-h-[44px] sm:min-h-[34px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                          />
+                                          <div className="border-t border-slate-200/70 dark:border-white/10 my-0.5" />
                                           <button
                                             type="button"
                                             data-testid="calendar-export-fit"
                                             onClick={() => handleExportPlannedFit(ev)}
-                                            className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                            className="w-full min-h-[44px] sm:min-h-[34px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
                                           >
                                             <Download className="w-3.5 h-3.5" weight="bold" />
                                             <span>.FIT</span>
@@ -507,7 +557,7 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                                             type="button"
                                             data-testid="calendar-export-zwo"
                                             onClick={() => handleExportPlannedZwo(ev)}
-                                            className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                            className="w-full min-h-[44px] sm:min-h-[34px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
                                           >
                                             <Download className="w-3.5 h-3.5" weight="bold" />
                                             <span>.ZWO</span>
@@ -517,7 +567,7 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                                               type="button"
                                               data-testid="calendar-export-erg"
                                               onClick={() => handleExportPlannedErg(ev)}
-                                              className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                              className="w-full min-h-[44px] sm:min-h-[34px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
                                             >
                                               <Download className="w-3.5 h-3.5" weight="bold" />
                                               <span>.ERG</span>
@@ -527,7 +577,7 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                                             type="button"
                                             data-testid="calendar-share-workout"
                                             onClick={() => handleSharePlannedWorkout(ev)}
-                                            className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                            className="w-full min-h-[44px] sm:min-h-[34px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
                                           >
                                             <ShareNetwork className="w-3.5 h-3.5" weight="bold" />
                                             <span>Share</span>

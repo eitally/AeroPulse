@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   ArrowRight,
   Bike,
   CalendarCheck,
@@ -235,7 +236,35 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
 
   const [isSyncingCalendar, setIsSyncingCalendar] = useState<boolean>(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
-  const [syncedBanner, setSyncedBanner] = useState<string | null>(null);
+  const exportMenuContainerRef = useRef<HTMLDivElement | null>(null);
+  const [syncedBanner, setSyncedBanner] = useState<{
+    text: string;
+    tone: 'ok' | 'warn';
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsExportMenuOpen(false);
+      }
+    };
+    const handleOutsidePointer = (event: MouseEvent) => {
+      if (
+        exportMenuContainerRef.current &&
+        event.target instanceof Node &&
+        !exportMenuContainerRef.current.contains(event.target)
+      ) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('mousedown', handleOutsidePointer);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('mousedown', handleOutsidePointer);
+    };
+  }, [isExportMenuOpen]);
 
   // Latest morning wellness (honest zeros when uncalibrated — never invent fake readiness metrics)
   const latestWellness = useMemo(() => {
@@ -834,9 +863,10 @@ export const ReadinessMorphingCard: React.FC<ReadinessMorphingCardProps> = ({
         description: `${morphedWorkout.rationale} [Calibrated to ${sportCalibrationLabel}]`,
         replaceExistingDate: true,
       });
-      setSyncedBanner(
-        `Saved "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Plan for ${todayIso}.`
-      );
+      setSyncedBanner({
+        text: `Saved "${morphedWorkout.title}" (${morphedWorkout.tss} TSS) to your Plan for ${todayIso}.`,
+        tone: 'ok',
+      });
       window.setTimeout(() => setSyncedBanner(null), 6500);
     } finally {
       setIsSyncingCalendar(false);
@@ -949,7 +979,10 @@ ${dataLines.join('\n')}
         thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
         dateIso: todayIso,
       });
-      setSyncedBanner(res.message);
+      setSyncedBanner({
+        text: res.message,
+        tone: res.pushed ? 'ok' : 'warn',
+      });
       window.setTimeout(() => setSyncedBanner(null), 7000);
     } finally {
       setIsSyncingCalendar(false);
@@ -1131,13 +1164,6 @@ ${dataLines.join('\n')}
           </div>
         )}
       </div>
-
-      {syncedBanner && (
-        <div className="mx-4 sm:mx-5 mt-3 rounded-xl bg-emerald-500/15 border border-emerald-500/35 px-3.5 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
-          <Check className="w-4 h-4 shrink-0" />
-          <span>{syncedBanner}</span>
-        </div>
-      )}
 
       {/* Expandable Body: Triggers Strip + Side-by-Side Original vs Morphed Effort Zone Skylines + Action Bar */}
       {isExpanded && (
@@ -1428,6 +1454,22 @@ ${dataLines.join('\n')}
           </div>
 
           {/* Bottom Action & Export Bar (1 Primary 44px CTA + Secondary Export Menu) */}
+          {syncedBanner && (
+            <div
+              role="status"
+              data-testid="readiness-synced-banner"
+              className={`rounded-xl px-3.5 py-2 text-xs font-medium flex items-center gap-2 ${
+                syncedBanner.tone === 'warn' ? 'ap-status-caution' : 'ap-status-prime'
+              }`}
+            >
+              {syncedBanner.tone === 'warn' ? (
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+              ) : (
+                <Check className="w-4 h-4 shrink-0" />
+              )}
+              <span>{syncedBanner.text}</span>
+            </div>
+          )}
           <div className="pt-3 border-t border-slate-200/70 dark:border-slate-800/80 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2.5">
               <button
@@ -1444,7 +1486,7 @@ ${dataLines.join('\n')}
                 </span>
               </button>
 
-              <div className="relative">
+              <div ref={exportMenuContainerRef} className="relative">
                 <button
                   type="button"
                   onClick={() => setIsExportMenuOpen((prev) => !prev)}

@@ -11,11 +11,16 @@ import {
   X,
 } from '../icons/PhosphorIcons';
 import type {
+  AthleteGearItem,
   AthleteProfile,
   DistanceUnit,
   UnifiedActivity,
   WorkoutQuickLog,
 } from '../../types';
+import {
+  useTelemetryWorkspace,
+  type TelemetryWorkspaceContextValue,
+} from '../../contexts/TelemetryWorkspaceContext';
 import {
   formatDistance,
   formatDuration,
@@ -59,6 +64,7 @@ export interface ActivityInspectorModalProps {
   similarHistoricalWorkouts: UnifiedActivity[];
   segmentHistoryBySegmentId: Map<string, SegmentHistorySummary>;
   repeatedSegmentsList: RepeatedSegmentSummary[];
+  gearItems?: AthleteGearItem[];
 }
 
 export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
@@ -83,7 +89,15 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
   similarHistoricalWorkouts,
   segmentHistoryBySegmentId,
   repeatedSegmentsList,
+  gearItems: gearItemsProp,
 }) => {
+  let wsCtx: TelemetryWorkspaceContextValue | null = null;
+  try {
+    wsCtx = useTelemetryWorkspace();
+  } catch {
+    wsCtx = null;
+  }
+  const effectiveGearItems = gearItemsProp ?? wsCtx?.effectiveGearItems ?? [];
   const [streamHoverIndex, setStreamHoverIndex] = useState<number | null>(null);
   const [streamZoomRange, setStreamZoomRange] = useState<[number, number] | null>(null);
   const [debriefZoomWindow, setDebriefZoomWindow] = useState<{
@@ -1042,22 +1056,69 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                         >
                           Gear:
                         </label>
-                        <input
-                          id={`${formId}-quicklog-gear`}
-                          type="text"
-                          placeholder={
-                            selectedActivity.sportCategory === 'Cycling'
-                              ? 'e.g. Road / Trainer Bike'
-                              : 'e.g. Daily Trainer / Carbon Shoe'
+                        {(() => {
+                          const sportGear = effectiveGearItems.filter(
+                            (g) =>
+                              !g.retired &&
+                              (selectedActivity.sportCategory === 'Cycling'
+                                ? g.type === 'BIKE'
+                                : g.type === 'SHOE')
+                          );
+                          if (sportGear.length > 0) {
+                            const matchedGearId =
+                              curLog.gearId ||
+                              selectedActivity.gearId ||
+                              sportGear.find(
+                                (g) =>
+                                  g.name === (curLog.gearName || selectedActivity.gearName)
+                              )?.id ||
+                              '';
+                            return (
+                              <select
+                                id={`${formId}-quicklog-gear`}
+                                data-testid="inspector-quicklog-gear-select"
+                                value={matchedGearId}
+                                onChange={(e) => {
+                                  const chosen = sportGear.find((g) => g.id === e.target.value);
+                                  saveQuickLogForActivity(selectedActivity.id, {
+                                    gearId: chosen?.id,
+                                    gearName: chosen?.name || '',
+                                    ...(chosen?.footwearClass
+                                      ? { footwearClass: chosen.footwearClass }
+                                      : {}),
+                                  });
+                                }}
+                                className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100 cursor-pointer"
+                              >
+                                <option value="">Select from Gear Closet…</option>
+                                {sportGear.map((g) => (
+                                  <option key={g.id} value={g.id}>
+                                    {g.name}
+                                    {g.primary ? ' (Primary)' : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            );
                           }
-                          value={curLog.gearName ?? ''}
-                          onChange={(e) =>
-                            saveQuickLogForActivity(selectedActivity.id, {
-                              gearName: e.target.value,
-                            })
-                          }
-                          className="w-full min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100"
-                        />
+                          return (
+                            <input
+                              id={`${formId}-quicklog-gear`}
+                              type="text"
+                              placeholder={
+                                selectedActivity.sportCategory === 'Cycling'
+                                  ? 'e.g. Road / Trainer Bike'
+                                  : 'e.g. Daily Trainer / Carbon Shoe'
+                              }
+                              value={curLog.gearName ?? ''}
+                              onChange={(e) =>
+                                saveQuickLogForActivity(selectedActivity.id, {
+                                  gearName: e.target.value,
+                                })
+                              }
+                              className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100"
+                            />
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>

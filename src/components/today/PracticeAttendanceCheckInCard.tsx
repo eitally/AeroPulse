@@ -75,8 +75,10 @@ export const PracticeAttendanceCheckInCard: React.FC<PracticeAttendanceCheckInCa
   const todayRecord = activeTeam.attendanceByDate?.[todayIso]?.[activeTeam.myMembershipId];
   const isVerifiedToday = Boolean(
     todayRecord &&
-      todayRecord.verifiedOnSite &&
-      (todayRecord.status === 'PRESENT' || todayRecord.status === 'LATE')
+      (todayRecord.verifiedOnSite || todayRecord.status === 'INJURED_MODIFIED') &&
+      (todayRecord.status === 'PRESENT' ||
+        todayRecord.status === 'LATE' ||
+        todayRecord.status === 'INJURED_MODIFIED')
   );
 
   const applyLocalDemoCheckIn = (venue: PracticeVenueGeofence, distanceMeters: number) => {
@@ -226,8 +228,11 @@ export const PracticeAttendanceCheckInCard: React.FC<PracticeAttendanceCheckInCa
             >
               <CheckCircle2 className="w-4 h-4 shrink-0" weight="fill" />
               <span>
-                On-Site ✓ · {todayRecord.venueName || targetVenue.name} ·{' '}
-                {todayRecord.distanceMeters ?? 0}m
+                {todayRecord.status === 'INJURED_MODIFIED'
+                  ? `Modified Attendance ✓ · ${todayRecord.note || 'AT Modified'}`
+                  : `On-Site ✓ · ${todayRecord.venueName || targetVenue.name} · ${
+                      todayRecord.distanceMeters ?? 0
+                    }m`}
               </span>
             </div>
           ) : (

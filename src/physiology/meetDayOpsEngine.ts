@@ -667,8 +667,10 @@ export function openPrintableMeetDayPacketWindow(params: {
     })
     .join('');
 
-  const html = `<!doctype html><html><head><title>${escapeHtml(params.meetTitle)} — MeetReady Meet Packet</title><style>body{font-family:system-ui,sans-serif;padding:20px;color:#111}h1,h2,h3{margin:12px 0 6px}table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:12px}th,td{border:1px solid #bbb;padding:5px 8px;text-align:left}.warn{background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-weight:700}</style></head><body><h1>${escapeHtml(params.teamName)} — ${escapeHtml(params.meetTitle)}</h1><p>NFHS Rule 4-2 Compliance: ${violations.length === 0 ? 'All athletes within 4-event limit ✓' : `${violations.length} athlete(s) exceed 4-event cap`}</p>${violations.length > 0 ? `<div class="warn">Over 4 Events: ${violations.map((v) => `${escapeHtml(v.athleteName)} (${v.eventCount})`).join(', ')}</div>` : ''}${sections}</body></html>`;
+  const html = `<!doctype html><html><head><title>${escapeHtml(params.meetTitle)} — MeetReady Meet Packet</title><style>body{font-family:system-ui,sans-serif;padding:20px;color:#111}h1,h2,h3{margin:12px 0 6px}table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:12px}th,td{border:1px solid #bbb;padding:5px 8px;text-align:left}.warn{background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-weight:700}.no-print{margin-bottom:12px}@media print{.no-print{display:none!important}}</style></head><body><div class="no-print"><button type="button" onclick="window.print()" style="padding:8px 14px;font-weight:700;border-radius:8px;border:1px solid #999;background:#fff;cursor:pointer;">Print Meet Packet</button></div><h1>${escapeHtml(params.teamName)} — ${escapeHtml(params.meetTitle)}</h1><p>NFHS Rule 4-2 Compliance: ${violations.length === 0 ? 'All athletes within 4-event limit ✓' : `${violations.length} athlete(s) exceed 4-event cap`}</p>${violations.length > 0 ? `<div class="warn">Over 4 Events: ${violations.map((v) => `${escapeHtml(v.athleteName)} (${v.eventCount})`).join(', ')}</div>` : ''}${sections}</body></html>`;
   win.document.write(html);
   win.document.close();
+  win.focus?.();
+  win.print?.();
   return true;
 }

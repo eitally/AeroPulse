@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   Bell,
   CheckCircle2,
   ClipboardText,
   Crosshair,
+  Download,
   MapPin,
   Plus,
   Target,
@@ -13,6 +14,7 @@ import {
   X,
   Zap,
 } from '../icons/PhosphorIcons';
+import { useModalDialog } from '../../hooks/useModalDialog';
 import {
   deleteTeamAnnouncementApi,
   postTeamAnnouncementApi,
@@ -78,6 +80,106 @@ function todayLocalIso(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+function shiftLocalIsoDays(baseIso: string, deltaDays: number): string {
+  const [y, m, d] = baseIso.split('-').map(Number);
+  const dt = new Date(y || 2026, (m || 1) - 1, (d || 1) + deltaDays, 12, 0, 0);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+}
+
+function isDemoOpsTeamId(teamId?: string | null): boolean {
+  if (!teamId) return false;
+  return teamId.startsWith('demo_team_') || teamId.startsWith('demo-team-');
+}
+
+function formatAnnouncementCategoryLabel(category: TeamAnnouncementCategory): string {
+  switch (category) {
+    case 'MEET_LOGISTICS':
+      return 'Meet Logistics';
+    case 'SCHEDULE_CHANGE':
+      return 'Schedule Change';
+    case 'WEATHER':
+      return 'Weather';
+    default:
+      return 'General';
+  }
+}
+
+function escapeOpsCsvCell(value: unknown): string {
+  const raw = String(value ?? '');
+  const trimmed = raw.trimStart();
+  const safe =
+    trimmed.startsWith('=') ||
+    trimmed.startsWith('+') ||
+    trimmed.startsWith('-') ||
+    trimmed.startsWith('@') ||
+    trimmed.startsWith('\t') ||
+    trimmed.startsWith('\r')
+      ? `'${raw}`
+      : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
+export function buildAttendanceCsv(params: {
+  dateIso: string;
+  teamName: string;
+  members: TeamSummaryWithRole['memberships'];
+  attendanceByMember: Record<string, TeamAttendanceStatus>;
+  savedRecords?: Record<string, TeamAttendanceRecord>;
+  injuryCases?: TeamSummaryWithRole['injuryCases'];
+}): string {
+  const headers = [
+    'Date',
+    'Team',
+    'Athlete',
+    'Event Group',
+    'Attendance Status',
+    'AT RTP Stage',
+    'Verified On Site',
+    'Distance (m)',
+    'Venue',
+    'Method',
+    'Note',
+  ];
+  const rtpByMember = new Map<string, string>();
+  for (const c of params.injuryCases || []) {
+    if (c.rtpStage !== 'CLEARED') rtpByMember.set(c.membershipId, c.rtpStage);
+  }
+  const rows = params.members.map((m) => {
+    const rec = params.savedRecords?.[m.membershipId];
+    const status = params.attendanceByMember[m.membershipId] || rec?.status || 'UNMARKED';
+    return [
+      params.dateIso,
+      params.teamName,
+      m.invitedName,
+      m.eventGroup || '',
+      status,
+      rtpByMember.get(m.membershipId) || (m.status === 'INJURED' ? 'INJURED' : ''),
+      rec?.verifiedOnSite ? 'Yes' : 'No',
+      typeof rec?.distanceMeters === 'number' ? String(rec.distanceMeters) : '',
+      rec?.venueName || '',
+      rec?.method || '',
+      rec?.note || '',
+    ]
+      .map(escapeOpsCsvCell)
+      .join(',');
+  });
+  return [headers.map(escapeOpsCsvCell).join(','), ...rows].join('\n');
+}
+
+function readSavedAttendanceMap(
+  team: TeamSummaryWithRole | null,
+  dateIso: string
+): Record<string, TeamAttendanceStatus> {
+  const savedMap = team?.attendanceByDate?.[dateIso];
+  const next: Record<string, TeamAttendanceStatus> = {};
+  if (savedMap) {
+    for (const rec of Object.values(savedMap)) {
+      next[rec.membershipId] = rec.status;
+    }
+  }
+  return next;
+}
+
 export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   activeTeam,
   myTeams,
@@ -88,18 +190,28 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   onTeamsUpdated,
 }) => {
   const todayIso = useMemo(() => todayLocalIso(), []);
+  const minAttendanceDateIso = useMemo(() => shiftLocalIsoDays(todayIso, -45), [todayIso]);
+  const [selectedDate, setSelectedDate] = useState<string>(todayIso);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [groupFilter, setGroupFilter] = useState<CoachEventGroup | 'ALL'>('ALL');
-  const [attendanceMap, setAttendanceMap] = useState<Record<string, TeamAttendanceStatus>>({});
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, TeamAttendanceStatus>>(() =>
+    readSavedAttendanceMap(activeTeam, todayIso)
+  );
   const [savingAttendance, setSavingAttendance] = useState<boolean>(false);
-  const [attendanceBanner, setAttendanceBanner] = useState<string | null>(null);
+  const [attendanceBanner, setAttendanceBanner] = useState<{
+    text: string;
+    tone: 'ok' | 'error';
+  } | null>(null);
 
   const [alertTitle, setAlertTitle] = useState<string>('');
   const [alertBody, setAlertBody] = useState<string>('');
   const [alertCategory, setAlertCategory] = useState<TeamAnnouncementCategory>('WEATHER');
   const [publishToHub, setPublishToHub] = useState<boolean>(true);
   const [postingAlert, setPostingAlert] = useState<boolean>(false);
-  const [alertBanner, setAlertBanner] = useState<string | null>(null);
+  const [alertBanner, setAlertBanner] = useState<{
+    text: string;
+    tone: 'ok' | 'error';
+  } | null>(null);
 
   const [isVenueSetupOpen, setIsVenueSetupOpen] = useState<boolean>(false);
   const [venuesDraft, setVenuesDraft] = useState<PracticeVenueGeofence[]>(
@@ -113,7 +225,10 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   const [newVenueEnabled, setNewVenueEnabled] = useState<boolean>(true);
   const [locatingVenue, setLocatingVenue] = useState<boolean>(false);
   const [savingVenues, setSavingVenues] = useState<boolean>(false);
-  const [venueBanner, setVenueBanner] = useState<string | null>(null);
+  const [venueBanner, setVenueBanner] = useState<{
+    text: string;
+    tone: 'ok' | 'error';
+  } | null>(null);
 
   useEffect(() => {
     setVenuesDraft(activeTeam?.brand.practiceVenues || []);
@@ -121,7 +236,9 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   }, [activeTeam?.brand.teamId, activeTeam?.brand.practiceVenues]);
 
   const athleteMembers = useMemo(() => {
-    const members = (activeTeam?.memberships || []).filter((m) => m.role === 'ATHLETE');
+    const members = (activeTeam?.memberships || []).filter(
+      (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
+    );
     if (allowedEventGroups && allowedEventGroups.length > 0) {
       const scoped = members.filter(
         (m) => !m.eventGroup || allowedEventGroups.includes(m.eventGroup)
@@ -131,16 +248,19 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
     return members;
   }, [activeTeam?.memberships, allowedEventGroups]);
 
-  useEffect(() => {
-    const savedMap = activeTeam?.attendanceByDate?.[todayIso];
-    const next: Record<string, TeamAttendanceStatus> = {};
-    if (savedMap) {
-      for (const rec of Object.values(savedMap)) {
-        next[rec.membershipId] = rec.status;
+  const atRtpByMemberId = useMemo(() => {
+    const map = new Map<string, 'OUT' | 'MODIFIED'>();
+    for (const c of activeTeam?.injuryCases || []) {
+      if (c.rtpStage === 'OUT' || c.rtpStage === 'MODIFIED') {
+        map.set(c.membershipId, c.rtpStage);
       }
     }
-    setAttendanceMap(next);
-  }, [activeTeam?.brand.teamId, activeTeam?.attendanceByDate, todayIso]);
+    return map;
+  }, [activeTeam?.injuryCases]);
+
+  useEffect(() => {
+    setAttendanceMap(readSavedAttendanceMap(activeTeam, selectedDate));
+  }, [activeTeam, selectedDate]);
 
   const visibleMembers = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -154,30 +274,64 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
   const handleMarkAllPresent = () => {
     const next: Record<string, TeamAttendanceStatus> = { ...attendanceMap };
     for (const m of visibleMembers) {
-      next[m.membershipId] = 'PRESENT';
+      const isInjured = m.status === 'INJURED' || atRtpByMemberId.has(m.membershipId);
+      next[m.membershipId] = isInjured ? 'INJURED_MODIFIED' : 'PRESENT';
     }
     setAttendanceMap(next);
     setAttendanceBanner(null);
   };
 
+  const handleExportAttendanceCsv = () => {
+    if (!activeTeam) return;
+    const csv = buildAttendanceCsv({
+      dateIso: selectedDate,
+      teamName: activeTeam.brand.shortName || activeTeam.brand.name,
+      members: visibleMembers,
+      attendanceByMember: attendanceMap,
+      savedRecords: activeTeam.attendanceByDate?.[selectedDate],
+      injuryCases: activeTeam.injuryCases,
+    });
+    const slug = (activeTeam.brand.slug || activeTeam.brand.shortName || 'team')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${slug}-attendance-${selectedDate}.csv`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    setAttendanceBanner({
+      text: `Exported attendance CSV for ${selectedDate} (${visibleMembers.length} athletes).`,
+      tone: 'ok',
+    });
+  };
+
   const handleSaveAttendance = async () => {
     if (!activeTeam) return;
-    const entries = visibleMembers
-      .map((m) => ({
-        membershipId: m.membershipId,
-        status: attendanceMap[m.membershipId] || 'PRESENT',
-      }));
+    const entries = visibleMembers.map((m) => ({
+      membershipId: m.membershipId,
+      status:
+        attendanceMap[m.membershipId] ||
+        (m.status === 'INJURED' || atRtpByMemberId.has(m.membershipId)
+          ? ('INJURED_MODIFIED' as const)
+          : ('PRESENT' as const)),
+    }));
     if (entries.length === 0) return;
 
     const applyLocal = () => {
       const existing = activeTeam.attendanceByDate || {};
-      const nextByMember: Record<string, TeamAttendanceRecord> = { ...(existing[todayIso] || {}) };
+      const nextByMember: Record<string, TeamAttendanceRecord> = {
+        ...(existing[selectedDate] || {}),
+      };
       for (const e of entries) {
         const prev = nextByMember[e.membershipId];
         const keepGps =
           prev?.method === 'GPS_GEOFENCE' && (e.status === 'PRESENT' || e.status === 'LATE');
         nextByMember[e.membershipId] = {
-          date: todayIso,
+          date: selectedDate,
           membershipId: e.membershipId,
           status: e.status,
           ...(keepGps
@@ -195,21 +349,29 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
       }
       const updated: TeamSummaryWithRole = {
         ...activeTeam,
-        attendanceByDate: { ...existing, [todayIso]: nextByMember },
+        attendanceByDate: { ...existing, [selectedDate]: nextByMember },
       };
       onTeamsUpdated(
         myTeams.map((t) => (t.brand.teamId === updated.brand.teamId ? updated : t)),
         updated.brand.teamId
       );
-      setAttendanceBanner(`Saved attendance for ${entries.length} athletes ✓`);
+      setAttendanceBanner({
+        text: `Saved attendance for ${entries.length} athletes (${selectedDate}) ✓`,
+        tone: 'ok',
+      });
     };
+
+    if (isDemoOpsTeamId(activeTeam.brand.teamId)) {
+      applyLocal();
+      return;
+    }
 
     setSavingAttendance(true);
     setAttendanceBanner(null);
     try {
       const resp = await recordTeamAttendanceBatchApi({
         teamId: activeTeam.brand.teamId,
-        date: todayIso,
+        date: selectedDate,
         entries,
       });
       if (resp.teams && resp.teams.length > 0) {
@@ -220,9 +382,15 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
           resp.team.brand.teamId
         );
       }
-      setAttendanceBanner(`Saved attendance for ${entries.length} athletes ✓`);
-    } catch {
-      applyLocal();
+      setAttendanceBanner({
+        text: `Saved attendance for ${entries.length} athletes (${selectedDate}) ✓`,
+        tone: 'ok',
+      });
+    } catch (err) {
+      setAttendanceBanner({
+        text: err instanceof Error ? err.message : 'Unable to save attendance roll call.',
+        tone: 'error',
+      });
     } finally {
       setSavingAttendance(false);
     }
@@ -253,8 +421,13 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
       );
       setAlertTitle('');
       setAlertBody('');
-      setAlertBanner('Team alert posted ✓');
+      setAlertBanner({ text: 'Team alert posted ✓', tone: 'ok' });
     };
+
+    if (isDemoOpsTeamId(activeTeam.brand.teamId)) {
+      applyLocal();
+      return;
+    }
 
     setPostingAlert(true);
     setAlertBanner(null);
@@ -276,13 +449,17 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
       }
       setAlertTitle('');
       setAlertBody('');
-      setAlertBanner(
-        publishToHub
+      setAlertBanner({
+        text: publishToHub
           ? 'Posted to Team + Public Parent Hub ✓'
-          : 'Posted Team Announcement ✓'
-      );
-    } catch {
-      applyLocal();
+          : 'Posted Team Announcement ✓',
+        tone: 'ok',
+      });
+    } catch (err) {
+      setAlertBanner({
+        text: err instanceof Error ? err.message : 'Unable to post team alert.',
+        tone: 'error',
+      });
     } finally {
       setPostingAlert(false);
     }
@@ -300,6 +477,10 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
         updated.brand.teamId
       );
     };
+    if (isDemoOpsTeamId(activeTeam.brand.teamId)) {
+      applyLocal();
+      return;
+    }
     try {
       const resp = await deleteTeamAnnouncementApi({
         teamId: activeTeam.brand.teamId,
@@ -307,11 +488,17 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
       });
       if (resp.teams && resp.teams.length > 0) {
         onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
-      } else {
-        applyLocal();
+      } else if (resp.team) {
+        onTeamsUpdated(
+          myTeams.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
+          resp.team.brand.teamId
+        );
       }
-    } catch {
-      applyLocal();
+    } catch (err) {
+      setAlertBanner({
+        text: err instanceof Error ? err.message : 'Unable to delete team alert.',
+        tone: 'error',
+      });
     }
   };
 
@@ -341,10 +528,13 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
         myTeams.map((t) => (t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t)),
         updatedTeam.brand.teamId
       );
-      setVenueBanner(`Saved ${saved.length} practice venue${saved.length === 1 ? '' : 's'} ✓`);
+      setVenueBanner({
+        text: `Saved ${saved.length} practice venue${saved.length === 1 ? '' : 's'} ✓`,
+        tone: 'ok',
+      });
     };
 
-    if (activeTeam.brand.teamId.startsWith('demo_team_')) {
+    if (isDemoOpsTeamId(activeTeam.brand.teamId)) {
       applyLocal(nextVenues);
       setSavingVenues(false);
       return;
@@ -362,16 +552,18 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
           myTeams.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
           resp.team.brand.teamId
         );
-      } else {
-        applyLocal(nextVenues);
       }
-      setVenueBanner(
-        `Saved ${(resp.practiceVenues || nextVenues).length} practice venue${
+      setVenueBanner({
+        text: `Saved ${(resp.practiceVenues || nextVenues).length} practice venue${
           (resp.practiceVenues || nextVenues).length === 1 ? '' : 's'
-        } ✓`
-      );
-    } catch {
-      applyLocal(nextVenues);
+        } ✓`,
+        tone: 'ok',
+      });
+    } catch (err) {
+      setVenueBanner({
+        text: err instanceof Error ? err.message : 'Unable to save practice venues.',
+        tone: 'error',
+      });
     } finally {
       setSavingVenues(false);
     }
@@ -379,7 +571,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
 
   const handleUseCurrentLocation = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setVenueBanner('Browser geolocation is unavailable.');
+      setVenueBanner({ text: 'Browser geolocation is unavailable.', tone: 'error' });
       return;
     }
     setLocatingVenue(true);
@@ -392,7 +584,10 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
       },
       (err) => {
         setLocatingVenue(false);
-        setVenueBanner(err?.message || 'Unable to read current GPS location.');
+        setVenueBanner({
+          text: err?.message || 'Unable to read current GPS location.',
+          tone: 'error',
+        });
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
@@ -415,7 +610,10 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
       lng < -180 ||
       lng > 180
     ) {
-      setVenueBanner('Enter a venue name and valid coordinates (or click Use My Current Location).');
+      setVenueBanner({
+        text: 'Enter a venue name and valid coordinates (or click Use My Current Location).',
+        tone: 'error',
+      });
       return;
     }
     const added: PracticeVenueGeofence = {
@@ -479,25 +677,52 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
             className="lg:col-span-6 rounded-xl ap-card-inset p-3 space-y-2.5"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <ClipboardText className="w-4 h-4 ap-text-brand" />
                 <span className="text-xs font-bold text-ap-ink dark:text-ap-chalk">
                   1-Tap Roll Call ({presentCount}/{athleteMembers.length} Present)
                 </span>
+                <input
+                  type="date"
+                  data-testid="attendance-date-picker"
+                  aria-label="Attendance roll call date"
+                  value={selectedDate}
+                  min={minAttendanceDateIso}
+                  max={todayIso}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setSelectedDate(e.target.value);
+                      setAttendanceBanner(null);
+                    }
+                  }}
+                  className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-2xs font-mono text-ap-ink dark:text-ap-chalk"
+                />
               </div>
-              <button
-                type="button"
-                data-testid="roll-call-mark-all-btn"
-                onClick={handleMarkAllPresent}
-                className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-ap-turf text-ap-volt text-2xs font-mono font-bold cursor-pointer"
-              >
-                Mark All Present
-              </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="attendance-export-csv-btn"
+                  onClick={handleExportAttendanceCsv}
+                  className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Export CSV</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="roll-call-mark-all-btn"
+                  onClick={handleMarkAllPresent}
+                  className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-ap-turf text-ap-volt text-2xs font-mono font-bold cursor-pointer"
+                >
+                  Mark All Present
+                </button>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-1.5">
               <input
                 type="search"
+                aria-label="Search roster athlete"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search athlete..."
@@ -529,8 +754,9 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                 </div>
               ) : (
                 visibleMembers.map((m) => {
-                  const status = attendanceMap[m.membershipId] || 'PRESENT';
-                  const todayRec = activeTeam.attendanceByDate?.[todayIso]?.[m.membershipId];
+                  const status = attendanceMap[m.membershipId];
+                  const todayRec = activeTeam.attendanceByDate?.[selectedDate]?.[m.membershipId];
+                  const atRtpStage = atRtpByMemberId.get(m.membershipId);
                   const showGpsPill = Boolean(
                     todayRec?.verifiedOnSite &&
                       todayRec?.method === 'GPS_GEOFENCE' &&
@@ -549,6 +775,24 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                         {m.eventGroup && (
                           <span className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
                             {m.eventGroup}
+                          </span>
+                        )}
+                        {atRtpStage && (
+                          <span
+                            data-testid={`roll-call-at-badge-${m.membershipId}`}
+                            className={`px-1.5 py-0.5 rounded font-mono text-2xs font-bold ${
+                              atRtpStage === 'OUT' ? 'ap-status-strained' : 'ap-status-caution'
+                            }`}
+                          >
+                            AT {atRtpStage}
+                          </span>
+                        )}
+                        {!atRtpStage && m.status === 'INJURED' && (
+                          <span
+                            data-testid={`roll-call-at-badge-${m.membershipId}`}
+                            className="px-1.5 py-0.5 rounded font-mono text-2xs font-bold ap-status-caution"
+                          >
+                            INJURED
                           </span>
                         )}
                         {showGpsPill && (
@@ -617,9 +861,13 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                 {attendanceBanner && (
                   <span
                     data-testid="roll-call-saved-banner"
-                    className="text-2xs font-mono font-bold text-emerald-600 dark:text-emerald-400"
+                    className={`text-2xs font-mono font-bold ${
+                      attendanceBanner.tone === 'error'
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    }`}
                   >
-                    {attendanceBanner}
+                    {attendanceBanner.text}
                   </span>
                 )}
               </div>
@@ -633,7 +881,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                     data-testid="practice-venues-toggle-btn"
                     aria-expanded={isVenueSetupOpen}
                     onClick={() => setIsVenueSetupOpen((prev) => !prev)}
-                    className="min-h-[36px] px-2.5 py-1 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-2xs font-mono font-bold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-2xs font-mono font-bold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <MapPin className="w-3.5 h-3.5 ap-text-brand" />
                     <span>
@@ -641,8 +889,14 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                     </span>
                   </button>
                   {venueBanner && (
-                    <span className="text-2xs font-mono font-semibold text-emerald-700 dark:text-emerald-300">
-                      {venueBanner}
+                    <span
+                      className={`text-2xs font-mono font-semibold ${
+                        venueBanner.tone === 'error'
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-emerald-700 dark:text-emerald-300'
+                      }`}
+                    >
+                      {venueBanner.text}
                     </span>
                   )}
                 </div>
@@ -683,7 +937,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                                     )
                                   );
                                 }}
-                                className="min-h-[32px] rounded-md border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-1.5 font-mono text-2xs"
+                                className="min-h-[44px] sm:min-h-[32px] rounded-md border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-1.5 font-mono text-2xs"
                               >
                                 <option value={100}>100m</option>
                                 <option value={250}>250m</option>
@@ -714,7 +968,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                                     venuesDraft.filter((item) => item.id !== v.id)
                                   )
                                 }
-                                className="p-1 text-rose-500 hover:text-rose-400 cursor-pointer"
+                                className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] inline-flex items-center justify-center p-1 text-rose-500 hover:text-rose-400 cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -730,10 +984,11 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                           <input
                             type="text"
                             data-testid="venue-name-input"
+                            aria-label="Practice venue name"
                             value={newVenueName}
                             onChange={(e) => setNewVenueName(e.target.value)}
                             placeholder="Venue name (e.g. Campus Track)"
-                            className="flex-1 min-w-[140px] min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs text-ap-ink dark:text-ap-chalk"
+                            className="flex-1 min-w-[140px] min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs text-ap-ink dark:text-ap-chalk"
                           />
                           <select
                             data-testid="venue-category-select"
@@ -742,7 +997,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                             onChange={(e) =>
                               setNewVenueCategory(e.target.value as PracticeVenueCategory)
                             }
-                            className="min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs font-mono"
+                            className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs font-mono"
                           >
                             <option value="TRACK">Track</option>
                             <option value="XC_COURSE">XC Course</option>
@@ -756,7 +1011,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                             aria-label="Geofence radius"
                             value={newVenueRadius}
                             onChange={(e) => setNewVenueRadius(Number(e.target.value) || 250)}
-                            className="min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs font-mono"
+                            className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-xs font-mono"
                           >
                             <option value={100}>100m</option>
                             <option value={250}>250m</option>
@@ -770,7 +1025,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                             data-testid="venue-use-current-location-btn"
                             disabled={locatingVenue}
                             onClick={handleUseCurrentLocation}
-                            className="min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-mono font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
                           >
                             <Crosshair className="w-3.5 h-3.5 ap-text-brand" />
                             <span>
@@ -784,7 +1039,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                             value={newVenueLat}
                             onChange={(e) => setNewVenueLat(e.target.value)}
                             placeholder="Lat"
-                            className="w-24 min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-2xs font-mono"
+                            className="w-24 min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-2xs font-mono"
                           />
                           <input
                             type="text"
@@ -793,7 +1048,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                             value={newVenueLng}
                             onChange={(e) => setNewVenueLng(e.target.value)}
                             placeholder="Lng"
-                            className="w-24 min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-2xs font-mono"
+                            className="w-24 min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 text-2xs font-mono"
                           />
                           <label className="inline-flex items-center gap-1 text-2xs font-mono cursor-pointer">
                             <input
@@ -809,7 +1064,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                             type="submit"
                             data-testid="venue-save-btn"
                             disabled={savingVenues}
-                            className="min-h-[36px] px-3 py-1 rounded-lg bg-ap-turf text-ap-volt text-2xs font-mono font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            className="min-h-[44px] sm:min-h-[36px] px-3 py-1 rounded-lg bg-ap-turf text-ap-volt text-2xs font-mono font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
                           >
                             <Plus className="w-3.5 h-3.5" />
                             <span>{savingVenues ? 'Saving…' : 'Add Venue'}</span>
@@ -844,9 +1099,9 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                       setAlertTitle(p.title);
                       setAlertBody(p.body);
                       setAlertCategory(p.category);
-                      setAlertBanner(null);
+                      setAlertBanner({ text: 'Quick preset loaded into editor.', tone: 'ok' });
                     }}
-                    className="min-h-[36px] px-2 py-0.5 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[36px] px-2 py-0.5 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk cursor-pointer"
                   >
                     {p.label}
                   </button>
@@ -859,6 +1114,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                 <input
                   type="text"
                   data-testid="announcement-title-input"
+                  aria-label="Team alert headline"
                   value={alertTitle}
                   onChange={(e) => setAlertTitle(e.target.value)}
                   placeholder="Alert headline (e.g. Track Practice Moved Inside)"
@@ -871,14 +1127,15 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                   className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs font-mono text-ap-ink dark:text-ap-chalk"
                 >
                   <option value="WEATHER">Weather</option>
-                  <option value="SCHEDULE_CHANGE">Schedule</option>
-                  <option value="MEET_LOGISTICS">Meet</option>
+                  <option value="SCHEDULE_CHANGE">Schedule Change</option>
+                  <option value="MEET_LOGISTICS">Meet Logistics</option>
                   <option value="GENERAL">General</option>
                 </select>
               </div>
               <textarea
                 rows={2}
                 data-testid="announcement-body-input"
+                aria-label="Team alert message"
                 value={alertBody}
                 onChange={(e) => setAlertBody(e.target.value)}
                 placeholder="Write a 1-sentence update for athletes & parents..."
@@ -910,9 +1167,13 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
             {alertBanner && (
               <div
                 data-testid="announcement-posted-banner"
-                className="text-2xs font-mono font-bold text-emerald-600 dark:text-emerald-400"
+                className={`text-2xs font-mono font-bold ${
+                  alertBanner.tone === 'error'
+                    ? 'text-rose-600 dark:text-rose-400'
+                    : 'text-emerald-600 dark:text-emerald-400'
+                }`}
               >
-                {alertBanner}
+                {alertBanner.text}
               </div>
             )}
 
@@ -925,7 +1186,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                   >
                     <div className="min-w-0">
                       <div className="font-bold text-ap-ink dark:text-ap-chalk truncate">
-                        [{ann.category}] {ann.title}
+                        [{formatAnnouncementCategoryLabel(ann.category)}] {ann.title}
                       </div>
                       <p className="text-2xs text-ap-muted dark:text-ap-muted-dark line-clamp-2">
                         {ann.body}
@@ -935,7 +1196,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                       type="button"
                       aria-label={`Delete alert ${ann.title}`}
                       onClick={() => void handleDeleteAnnouncement(ann.id)}
-                      className="p-1 text-rose-500 hover:text-rose-400 cursor-pointer shrink-0"
+                      className="min-h-[44px] min-w-[44px] sm:min-h-[32px] sm:min-w-[32px] inline-flex items-center justify-center p-1 text-rose-500 hover:text-rose-400 cursor-pointer shrink-0"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -963,6 +1224,14 @@ export const CoachAthleteSummaryDrawer: React.FC<CoachAthleteSummaryDrawerProps>
   onClose,
   onSwitchToProTelemetry,
 }) => {
+  const drawerDialogRef = useRef<HTMLDivElement | null>(null);
+  const drawerHeadingId = useId();
+  useModalDialog({
+    isOpen: Boolean(athlete),
+    onClose,
+    dialogRef: drawerDialogRef,
+  });
+
   if (!athlete) return null;
   const checkIns = athlete.sessionCheckIns || [];
   const latest = checkIns.length > 0 ? checkIns[checkIns.length - 1] : null;
@@ -985,9 +1254,15 @@ export const CoachAthleteSummaryDrawer: React.FC<CoachAthleteSummaryDrawerProps>
 
   return (
     <div
+      ref={drawerDialogRef}
       role="dialog"
       aria-modal="true"
+      aria-labelledby={drawerHeadingId}
+      tabIndex={-1}
       data-testid="coach-athlete-essentials-drawer"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
     >
       <div className="w-full max-w-md rounded-2xl liquid-glass bg-white dark:bg-ap-obsidian border border-ap-edge p-4 sm:p-5 space-y-4 shadow-2xl">
@@ -996,7 +1271,7 @@ export const CoachAthleteSummaryDrawer: React.FC<CoachAthleteSummaryDrawerProps>
             <div className="text-2xs font-mono uppercase tracking-wider text-ap-muted dark:text-ap-muted-dark">
               Essentials Coach Summary
             </div>
-            <h3 className="text-lg font-extrabold text-ap-ink dark:text-ap-chalk">
+            <h3 id={drawerHeadingId} className="text-lg font-extrabold text-ap-ink dark:text-ap-chalk">
               {athlete.name}
             </h3>
             {athlete.eventGroup && (

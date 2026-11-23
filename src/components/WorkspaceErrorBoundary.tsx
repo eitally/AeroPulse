@@ -17,6 +17,7 @@ export interface WorkspaceErrorBoundaryProps {
 
 interface WorkspaceErrorBoundaryState {
   error: Error | null;
+  componentStack?: string;
   downloadingDiagnostics?: boolean;
   diagnosticsDone?: boolean;
 }
@@ -40,12 +41,15 @@ export class WorkspaceErrorBoundary extends React.Component<
 
   componentDidUpdate(prevProps: WorkspaceErrorBoundaryProps): void {
     if (prevProps.resetKey !== this.props.resetKey && this.state.error !== null) {
-      this.setState({ error: null });
+      this.setState({ error: null, componentStack: undefined });
     }
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error('[MeetReady Boundary]', error, errorInfo);
+    if (errorInfo?.componentStack) {
+      this.setState({ componentStack: errorInfo.componentStack });
+    }
     if (isDynamicChunkLoadError(error)) {
       triggerChunkSkewReload(
         `boundary-${this.props.restoreTab || 'app'}`,
@@ -55,7 +59,12 @@ export class WorkspaceErrorBoundary extends React.Component<
   }
 
   private handleRetry = (): void => {
-    this.setState({ error: null, downloadingDiagnostics: false, diagnosticsDone: false });
+    this.setState({
+      error: null,
+      componentStack: undefined,
+      downloadingDiagnostics: false,
+      diagnosticsDone: false,
+    });
   };
 
   private handleReloadLatestBuild = (): void => {
@@ -68,11 +77,13 @@ export class WorkspaceErrorBoundary extends React.Component<
 
   private handleDownloadDiagnostics = (): void => {
     const activeError = this.state.error;
+    const componentStack = this.state.componentStack;
     this.setState({ downloadingDiagnostics: true });
     void downloadSupportDiagnosticsJson({
       source: 'workspace-error-boundary',
       restoreTab: this.props.restoreTab,
       boundaryError: activeError,
+      ...(componentStack ? { componentStack } : {}),
     })
       .then((res) => {
         this.setState({

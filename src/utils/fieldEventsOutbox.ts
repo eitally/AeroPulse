@@ -340,6 +340,7 @@ export function overlayPendingFieldOutboxOnTeams(
   });
 }
 
+export const MAX_FIELD_OUTBOX_ATTEMPTS = 5;
 const PERMANENT_CLIENT_ERROR_STATUSES = new Set([400, 403, 404, 422]);
 
 let inFlightFieldOutboxFlush: Promise<FieldOutboxFlushResult> | null = null;
@@ -384,6 +385,17 @@ export async function flushFieldOutbox(
     let lastError: string | undefined;
 
     for (const batch of initialOutbox) {
+      if ((batch.attempts || 0) >= MAX_FIELD_OUTBOX_ATTEMPTS) {
+        const reason =
+          batch.lastError || `Exhausted ${MAX_FIELD_OUTBOX_ATTEMPTS} field outbox attempts`;
+        console.error(`[MeetReady Field Outbox] Quarantining poison-pill batch ${batch.batchId}: ${reason}`);
+        quarantineBatchInDexieAsync(batch, undefined, reason);
+        removeFieldOutboxBatch(batch.batchId);
+        droppedBatches += 1;
+        lastError = reason;
+        continue;
+      }
+
       try {
         const resp = await recordTeamFieldMarksApi({
           teamId: batch.teamId,
@@ -410,12 +422,20 @@ export async function flushFieldOutbox(
         const message =
           err instanceof Error && err.message ? err.message : 'Pending network sync';
         lastError = message;
+        const nextAttempts = (batch.attempts || 0) + 1;
 
-        if (status !== undefined && PERMANENT_CLIENT_ERROR_STATUSES.has(status)) {
+        if (
+          (status !== undefined && PERMANENT_CLIENT_ERROR_STATUSES.has(status)) ||
+          nextAttempts >= MAX_FIELD_OUTBOX_ATTEMPTS
+        ) {
           console.error(
-            `[MeetReady Field Outbox] Dropping batch ${batch.batchId} due to HTTP ${status}: ${message}`
+            `[MeetReady Field Outbox] Dropping batch ${batch.batchId} (${status ? `HTTP ${status}` : `${nextAttempts} attempts`}): ${message}`
           );
-          quarantineBatchInDexieAsync(batch, status, message);
+          quarantineBatchInDexieAsync(
+            { ...batch, attempts: nextAttempts, lastError: message },
+            status,
+            message
+          );
           removeFieldOutboxBatch(batch.batchId);
           droppedBatches += 1;
         } else {
@@ -423,7 +443,7 @@ export async function flushFieldOutbox(
             b.batchId === batch.batchId
               ? {
                   ...b,
-                  attempts: (b.attempts || 0) + 1,
+                  attempts: nextAttempts,
                   lastError: message,
                 }
               : b

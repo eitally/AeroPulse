@@ -425,13 +425,22 @@ export async function renderShareCardPngBlob(opts: {
   ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
   ctx.fillRect(84, 1140, 912, 2);
 
+  const qrTarget = resolveShareCardQrTarget(opts.shareUrl);
+  const isFallbackQr = qrTarget === SHARE_CARD_QR_FALLBACK_URL;
+
   ctx.fillStyle = '#D8FF2A';
   ctx.font = '700 22px ui-monospace, SFMono-Regular, monospace';
   ctx.fillText('SCAN FOR SPLITS · meetready.app/share', 84, 1184);
 
   ctx.fillStyle = '#94A3B8';
   ctx.font = '600 19px ui-monospace, SFMono-Regular, monospace';
-  ctx.fillText('Built for Meet Day  ·  Zero Login Split Recalc', 84, 1226);
+  ctx.fillText(
+    isFallbackQr
+      ? 'Zero-Login Specimen · meetready.app/share/workout?preset=8x400'
+      : 'Built for Meet Day  ·  Zero Login Split Recalc',
+    84,
+    1226
+  );
 
   const qrTileX = 860;
   const qrTileY = 1156;
@@ -440,7 +449,6 @@ export async function renderShareCardPngBlob(opts: {
   drawRoundedRectPath(ctx, qrTileX, qrTileY, qrTileSize, qrTileSize, 14);
   ctx.fill();
 
-  const qrTarget = resolveShareCardQrTarget(opts.shareUrl);
   const qrMatrix = generateQrMatrix(qrTarget);
   const quietModules = 4;
   const totalModules = qrMatrix.length + quietModules * 2;

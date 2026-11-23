@@ -35,6 +35,7 @@ import { CircadianFirstTouchHero, type CircadianHeroMode } from './CircadianFirs
 import { AthleteSessionCheckInCard } from './AthleteSessionCheckInCard';
 import { EveningCloseoutCard } from './today/EveningCloseoutCard';
 import { PracticeAttendanceCheckInCard } from './today/PracticeAttendanceCheckInCard';
+import { AthleteTeamStatusAndNotesCard } from './today/AthleteTeamStatusAndNotesCard';
 import { FitnessCheckInAndCrossTrainingDrawer } from './fitness/FitnessCheckInAndCrossTrainingDrawer';
 import { FitnessSnapshotMetricCards } from './fitness/FitnessSnapshotMetricCards';
 import { resolveCircadianHeroMode } from '../physiology/eveningHabitEngine';
@@ -986,6 +987,16 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
         onOpenTracksideStopwatch={onOpenTracksideStopwatch}
       />
 
+      {activeTeam && (
+        <AthleteTeamStatusAndNotesCard
+          activeTeam={activeTeam}
+          myTeams={myTeams}
+          todayIso={todayIso}
+          isSampleDemoMode={isSampleDemoMode}
+          onTeamsUpdated={onTeamsUpdated}
+        />
+      )}
+
       {activeTeam &&
         activeTeam.myRole !== 'PARENT_FOLLOWER' &&
         (activeTeam.brand.practiceVenues || []).some((v) => v.enabled) && (
@@ -1011,6 +1022,7 @@ const FitnessHealthViewInner: React.FC<FitnessHealthViewProps> = ({
                 activities={activities}
                 plannedEvents={plannedEvents}
                 latestWellness={latestDay}
+                distanceUnit={distanceUnit}
                 safeSportHideWeight={Boolean(athleteProfile?.safeSportHideWeight)}
                 sessionCheckIns={sessionCheckIns}
                 onRecordCheckIn={onRecordSessionCheckIn}

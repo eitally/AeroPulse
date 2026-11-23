@@ -27,6 +27,7 @@ import {
 import { formatPracticeTime12h } from '../../utils/workoutScheduleUtils';
 import type { SafetySwapEventInput } from '../../physiology/sessionCheckInAndDigestEngine';
 import type {
+  DistanceUnit,
   PlannedWorkoutEvent,
   SessionCheckInRecord,
   UnifiedActivity,
@@ -39,6 +40,7 @@ export interface EveningCloseoutCardProps {
   activities: UnifiedActivity[];
   plannedEvents: PlannedWorkoutEvent[];
   latestWellness?: UnifiedWellnessDay | null;
+  distanceUnit?: DistanceUnit;
   safeSportHideWeight?: boolean;
   sessionCheckIns: SessionCheckInRecord[];
   onRecordCheckIn: (
@@ -70,7 +72,7 @@ const PAIN_AREAS: Array<{
   label: string;
 }> = [
   { id: 'SHIN', label: 'Shin' },
-  { id: 'ACHILLES', label: 'Achilles' },
+  { id: 'ACHILLES', label: 'Achilles / Calf' },
   { id: 'KNEE', label: 'Knee' },
   { id: 'HAMSTRING', label: 'Hamstring' },
   { id: 'QUAD', label: 'Quad' },
@@ -81,6 +83,7 @@ const PAIN_AREAS: Array<{
   { id: 'FOOT', label: 'Foot' },
   { id: 'HIP', label: 'Hip' },
   { id: 'BACK', label: 'Back' },
+  { id: 'OTHER', label: 'Other' },
 ];
 
 export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
@@ -88,6 +91,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
   activities,
   plannedEvents,
   latestWellness,
+  distanceUnit = 'mi',
   safeSportHideWeight = false,
   sessionCheckIns,
   onRecordCheckIn,
@@ -417,7 +421,10 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
             {todayReceipt.headline}
           </div>
           <div className="text-2xs text-slate-600 dark:text-slate-300">
-            {todayReceipt.totalDurationMins}m · {todayReceipt.totalDistanceKm} km
+            {todayReceipt.totalDurationMins}m ·{' '}
+            {distanceUnit === 'km'
+              ? `${todayReceipt.totalDistanceKm} km`
+              : `${(todayReceipt.totalDistanceKm * 0.621371).toFixed(1)} mi`}
           </div>
         </div>
 
@@ -520,17 +527,18 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
             <span>{painDrawerOpen ? 'Pain Flagged' : 'Flag Pain / Tightness'}</span>
           </button>
 
-          {!painDrawerOpen && (
-            <>
+          {!painDrawerOpen &&
+            (todayReceipt.sessionCount === 0 ? (
               <button
                 type="button"
                 data-testid="watchless-did-workout-btn"
                 disabled={isSaving}
                 onClick={handleSave}
-                className="min-h-[44px] px-3.5 py-1.5 rounded-xl border border-ap-frame/30 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon text-xs font-bold text-ap-ink dark:text-ap-chalk hover:brightness-95 cursor-pointer disabled:opacity-60"
+                className="min-h-[44px] px-4 py-1.5 rounded-xl ap-btn-primary text-xs font-bold cursor-pointer disabled:opacity-60"
               >
-                I Did Today&apos;s Workout ✓
+                {isSaving ? 'Locking…' : "I Did Today's Workout ✓ · Close Day"}
               </button>
+            ) : (
               <button
                 type="button"
                 data-testid="checkin-submit-clear"
@@ -540,8 +548,7 @@ export const EveningCloseoutCard: React.FC<EveningCloseoutCardProps> = ({
               >
                 {isSaving ? 'Locking…' : 'Close Day & Lock Tomorrow'}
               </button>
-            </>
-          )}
+            ))}
         </div>
       </div>
 

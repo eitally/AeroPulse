@@ -39,7 +39,7 @@ const PAIN_AREAS: Array<{
   label: string;
 }> = [
   { id: 'SHIN', label: 'Shin' },
-  { id: 'ACHILLES', label: 'Achilles' },
+  { id: 'ACHILLES', label: 'Achilles / Calf' },
   { id: 'KNEE', label: 'Knee' },
   { id: 'HAMSTRING', label: 'Hamstring' },
   { id: 'QUAD', label: 'Quad' },
@@ -50,6 +50,7 @@ const PAIN_AREAS: Array<{
   { id: 'FOOT', label: 'Foot' },
   { id: 'HIP', label: 'Hip' },
   { id: 'BACK', label: 'Back' },
+  { id: 'OTHER', label: 'Other' },
 ];
 
 export const AthleteSessionCheckInCard: React.FC<AthleteSessionCheckInCardProps> = ({

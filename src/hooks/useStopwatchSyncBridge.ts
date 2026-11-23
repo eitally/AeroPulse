@@ -99,6 +99,11 @@ export function useStopwatchSyncBridge({
       return { syncedBatches: 0, syncedEntries: 0, remainingBatches: 0, remainingEntries: 0 };
     }
     const swRes = await flushStopwatchOutbox(applyUpdatedTeamToState);
+    if ((swRes.deadLetteredBatches || 0) > 0) {
+      console.warn(
+        `[MeetReady Stopwatch] DEAD_LETTERED ${swRes.deadLetteredBatches} poison-pill stopwatch batch(es).`
+      );
+    }
     void flushFieldOutbox(applyUpdatedTeamToState);
     return swRes;
   }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, applyUpdatedTeamToState]);
@@ -205,6 +210,8 @@ export function useStopwatchSyncBridge({
 
       let syncStatus: StopwatchSaveResult['syncStatus'] = 'LOCAL_ONLY';
       let pendingTeamCount = 0;
+      let deadLetteredBatches = 0;
+      let syncWarning: string | undefined;
 
       if (!isSampleDemoMode && activeTeamId && teamApiEntries.length > 0) {
         enqueueStopwatchOutboxBatch(activeTeamId, teamApiEntries);
@@ -221,7 +228,14 @@ export function useStopwatchSyncBridge({
         });
         const flushRes = await flushStopwatchOutbox(applyUpdatedTeamToState);
         pendingTeamCount = flushRes.remainingEntries;
-        syncStatus = flushRes.remainingEntries === 0 ? 'SYNCED' : 'PENDING_OFFLINE';
+        deadLetteredBatches = flushRes.deadLetteredBatches || 0;
+        if (deadLetteredBatches > 0) {
+          syncWarning = `DEAD_LETTERED: ${deadLetteredBatches} stopwatch batch(es) quarantined after permanent failure or max retries.`;
+          console.warn(`[MeetReady Stopwatch] ${syncWarning}`);
+          syncStatus = 'DEAD_LETTERED' as StopwatchSaveResult['syncStatus'];
+        } else {
+          syncStatus = flushRes.remainingEntries === 0 ? 'SYNCED' : 'PENDING_OFFLINE';
+        }
       }
 
       return {
@@ -233,6 +247,7 @@ export function useStopwatchSyncBridge({
         pendingTeamCount,
         skippedReadOnlyNames,
         syncStatus,
+        ...(deadLetteredBatches > 0 ? { deadLetteredBatches, syncWarning } : {}),
       };
     },
     [
