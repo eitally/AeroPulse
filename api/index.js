@@ -1,9 +1,9 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express14 from "express";
+import express15 from "express";
 
 // server/apiRouter.ts
-import express12 from "express";
+import express13 from "express";
 
 // server/securityUtils.ts
 import crypto from "crypto";
@@ -1399,6 +1399,55 @@ async function deleteMemberPostgresRowsAsync(params) {
   } catch (err) {
     warnServerFallback("vault:delete-member-postgres", err);
     if (txClient) throw err;
+  }
+}
+async function insertFunnelEventPostgresAsync(row) {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  try {
+    await ensurePostgresVaultSchema(pool);
+    await pool.query(
+      `INSERT INTO thresh_funnel_events (
+         event_name, utm_source, utm_medium, utm_campaign, utm_content, src,
+         referrer_host, landing_path, role, tier
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        row.event_name,
+        row.utm_source || null,
+        row.utm_medium || null,
+        row.utm_campaign || null,
+        row.utm_content || null,
+        row.src || null,
+        row.referrer_host || null,
+        row.landing_path || null,
+        row.role || null,
+        row.tier || null
+      ]
+    );
+    return true;
+  } catch (err) {
+    warnServerFallback("vault:insert-funnel-event-postgres", err);
+    return null;
+  }
+}
+async function queryFunnelEventsPostgresAsync(sinceIso, limit = 1e4) {
+  const pool = getPostgresPool();
+  if (!pool) return null;
+  try {
+    await ensurePostgresVaultSchema(pool);
+    const res = await pool.query(
+      `SELECT event_name, created_at::text AS created_at, utm_source, utm_medium, utm_campaign,
+              utm_content, src, referrer_host, landing_path, role, tier
+       FROM thresh_funnel_events
+       WHERE created_at >= $1::timestamptz
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [sinceIso, Math.max(1, Math.min(25e3, Math.floor(limit)))]
+    );
+    return res.rows;
+  } catch (err) {
+    warnServerFallback("vault:query-funnel-events-postgres", err);
+    return null;
   }
 }
 
@@ -3149,7 +3198,7 @@ function buildGarminTrainingApiV2Payload(input) {
     workoutSteps = astNodes.map((node, idx) => {
       if (node.type === "step") {
         const s = node.step;
-        const pct = Math.max(40, Math.min(180, s.intensityPct || 75));
+        const pct2 = Math.max(40, Math.min(180, s.intensityPct || 75));
         const durSecs = Math.max(5, Math.round(s.durationSecs || s.durationMins * 60 || 60));
         estimatedDurationInSecs += durSecs;
         return toGarminExecutableStepDto({
@@ -3159,14 +3208,14 @@ function buildGarminTrainingApiV2Payload(input) {
           distanceMeters: s.distanceMeters,
           isRunning,
           stepKind: mapAstKind(s.stepKind),
-          targetPctFtp: pct,
+          targetPctFtp: pct2,
           targetPaceSecsPerKm: s.targetPaceSecsPerKm,
           ftpWatts: activeFtp,
           thresholdPaceSecsPerKm: thresholdPace
         });
       }
       const innerSteps = node.steps.map((inner, innerIdx) => {
-        const pct = Math.max(40, Math.min(180, inner.intensityPct || 75));
+        const pct2 = Math.max(40, Math.min(180, inner.intensityPct || 75));
         const durSecs = Math.max(5, Math.round(inner.durationSecs || inner.durationMins * 60 || 60));
         estimatedDurationInSecs += durSecs * node.repeatCount;
         return toGarminExecutableStepDto({
@@ -3176,7 +3225,7 @@ function buildGarminTrainingApiV2Payload(input) {
           distanceMeters: inner.distanceMeters,
           isRunning,
           stepKind: mapAstKind(inner.stepKind),
-          targetPctFtp: pct,
+          targetPctFtp: pct2,
           targetPaceSecsPerKm: inner.targetPaceSecsPerKm,
           ftpWatts: activeFtp,
           thresholdPaceSecsPerKm: thresholdPace
@@ -3194,7 +3243,7 @@ function buildGarminTrainingApiV2Payload(input) {
     const rawSteps = Array.isArray(input.steps) && input.steps.length > 0 ? input.steps : [{ label: input.name || "Main Set", durationSecs: 1800, targetPctFtp: 75, stepType: "interval" }];
     const totalSteps = rawSteps.length;
     workoutSteps = rawSteps.map((s, idx) => {
-      const pct = Number(s.targetPctFtp || 70);
+      const pct2 = Number(s.targetPctFtp || 70);
       let stepKind = "interval";
       if (s.stepType === "warmup") stepKind = "warmup";
       else if (s.stepType === "cooldown") stepKind = "cooldown";
@@ -3202,7 +3251,7 @@ function buildGarminTrainingApiV2Payload(input) {
       else if (!s.stepType) {
         if (idx === 0 && totalSteps > 1) stepKind = "warmup";
         else if (idx === totalSteps - 1 && totalSteps > 1) stepKind = "cooldown";
-        else if (pct <= 60 || /recov|easy|rest/i.test(s.label)) stepKind = "rest";
+        else if (pct2 <= 60 || /recov|easy|rest/i.test(s.label)) stepKind = "rest";
       }
       const durSecs = Math.max(5, Math.round(s.durationSecs || 60));
       estimatedDurationInSecs += durSecs;
@@ -3213,7 +3262,7 @@ function buildGarminTrainingApiV2Payload(input) {
         distanceMeters: s.distanceMeters,
         isRunning,
         stepKind,
-        targetPctFtp: pct,
+        targetPctFtp: pct2,
         targetWatts: s.targetWatts,
         targetMinWatts: s.targetMinWatts,
         targetMaxWatts: s.targetMaxWatts,
@@ -4288,6 +4337,224 @@ async function saveSessionCacheAsync(req, res, explicitSid) {
   emitEncryptedVaultCookieIfPossible(activeReq, res, scopeKey, store);
 }
 
+// server/rateLimiter.ts
+function getConfiguredRateLimitBackend() {
+  const restUrl = (process.env.UPSTASH_REDIS_REST_URL || "").trim();
+  const restToken = (process.env.UPSTASH_REDIS_REST_TOKEN || "").trim();
+  if (restUrl && restToken) return "UPSTASH_REDIS";
+  if (getVaultStorageBackend() === "POSTGRES") return "POSTGRES";
+  return "MEMORY";
+}
+var memoryRateLimitStore = /* @__PURE__ */ new Map();
+var MAX_MEMORY_RATE_LIMIT_KEYS = 4e3;
+function getClientRateLimitIp(req) {
+  const forwarded = req.headers["x-vercel-forwarded-for"] || req.headers["x-forwarded-for"];
+  const firstForwarded = Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === "string" ? forwarded.split(",")[0] : "";
+  const candidate = (firstForwarded || req.ip || req.socket?.remoteAddress || "local").trim();
+  return candidate.replace(/[^a-zA-Z0-9.:_-]/g, "").slice(0, 64) || "local";
+}
+function checkMemoryRateLimitSync(key, limit = 20, windowMs = 6e4) {
+  const cleanKey = String(key || "").trim().slice(0, 180) || "default";
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const safeWindowMs = Math.max(1e3, Math.floor(windowMs));
+  const now = Date.now();
+  if (memoryRateLimitStore.size > MAX_MEMORY_RATE_LIMIT_KEYS) {
+    for (const [k, rec] of memoryRateLimitStore.entries()) {
+      if (rec.resetAt <= now) {
+        memoryRateLimitStore.delete(k);
+      }
+    }
+    while (memoryRateLimitStore.size >= MAX_MEMORY_RATE_LIMIT_KEYS) {
+      const oldest = memoryRateLimitStore.keys().next().value;
+      if (oldest === void 0) break;
+      memoryRateLimitStore.delete(oldest);
+    }
+  }
+  const record = memoryRateLimitStore.get(cleanKey);
+  if (!record || record.resetAt <= now) {
+    memoryRateLimitStore.set(cleanKey, { count: 1, resetAt: now + safeWindowMs });
+    return {
+      allowed: true,
+      retryAfterSecs: 0,
+      remaining: Math.max(0, safeLimit - 1),
+      backend: "MEMORY"
+    };
+  }
+  if (record.count >= safeLimit) {
+    return {
+      allowed: false,
+      retryAfterSecs: Math.max(1, Math.ceil((record.resetAt - now) / 1e3)),
+      remaining: 0,
+      backend: "MEMORY"
+    };
+  }
+  record.count += 1;
+  return {
+    allowed: true,
+    retryAfterSecs: 0,
+    remaining: Math.max(0, safeLimit - record.count),
+    backend: "MEMORY"
+  };
+}
+async function tryUpstashRateLimitAsync(key, limit, windowMs) {
+  const restUrl = (process.env.UPSTASH_REDIS_REST_URL || "").trim().replace(/\/+$/, "");
+  const restToken = (process.env.UPSTASH_REDIS_REST_TOKEN || "").trim();
+  if (!restUrl || !restToken) return null;
+  const redisKey = `mr:rl:${key}`;
+  try {
+    const resp = await fetch(`${restUrl}/pipeline`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${restToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify([
+        ["INCR", redisKey],
+        ["PTTL", redisKey]
+      ]),
+      signal: AbortSignal.timeout(1500)
+    });
+    if (!resp.ok) {
+      return null;
+    }
+    const rows = await resp.json();
+    if (!Array.isArray(rows) || rows.length < 2 || rows[0]?.error) {
+      return null;
+    }
+    const count = Number(rows[0]?.result);
+    let ttlMs = Number(rows[1]?.result);
+    if (!Number.isFinite(count) || count <= 0) {
+      return null;
+    }
+    if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
+      ttlMs = windowMs;
+      await fetch(`${restUrl}/pexpire/${encodeURIComponent(redisKey)}/${windowMs}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${restToken}` },
+        signal: AbortSignal.timeout(1e3)
+      }).catch(() => void 0);
+    }
+    const allowed = count <= limit;
+    return {
+      allowed,
+      retryAfterSecs: allowed ? 0 : Math.max(1, Math.ceil(ttlMs / 1e3)),
+      remaining: Math.max(0, limit - count),
+      backend: "UPSTASH_REDIS"
+    };
+  } catch (err) {
+    warnServerFallback("rate-limit:upstash-fallback", err);
+    return null;
+  }
+}
+async function checkDistributedRateLimitAsync(key, limit = 20, windowMs = 6e4) {
+  const cleanKey = String(key || "").trim().slice(0, 180) || "default";
+  const safeLimit = Math.max(1, Math.floor(limit));
+  const safeWindowMs = Math.max(1e3, Math.floor(windowMs));
+  const upstashRes = await tryUpstashRateLimitAsync(cleanKey, safeLimit, safeWindowMs);
+  if (upstashRes) {
+    return upstashRes;
+  }
+  const pgRes = await consumeRateLimitPostgresAsync(cleanKey, safeLimit, safeWindowMs);
+  if (pgRes) {
+    return {
+      ...pgRes,
+      backend: "POSTGRES"
+    };
+  }
+  return checkMemoryRateLimitSync(cleanKey, safeLimit, safeWindowMs);
+}
+
+// server/observability.ts
+import crypto4 from "crypto";
+function sanitizeTelemetryString(raw, maxLen = 300) {
+  return String(raw || "").replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[REDACTED]").replace(/([?&](?:token|code|secret|key|t)=)[^&\s]+/gi, "$1[REDACTED]").slice(0, maxLen);
+}
+function parseSentryDsn(rawDsn) {
+  const trimmed = String(rawDsn || "").trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    const publicKey = parsed.username;
+    const pathParts = parsed.pathname.replace(/^\/+/, "").split("/").filter(Boolean);
+    const projectId = pathParts.pop();
+    if (!publicKey || !projectId || !parsed.host) return null;
+    const prefix = pathParts.length > 0 ? `/${pathParts.join("/")}` : "";
+    return {
+      storeUrl: `${parsed.protocol}//${parsed.host}${prefix}/api/${encodeURIComponent(projectId)}/store/`,
+      publicKey,
+      projectId
+    };
+  } catch {
+    return null;
+  }
+}
+async function postSentryEvent(dsn, eventPayload) {
+  try {
+    await fetch(dsn.storeUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Sentry-Auth": `Sentry sentry_version=7, sentry_key=${dsn.publicKey}, sentry_client=meetready-server/2.1`
+      },
+      body: JSON.stringify(eventPayload),
+      signal: AbortSignal.timeout(2e3)
+    });
+  } catch {
+  }
+}
+function shouldSuppressConsoleTelemetry() {
+  return process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+}
+async function captureServerException(err, context = {}) {
+  const errName = err instanceof Error ? err.name : "Error";
+  const errMsg = sanitizeTelemetryString(
+    err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown server error"
+  );
+  const cleanPath = context.path ? sanitizeTelemetryString(context.path.split("?")[0], 160) : void 0;
+  const scope = sanitizeTelemetryString(context.scope || "server", 80);
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  if (!shouldSuppressConsoleTelemetry()) {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        timestamp,
+        scope,
+        ...context.method ? { method: context.method } : {},
+        ...cleanPath ? { path: cleanPath } : {},
+        ...typeof context.statusCode === "number" ? { statusCode: context.statusCode } : {},
+        errorName: errName,
+        message: errMsg
+      })
+    );
+  }
+  const dsn = parseSentryDsn(process.env.SENTRY_DSN);
+  if (!dsn) return;
+  await postSentryEvent(dsn, {
+    event_id: crypto4.randomBytes(16).toString("hex"),
+    timestamp,
+    level: "error",
+    platform: "node",
+    server_name: "meetready-api",
+    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "development",
+    message: `${scope}: ${errMsg}`,
+    tags: {
+      scope,
+      ...context.method ? { method: context.method } : {},
+      ...cleanPath ? { path: cleanPath } : {},
+      ...typeof context.statusCode === "number" ? { statusCode: String(context.statusCode) } : {}
+    },
+    exception: {
+      values: [
+        {
+          type: errName,
+          value: errMsg
+        }
+      ]
+    }
+  });
+}
+
 // server/routers/vaultAndPhysiologyRouter.ts
 import express from "express";
 
@@ -5351,9 +5618,9 @@ vaultAndPhysiologyRouter.post("/api/physiology/debrief", (req, res) => {
 import express2 from "express";
 
 // server/authService.ts
-import crypto4 from "crypto";
+import crypto5 from "crypto";
 function hashKey(val) {
-  return crypto4.createHash("sha256").update(String(val ?? "").toLowerCase().trim()).digest("hex").slice(0, 32);
+  return crypto5.createHash("sha256").update(String(val ?? "").toLowerCase().trim()).digest("hex").slice(0, 32);
 }
 async function saveUser(user) {
   user.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
@@ -5430,7 +5697,7 @@ async function findOrCreateUser(provider, providerId, profile) {
       return user;
     }
   }
-  const newUserId = `usr_${crypto4.randomBytes(8).toString("hex")}`;
+  const newUserId = `usr_${crypto5.randomBytes(8).toString("hex")}`;
   const now = (/* @__PURE__ */ new Date()).toISOString();
   const newUser = {
     id: newUserId,
@@ -5587,8 +5854,8 @@ async function disconnectServiceFromUser(userId, service) {
 var MAGIC_LINK_TTL_MS = 15 * 60 * 1e3;
 async function createMagicLinkToken(email, pendingJoin) {
   const cleanEmail = email.toLowerCase().trim();
-  const rawToken = crypto4.randomBytes(32).toString("hex");
-  const tokenHash = crypto4.createHash("sha256").update(rawToken).digest("hex");
+  const rawToken = crypto5.randomBytes(32).toString("hex");
+  const tokenHash = crypto5.createHash("sha256").update(rawToken).digest("hex");
   const expiresAt = Date.now() + MAGIC_LINK_TTL_MS;
   await saveTenantVaultAsync(`magic_link_${tokenHash}`, {
     email: cleanEmail,
@@ -5599,7 +5866,7 @@ async function createMagicLinkToken(email, pendingJoin) {
 }
 async function peekMagicLinkPayload(rawToken) {
   if (!rawToken || typeof rawToken !== "string") return null;
-  const tokenHash = crypto4.createHash("sha256").update(rawToken.trim()).digest("hex");
+  const tokenHash = crypto5.createHash("sha256").update(rawToken.trim()).digest("hex");
   const record = await loadTenantVaultAsync(`magic_link_${tokenHash}`, null);
   if (!record || !record.email || !record.expiresAt) {
     return null;
@@ -5612,7 +5879,7 @@ async function peekMagicLinkPayload(rawToken) {
 }
 async function verifyMagicLinkPayload(rawToken) {
   if (!rawToken || typeof rawToken !== "string") return null;
-  const tokenHash = crypto4.createHash("sha256").update(rawToken.trim()).digest("hex");
+  const tokenHash = crypto5.createHash("sha256").update(rawToken.trim()).digest("hex");
   const vaultKey = `magic_link_${tokenHash}`;
   return withVaultLock(vaultKey, async () => {
     const record = await loadTenantVaultAsync(vaultKey, null);
@@ -5688,8 +5955,8 @@ async function createPendingEmailChange(userId, newEmail) {
       error: "That email is already linked to another MeetReady account."
     };
   }
-  const code = String(crypto4.randomInt(1e5, 1e6));
-  const codeHash = crypto4.createHash("sha256").update(code).digest("hex");
+  const code = String(crypto5.randomInt(1e5, 1e6));
+  const codeHash = crypto5.createHash("sha256").update(code).digest("hex");
   await saveTenantVaultAsync(`email_change_${user.id}`, {
     newEmail: cleanNewEmail,
     codeHash,
@@ -5759,7 +6026,7 @@ async function verifyAndCommitEmailChange(userId, rawCode, expectedNewEmail) {
       await saveTenantVaultAsync(vaultKey, null);
       return { ok: false, error: "Too many invalid attempts. Please request a new verification code." };
     }
-    const incomingHash = crypto4.createHash("sha256").update(cleanCode).digest("hex");
+    const incomingHash = crypto5.createHash("sha256").update(cleanCode).digest("hex");
     if (!timingSafeStringEqual(incomingHash, rec.codeHash)) {
       rec.attempts += 1;
       await saveTenantVaultAsync(vaultKey, rec);
@@ -5781,19 +6048,19 @@ async function verifyAndCommitEmailChange(userId, rawCode, expectedNewEmail) {
 function issuePasskeyChallengeToken(payload) {
   const data = JSON.stringify({
     ...payload,
-    jti: crypto4.randomBytes(12).toString("hex"),
+    jti: crypto5.randomBytes(12).toString("hex"),
     exp: Date.now() + 5 * 60 * 1e3
     // 5 min TTL
   });
   const b64 = Buffer.from(data, "utf8").toString("base64url");
-  const sig = crypto4.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
+  const sig = crypto5.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
   return `${b64}.${sig}`;
 }
 function verifyPasskeyChallengeToken(token) {
   if (!token) return null;
   const [b64, sig] = token.split(".");
   if (!b64 || !sig) return null;
-  const expectedSig = crypto4.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
+  const expectedSig = crypto5.createHmac("sha256", getPasskeyChallengeSecret()).update(b64).digest("base64url");
   if (!timingSafeStringEqual(sig, expectedSig)) return null;
   try {
     const claims = JSON.parse(Buffer.from(b64, "base64url").toString("utf8"));
@@ -6563,8 +6830,8 @@ function buildCorosWorkoutPayload(input) {
     const rawSteps = Array.isArray(input.steps) && input.steps.length > 0 ? input.steps : [{ label: input.name || "Main Set", durationSecs: 1800, targetPctFtp: 75, stepType: "interval" }];
     const total = rawSteps.length;
     stages = rawSteps.map((s, idx) => {
-      const pct = Number(s.targetPctFtp || 75);
-      const inferredKind = s.stepType ? mapKind(s.stepType) : idx === 0 && total > 1 ? "warmup" : idx === total - 1 && total > 1 ? "cooldown" : pct <= 60 ? "recovery" : "work";
+      const pct2 = Number(s.targetPctFtp || 75);
+      const inferredKind = s.stepType ? mapKind(s.stepType) : idx === 0 && total > 1 ? "warmup" : idx === total - 1 && total > 1 ? "cooldown" : pct2 <= 60 ? "recovery" : "work";
       const durSecs = Math.max(5, Math.round(s.durationSecs || 60));
       estimatedDurationSecs += durSecs;
       if (s.distanceMeters) {
@@ -6578,7 +6845,7 @@ function buildCorosWorkoutPayload(input) {
         durationSecs: durSecs,
         distanceMeters: s.distanceMeters,
         isRunning,
-        targetPctFtp: pct,
+        targetPctFtp: pct2,
         targetWatts: s.targetWatts,
         targetMinWatts: s.targetMinWatts,
         targetMaxWatts: s.targetMaxWatts,
@@ -6627,6 +6894,273 @@ async function pushWorkoutToCorosConnect(opts) {
     pushed: true,
     workoutId,
     message: `Pushed "${opts.input.name}" directly to your COROS Training Calendar (${payload.planDate}).`
+  };
+}
+
+// server/wahooConnectService.ts
+import crypto6 from "crypto";
+var WAHOO_OAUTH_SCOPES = "user_read workouts_read workouts_write plans_write";
+var WahooCloudPushError = class extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = "WahooCloudPushError";
+    this.status = status;
+    this.needsScopeUpgrade = status === 403;
+    this.unauthorized = status === 401;
+  }
+};
+function hasWahooWorkoutPushScopes(scope) {
+  if (!scope || typeof scope !== "string") return false;
+  const tokens = new Set(
+    scope.toLowerCase().split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)
+  );
+  return tokens.has("workouts_write") && tokens.has("plans_write");
+}
+function mapIntensityType(kind) {
+  if (kind === "warmup") return "warmup";
+  if (kind === "cooldown") return "cooldown";
+  if (kind === "rest" || kind === "recovery") return "recovery";
+  return "active";
+}
+function buildSingleWahooInterval(params) {
+  const isRecovery = params.intensityType === "recovery" || params.intensityType === "rest";
+  const exit_trigger_type = params.distanceMeters && params.distanceMeters > 0 ? "distance" : "time";
+  const exit_trigger_value = exit_trigger_type === "distance" ? Math.round(params.distanceMeters || 400) : Math.max(5, Math.round(params.durationSecs || 60));
+  const targets = [];
+  if (!isRecovery) {
+    if (params.isRunning) {
+      const paceSecsKm = Math.max(
+        95,
+        params.targetPaceSecsPerKm || Math.round(params.thresholdPaceSecsPerKm / (Math.max(40, params.targetPctFtp) / 100))
+      );
+      const speedMps = 1e3 / paceSecsKm;
+      targets.push({
+        type: "speed",
+        low: Number((speedMps * 0.96).toFixed(2)),
+        high: Number((speedMps * 1.04).toFixed(2))
+      });
+    } else {
+      const centerWatts = Number(params.targetWatts) > 0 ? Math.round(Number(params.targetWatts)) : Math.round(Math.max(40, params.targetPctFtp) / 100 * params.ftpWatts);
+      const lowWatts = Number(params.targetMinWatts) > 0 ? Math.round(Number(params.targetMinWatts)) : Math.max(40, Math.round(centerWatts * 0.95));
+      const highWatts = Number(params.targetMaxWatts) > 0 ? Math.round(Number(params.targetMaxWatts)) : Math.round(centerWatts * 1.05);
+      targets.push({
+        type: "power",
+        low: lowWatts,
+        high: Math.max(lowWatts + 5, highWatts)
+      });
+    }
+  } else if (params.hrCeilingBpm && params.hrCeilingBpm > 80) {
+    targets.push({
+      type: "hr",
+      low: 90,
+      high: Math.round(params.hrCeilingBpm)
+    });
+  }
+  return {
+    name: String(params.name || "Interval").slice(0, 64),
+    intensity_type: params.intensityType,
+    exit_trigger_type,
+    exit_trigger_value,
+    targets
+  };
+}
+function buildWahooPlanJson(input) {
+  const isRunning = String(input.sportCategory || "Running").toLowerCase().includes("run");
+  const ftpWatts = Math.max(100, Math.round(Number(input.ftpWatts || 250)));
+  const thresholdPace = Math.max(95, Math.round(Number(input.thresholdPaceSecsPerKm || 245)));
+  const planDate = String(input.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
+  const syntax = String(input.workoutSyntax || "").trim();
+  const astNodes = syntax ? parseStructuredTrackWorkout(syntax, thresholdPace) : [];
+  let estimatedDurationSecs = 0;
+  let estimatedDistanceMeters = 0;
+  const intervals = [];
+  if (astNodes.length > 0) {
+    for (const node of astNodes) {
+      if (node.type === "step") {
+        const s = node.step;
+        const durSecs = Math.max(5, Math.round(s.durationSecs || s.durationMins * 60 || 60));
+        estimatedDurationSecs += durSecs;
+        if (s.distanceMeters) estimatedDistanceMeters += Math.round(s.distanceMeters);
+        intervals.push(
+          buildSingleWahooInterval({
+            name: s.label,
+            intensityType: mapIntensityType(s.stepKind),
+            durationSecs: durSecs,
+            distanceMeters: s.distanceMeters,
+            isRunning,
+            targetPctFtp: s.intensityPct || 75,
+            targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+            ftpWatts,
+            thresholdPaceSecsPerKm: thresholdPace
+          })
+        );
+      } else {
+        const children = node.steps.map((inner) => {
+          const durSecs = Math.max(
+            5,
+            Math.round(inner.durationSecs || inner.durationMins * 60 || 60)
+          );
+          estimatedDurationSecs += durSecs * node.repeatCount;
+          if (inner.distanceMeters) {
+            estimatedDistanceMeters += Math.round(inner.distanceMeters) * node.repeatCount;
+          }
+          return buildSingleWahooInterval({
+            name: inner.label,
+            intensityType: mapIntensityType(inner.stepKind),
+            durationSecs: durSecs,
+            distanceMeters: inner.distanceMeters,
+            isRunning,
+            targetPctFtp: inner.intensityPct || 75,
+            targetPaceSecsPerKm: inner.targetPaceSecsPerKm,
+            ftpWatts,
+            thresholdPaceSecsPerKm: thresholdPace
+          });
+        });
+        intervals.push({
+          name: node.label || `${node.repeatCount}x Repeat`,
+          intensity_type: "active",
+          exit_trigger_type: "time",
+          exit_trigger_value: 0,
+          targets: [],
+          repeat: node.repeatCount,
+          intervals: children
+        });
+      }
+    }
+  } else {
+    const rawSteps = Array.isArray(input.steps) && input.steps.length > 0 ? input.steps : [
+      {
+        label: input.name || "Main Set",
+        durationSecs: 1800,
+        targetPctFtp: 75,
+        stepType: "interval"
+      }
+    ];
+    const total = rawSteps.length;
+    rawSteps.forEach((s, idx) => {
+      const pct2 = Number(s.targetPctFtp || 75);
+      const inferredKind = s.stepType ? mapIntensityType(s.stepType) : idx === 0 && total > 1 ? "warmup" : idx === total - 1 && total > 1 ? "cooldown" : pct2 <= 60 ? "recovery" : "active";
+      const durSecs = Math.max(5, Math.round(s.durationSecs || 60));
+      estimatedDurationSecs += durSecs;
+      if (s.distanceMeters) estimatedDistanceMeters += Math.round(s.distanceMeters);
+      intervals.push(
+        buildSingleWahooInterval({
+          name: String(s.label || `Step ${idx + 1}`),
+          intensityType: inferredKind,
+          durationSecs: durSecs,
+          distanceMeters: s.distanceMeters,
+          isRunning,
+          targetPctFtp: pct2,
+          targetWatts: s.targetWatts,
+          targetMinWatts: s.targetMinWatts,
+          targetMaxWatts: s.targetMaxWatts,
+          targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+          ftpWatts,
+          thresholdPaceSecsPerKm: thresholdPace,
+          hrCeilingBpm: s.hrCeilingBpm
+        })
+      );
+    });
+  }
+  const cleanName = String(input.name || "MeetReady Prescribed Session").trim().slice(0, 64);
+  const cleanDescription = String(input.description || "Prescribed by MeetReady").slice(0, 500);
+  return {
+    header: {
+      version: "1.0",
+      name: cleanName,
+      description: cleanDescription,
+      workout_type_family: isRunning ? 1 : 0,
+      // 0=biking, 1=running in Wahoo plan schema
+      workout_type_location: 0,
+      estimated_duration: estimatedDurationSecs,
+      estimated_distance: estimatedDistanceMeters,
+      ftp: ftpWatts,
+      threshold_pace_secs_per_km: thresholdPace,
+      plan_date: planDate
+    },
+    name: cleanName,
+    sport: isRunning ? "Running" : "Cycling",
+    planDate,
+    estimatedDurationSecs,
+    estimatedDistanceMeters,
+    intervals
+  };
+}
+async function pushWorkoutToWahooCloud(opts) {
+  const planJson = buildWahooPlanJson(opts.input);
+  const planBase64 = Buffer.from(JSON.stringify(planJson), "utf8").toString("base64");
+  const fileDataUrl = `data:application/json;base64,${planBase64}`;
+  const externalId = `meetready_${planJson.planDate}_${crypto6.randomBytes(4).toString("hex")}`;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const planResp = await fetch("https://api.wahooligan.com/v1/plans", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify({
+      plan: {
+        file: fileDataUrl,
+        filename: "meetready-plan.json",
+        external_id: externalId,
+        provider_updated_at: nowIso
+      }
+    })
+  });
+  if (!planResp.ok) {
+    const errText = await planResp.text().catch(() => "");
+    throw new WahooCloudPushError(
+      `Wahoo plan upload failed (${planResp.status}): ${errText.slice(0, 180)}`,
+      planResp.status
+    );
+  }
+  const planData = await planResp.json().catch(() => ({}));
+  const planId = planData.id ?? planData.plan?.id;
+  const isRunning = planJson.sport === "Running";
+  const workoutResp = await fetch("https://api.wahooligan.com/v1/workouts", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.accessToken}`,
+      "Content-Type": "application/json",
+      Accept: "application/json"
+    },
+    body: JSON.stringify({
+      workout: {
+        name: planJson.name,
+        starts: `${planJson.planDate}T08:00:00.000Z`,
+        minutes: Math.max(1, Math.round(planJson.estimatedDurationSecs / 60)),
+        workout_type_id: isRunning ? 0 : 1,
+        ...planId !== void 0 ? { plan_id: planId } : {},
+        workout_token: externalId
+      }
+    })
+  });
+  if (workoutResp.status === 403) {
+    return {
+      pushed: true,
+      partialSuccess: true,
+      planId,
+      planJson,
+      message: `Uploaded "${planJson.name}" structured plan to your Wahoo Library (calendar scheduling skipped: 403).`
+    };
+  }
+  if (!workoutResp.ok) {
+    const errText = await workoutResp.text().catch(() => "");
+    throw new WahooCloudPushError(
+      `Wahoo workout schedule failed (${workoutResp.status}): ${errText.slice(0, 180)}`,
+      workoutResp.status
+    );
+  }
+  const workoutData = await workoutResp.json().catch(() => ({}));
+  const workoutId = workoutData.id ?? workoutData.workout?.id;
+  return {
+    pushed: true,
+    partialSuccess: false,
+    planId,
+    workoutId,
+    planJson,
+    message: `Pushed "${planJson.name}" directly to your Wahoo Cloud / ELEMNT (${planJson.planDate}).`
   };
 }
 
@@ -7526,15 +8060,15 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
       for (let r = 0; r < reps; r++) {
         for (const s of expand) {
           stepOrder += 1;
-          const pct = Math.max(40, Math.min(180, s.intensityPct || 75));
-          const paceSecsKm = s.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+          const pct2 = Math.max(40, Math.min(180, s.intensityPct || 75));
+          const paceSecsKm = s.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct2 / 100));
           normalizedSteps.push({
             stepOrder,
             label: s.label,
             durationSecs: Math.max(5, Math.round(s.durationSecs || s.durationMins * 60)),
             distanceMeters: s.distanceMeters,
-            targetPctFtp: pct,
-            targetWatts: Math.round(ftp * pct / 100),
+            targetPctFtp: pct2,
+            targetWatts: Math.round(ftp * pct2 / 100),
             targetPaceSecsPerKm: Math.round(paceSecsKm),
             stepKind: s.stepKind || "work"
           });
@@ -7555,16 +8089,16 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
         orderIdx += 1;
         const dist = typeof item.distanceMeters === "number" && item.distanceMeters > 0 ? Math.round(item.distanceMeters) : void 0;
         const explicitPace = typeof item.targetPaceSecsPerKm === "number" && item.targetPaceSecsPerKm > 60 ? Math.round(item.targetPaceSecsPerKm) : void 0;
-        const pct = explicitPace ? Math.max(40, Math.min(180, Math.round(thresholdPaceSecsPerKm / explicitPace * 100))) : Math.max(40, Math.min(180, Number(item.targetPctFtp) || 75));
-        const targetWatts = Math.round(ftp * pct / 100);
-        const targetPaceSecsPerKm = explicitPace ?? Math.round(thresholdPaceSecsPerKm / (pct / 100));
+        const pct2 = explicitPace ? Math.max(40, Math.min(180, Math.round(thresholdPaceSecsPerKm / explicitPace * 100))) : Math.max(40, Math.min(180, Number(item.targetPctFtp) || 75));
+        const targetWatts = Math.round(ftp * pct2 / 100);
+        const targetPaceSecsPerKm = explicitPace ?? Math.round(thresholdPaceSecsPerKm / (pct2 / 100));
         const durationSecs = typeof item.durationSecs === "number" && item.durationSecs > 0 ? Math.max(5, Math.round(item.durationSecs)) : dist ? Math.max(5, Math.round(dist / 1e3 * targetPaceSecsPerKm)) : 300;
         normalizedSteps.push({
           stepOrder: orderIdx,
           label: String(item.label || `Step ${orderIdx}`),
           durationSecs,
           distanceMeters: dist,
-          targetPctFtp: pct,
+          targetPctFtp: pct2,
           targetWatts,
           targetPaceSecsPerKm,
           stepKind: kind
@@ -7592,8 +8126,8 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
               pushSimpleStep(s.steps[j], j % 2 === 1 ? "rest" : "work");
             } else {
               const child = s.steps[j];
-              const pct = Math.max(40, Math.min(180, Number(child.targetPctFtp) || 75));
-              const pace = child.targetPaceSecsPerKm ?? Math.round(thresholdPaceSecsPerKm / (pct / 100));
+              const pct2 = Math.max(40, Math.min(180, Number(child.targetPctFtp) || 75));
+              const pace = child.targetPaceSecsPerKm ?? Math.round(thresholdPaceSecsPerKm / (pct2 / 100));
               const dist = child.distanceMeters ? Math.round(child.distanceMeters) : void 0;
               const secs = child.durationSecs ? Math.max(5, Math.round(child.durationSecs)) : dist ? Math.max(5, Math.round(dist / 1e3 * pace)) : 60;
               orderIdx += 1;
@@ -7602,8 +8136,8 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
                 label: String(child.label || `Rep Step ${orderIdx}`),
                 durationSecs: secs,
                 distanceMeters: dist,
-                targetPctFtp: pct,
-                targetWatts: Math.round(ftp * pct / 100),
+                targetPctFtp: pct2,
+                targetWatts: Math.round(ftp * pct2 / 100),
                 targetPaceSecsPerKm: Math.round(pace),
                 stepKind: j % 2 === 1 ? "rest" : "work"
               });
@@ -7672,14 +8206,14 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
   });
   const garminWorkoutSteps = astNodes ? astNodes.map((node, idx) => {
     if (node.type === "step") {
-      const pct = Math.max(40, Math.min(180, node.step.intensityPct || 75));
-      const pace = node.step.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+      const pct2 = Math.max(40, Math.min(180, node.step.intensityPct || 75));
+      const pace = node.step.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct2 / 100));
       return toGarminExecStep({
         stepOrder: idx + 1,
         label: node.step.label,
         durationSecs: Math.max(5, Math.round(node.step.durationSecs || 60)),
         distanceMeters: node.step.distanceMeters,
-        targetWatts: Math.round(ftp * pct / 100),
+        targetWatts: Math.round(ftp * pct2 / 100),
         targetPaceSecsPerKm: Math.round(pace),
         stepKind: node.step.stepKind
       });
@@ -7690,14 +8224,14 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
       numberOfIterations: node.repeatCount,
       smartRepeat: false,
       workoutSteps: node.steps.map((inner, innerIdx) => {
-        const pct = Math.max(40, Math.min(180, inner.intensityPct || 75));
-        const pace = inner.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
+        const pct2 = Math.max(40, Math.min(180, inner.intensityPct || 75));
+        const pace = inner.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct2 / 100));
         return toGarminExecStep({
           stepOrder: innerIdx + 1,
           label: inner.label,
           durationSecs: Math.max(5, Math.round(inner.durationSecs || 60)),
           distanceMeters: inner.distanceMeters,
-          targetWatts: Math.round(ftp * pct / 100),
+          targetWatts: Math.round(ftp * pct2 / 100),
           targetPaceSecsPerKm: Math.round(pace),
           stepKind: inner.stepKind
         });
@@ -7767,6 +8301,24 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
       stepType: st.stepKind === "rest" ? "recovery" : st.stepKind === "work" ? "interval" : st.stepKind
     }))
   });
+  const wahooPlanJson = buildWahooPlanJson({
+    date: String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10),
+    name: title,
+    sportCategory: sport,
+    description: typeof body.description === "string" ? body.description : intervalsIcuText,
+    workoutSyntax,
+    ftpWatts: ftp,
+    thresholdPaceSecsPerKm,
+    steps: normalizedSteps.map((st) => ({
+      label: st.label,
+      durationSecs: st.durationSecs,
+      distanceMeters: st.distanceMeters,
+      targetPctFtp: st.targetPctFtp,
+      targetWatts: st.targetWatts,
+      targetPaceSecsPerKm: st.targetPaceSecsPerKm,
+      stepType: st.stepKind === "rest" ? "recovery" : st.stepKind === "work" ? "interval" : st.stepKind
+    }))
+  });
   res.status(200).json({
     ok: true,
     title,
@@ -7776,6 +8328,7 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
     appleWorkoutKitJson,
     garminTrainingApiJson,
     corosWorkoutJson,
+    wahooPlanJson,
     zwoXml: zwoLines.join("\n"),
     ergText
   });
@@ -7827,7 +8380,7 @@ webhooksAndExportRouter.post("/api/physiology/race-passport", (req, res) => {
 import express3 from "express";
 
 // server/teamFieldAndDailyOpsService.ts
-import crypto12 from "crypto";
+import crypto14 from "crypto";
 
 // src/physiology/fieldEventsEngine.ts
 var FIELD_EVENT_CATALOG = [
@@ -8308,7 +8861,7 @@ var PENTATHLON_MEN_COEFFS = {
 };
 
 // server/teamStoreCore.ts
-import crypto5 from "crypto";
+import crypto7 from "crypto";
 
 // server/cleanRoomFirewall.ts
 var FIRST_PARTY_HARDWARE_TOKENS = [
@@ -9080,7 +9633,7 @@ function userTeamsVaultKey(sid) {
   return `user_teams_${sid.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32)}`;
 }
 function hashToken(rawToken) {
-  return crypto5.createHash("sha256").update(rawToken.trim()).digest("hex");
+  return crypto7.createHash("sha256").update(rawToken.trim()).digest("hex");
 }
 function sanitizeExternalSyncConfig(raw, existing) {
   if (!raw && !existing) return void 0;
@@ -9102,6 +9655,57 @@ function sanitizeExternalSyncConfig(raw, existing) {
     enablePublicParentHub: typeof merged.enablePublicParentHub === "boolean" ? merged.enablePublicParentHub : false,
     ...merged.lastSyncedAt ? { lastSyncedAt: String(merged.lastSyncedAt).slice(0, 40) } : {}
   };
+}
+var VALID_PRACTICE_VENUE_CATEGORIES = /* @__PURE__ */ new Set([
+  "TRACK",
+  "XC_COURSE",
+  "ROAD_CAMPUS",
+  "GYM_WEIGHTS",
+  "POOL_CROSS",
+  "OTHER"
+]);
+function sanitizeDistrictName(raw) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.trim().slice(0, 80);
+  return trimmed || void 0;
+}
+function sanitizePracticeVenues(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seenIds = /* @__PURE__ */ new Set();
+  for (const entry of raw) {
+    if (out.length >= 8) break;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const item = entry;
+    const name = String(item.name || "").trim().slice(0, 64);
+    if (!name) continue;
+    const hasLat = item.latitude !== void 0 && item.latitude !== null && String(item.latitude).trim() !== "";
+    const hasLng = item.longitude !== void 0 && item.longitude !== null && String(item.longitude).trim() !== "";
+    const lat = hasLat ? Number(item.latitude) : Number.NaN;
+    const lng = hasLng ? Number(item.longitude) : Number.NaN;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      continue;
+    }
+    const rawRadius = item.radiusMeters !== void 0 && item.radiusMeters !== null && String(item.radiusMeters).trim() !== "" ? Number(item.radiusMeters) : NaN;
+    const radiusMeters = Number.isFinite(rawRadius) ? Math.max(50, Math.min(1500, Math.round(rawRadius))) : 250;
+    const rawCat = String(item.category || "TRACK").trim().toUpperCase();
+    const category = VALID_PRACTICE_VENUE_CATEGORIES.has(rawCat) ? rawCat : "TRACK";
+    let id = typeof item.id === "string" ? item.id.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 48) : "";
+    if (!id || seenIds.has(id)) {
+      id = `venue_${crypto7.randomBytes(4).toString("hex")}`;
+    }
+    seenIds.add(id);
+    out.push({
+      id,
+      name,
+      category,
+      latitude: lat,
+      longitude: lng,
+      radiusMeters,
+      enabled: typeof item.enabled === "boolean" ? item.enabled : true
+    });
+  }
+  return out;
 }
 function projectSafePublicExternalSync(externalSync) {
   if (!externalSync) return void 0;
@@ -9432,6 +10036,16 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     )
   };
   const projectedExternalSync = isParentFollower ? projectSafePublicExternalSync(doc.brand.externalSync) : doc.brand.externalSync;
+  const projectedAttendanceByDate = doc.attendanceByDate ? isStaffViewer ? doc.attendanceByDate : !isParentFollower && myMembership.role === "ATHLETE" ? (() => {
+    const ownOnly = {};
+    for (const [dateKey, dayMap] of Object.entries(doc.attendanceByDate)) {
+      const selfRec = dayMap?.[myMembership.membershipId];
+      if (selfRec) {
+        ownOnly[dateKey] = { [myMembership.membershipId]: selfRec };
+      }
+    }
+    return ownOnly;
+  })() : void 0 : void 0;
   return {
     brand: {
       ...doc.brand,
@@ -9455,7 +10069,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     ...isParentFollower ? {} : { workoutLibrary: doc.workoutLibrary || [] },
     workoutComments: visibleComments,
     guardianSafetyAlerts: visibleSafetyAlerts,
-    ...isStaffViewer && doc.attendanceByDate ? { attendanceByDate: doc.attendanceByDate } : {},
+    ...projectedAttendanceByDate ? { attendanceByDate: projectedAttendanceByDate } : {},
     announcements: visibleAnnouncements,
     ...isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks },
     ...typeof doc.fieldMarkLogsTotalCount === "number" && !isParentFollower ? { fieldMarkLogsTotalCount: doc.fieldMarkLogsTotalCount } : {},
@@ -9603,7 +10217,7 @@ async function autoLinkPendingTeamInvitesByEmail(params) {
 }
 
 // server/teamEmailAndOtpService.ts
-import crypto6 from "crypto";
+import crypto8 from "crypto";
 async function withBoundedTimeout(promise, timeoutMs = 8e3, label = "notification") {
   let timer;
   try {
@@ -9622,7 +10236,7 @@ async function withBoundedTimeout(promise, timeoutMs = 8e3, label = "notificatio
   }
 }
 function emailOtpVaultKey(email) {
-  const hash = crypto6.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
+  const hash = crypto8.createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 24);
   return `email_otp_${hash}`;
 }
 function isResendConfigured() {
@@ -9824,7 +10438,7 @@ async function requestEmailOtpCode(rawEmail, options) {
       error: ageCheck.error
     };
   }
-  const code = String(crypto6.randomInt(1e5, 999999));
+  const code = String(crypto8.randomInt(1e5, 999999));
   const record = {
     email,
     codeHash: hashToken(`${email}:${code}`),
@@ -9902,7 +10516,7 @@ async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid, options) {
     const candidateHash = hashToken(`${email}:${code}`);
     const a = Buffer.from(candidateHash);
     const b = Buffer.from(stored.codeHash);
-    if (a.length !== b.length || !crypto6.timingSafeEqual(a, b)) {
+    if (a.length !== b.length || !crypto8.timingSafeEqual(a, b)) {
       stored.attempts += 1;
       await saveTenantVaultAsync(key, stored);
       return { ok: false, statusCode: 400, error: "Incorrect 6-digit code." };
@@ -9970,7 +10584,7 @@ async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid, options) {
 }
 
 // server/pushNotificationService.ts
-import crypto7 from "crypto";
+import crypto9 from "crypto";
 import { generateVAPIDKeys, sendNotification } from "web-push";
 var VAPID_VAULT_KEY = "thresh_vapid_keys_v1";
 var cachedVapidKeys = null;
@@ -10045,7 +10659,7 @@ async function saveUserPushSubscription(params) {
     const existing = await loadTenantVaultAsync(key, []);
     const prior = existing.find((s) => s.endpoint === cleanEndpoint);
     const entry = {
-      id: prior?.id || `psub_${crypto7.randomBytes(6).toString("hex")}`,
+      id: prior?.id || `psub_${crypto9.randomBytes(6).toString("hex")}`,
       userSid: params.userSid,
       endpoint: cleanEndpoint,
       keys: { p256dh, auth },
@@ -10234,7 +10848,7 @@ async function dispatchTeamPushNotifications(params) {
 }
 
 // server/athleticSyncService.ts
-import crypto11 from "crypto";
+import crypto13 from "crypto";
 
 // src/utils/officialRaceSynthesizer.ts
 var OFFICIAL_RACE_EVENTS = [
@@ -11110,7 +11724,7 @@ async function archiveCoachActivitiesForMember(member, activities) {
 }
 
 // server/athleticFieldSyncHelper.ts
-import crypto8 from "node:crypto";
+import crypto10 from "node:crypto";
 function applyParsedExternalFieldMarksToDoc(params) {
   const baseLogs = Array.isArray(params.existingLogs) ? [...params.existingLogs] : Array.isArray(params.doc.fieldMarkLogs) ? [...params.doc.fieldMarkLogs] : [];
   const mergedLogs = [...baseLogs];
@@ -11132,7 +11746,7 @@ function applyParsedExternalFieldMarksToDoc(params) {
       membershipId,
       athleteName,
       nowIso,
-      idSuffix: crypto8.randomBytes(4).toString("hex")
+      idSuffix: crypto10.randomBytes(4).toString("hex")
     });
     const isDup = mergedLogs.some(
       (existing) => isDuplicateExternalFieldLog(existing, candidate)
@@ -11154,10 +11768,10 @@ function applyParsedExternalFieldMarksToDoc(params) {
 }
 
 // server/teamService.ts
-import crypto10 from "crypto";
+import crypto12 from "crypto";
 
 // server/teamWorkoutAndGovernanceService.ts
-import crypto9 from "crypto";
+import crypto11 from "crypto";
 
 // src/physiology/safeSportPatternWatchEngine.ts
 var DAY_MS = 864e5;
@@ -11503,7 +12117,7 @@ async function broadcastWorkoutToTeamSquad(params) {
     const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
     const meetingNotes = params.meetingNotes ? String(params.meetingNotes).trim().slice(0, 240) : void 0;
     const workout = {
-      broadcastId: `bw_${crypto9.randomBytes(6).toString("hex")}`,
+      broadcastId: `bw_${crypto11.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup,
       ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -11574,7 +12188,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
       const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
       const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : void 0;
       return {
-        broadcastId: `bw_${crypto9.randomBytes(6).toString("hex")}`,
+        broadcastId: `bw_${crypto11.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         targetSquadGroup,
         ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -11992,7 +12606,7 @@ Team: ${doc.brand.name}`
             deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
           }
           const alertRecord = {
-            id: `gsa_${crypto9.randomBytes(6).toString("hex")}`,
+            id: `gsa_${crypto11.randomBytes(6).toString("hex")}`,
             teamId: doc.brand.teamId,
             targetMembershipId: mem.membershipId,
             athleteName: mem.invitedName,
@@ -12061,7 +12675,7 @@ Team: ${doc.brand.name}`
       deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
     }
     const alertRecord = {
-      id: `gsa_${crypto9.randomBytes(6).toString("hex")}`,
+      id: `gsa_${crypto11.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: target.membershipId,
       athleteName: target.invitedName,
@@ -12123,9 +12737,9 @@ async function saveTeamWorkoutLibraryTemplate(params) {
     }
     const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "SWIMMING" || params.template.category === "TRIATHLON" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto9.randomBytes(6).toString("hex")}`;
+    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto11.randomBytes(6).toString("hex")}`;
     const record = {
-      id: id || `wlib_${crypto9.randomBytes(6).toString("hex")}`,
+      id: id || `wlib_${crypto11.randomBytes(6).toString("hex")}`,
       name: cleanName,
       category: validCat,
       sportCategory: params.template.sportCategory || "Running",
@@ -12241,7 +12855,7 @@ async function postTeamWorkoutComment(params) {
       targetIsProtectedMinor || doc.brand.enableParentGuardianCc && targetMem.parentGuardianEmail
     );
     const comment = {
-      id: `cmt_${crypto9.randomBytes(6).toString("hex")}`,
+      id: `cmt_${crypto11.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: targetMem.membershipId,
       targetAthleteName: targetMem.invitedName,
@@ -12411,6 +13025,20 @@ async function migrateAnonymousTeamsToStravaSid(params) {
     stravaAthleteId: params.stravaAthleteId
   });
 }
+function sanitizeReferrerHost(raw) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.trim();
+  if (!trimmed || /\s/.test(trimmed)) return void 0;
+  try {
+    const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return void 0;
+    const host = parsed.hostname.trim().toLowerCase().replace(/[^a-z0-9.-]/g, "").replace(/^\.+|\.+$/g, "").slice(0, 80);
+    return host || void 0;
+  } catch {
+    return void 0;
+  }
+}
 function sanitizeCoachAttribution(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return void 0;
   const input = raw;
@@ -12420,12 +13048,14 @@ function sanitizeCoachAttribution(raw) {
     const trimmed = val.trim().slice(0, maxLen);
     return trimmed || void 0;
   };
+  const referrerHost = sanitizeReferrerHost(input.referrerHost);
   const out = {
     ...cleanField("utm_source", 80) ? { utm_source: cleanField("utm_source", 80) } : {},
     ...cleanField("utm_medium", 80) ? { utm_medium: cleanField("utm_medium", 80) } : {},
     ...cleanField("utm_campaign", 80) ? { utm_campaign: cleanField("utm_campaign", 80) } : {},
     ...cleanField("utm_content", 80) ? { utm_content: cleanField("utm_content", 80) } : {},
     ...cleanField("src", 80) ? { src: cleanField("src", 80) } : {},
+    ...referrerHost ? { referrerHost } : {},
     ...cleanField("landing_path", 120) ? { landing_path: cleanField("landing_path", 120) } : {},
     ...cleanField("selfReportedChannel", 60) ? { selfReportedChannel: cleanField("selfReportedChannel", 60) } : {},
     ...cleanField("capturedAt", 40) ? { capturedAt: cleanField("capturedAt", 40) } : {}
@@ -12440,17 +13070,19 @@ async function createTeamForCoach(params) {
   const cleanShort = String(params.shortName || "").trim().slice(0, 22) || cleanName.split(/\s+/).slice(0, 2).join(" ").toUpperCase().slice(0, 14);
   let slug = slugifyTeamName(cleanName);
   if (dir.bySlug[slug]) {
-    slug = `${slug}-${crypto10.randomInt(10, 99)}`;
+    slug = `${slug}-${crypto12.randomInt(10, 99)}`;
   }
   let joinCode = generateTeamJoinCode(cleanShort);
   if (dir.byJoinCode[joinCode]) {
-    joinCode = generateTeamJoinCode(cleanShort, crypto10.randomInt(10, 99));
+    joinCode = generateTeamJoinCode(cleanShort, crypto12.randomInt(10, 99));
   }
-  const teamId = `tm_${crypto10.randomBytes(8).toString("hex")}`;
+  const teamId = `tm_${crypto12.randomBytes(8).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const defaultSafeSportShield = typeof params.defaultSafeSportShield === "boolean" ? params.defaultSafeSportShield : orgDefaults.defaultSafeSportShield;
   const enableParentGuardianCc = typeof params.enableParentGuardianCc === "boolean" ? params.enableParentGuardianCc : orgDefaults.enableParentGuardianCc;
   const safeLogo = params.logoDataUrl && params.logoDataUrl.startsWith("data:image/") && params.logoDataUrl.length <= 96e3 ? params.logoDataUrl : void 0;
+  const cleanDistrictName = sanitizeDistrictName(params.districtName);
+  const cleanPracticeVenues = sanitizePracticeVenues(params.practiceVenues);
   const brand = {
     teamId,
     slug,
@@ -12458,6 +13090,8 @@ async function createTeamForCoach(params) {
     name: cleanName,
     shortName: cleanShort,
     mascotOrMotto: params.mascotOrMotto ? String(params.mascotOrMotto).trim().slice(0, 64) : void 0,
+    ...cleanDistrictName ? { districtName: cleanDistrictName } : {},
+    ...cleanPracticeVenues.length > 0 ? { practiceVenues: cleanPracticeVenues } : {},
     orgType,
     primarySport: params.primarySport || orgDefaults.defaultPrimarySport,
     logoDataUrl: safeLogo,
@@ -12473,7 +13107,7 @@ async function createTeamForCoach(params) {
   const cleanCoachEventGroups = sanitizeTargetEventGroups(params.coachEventGroups);
   const coachAttribution = sanitizeCoachAttribution(params.attribution);
   const coachMembership = {
-    membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
     teamId,
     userSid: params.callerSid,
     role: "HEAD_COACH",
@@ -12536,6 +13170,12 @@ async function updateTeamBranding(params) {
     if (typeof u.mascotOrMotto === "string") {
       doc.brand.mascotOrMotto = u.mascotOrMotto.trim().slice(0, 64) || void 0;
     }
+    if (typeof u.districtName === "string") {
+      doc.brand.districtName = sanitizeDistrictName(u.districtName);
+    }
+    if (Array.isArray(u.practiceVenues)) {
+      doc.brand.practiceVenues = sanitizePracticeVenues(u.practiceVenues);
+    }
     if (u.orgType && callerMem.role === "HEAD_COACH") doc.brand.orgType = u.orgType;
     if (u.primarySport) doc.brand.primarySport = u.primarySport;
     if (u.primaryHex) doc.brand.primaryHex = normalizeHexColor(u.primaryHex, doc.brand.primaryHex);
@@ -12564,7 +13204,7 @@ async function updateTeamBranding(params) {
       doc.brand.logoDataUrl = u.logoDataUrl;
     }
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+    await saveTeamDocRaw(params.teamId, doc);
     return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
   });
 }
@@ -12618,8 +13258,8 @@ async function bulkCreateAndSendInvites(params) {
       )) {
         continue;
       }
-      const rawToken = crypto10.randomBytes(12).toString("base64url");
-      const membershipId = `mem_${crypto10.randomBytes(6).toString("hex")}`;
+      const rawToken = crypto12.randomBytes(12).toString("base64url");
+      const membershipId = `mem_${crypto12.randomBytes(6).toString("hex")}`;
       const emailParam = cleanEmail ? `&email=${encodeURIComponent(cleanEmail)}` : "";
       const magicJoinUrl = `${cleanOrigin}/join/${latestDoc.brand.slug}?t=${rawToken}${emailParam}`;
       const parentCc = latestDoc.brand.enableParentGuardianCc && row.parentGuardianEmail ? row.parentGuardianEmail.trim().toLowerCase() : void 0;
@@ -12745,7 +13385,7 @@ async function resendPendingTeamInvites(params) {
       continue;
     }
     if (!m.rawInviteToken) {
-      m.rawInviteToken = crypto10.randomBytes(12).toString("base64url");
+      m.rawInviteToken = crypto12.randomBytes(12).toString("base64url");
       m.inviteTokenHash = hashToken(m.rawInviteToken);
     }
     const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : "";
@@ -12919,7 +13559,7 @@ async function claimTeamJoinInvite(params) {
     const resolvedSharingTier = isStaffInvite ? "FULL_STREAMS" : isDeferredMinorParentEmail ? "LOAD_ONLY" : params.sharingTier || "SUMMARY_ONLY";
     if (!mem) {
       mem = {
-        membershipId: `mem_${crypto10.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto12.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         stravaAthleteId: cleanStravaId,
@@ -12986,7 +13626,7 @@ async function claimTeamJoinInvite(params) {
     if (mem.isMinorU18 && mem.parentGuardianEmail) {
       let rawConsentToken = "";
       if (!mem.parentConsentTokenHash) {
-        rawConsentToken = crypto10.randomBytes(16).toString("base64url");
+        rawConsentToken = crypto12.randomBytes(16).toString("base64url");
         mem.parentConsentTokenHash = hashToken(rawConsentToken);
         mem.parentConsentToken = void 0;
       }
@@ -13162,7 +13802,7 @@ function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
     const estDist = meet.distanceMeters || 5e3;
     const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
     additions.push({
-      broadcastId: `meet_${crypto11.randomBytes(6).toString("hex")}`,
+      broadcastId: `meet_${crypto13.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup: "ALL",
       date: cleanDate,
@@ -13371,10 +14011,10 @@ function findOrCreateExternalMembership(doc, candidate) {
     candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
   );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-  const rawToken = crypto11.randomBytes(12).toString("base64url");
+  const rawToken = crypto13.randomBytes(12).toString("base64url");
   const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
   const createdMem = {
-    membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
     role: "ATHLETE",
     squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
@@ -13391,7 +14031,7 @@ function findOrCreateExternalMembership(doc, candidate) {
     status: "INVITED",
     emailDeliveryStatus: "READY_MANUAL_LINK",
     rawInviteToken: rawToken,
-    inviteTokenHash: crypto11.createHash("sha256").update(rawToken).digest("hex"),
+    inviteTokenHash: crypto13.createHash("sha256").update(rawToken).digest("hex"),
     invitedAt: nowIso,
     liveSnapshot: {
       updatedAt: nowIso,
@@ -13462,7 +14102,7 @@ async function applyExternalTeamSyncBatch(params) {
     );
     if (duplicate) continue;
     const activity = synthesizeOfficialRaceActivity({
-      id: `ext-meet-${crypto11.randomBytes(5).toString("hex")}`,
+      id: `ext-meet-${crypto13.randomBytes(5).toString("hex")}`,
       date: row.date,
       meetName: row.meetName,
       eventLabel: row.eventLabel,
@@ -13650,7 +14290,7 @@ async function followTeamAsParentOrFan(params) {
     if (!mem) {
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       mem = {
-        membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         role: "PARENT_FOLLOWER",
@@ -13774,8 +14414,8 @@ async function subscribeParentEmailToPublicHub(params) {
       error: "Team Hub not found or public parent updates are disabled."
     };
   }
-  const rawConfirmToken = crypto11.randomBytes(24).toString("base64url");
-  const rawUnsubToken = crypto11.randomBytes(24).toString("base64url");
+  const rawConfirmToken = crypto13.randomBytes(24).toString("base64url");
+  const rawUnsubToken = crypto13.randomBytes(24).toString("base64url");
   const confirmHash = hashToken(rawConfirmToken);
   const unsubHash = hashToken(rawUnsubToken);
   const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
@@ -13790,7 +14430,7 @@ async function subscribeParentEmailToPublicHub(params) {
       return { alreadyConfirmed: true };
     }
     const updatedRecord = {
-      id: existing?.id || `psub_${crypto11.randomBytes(6).toString("hex")}`,
+      id: existing?.id || `psub_${crypto13.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       email: cleanEmail,
       status: "PENDING",
@@ -13954,7 +14594,7 @@ async function dispatchParentHubAnnouncementEmails(params) {
     const confirmed = records.filter((r) => r.status === "CONFIRMED").slice(0, 50);
     if (confirmed.length === 0) return;
     for (const rec of confirmed) {
-      const rawUnsubToken = crypto11.randomBytes(24).toString("base64url");
+      const rawUnsubToken = crypto13.randomBytes(24).toString("base64url");
       rec.unsubscribeTokenHashes = [
         hashToken(rawUnsubToken),
         ...rec.unsubscribeTokenHashes || []
@@ -14030,6 +14670,15 @@ var VALID_FIELD_EVENT_CODES = /* @__PURE__ */ new Set([
   "HEPT",
   "DEC"
 ]);
+function computeHaversineDistanceMeters(lat1, lng1, lat2, lng2) {
+  const earthRadiusMeters = 6371e3;
+  const toRad = (deg) => deg * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+}
 async function recordTeamAttendanceBatch(params) {
   const cleanDate = String(params.date || "").trim().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
@@ -14058,11 +14707,23 @@ async function recordTeamAttendanceBatch(params) {
         (m) => m.membershipId === memId && m.status !== "REVOKED"
       );
       if (!targetMem) continue;
+      const existingRec = dayBucket[memId];
+      const keepGpsMeta = existingRec?.method === "GPS_GEOFENCE" && (status === "PRESENT" || status === "LATE");
       dayBucket[memId] = {
         date: cleanDate,
         membershipId: memId,
         status,
         ...rawEntry.note ? { note: String(rawEntry.note).trim().slice(0, 140) } : {},
+        ...keepGpsMeta ? {
+          checkedInAt: existingRec.checkedInAt,
+          verifiedOnSite: existingRec.verifiedOnSite,
+          distanceMeters: existingRec.distanceMeters,
+          venueId: existingRec.venueId,
+          venueName: existingRec.venueName,
+          method: "GPS_GEOFENCE"
+        } : {
+          method: "COACH_MANUAL"
+        },
         updatedAt: nowIso,
         updatedBySid: params.callerSid
       };
@@ -14091,6 +14752,206 @@ async function recordTeamAttendanceBatch(params) {
     };
   });
 }
+async function updateTeamPracticeVenues(params) {
+  const originUrl = params.originUrl || "https://meetready.app";
+  const sanitized = sanitizePracticeVenues(params.practiceVenues);
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, statusCode: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || callerMem.role !== "HEAD_COACH" && callerMem.role !== "ASSISTANT_COACH" && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: "Head Coach, Assistant Coach, or Org Admin permissions required."
+      };
+    }
+    doc.brand.practiceVenues = sanitized;
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "PRACTICE_VENUES_UPDATED",
+      targetId: params.teamId,
+      metadata: {
+        venueCount: sanitized.length,
+        enabledCount: sanitized.filter((v) => v.enabled).length
+      }
+    });
+    return {
+      ok: true,
+      statusCode: 200,
+      practiceVenues: sanitized,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, originUrl)
+    };
+  });
+}
+async function selfCheckInTeamAttendance(params) {
+  const originUrl = params.originUrl || "https://meetready.app";
+  const cleanDate = params.date === void 0 || params.date === null || String(params.date).trim() === "" ? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10) : String(params.date).trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: "Valid YYYY-MM-DD check-in date required."
+    };
+  }
+  const lat = Number(params.latitude);
+  const lng = Number(params.longitude);
+  if (typeof params.latitude !== "number" || typeof params.longitude !== "number" || !Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: "Valid GPS coordinates are required for one-time geofence check-in."
+    };
+  }
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return {
+        ok: false,
+        statusCode: 404,
+        verifiedOnSite: false,
+        error: "Team not found."
+      };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem) {
+      return {
+        ok: false,
+        statusCode: 403,
+        verifiedOnSite: false,
+        error: "Active team membership required to check in."
+      };
+    }
+    if (callerMem.role === "PARENT_FOLLOWER") {
+      return {
+        ok: false,
+        statusCode: 403,
+        verifiedOnSite: false,
+        error: "Parent/guardian follower accounts cannot submit athlete practice check-ins."
+      };
+    }
+    const enabledVenues = (doc.brand.practiceVenues || []).filter((v) => v.enabled);
+    if (enabledVenues.length === 0) {
+      return {
+        ok: false,
+        statusCode: 400,
+        verifiedOnSite: false,
+        error: "No enabled practice venue geofences are configured for this team."
+      };
+    }
+    let selectedVenue;
+    let distanceMeters = 0;
+    if (params.venueId && String(params.venueId).trim()) {
+      const requestedId = String(params.venueId).trim();
+      selectedVenue = enabledVenues.find((v) => v.id === requestedId);
+      if (!selectedVenue) {
+        return {
+          ok: false,
+          statusCode: 400,
+          verifiedOnSite: false,
+          error: "Requested practice venue is not enabled for this team."
+        };
+      }
+      distanceMeters = Math.round(
+        computeHaversineDistanceMeters(lat, lng, selectedVenue.latitude, selectedVenue.longitude)
+      );
+    } else {
+      let bestDist = Infinity;
+      for (const venue of enabledVenues) {
+        const d = computeHaversineDistanceMeters(lat, lng, venue.latitude, venue.longitude);
+        if (d < bestDist) {
+          bestDist = d;
+          selectedVenue = venue;
+        }
+      }
+      distanceMeters = Math.round(bestDist);
+    }
+    if (!selectedVenue) {
+      return {
+        ok: false,
+        statusCode: 400,
+        verifiedOnSite: false,
+        error: "No enabled practice venue available."
+      };
+    }
+    if (distanceMeters > selectedVenue.radiusMeters) {
+      return {
+        ok: false,
+        statusCode: 400,
+        verifiedOnSite: false,
+        distanceMeters,
+        radiusMeters: selectedVenue.radiusMeters,
+        venueId: selectedVenue.id,
+        venueName: selectedVenue.name,
+        error: `Outside ${selectedVenue.name} practice geofence (${distanceMeters}m away; max ${selectedVenue.radiusMeters}m).`
+      };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    doc.attendanceByDate = doc.attendanceByDate || {};
+    const dayBucket = {
+      ...doc.attendanceByDate[cleanDate] || {}
+    };
+    const record = {
+      date: cleanDate,
+      membershipId: callerMem.membershipId,
+      status: "PRESENT",
+      checkedInAt: nowIso,
+      verifiedOnSite: true,
+      distanceMeters,
+      venueId: selectedVenue.id,
+      venueName: selectedVenue.name,
+      method: "GPS_GEOFENCE",
+      updatedAt: nowIso,
+      updatedBySid: params.callerSid
+    };
+    dayBucket[callerMem.membershipId] = record;
+    doc.attendanceByDate[cleanDate] = dayBucket;
+    const allDates = Object.keys(doc.attendanceByDate).sort();
+    if (allDates.length > 45) {
+      for (const oldKey of allDates.slice(0, allDates.length - 45)) {
+        delete doc.attendanceByDate[oldKey];
+      }
+    }
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "ATTENDANCE_GPS_SELF_CHECKIN",
+      targetId: callerMem.membershipId,
+      metadata: {
+        date: cleanDate,
+        venueId: selectedVenue.id,
+        venueName: selectedVenue.name,
+        distanceMeters,
+        radiusMeters: selectedVenue.radiusMeters,
+        verifiedOnSite: true
+      }
+    });
+    return {
+      ok: true,
+      statusCode: 200,
+      verifiedOnSite: true,
+      distanceMeters,
+      radiusMeters: selectedVenue.radiusMeters,
+      venueId: selectedVenue.id,
+      venueName: selectedVenue.name,
+      record,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, originUrl)
+    };
+  });
+}
 async function postTeamAnnouncement(params) {
   const cleanTitle = String(params.title || "").trim().slice(0, 120);
   const cleanBody = String(params.body || "").trim().slice(0, 600);
@@ -14113,7 +14974,7 @@ async function postTeamAnnouncement(params) {
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const targetGroups = sanitizeTargetEventGroups(params.targetEventGroups);
     const announcement = {
-      id: `ann_${crypto12.randomBytes(6).toString("hex")}`,
+      id: `ann_${crypto14.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       title: cleanTitle,
       body: cleanBody,
@@ -14363,7 +15224,7 @@ async function recordTeamFieldMarks(params) {
       const flightName = typeof rawEntry.flightName === "string" && rawEntry.flightName.trim() ? rawEntry.flightName.trim().slice(0, 48) : void 0;
       const placeRank = typeof rawEntry.placeRank === "number" && Number.isFinite(rawEntry.placeRank) && rawEntry.placeRank >= 1 ? Math.round(rawEntry.placeRank) : void 0;
       const advancedToFinals = typeof rawEntry.advancedToFinals === "boolean" ? rawEntry.advancedToFinals : void 0;
-      const recordId = `fld_${crypto12.randomBytes(6).toString("hex")}`;
+      const recordId = `fld_${crypto14.randomBytes(6).toString("hex")}`;
       const record = {
         id: recordId,
         teamId: doc.brand.teamId,
@@ -14551,7 +15412,7 @@ async function inviteTeamCoachingStaff(params) {
       doc.memberships,
       params.assignedAthleteMembershipIds
     );
-    const rawInviteToken = crypto12.randomBytes(16).toString("base64url");
+    const rawInviteToken = crypto14.randomBytes(16).toString("base64url");
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
     const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
@@ -14567,7 +15428,7 @@ async function inviteTeamCoachingStaff(params) {
       emailStatus = sendRes.status;
     }
     const newMem = {
-      membershipId: `mem_coach_${crypto12.randomBytes(6).toString("hex")}`,
+      membershipId: `mem_coach_${crypto14.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       role,
       squadGroup: "Coaching Staff",
@@ -14614,7 +15475,7 @@ async function inviteTeamCoachingStaff(params) {
 }
 
 // server/teamMessagingService.ts
-import crypto13 from "crypto";
+import crypto15 from "crypto";
 function escapeHtml3(raw) {
   return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
@@ -14764,7 +15625,7 @@ async function postTeamMessage(params) {
       policy.quietHoursEndHour
     );
     const record = {
-      id: `msg_${crypto13.randomBytes(6).toString("hex")}`,
+      id: `msg_${crypto15.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       channelId,
       channelScope: params.channelScope,
@@ -14938,128 +15799,8 @@ async function updateTeamMessagingPolicy(params) {
   });
 }
 
-// server/rateLimiter.ts
-var memoryRateLimitStore = /* @__PURE__ */ new Map();
-var MAX_MEMORY_RATE_LIMIT_KEYS = 4e3;
-function getClientRateLimitIp(req) {
-  const forwarded = req.headers["x-vercel-forwarded-for"] || req.headers["x-forwarded-for"];
-  const firstForwarded = Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === "string" ? forwarded.split(",")[0] : "";
-  const candidate = (firstForwarded || req.ip || req.socket?.remoteAddress || "local").trim();
-  return candidate.replace(/[^a-zA-Z0-9.:_-]/g, "").slice(0, 64) || "local";
-}
-function checkMemoryRateLimitSync(key, limit = 20, windowMs = 6e4) {
-  const cleanKey = String(key || "").trim().slice(0, 180) || "default";
-  const safeLimit = Math.max(1, Math.floor(limit));
-  const safeWindowMs = Math.max(1e3, Math.floor(windowMs));
-  const now = Date.now();
-  if (memoryRateLimitStore.size > MAX_MEMORY_RATE_LIMIT_KEYS) {
-    for (const [k, rec] of memoryRateLimitStore.entries()) {
-      if (rec.resetAt <= now) {
-        memoryRateLimitStore.delete(k);
-      }
-    }
-    while (memoryRateLimitStore.size >= MAX_MEMORY_RATE_LIMIT_KEYS) {
-      const oldest = memoryRateLimitStore.keys().next().value;
-      if (oldest === void 0) break;
-      memoryRateLimitStore.delete(oldest);
-    }
-  }
-  const record = memoryRateLimitStore.get(cleanKey);
-  if (!record || record.resetAt <= now) {
-    memoryRateLimitStore.set(cleanKey, { count: 1, resetAt: now + safeWindowMs });
-    return {
-      allowed: true,
-      retryAfterSecs: 0,
-      remaining: Math.max(0, safeLimit - 1),
-      backend: "MEMORY"
-    };
-  }
-  if (record.count >= safeLimit) {
-    return {
-      allowed: false,
-      retryAfterSecs: Math.max(1, Math.ceil((record.resetAt - now) / 1e3)),
-      remaining: 0,
-      backend: "MEMORY"
-    };
-  }
-  record.count += 1;
-  return {
-    allowed: true,
-    retryAfterSecs: 0,
-    remaining: Math.max(0, safeLimit - record.count),
-    backend: "MEMORY"
-  };
-}
-async function tryUpstashRateLimitAsync(key, limit, windowMs) {
-  const restUrl = (process.env.UPSTASH_REDIS_REST_URL || "").trim().replace(/\/+$/, "");
-  const restToken = (process.env.UPSTASH_REDIS_REST_TOKEN || "").trim();
-  if (!restUrl || !restToken) return null;
-  const redisKey = `mr:rl:${key}`;
-  try {
-    const resp = await fetch(`${restUrl}/pipeline`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${restToken}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify([
-        ["INCR", redisKey],
-        ["PTTL", redisKey]
-      ]),
-      signal: AbortSignal.timeout(1500)
-    });
-    if (!resp.ok) {
-      return null;
-    }
-    const rows = await resp.json();
-    if (!Array.isArray(rows) || rows.length < 2 || rows[0]?.error) {
-      return null;
-    }
-    const count = Number(rows[0]?.result);
-    let ttlMs = Number(rows[1]?.result);
-    if (!Number.isFinite(count) || count <= 0) {
-      return null;
-    }
-    if (!Number.isFinite(ttlMs) || ttlMs <= 0) {
-      ttlMs = windowMs;
-      await fetch(`${restUrl}/pexpire/${encodeURIComponent(redisKey)}/${windowMs}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${restToken}` },
-        signal: AbortSignal.timeout(1e3)
-      }).catch(() => void 0);
-    }
-    const allowed = count <= limit;
-    return {
-      allowed,
-      retryAfterSecs: allowed ? 0 : Math.max(1, Math.ceil(ttlMs / 1e3)),
-      remaining: Math.max(0, limit - count),
-      backend: "UPSTASH_REDIS"
-    };
-  } catch (err) {
-    warnServerFallback("rate-limit:upstash-fallback", err);
-    return null;
-  }
-}
-async function checkDistributedRateLimitAsync(key, limit = 20, windowMs = 6e4) {
-  const cleanKey = String(key || "").trim().slice(0, 180) || "default";
-  const safeLimit = Math.max(1, Math.floor(limit));
-  const safeWindowMs = Math.max(1e3, Math.floor(windowMs));
-  const upstashRes = await tryUpstashRateLimitAsync(cleanKey, safeLimit, safeWindowMs);
-  if (upstashRes) {
-    return upstashRes;
-  }
-  const pgRes = await consumeRateLimitPostgresAsync(cleanKey, safeLimit, safeWindowMs);
-  if (pgRes) {
-    return {
-      ...pgRes,
-      backend: "POSTGRES"
-    };
-  }
-  return checkMemoryRateLimitSync(cleanKey, safeLimit, safeWindowMs);
-}
-
 // server/teamLifecycleService.ts
-import crypto14 from "crypto";
+import crypto16 from "crypto";
 function sanitizeMemberPublicNameForDeletion(m) {
   m.userSid = void 0;
   m.stravaAthleteId = void 0;
@@ -15720,7 +16461,7 @@ async function issueOrResendParentConsentLink(params) {
     if (cleanIncomingEmail) {
       mem.parentGuardianEmail = cleanIncomingEmail;
     }
-    const rawConsentToken = crypto14.randomBytes(16).toString("base64url");
+    const rawConsentToken = crypto16.randomBytes(16).toString("base64url");
     mem.parentConsentTokenHash = hashToken(rawConsentToken);
     mem.parentConsentToken = void 0;
     if (mem.parentConsentStatus !== "ACKNOWLEDGED") {
@@ -15914,6 +16655,8 @@ teamRouter.post("/api/teams", async (req, res) => {
       name: String(req.body?.name || ""),
       shortName: req.body?.shortName ? String(req.body.shortName) : void 0,
       mascotOrMotto: req.body?.mascotOrMotto ? String(req.body.mascotOrMotto) : void 0,
+      districtName: typeof req.body?.districtName === "string" ? req.body.districtName : void 0,
+      practiceVenues: Array.isArray(req.body?.practiceVenues) ? req.body.practiceVenues : void 0,
       orgType: req.body?.orgType || "HIGH_SCHOOL",
       primarySport: req.body?.primarySport,
       primaryHex: req.body?.primaryHex,
@@ -15965,6 +16708,42 @@ teamRouter.put("/api/teams/:teamId", async (req, res) => {
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : "Failed to update team."
+    });
+  }
+});
+teamRouter.put("/api/teams/:teamId/practice-venues", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await updateTeamPracticeVenues({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      practiceVenues: body.practiceVenues,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.statusCode || 403).json({
+        ok: false,
+        error: result.error || "Coach or Org Admin permissions required."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      practiceVenues: result.practiceVenues,
+      team: result.team,
+      teams
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed updating practice venues."
     });
   }
 });
@@ -17030,6 +17809,62 @@ teamRouter.post("/api/teams/:teamId/attendance", async (req, res) => {
     });
   }
 });
+teamRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const parseCoord = (raw) => {
+      if (typeof raw === "number") return raw;
+      if (typeof raw === "string" && raw.trim() !== "") return Number(raw);
+      return Number.NaN;
+    };
+    const result = await selfCheckInTeamAttendance({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      date: typeof body.date === "string" ? body.date : void 0,
+      venueId: typeof body.venueId === "string" ? body.venueId : void 0,
+      latitude: parseCoord(body.latitude),
+      longitude: parseCoord(body.longitude),
+      accuracyMeters: typeof body.accuracyMeters === "number" && Number.isFinite(body.accuracyMeters) ? body.accuracyMeters : void 0,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.statusCode || 400).json({
+        ok: false,
+        verifiedOnSite: false,
+        ...typeof result.distanceMeters === "number" ? { distanceMeters: result.distanceMeters } : {},
+        ...typeof result.radiusMeters === "number" ? { radiusMeters: result.radiusMeters } : {},
+        ...result.venueId ? { venueId: result.venueId } : {},
+        ...result.venueName ? { venueName: result.venueName } : {},
+        error: result.error || "Practice geofence check-in failed."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      verifiedOnSite: true,
+      distanceMeters: result.distanceMeters,
+      radiusMeters: result.radiusMeters,
+      venueId: result.venueId,
+      venueName: result.venueName,
+      record: result.record,
+      team: result.team,
+      teams
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      verifiedOnSite: false,
+      error: err instanceof Error ? err.message : "Failed GPS practice check-in."
+    });
+  }
+});
 teamRouter.post("/api/teams/:teamId/announcements", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -17526,7 +18361,7 @@ teamRouter.post("/api/push/test", async (req, res) => {
 import express4 from "express";
 
 // server/teamMeetDayOpsService.ts
-import crypto15 from "crypto";
+import crypto17 from "crypto";
 function sanitizeMeetDayPacketEntry(raw, idx) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const obj = raw;
@@ -17543,7 +18378,7 @@ function sanitizeMeetDayPacketEntry(raw, idx) {
   const relayTeamCode = typeof obj.relayTeamCode === "string" && obj.relayTeamCode.trim() ? obj.relayTeamCode.trim().toUpperCase().slice(0, 4) : void 0;
   const rawLeg = typeof obj.relayLegOrder === "number" && Number.isInteger(obj.relayLegOrder) ? obj.relayLegOrder : void 0;
   const relayLegOrder = rawLeg === 1 || rawLeg === 2 || rawLeg === 3 || rawLeg === 4 ? rawLeg : void 0;
-  const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 64) : `entry_${idx}_${crypto15.randomBytes(4).toString("hex")}`;
+  const id = typeof obj.id === "string" && obj.id.trim() ? obj.id.trim().slice(0, 64) : `entry_${idx}_${crypto17.randomBytes(4).toString("hex")}`;
   return {
     id,
     athleteName,
@@ -17592,7 +18427,7 @@ async function saveMeetDayPacket(params) {
     if (clean) entries.push(clean);
   }
   const requestedPacketId = typeof params.packet?.packetId === "string" ? params.packet.packetId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : "";
-  const packetId = requestedPacketId || `mdp_${crypto15.randomBytes(6).toString("hex")}`;
+  const packetId = requestedPacketId || `mdp_${crypto17.randomBytes(6).toString("hex")}`;
   return withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
     if (!doc) {
@@ -17811,7 +18646,7 @@ teamMeetDayRouter.delete(
 import express5 from "express";
 
 // server/teamInjuryService.ts
-import crypto16 from "crypto";
+import crypto18 from "crypto";
 var VALID_RTP_STAGES = /* @__PURE__ */ new Set([
   "OUT",
   "MODIFIED",
@@ -17922,7 +18757,7 @@ async function upsertTeamInjuryCase(params) {
     const nextPrivateNotes = isTrainer ? hasClinicalInput ? cleanClinicalInput || void 0 : existingCase?.privateClinicalNotes : existingCase?.privateClinicalNotes;
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const savedCase = {
-      id: existingCase?.id || requestedId || `inj_${crypto16.randomBytes(6).toString("hex")}`,
+      id: existingCase?.id || requestedId || `inj_${crypto18.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       membershipId: targetMem.membershipId,
       athleteName: targetMem.invitedName,
@@ -18149,7 +18984,7 @@ teamInjuryRouter.delete(
 import express6 from "express";
 
 // server/teamBillingService.ts
-import crypto17 from "crypto";
+import crypto19 from "crypto";
 var TEAM_BILLING_PLANS = {
   FREE_FOUNDING: {
     planCode: "FREE_FOUNDING",
@@ -18261,7 +19096,7 @@ async function issueSchoolPoInvoice(params) {
     const now = /* @__PURE__ */ new Date();
     const nowIso = now.toISOString();
     const year = now.getUTCFullYear();
-    const suffix = crypto17.randomInt(1e3, 1e4);
+    const suffix = crypto19.randomInt(1e3, 1e4);
     const invoiceNumber = `MR-PO-${year}-${suffix}`;
     const dueDate = new Date(now.getTime() + 30 * 864e5).toISOString().slice(0, 10);
     const invoice = {
@@ -18397,8 +19232,8 @@ async function createStripeCheckoutSession(params) {
   ).trim().toLowerCase();
   const form = new URLSearchParams();
   form.set("mode", "subscription");
-  form.set("success_url", `${cleanOrigin}/#coach?billing=success`);
-  form.set("cancel_url", `${cleanOrigin}/#coach?billing=cancelled`);
+  form.set("success_url", `${cleanOrigin}/?billing=success#coach/roster`);
+  form.set("cancel_url", `${cleanOrigin}/?billing=cancelled#coach/roster`);
   form.set("client_reference_id", doc.brand.teamId);
   form.set("metadata[teamId]", doc.brand.teamId);
   form.set("metadata[planCode]", rawPlan);
@@ -18495,12 +19330,12 @@ function verifyStripeWebhookSignature(params) {
     Buffer.from(`${timestamp}.`, "utf8"),
     rawBuffer
   ]);
-  const expectedHex = crypto17.createHmac("sha256", secret).update(signedPayload).digest("hex").toLowerCase();
+  const expectedHex = crypto19.createHmac("sha256", secret).update(signedPayload).digest("hex").toLowerCase();
   const expectedBuf = Buffer.from(expectedHex, "utf8");
   const matched = v1Signatures.some((sig) => {
     const sigBuf = Buffer.from(sig, "utf8");
     if (sigBuf.length !== expectedBuf.length) return false;
-    return crypto17.timingSafeEqual(sigBuf, expectedBuf);
+    return crypto19.timingSafeEqual(sigBuf, expectedBuf);
   });
   if (!matched) {
     return { valid: false, timestamp, reason: "Stripe webhook signature mismatch." };
@@ -18638,8 +19473,343 @@ async function processStripeWebhookEvent(params) {
   };
 }
 
+// src/physiology/trackEnvironmentPhysics.ts
+var STRAIGHT_METERS = 84.39;
+var KERB_RADIUS_METERS = 36.5;
+var LANE_1_RADIUS_METERS = KERB_RADIUS_METERS + 0.3;
+var LANE_1_CIRCUMFERENCE_METERS = 2 * STRAIGHT_METERS + 2 * Math.PI * LANE_1_RADIUS_METERS;
+
+// src/physiology/scholasticEngine.ts
+function summarizeNcaaCaraWeeklyHours(activities, referenceDateStr, extraStrengthOrMeetingHours = 0, competitionDates = [], options) {
+  const refMs = referenceDateStr ? (/* @__PURE__ */ new Date(`${referenceDateStr.slice(0, 10)}T23:59:59Z`)).getTime() : Date.now();
+  const startMs = refMs - 7 * 86400 * 1e3;
+  const hoursByDay = /* @__PURE__ */ new Map();
+  const competitionDays = new Set(
+    competitionDates.map((d) => d.slice(0, 10)).filter((d) => {
+      if (!d) return false;
+      const dMs = (/* @__PURE__ */ new Date(`${d}T12:00:00Z`)).getTime();
+      return !Number.isNaN(dMs) && dMs > startMs && dMs <= refMs;
+    })
+  );
+  for (const act of activities) {
+    if (!act?.startDateLocal) continue;
+    const tMs = new Date(act.startDateLocal).getTime();
+    if (Number.isNaN(tMs) || tMs <= startMs || tMs > refMs) continue;
+    const dayKey = act.startDateLocal.slice(0, 10);
+    if (Boolean(act.officialRaceData) || Boolean(act.isCompetitionDay)) {
+      competitionDays.add(dayKey);
+    }
+    const secs = Math.max(0, act.movingTimeSecs || 0);
+    hoursByDay.set(dayKey, (hoursByDay.get(dayKey) || 0) + secs / 3600);
+  }
+  for (const compDay of competitionDays) {
+    hoursByDay.set(compDay, 3);
+  }
+  let practiceAndCompHours = 0;
+  let activeDaysCount = 0;
+  for (const dayHours of hoursByDay.values()) {
+    practiceAndCompHours += dayHours;
+    if (dayHours > 0.05) {
+      activeDaysCount += 1;
+    }
+  }
+  const seasonSegment = options?.seasonSegment || "IN_SEASON";
+  const weeklyCapHours = seasonSegment === "OUT_OF_SEASON" ? 8 : 20;
+  const dailyCapHours = 4;
+  const requiredDaysOff = seasonSegment === "OUT_OF_SEASON" ? 2 : 1;
+  const daysOffCount = Math.max(0, 7 - Math.min(7, activeDaysCount));
+  const daysOffCompliant = daysOffCount >= requiredDaysOff;
+  const strengthHours = Number(Math.max(0, Number(options?.strengthHours || 0)).toFixed(2));
+  const meetingFilmHours = Number(Math.max(0, Number(options?.meetingFilmHours || 0)).toFixed(2));
+  const varaHours = Number(Math.max(0, Number(options?.varaHours || 0)).toFixed(2));
+  const extraTotal = Math.max(0, extraStrengthOrMeetingHours) + strengthHours + meetingFilmHours;
+  const outOfSeasonSkillCompliant = seasonSegment === "OUT_OF_SEASON" ? meetingFilmHours <= 2 : true;
+  const rolling7dCountableHours = Number((practiceAndCompHours + extraTotal).toFixed(2));
+  const maxSingleDayHours = Number(
+    Math.max(0, ...Array.from(hoursByDay.values())).toFixed(2)
+  );
+  const remainingWeeklyHours = Number(
+    Math.max(0, weeklyCapHours - rolling7dCountableHours).toFixed(2)
+  );
+  const compliant = rolling7dCountableHours <= weeklyCapHours && maxSingleDayHours <= dailyCapHours && daysOffCompliant && outOfSeasonSkillCompliant;
+  const statusLabel = rolling7dCountableHours > weeklyCapHours ? `Exceeds ${weeklyCapHours}h NCAA CARA Cap (${rolling7dCountableHours}h)` : maxSingleDayHours > dailyCapHours ? `Exceeds 4h Single-Day CARA Cap (${maxSingleDayHours}h)` : !daysOffCompliant ? `Missing Required Day Off (${daysOffCount}/${requiredDaysOff} off)` : !outOfSeasonSkillCompliant ? `Exceeds 2h Out-of-Season Skill/Film Cap (${meetingFilmHours}h)` : rolling7dCountableHours >= weeklyCapHours - 2.5 ? `Near ${weeklyCapHours}h Cap (${remainingWeeklyHours}h remaining)` : `NCAA CARA Compliant (${rolling7dCountableHours}h / ${weeklyCapHours}h)`;
+  return {
+    rolling7dCountableHours,
+    weeklyCapHours,
+    maxSingleDayHours,
+    dailyCapHours,
+    remainingWeeklyHours,
+    competitionDaysCount: competitionDays.size,
+    seasonSegment,
+    strengthHours,
+    meetingFilmHours,
+    varaHours,
+    daysOffCount,
+    requiredDaysOff,
+    daysOffCompliant,
+    outOfSeasonSkillCompliant,
+    compliant,
+    statusLabel
+  };
+}
+
+// server/teamDistrictService.ts
+var STAFF_ROLES = /* @__PURE__ */ new Set(["HEAD_COACH", "ASSISTANT_COACH", "ATHLETIC_TRAINER", "ORG_ADMIN"]);
+function sanitizeInvoiceForDistrictOverview(invoice) {
+  if (!invoice) return void 0;
+  return {
+    invoiceNumber: invoice.invoiceNumber,
+    planCode: invoice.planCode,
+    amountUsd: invoice.amountUsd,
+    schoolOrDistrictName: invoice.schoolOrDistrictName,
+    ...invoice.poNumber ? { poNumber: invoice.poNumber } : {},
+    billingContactEmail: "",
+    issuedAt: invoice.issuedAt,
+    dueDate: invoice.dueDate,
+    status: invoice.status,
+    ...invoice.paidAt ? { paidAt: invoice.paidAt } : {}
+  };
+}
+function isRenewalAlertDue(billingStatus, billingCycleEndIso, todayIso) {
+  if (billingStatus === "RENEWAL_DUE" || billingStatus === "PAST_DUE") return true;
+  if (!billingCycleEndIso) return false;
+  const endMs = Date.parse(`${billingCycleEndIso.slice(0, 10)}T00:00:00Z`);
+  const todayMs = Date.parse(`${todayIso.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(endMs) || !Number.isFinite(todayMs)) return false;
+  return (endMs - todayMs) / 864e5 <= 30;
+}
+function committedPlanAmountUsd(planCode, status) {
+  if (planCode === "FREE_FOUNDING") return 0;
+  if (status === "ACTIVE_PAID" || status === "PO_ISSUED" || status === "RENEWAL_DUE" || status === "PAST_DUE") {
+    return TEAM_BILLING_PLANS[planCode]?.amountUsd ?? 0;
+  }
+  return 0;
+}
+function buildDistrictOverviewFromDocs(docs, callerSid, opts) {
+  const todayIso = (opts?.todayIso || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
+  const nowRef = /* @__PURE__ */ new Date(`${todayIso}T12:00:00Z`);
+  const cleanDistrictFilter = opts?.districtName?.trim() || void 0;
+  const normalizedFilter = cleanDistrictFilter?.toLowerCase();
+  const governedDocs = (docs || []).filter((doc) => {
+    const callerMem = (doc.memberships || []).find(
+      (m) => m.userSid === callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI" && canManageTeamGovernanceRole(m.role)
+    );
+    return Boolean(callerMem);
+  });
+  const districtNameSet = /* @__PURE__ */ new Set();
+  for (const doc of governedDocs) {
+    const dName = doc.brand.districtName?.trim();
+    if (dName) districtNameSet.add(dName);
+  }
+  const availableDistrictNames = Array.from(districtNameSet).sort((a, b) => a.localeCompare(b));
+  const hasDistrictPlan = governedDocs.some((d) => d.billing?.planCode === "DISTRICT_2000");
+  const filteredDocs = normalizedFilter ? governedDocs.filter(
+    (d) => (d.brand.districtName || "").trim().toLowerCase() === normalizedFilter
+  ) : governedDocs;
+  let totalCaraHoursSumAll = 0;
+  let totalCaraTrackedAll = 0;
+  const schools = filteredDocs.map((doc) => {
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI" && canManageTeamGovernanceRole(m.role)
+    );
+    const liveMembers = (doc.memberships || []).filter(
+      (m) => m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    const athletes = liveMembers.filter((m) => m.role === "ATHLETE");
+    const coachesAndStaff = liveMembers.filter((m) => STAFF_ROLES.has(m.role));
+    const activeAthletes = athletes.filter((m) => m.status === "ACTIVE").length;
+    const watchConnectedAthletes = athletes.filter(
+      (m) => Boolean(m.liveSnapshot?.hasConnectedWatch)
+    ).length;
+    const activeAtInjuries = (doc.injuryCases || []).filter(
+      (c) => c.rtpStage !== "CLEARED"
+    ).length;
+    const todayAttendance = doc.attendanceByDate?.[todayIso] || {};
+    const modifiedAttendanceToday = Object.values(todayAttendance).filter(
+      (rec) => rec.status === "INJURED_MODIFIED"
+    ).length;
+    let safeSportRedFlags = 0;
+    let safeSportAmberFlags = 0;
+    let minorAthleteCount = 0;
+    let parentConsentAcknowledgedCount = 0;
+    let caraTrackedAthletes = 0;
+    let sumCaraHours = 0;
+    let maxCaraHours = 0;
+    let caraOverCapCount = 0;
+    let caraWarningCount = 0;
+    for (const ath of athletes) {
+      const ageResolved = resolveAthleteAgeTier({
+        birthMonthYear: ath.birthMonthYear,
+        birthYear: ath.birthYear,
+        orgType: doc.brand.orgType,
+        graduationYear: ath.graduationYear,
+        now: nowRef
+      });
+      const isMinor = ageResolved.ageTier === "UNKNOWN" ? Boolean(ath.isMinorU18) : ageResolved.isMinorU18;
+      if (isMinor) {
+        minorAthleteCount += 1;
+        if (ath.parentConsentStatus === "ACKNOWLEDGED") {
+          parentConsentAcknowledgedCount += 1;
+        }
+      }
+      const cachedLight = ath.liveSnapshot?.safeSportWatch?.trafficLight;
+      const trafficLight = cachedLight ?? ((ath.liveSnapshot?.activities?.length || 0) > 0 ? evaluateSafeSportPatternWatch({
+        activities: ath.liveSnapshot?.activities || [],
+        wellnessDays: ath.liveSnapshot?.wellnessDays || [],
+        isMinorU18: isMinor,
+        referenceDateIso: todayIso
+      }).trafficLight : "GREEN_CLEAR");
+      if (trafficLight === "RED_MEDICAL_REVIEW") safeSportRedFlags += 1;
+      else if (trafficLight === "AMBER_WATCH") safeSportAmberFlags += 1;
+      const actCount = ath.liveSnapshot?.activities?.length || 0;
+      let athCaraHours;
+      if (actCount > 0) {
+        athCaraHours = summarizeNcaaCaraWeeklyHours(
+          ath.liveSnapshot?.activities || [],
+          todayIso
+        ).rolling7dCountableHours;
+      } else if (typeof ath.liveSnapshot?.caraHours7d === "number") {
+        athCaraHours = ath.liveSnapshot.caraHours7d;
+      }
+      if (typeof athCaraHours === "number" && Number.isFinite(athCaraHours)) {
+        caraTrackedAthletes += 1;
+        sumCaraHours += athCaraHours;
+        totalCaraHoursSumAll += athCaraHours;
+        totalCaraTrackedAll += 1;
+        if (athCaraHours > maxCaraHours) maxCaraHours = athCaraHours;
+        if (athCaraHours > 20) caraOverCapCount += 1;
+        else if (athCaraHours >= 17) caraWarningCount += 1;
+      }
+    }
+    const guardianCcCompliancePct = minorAthleteCount === 0 ? 100 : Math.round(parentConsentAcknowledgedCount / minorAthleteCount * 100);
+    const billingPlanCode = doc.billing?.planCode || "FREE_FOUNDING";
+    const billingStatus = doc.billing?.status || "PILOT";
+    const billingCycleEndIso = doc.billing?.billingCycleEndIso;
+    const renewalAlert = isRenewalAlertDue(billingStatus, billingCycleEndIso, todayIso);
+    return {
+      teamId: doc.brand.teamId,
+      teamName: doc.brand.name,
+      shortName: doc.brand.shortName,
+      orgType: doc.brand.orgType,
+      ...doc.brand.districtName ? { districtName: doc.brand.districtName } : {},
+      myRole: callerMem.role,
+      totalAthletes: athletes.length,
+      activeAthletes,
+      totalCoachesAndStaff: coachesAndStaff.length,
+      watchConnectedAthletes,
+      activeAtInjuries,
+      modifiedAttendanceToday,
+      safeSportRedFlags,
+      safeSportAmberFlags,
+      safeSportShieldEnabled: Boolean(doc.brand.defaultSafeSportShield),
+      guardianCcEnabled: Boolean(doc.brand.enableParentGuardianCc),
+      minorAthleteCount,
+      parentConsentAcknowledgedCount,
+      guardianCcCompliancePct,
+      caraTrackedAthletes,
+      avgCaraHours7d: caraTrackedAthletes > 0 ? Number((sumCaraHours / caraTrackedAthletes).toFixed(1)) : 0,
+      maxCaraHours7d: caraTrackedAthletes > 0 ? Number(maxCaraHours.toFixed(1)) : 0,
+      caraOverCapCount,
+      caraWarningCount,
+      billingPlanCode,
+      billingStatus,
+      ...doc.billing?.schoolOrDistrictName ? { billingSchoolOrDistrictName: doc.billing.schoolOrDistrictName } : {},
+      ...doc.billing?.poNumber ? { poNumber: doc.billing.poNumber } : {},
+      ...billingCycleEndIso ? { billingCycleEndIso } : {},
+      renewalAlert,
+      ...doc.billing?.poInvoices?.[0] ? { latestInvoice: sanitizeInvoiceForDistrictOverview(doc.billing.poInvoices[0]) } : {}
+    };
+  });
+  const totalsAccumulator = schools.reduce(
+    (acc, s) => {
+      acc.totalAthletes += s.totalAthletes;
+      acc.activeAthletes += s.activeAthletes;
+      acc.totalCoachesAndStaff += s.totalCoachesAndStaff;
+      acc.activeAtInjuries += s.activeAtInjuries;
+      acc.modifiedAttendanceToday += s.modifiedAttendanceToday;
+      acc.safeSportRedFlags += s.safeSportRedFlags;
+      acc.safeSportAmberFlags += s.safeSportAmberFlags;
+      acc.minorAthleteCount += s.minorAthleteCount;
+      acc.parentConsentAcknowledgedCount += s.parentConsentAcknowledgedCount;
+      acc.caraOverCapCount += s.caraOverCapCount;
+      acc.caraWarningCount += s.caraWarningCount;
+      if (s.renewalAlert) acc.schoolsNeedingRenewal += 1;
+      acc.totalAnnualCommittedUsd += committedPlanAmountUsd(s.billingPlanCode, s.billingStatus);
+      return acc;
+    },
+    {
+      totalAthletes: 0,
+      activeAthletes: 0,
+      totalCoachesAndStaff: 0,
+      activeAtInjuries: 0,
+      modifiedAttendanceToday: 0,
+      safeSportRedFlags: 0,
+      safeSportAmberFlags: 0,
+      minorAthleteCount: 0,
+      parentConsentAcknowledgedCount: 0,
+      caraOverCapCount: 0,
+      caraWarningCount: 0,
+      schoolsNeedingRenewal: 0,
+      totalAnnualCommittedUsd: 0
+    }
+  );
+  const overallGuardianCcCompliancePct = totalsAccumulator.minorAthleteCount === 0 ? 100 : Math.round(
+    totalsAccumulator.parentConsentAcknowledgedCount / totalsAccumulator.minorAthleteCount * 100
+  );
+  return {
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    ...cleanDistrictFilter ? { districtFilter: cleanDistrictFilter } : {},
+    availableDistrictNames,
+    hasDistrictPlan,
+    totals: {
+      schoolCount: schools.length,
+      ...totalsAccumulator,
+      overallGuardianCcCompliancePct,
+      avgCaraHours7d: totalCaraTrackedAll > 0 ? Number((totalCaraHoursSumAll / totalCaraTrackedAll).toFixed(1)) : 0
+    },
+    schools
+  };
+}
+async function getDistrictAdOverview(params) {
+  const userIdx = await loadTenantVaultAsync(
+    userTeamsVaultKey(params.callerSid),
+    {
+      teamIds: [],
+      updatedAt: ""
+    }
+  );
+  const docs = [];
+  for (const teamId of userIdx.teamIds) {
+    const doc = await loadTeamDocRaw(teamId);
+    if (doc) docs.push(doc);
+  }
+  return buildDistrictOverviewFromDocs(docs, params.callerSid, {
+    districtName: params.districtName
+  });
+}
+
 // server/routers/teamBillingRouter.ts
 var teamBillingRouter = express6.Router();
+teamBillingRouter.get("/api/teams/district-overview", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const districtName = typeof req.query.districtName === "string" && req.query.districtName.trim() ? req.query.districtName.trim() : void 0;
+    const report = await getDistrictAdOverview({
+      callerSid: claims.sid,
+      districtName
+    });
+    res.json({ ok: true, report });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading district AD overview."
+    });
+  }
+});
 teamBillingRouter.get("/api/teams/:teamId/billing", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -18783,7 +19953,7 @@ teamBillingRouter.post("/api/billing/stripe/webhook", async (req, res) => {
 });
 
 // server/routers/teamSyncRouter.ts
-import crypto18 from "crypto";
+import crypto20 from "crypto";
 import express7 from "express";
 var teamSyncRouter = express7.Router();
 function resolveSyncOrigin(req) {
@@ -18931,7 +20101,7 @@ teamSyncRouter.post("/api/teams/follow", async (req, res) => {
     let sid = existing?.sid;
     let sessionToken;
     if (!sid) {
-      const anonSid = crypto18.randomBytes(16).toString("hex");
+      const anonSid = crypto20.randomBytes(16).toString("hex");
       sessionToken = setSessionCookie(
         req,
         res,
@@ -19105,10 +20275,10 @@ teamSyncRouter.get(
 
 // server/routers/authRouter.ts
 import express8 from "express";
-import crypto20 from "crypto";
+import crypto22 from "crypto";
 
 // server/webauthnVerify.ts
-import crypto19 from "crypto";
+import crypto21 from "crypto";
 function readCborLength(buf, addtl, offset) {
   if (addtl < 24) {
     return { length: addtl, nextOffset: offset };
@@ -19219,7 +20389,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 1 || !Buffer.isBuffer(xBuf) || !Buffer.isBuffer(yBuf)) {
       throw new Error("Invalid COSE EC2 P-256 public key parameters.");
     }
-    const pubKey = crypto19.createPublicKey({
+    const pubKey = crypto21.createPublicKey({
       key: {
         kty: "EC",
         crv: "P-256",
@@ -19240,7 +20410,7 @@ function coseKeyMapToSpki(coseMap) {
     if (!Buffer.isBuffer(nBuf) || !Buffer.isBuffer(eBuf)) {
       throw new Error("Invalid COSE RSA public key parameters.");
     }
-    const pubKey = crypto19.createPublicKey({
+    const pubKey = crypto21.createPublicKey({
       key: {
         kty: "RSA",
         n: nBuf.toString("base64url"),
@@ -19260,7 +20430,7 @@ function coseKeyMapToSpki(coseMap) {
     if (crv !== 6 || !Buffer.isBuffer(xBuf)) {
       throw new Error("Invalid COSE Ed25519 public key parameters.");
     }
-    const pubKey = crypto19.createPublicKey({
+    const pubKey = crypto21.createPublicKey({
       key: {
         kty: "OKP",
         crv: "Ed25519",
@@ -19307,9 +20477,9 @@ function assertRpIdHashAndFlags(authData, expectedRpId, requireAtFlag) {
   if (!Buffer.isBuffer(authData) || authData.length < minLen) {
     throw new Error("Truncated WebAuthn authenticatorData.");
   }
-  const expectedRpHash = crypto19.createHash("sha256").update(expectedRpId).digest();
+  const expectedRpHash = crypto21.createHash("sha256").update(expectedRpId).digest();
   const actualRpHash = authData.subarray(0, 32);
-  if (!crypto19.timingSafeEqual(actualRpHash, expectedRpHash)) {
+  if (!crypto21.timingSafeEqual(actualRpHash, expectedRpHash)) {
     throw new Error("WebAuthn RP ID hash mismatch.");
   }
   const flags = authData.readUInt8(32);
@@ -19412,15 +20582,15 @@ function verifyWebAuthnAssertion(params) {
         error: "Passkey record lacks stored public key."
       };
     }
-    const pubKey = crypto19.createPublicKey({
+    const pubKey = crypto21.createPublicKey({
       key: Buffer.from(params.publicKeySpkiBase64, "base64"),
       format: "der",
       type: "spki"
     });
-    const clientDataHash = crypto19.createHash("sha256").update(clientDataBytes).digest();
+    const clientDataHash = crypto21.createHash("sha256").update(clientDataBytes).digest();
     const signedData = Buffer.concat([authData, clientDataHash]);
     const algDigest = params.coseAlg === -8 ? null : "sha256";
-    const isValidSig = crypto19.verify(algDigest, signedData, pubKey, sigBuf);
+    const isValidSig = crypto21.verify(algDigest, signedData, pubKey, sigBuf);
     if (!isValidSig) {
       return {
         verified: false,
@@ -20533,8 +21703,8 @@ authRouter.post("/api/auth/passkey/register-options", async (req, res) => {
   const rpId = getRpId(req);
   const email = String(req.body?.email || "").trim().toLowerCase();
   const name = String(req.body?.name || email.split("@")[0] || "Athlete").trim();
-  const challenge = crypto20.randomBytes(32).toString("base64url");
-  const userId = crypto20.randomBytes(16).toString("base64url");
+  const challenge = crypto22.randomBytes(32).toString("base64url");
+  const userId = crypto22.randomBytes(16).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "register",
@@ -20661,7 +21831,7 @@ authRouter.post("/api/auth/passkey/register-verify", async (req, res) => {
 });
 authRouter.post("/api/auth/passkey/auth-options", (req, res) => {
   const rpId = getRpId(req);
-  const challenge = crypto20.randomBytes(32).toString("base64url");
+  const challenge = crypto22.randomBytes(32).toString("base64url");
   const challengeToken = issuePasskeyChallengeToken({
     challenge,
     purpose: "auth"
@@ -20888,7 +22058,7 @@ authRouter.delete("/api/auth/account", async (req, res) => {
 
 // server/routers/configRouter.ts
 import { Router as Router8 } from "express";
-import crypto23 from "crypto";
+import crypto25 from "crypto";
 import fs7 from "fs";
 
 // server/secretManager.ts
@@ -21260,19 +22430,19 @@ function parseWorkoutSyntaxToSteps(syntax, fallbackDurationSecs = 3600) {
     const wattsMatch = clean.match(/(\d+)\s*w/i);
     const mins = minMatch ? Number(minMatch[1]) : secMatch ? Math.max(1, Math.round(Number(secMatch[1]) / 60)) : 10;
     const secs = secMatch && !minMatch ? Number(secMatch[1]) : mins * 60;
-    const pct = pctMatch ? Number(pctMatch[1]) : wattsMatch ? Math.round(Number(wattsMatch[1]) / 300 * 100) : 75;
+    const pct2 = pctMatch ? Number(pctMatch[1]) : wattsMatch ? Math.round(Number(wattsMatch[1]) / 300 * 100) : 75;
     return {
       label: clean.split(/\d+[ms]/i)[0]?.trim() || `Step ${idx + 1}`,
       durationSecs: secs,
       duration: minMatch ? `${mins}m` : `${secs}s`,
-      targetPctFtp: pct,
+      targetPctFtp: pct2,
       targetZoneOrOutput: clean
     };
   });
 }
 
 // server/oauthHelpers.ts
-import crypto21 from "crypto";
+import crypto23 from "crypto";
 function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
   const verified = getVerifiedSessionClaims(req);
   if (verified?.sid) {
@@ -21285,7 +22455,7 @@ function ensureRequestSession(req, res, fallbackSubject = "thresh-athlete") {
     );
     return { sid: verified.sid, sessionToken: sessionToken2 };
   }
-  const sid = crypto21.randomBytes(16).toString("hex");
+  const sid = crypto23.randomBytes(16).toString("hex");
   const sessionToken = setSessionCookie(req, res, fallbackSubject, sid);
   bindRequestScopeKey(req, sid);
   return { sid, sessionToken };
@@ -21841,7 +23011,7 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 
 // server/routers/stravaRouter.ts
 import express9 from "express";
-import crypto22 from "crypto";
+import crypto24 from "crypto";
 import fs6 from "fs";
 
 // server/stravaIdUtils.ts
@@ -22647,7 +23817,7 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = (prevClaims?.sub === canonicalUserId ? prevClaims.sid : void 0) || (opts.expectedUserId === canonicalUserId ? opts.expectedSid : void 0) || deriveUserSessionSid(canonicalUserId);
     sessionSubject = canonicalUserId;
   } else {
-    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto22.randomBytes(16).toString("hex");
+    canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto24.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
   if (opts.athleteId) {
@@ -25120,8 +26290,8 @@ intervalsRouter.post("/api/intervals/workout/push", async (req, res) => {
       const cue = sportCategory === "Running" ? "Pace" : "FTP";
       workoutMarkdown = body.steps.map((st) => {
         const durOrDist = st.distanceMeters ? `${Math.round(st.distanceMeters)}m` : `${Math.max(15, Math.round(Number(st.durationSecs || 300)))}s`;
-        const pct = Math.max(45, Math.min(180, Math.round(Number(st.targetPctFtp || 75))));
-        return `- ${durOrDist} ${Math.max(45, pct - 2)}%-${Math.min(180, pct + 2)}% ${cue} (${String(
+        const pct2 = Math.max(45, Math.min(180, Math.round(Number(st.targetPctFtp || 75))));
+        return `- ${durOrDist} ${Math.max(45, pct2 - 2)}%-${Math.min(180, pct2 + 2)}% ${cue} (${String(
           st.label || "Interval"
         )})`;
       }).join("\n");
@@ -25911,7 +27081,7 @@ var { callbackHandler: wahooCallbackHandler } = registerOAuthConnectorRoutes(wah
   displayName: "Wahoo",
   accentColor: "#0EA5E9",
   authorizeUrl: "https://api.wahooligan.com/oauth/authorize",
-  scope: "user_read workouts_read",
+  scope: WAHOO_OAUTH_SCOPES,
   envVarNames: ["WAHOO_CLIENT_ID", "WAHOO_CLIENT_SECRET"],
   usePkce: true,
   successBody: "Your Wahoo Cloud account is now linked via OAuth 2.0 / PKCE. ELEMNT rides, workouts, and FIT files will sync automatically with smart deduplication.",
@@ -26117,6 +27287,97 @@ wahooRouter.get("/api/wahoo/sync", async (req, res) => {
     });
   }
 });
+wahooRouter.post(
+  ["/api/wahoo/workouts/push", "/api/wahoo/workout/push"],
+  async (req, res) => {
+    const { clientId, clientSecret } = getEffectiveWahooClientConfig(req);
+    const wahooConfigured = Boolean(clientId && clientSecret);
+    try {
+      const token = await ensureValidWahooAccessToken(req);
+      if (!token) {
+        res.status(wahooConfigured ? 401 : 503).json({
+          ok: false,
+          pushed: false,
+          setupRequired: !wahooConfigured,
+          connectRequired: wahooConfigured,
+          error: wahooConfigured ? "Wahoo Cloud is not connected yet. Connect Wahoo in Data Sources to push workouts directly to your ELEMNT." : "Wahoo Cloud API credentials (WAHOO_CLIENT_ID / WAHOO_CLIENT_SECRET) are not configured yet. Use Download .FIT or Intervals.icu Cross-Watch Bridge in the meantime."
+        });
+        return;
+      }
+      const headerToken = String(req.headers["x-wahoo-access-token"] || "").trim();
+      const { scope } = getEffectiveWahooTokens(req);
+      const effectiveScope = headerToken ? String(req.headers["x-wahoo-scope"] || scope || "").trim() : scope;
+      if (!hasWahooWorkoutPushScopes(effectiveScope)) {
+        res.status(403).json({
+          ok: false,
+          pushed: false,
+          needsScopeUpgrade: true,
+          error: "Your Wahoo connection is read-only. Reconnect Wahoo in Data Sources to grant workouts_write & plans_write permissions."
+        });
+        return;
+      }
+      const body = req.body || {};
+      const store = getScopedRuntimeStore(req);
+      const profileObj = store.athleteProfile || {};
+      const pushInput = {
+        date: String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10),
+        name: String(body.name || "MeetReady Prescribed Session"),
+        sportCategory: String(body.sportCategory || "Cycling"),
+        description: typeof body.description === "string" ? body.description : void 0,
+        workoutSyntax: typeof body.workoutSyntax === "string" ? body.workoutSyntax : void 0,
+        ftpWatts: Number(body.ftpWatts || store.athleteFtp || profileObj.ftp || 250),
+        lthrBpm: Number(body.lthrBpm || store.athleteLthr || profileObj.lthr || 165),
+        thresholdPaceSecsPerKm: Number(
+          body.thresholdPaceSecsPerKm || profileObj.thresholdPaceSecsPerKm || 245
+        ),
+        steps: Array.isArray(body.steps) ? body.steps : void 0
+      };
+      const executePush = async (activeToken) => pushWorkoutToWahooCloud({ accessToken: activeToken, input: pushInput });
+      let pushResult;
+      try {
+        pushResult = await executePush(token);
+      } catch (firstErr) {
+        if (firstErr instanceof WahooCloudPushError && firstErr.unauthorized) {
+          const refreshedToken = await ensureValidWahooAccessToken(req, true);
+          if (refreshedToken && refreshedToken !== token) {
+            pushResult = await executePush(refreshedToken);
+          } else {
+            throw firstErr;
+          }
+        } else {
+          throw firstErr;
+        }
+      }
+      res.status(200).json({ ok: true, ...pushResult });
+    } catch (err) {
+      if (err instanceof WahooCloudPushError) {
+        if (err.needsScopeUpgrade) {
+          res.status(403).json({
+            ok: false,
+            pushed: false,
+            needsScopeUpgrade: true,
+            error: err.message
+          });
+          return;
+        }
+        if (err.unauthorized) {
+          res.status(401).json({
+            ok: false,
+            pushed: false,
+            connectRequired: true,
+            error: err.message
+          });
+          return;
+        }
+      }
+      res.status(500).json({
+        ok: false,
+        pushed: false,
+        error: err instanceof Error ? err.message : "Failed to push workout to Wahoo Cloud."
+      });
+    }
+  }
+);
 
 // server/routers/polarRouter.ts
 import { Router as Router4 } from "express";
@@ -27704,7 +28965,7 @@ configRouter.post("/api/auth/session", (req, res) => {
     res.json({ ok: true, authLevel: "verified" });
     return;
   }
-  const anonSub = `anon_${crypto23.randomBytes(8).toString("hex")}`;
+  const anonSub = `anon_${crypto25.randomBytes(8).toString("hex")}`;
   setSessionCookie(req, res, anonSub, void 0, "anon");
   res.json({ ok: true, authLevel: "anon" });
 });
@@ -27784,8 +29045,16 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
   const garminCanPushWorkouts = Boolean(activeGarminSession?.garminOAuthAccessToken);
   const resolvedGarminName = activeGarminSession?.fullName || activeGarminSession?.displayName || void 0;
   const { clientId: wahooClientId, clientSecret: wahooClientSecret } = getEffectiveWahooClientConfig(req);
-  const { accessToken: wahooAccessToken, athleteId: wahooAthleteId, athleteName: wahooAthleteName } = getEffectiveWahooTokens(req);
+  const {
+    accessToken: wahooAccessToken,
+    athleteId: wahooAthleteId,
+    athleteName: wahooAthleteName,
+    scope: wahooScope
+  } = getEffectiveWahooTokens(req);
   const isWahooConnected = Boolean(wahooAccessToken);
+  const wahooCanPushWorkouts = Boolean(
+    isWahooConnected && hasWahooWorkoutPushScopes(wahooScope)
+  );
   const { clientId: polarClientId, clientSecret: polarClientSecret } = getEffectivePolarClientConfig(req);
   const { accessToken: polarAccessToken, athleteId: polarAthleteId, athleteName: polarAthleteName } = getEffectivePolarTokens(req);
   const isPolarConnected = Boolean(polarAccessToken);
@@ -27826,14 +29095,18 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
     intervalsSource: intervalsAccessToken ? "OAUTH" : isIntervalsConnected ? "USER_INPUT" : "NONE",
     wahooConfigured: Boolean(wahooClientId && wahooClientSecret),
     wahooConnected: isWahooConnected,
+    wahooScope: isWahooConnected && wahooScope ? wahooScope : void 0,
+    wahooCanPushWorkouts,
     wahooAthleteId: isWahooConnected ? wahooAthleteId : void 0,
     wahooAthleteName: isWahooConnected ? wahooAthleteName : void 0,
     polarConfigured: Boolean(polarClientId && polarClientSecret),
     polarConnected: isPolarConnected,
+    polarCanPushWorkouts: false,
     polarAthleteId: isPolarConnected ? polarAthleteId : void 0,
     polarAthleteName: isPolarConnected ? polarAthleteName : void 0,
     corosConfigured: Boolean(corosClientId && corosClientSecret),
     corosConnected: isCorosConnected,
+    corosCanPushWorkouts: isCorosConnected,
     corosAthleteId: isCorosConnected ? corosAthleteId : void 0,
     corosAthleteName: isCorosConnected ? corosAthleteName : void 0,
     stravaConfigured: Boolean(stravaClientId && stravaClientSecret),
@@ -28303,10 +29576,336 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
   }
 });
 
+// server/routers/analyticsRouter.ts
+import express12 from "express";
+
+// server/funnelAnalyticsService.ts
+var FUNNEL_EVENT_NAMES = [
+  "landing_view",
+  "demo_enter",
+  "auth_complete",
+  "team_created",
+  "workout_published",
+  "po_generated",
+  "stripe_checkout_started"
+];
+var FUNNEL_ROLES = ["COACH", "ATHLETE", "ORG_ADMIN", "UNKNOWN"];
+var FUNNEL_TIERS = [
+  "FREE_FOUNDING",
+  "HS_250",
+  "COLLEGIATE_1200",
+  "DISTRICT_2000",
+  "HIGH_SCHOOL",
+  "COLLEGIATE",
+  "RUNNING_CLUB",
+  "COACH_SQUAD",
+  "DEMO_COACH",
+  "DEMO_ATHLETE"
+];
+var EVENT_NAME_SET = new Set(FUNNEL_EVENT_NAMES);
+var ROLE_SET = new Set(FUNNEL_ROLES);
+var TIER_SET = new Set(FUNNEL_TIERS);
+var FUNNEL_VAULT_KEY = "funnel_events_v1";
+var MAX_VAULT_FUNNEL_EVENTS = 2e3;
+var EMAIL_IN_TEXT_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
+var CONTROL_CHARS_RE = /[\r\n\t\x00-\x1f\x7f]+/g;
+var IPV4_HOST_RE = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+function isValidFunnelEventName(raw) {
+  return typeof raw === "string" && EVENT_NAME_SET.has(raw.trim());
+}
+function sanitizePlainTag(raw, maxLen = 64) {
+  if (typeof raw !== "string") return void 0;
+  const cleaned = raw.replace(CONTROL_CHARS_RE, " ").replace(EMAIL_IN_TEXT_RE, "[redacted]").replace(/\s+/g, " ").trim().slice(0, maxLen);
+  return cleaned || void 0;
+}
+function sanitizeReferrerHost2(raw) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.replace(CONTROL_CHARS_RE, "").trim();
+  if (!trimmed) return void 0;
+  if (!/^https?:\/\//i.test(trimmed) && trimmed.includes("@")) {
+    return void 0;
+  }
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed.replace(/^\/+/, "")}`);
+    const host = parsed.hostname.trim().toLowerCase().replace(/\.+$/, "").slice(0, 80);
+    if (!host || !/^[a-z0-9.-]+$/.test(host) || IPV4_HOST_RE.test(host)) {
+      return void 0;
+    }
+    return host;
+  } catch {
+    return void 0;
+  }
+}
+function sanitizeLandingPath(raw) {
+  if (typeof raw !== "string") return void 0;
+  const trimmed = raw.replace(CONTROL_CHARS_RE, "").trim();
+  if (!trimmed) return void 0;
+  let pathname = trimmed;
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      pathname = new URL(trimmed).pathname;
+    } catch {
+      return void 0;
+    }
+  } else {
+    pathname = trimmed.split("?")[0].split("#")[0];
+  }
+  pathname = `/${pathname.replace(/^\/+/, "")}`.replace(/\/{2,}/g, "/");
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    const trimmedSlash = pathname.replace(/\/+$/, "");
+    if (trimmedSlash) pathname = trimmedSlash;
+  }
+  if (/^\/join\/.+/i.test(pathname)) {
+    return "/join/:slug";
+  }
+  if (/^\/team\/.+/i.test(pathname)) {
+    return "/team/:slug";
+  }
+  const scrubbed = pathname.replace(EMAIL_IN_TEXT_RE, "[redacted]").slice(0, 80);
+  return scrubbed || "/";
+}
+function sanitizeRole(raw) {
+  if (typeof raw !== "string") return "UNKNOWN";
+  const upper = raw.trim().toUpperCase();
+  return ROLE_SET.has(upper) ? upper : "UNKNOWN";
+}
+function sanitizeTier(raw) {
+  if (typeof raw !== "string") return void 0;
+  const upper = raw.trim().toUpperCase();
+  return TIER_SET.has(upper) ? upper : void 0;
+}
+function sanitizeFunnelEventInput(rawInput) {
+  const candidateEvent = rawInput.event ?? rawInput.eventName ?? rawInput.event_name;
+  if (!isValidFunnelEventName(candidateEvent)) {
+    return null;
+  }
+  const eventName = candidateEvent.trim();
+  const utm_source = sanitizePlainTag(rawInput.utm_source, 64);
+  const utm_medium = sanitizePlainTag(rawInput.utm_medium, 64);
+  const utm_campaign = sanitizePlainTag(rawInput.utm_campaign, 64);
+  const utm_content = sanitizePlainTag(rawInput.utm_content, 64);
+  const src = sanitizePlainTag(rawInput.src, 64);
+  const referrer_host = sanitizeReferrerHost2(rawInput.referrer_host ?? rawInput.referrerHost);
+  const landing_path = sanitizeLandingPath(rawInput.landing_path ?? rawInput.landingPath);
+  const role = sanitizeRole(rawInput.role);
+  const tier = sanitizeTier(rawInput.tier);
+  return {
+    event_name: eventName,
+    ...utm_source ? { utm_source } : {},
+    ...utm_medium ? { utm_medium } : {},
+    ...utm_campaign ? { utm_campaign } : {},
+    ...utm_content ? { utm_content } : {},
+    ...src ? { src } : {},
+    ...referrer_host ? { referrer_host } : {},
+    ...landing_path ? { landing_path } : {},
+    role,
+    ...tier ? { tier } : {}
+  };
+}
+async function recordFunnelEventAsync(rawInput) {
+  const sanitized = sanitizeFunnelEventInput(rawInput);
+  if (!sanitized) {
+    return { ok: false, status: 400, error: "Invalid or unsupported funnel event." };
+  }
+  const dbRow = {
+    event_name: sanitized.event_name,
+    utm_source: sanitized.utm_source ?? null,
+    utm_medium: sanitized.utm_medium ?? null,
+    utm_campaign: sanitized.utm_campaign ?? null,
+    utm_content: sanitized.utm_content ?? null,
+    src: sanitized.src ?? null,
+    referrer_host: sanitized.referrer_host ?? null,
+    landing_path: sanitized.landing_path ?? null,
+    role: sanitized.role,
+    tier: sanitized.tier ?? null
+  };
+  const insertedPg = await insertFunnelEventPostgresAsync(dbRow);
+  if (insertedPg === true) {
+    return {
+      ok: true,
+      recorded: true,
+      storageBackend: "POSTGRES",
+      event: sanitized
+    };
+  }
+  const vaultRow = {
+    ...dbRow,
+    created_at: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await withVaultLock(FUNNEL_VAULT_KEY, async () => {
+    const existing = await loadTenantVaultAsync(FUNNEL_VAULT_KEY, []);
+    const next = [...existing, vaultRow].slice(-MAX_VAULT_FUNNEL_EVENTS);
+    await saveTenantVaultAsync(FUNNEL_VAULT_KEY, next);
+  });
+  return {
+    ok: true,
+    recorded: true,
+    storageBackend: getVaultStorageBackend(),
+    event: sanitized
+  };
+}
+function createEmptyEventCounts() {
+  return {
+    landing_view: 0,
+    demo_enter: 0,
+    auth_complete: 0,
+    team_created: 0,
+    workout_published: 0,
+    po_generated: 0,
+    stripe_checkout_started: 0
+  };
+}
+function pct(numerator, denominator) {
+  if (!denominator || denominator <= 0) return 0;
+  return Math.round(numerator / denominator * 1e3) / 10;
+}
+function incrementDimension(map, rawValue) {
+  const clean = typeof rawValue === "string" ? rawValue.trim() : "";
+  if (!clean) return;
+  map[clean] = (map[clean] || 0) + 1;
+}
+async function getFunnelSummaryAsync(opts) {
+  const parsedDays = Number(opts?.windowDays);
+  const windowDays = Number.isFinite(parsedDays) && parsedDays > 0 ? Math.max(1, Math.min(365, Math.floor(parsedDays))) : 30;
+  const sinceMs = Date.now() - windowDays * 864e5;
+  const sinceIso = new Date(sinceMs).toISOString();
+  let storageBackend = getVaultStorageBackend();
+  let rows = await queryFunnelEventsPostgresAsync(sinceIso, 25e3);
+  if (rows !== null) {
+    storageBackend = "POSTGRES";
+  } else {
+    const allVaultRows = await loadTenantVaultAsync(FUNNEL_VAULT_KEY, []);
+    rows = allVaultRows.filter((row) => {
+      if (!row?.created_at) return false;
+      const ts = Date.parse(String(row.created_at));
+      return Number.isFinite(ts) && ts >= sinceMs;
+    });
+  }
+  const byEvent = createEmptyEventCounts();
+  const byUtmSource = {};
+  const byUtmMedium = {};
+  const byUtmCampaign = {};
+  const byReferrerHost = {};
+  const byRole = {};
+  const byTier = {};
+  const dailyMap = /* @__PURE__ */ new Map();
+  let totalEvents = 0;
+  for (const row of rows) {
+    if (!row || !isValidFunnelEventName(row.event_name)) continue;
+    const eventName = row.event_name;
+    totalEvents += 1;
+    byEvent[eventName] += 1;
+    incrementDimension(byUtmSource, row.utm_source);
+    incrementDimension(byUtmMedium, row.utm_medium);
+    incrementDimension(byUtmCampaign, row.utm_campaign);
+    incrementDimension(byReferrerHost, row.referrer_host);
+    incrementDimension(byRole, row.role || "UNKNOWN");
+    incrementDimension(byTier, row.tier);
+    const parsedDate = row.created_at ? new Date(String(row.created_at)) : null;
+    const dateKey = parsedDate && Number.isFinite(parsedDate.getTime()) ? parsedDate.toISOString().slice(0, 10) : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+    let bucket = dailyMap.get(dateKey);
+    if (!bucket) {
+      bucket = {
+        date: dateKey,
+        total: 0,
+        byEvent: createEmptyEventCounts()
+      };
+      dailyMap.set(dateKey, bucket);
+    }
+    bucket.total += 1;
+    bucket.byEvent[eventName] += 1;
+  }
+  const dailyCounts = Array.from(dailyMap.values()).sort(
+    (a, b) => a.date.localeCompare(b.date)
+  );
+  return {
+    windowDays,
+    sinceIso,
+    storageBackend,
+    totalEvents,
+    byEvent,
+    conversionRates: {
+      landingToDemoPct: pct(byEvent.demo_enter, byEvent.landing_view),
+      landingToAuthPct: pct(byEvent.auth_complete, byEvent.landing_view),
+      authToTeamPct: pct(byEvent.team_created, byEvent.auth_complete),
+      teamToWorkoutPct: pct(byEvent.workout_published, byEvent.team_created),
+      teamToPoPct: pct(byEvent.po_generated, byEvent.team_created),
+      teamToStripeCheckoutPct: pct(byEvent.stripe_checkout_started, byEvent.team_created)
+    },
+    byUtmSource,
+    byUtmMedium,
+    byUtmCampaign,
+    byReferrerHost,
+    byRole,
+    byTier,
+    dailyCounts
+  };
+}
+
+// server/routers/analyticsRouter.ts
+var analyticsRouter = express12.Router();
+analyticsRouter.post("/api/analytics/event", async (req, res) => {
+  try {
+    const rateLimit = await checkDistributedRateLimitAsync(
+      `funnel:${getClientRateLimitIp(req)}`,
+      60,
+      6e4
+    );
+    if (!rateLimit.allowed) {
+      res.setHeader("Retry-After", String(rateLimit.retryAfterSecs));
+      res.status(429).json({
+        ok: false,
+        error: "Rate limit exceeded for funnel telemetry. Try again shortly.",
+        retryAfterSecs: rateLimit.retryAfterSecs
+      });
+      return;
+    }
+    const rawBody = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+    const result = await recordFunnelEventAsync(rawBody);
+    if (!result.ok) {
+      res.status(result.status || 400).json({
+        ok: false,
+        error: result.error || "Invalid funnel event."
+      });
+      return;
+    }
+    res.status(202).json({ ok: true, recorded: true });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Unable to record funnel event."
+    });
+  }
+});
+analyticsRouter.get("/api/analytics/summary", async (req, res) => {
+  if (!hasValidCronAuthorization(req)) {
+    res.status(401).json({ ok: false, error: "Unauthorized analytics summary request." });
+    return;
+  }
+  try {
+    const rawQueryVal = req.query.windowDays;
+    let windowDays = 30;
+    if (typeof rawQueryVal === "string" && rawQueryVal.trim() !== "") {
+      const parsed = Number(rawQueryVal);
+      if (Number.isFinite(parsed)) {
+        windowDays = Math.max(1, Math.min(365, Math.floor(parsed)));
+      }
+    }
+    const summary = await getFunnelSummaryAsync({ windowDays });
+    res.status(200).json({ ok: true, summary });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed loading analytics summary."
+    });
+  }
+});
+
 // server/apiRouter.ts
-var apiRouter = express12.Router();
+var SERVER_BOOT_ISO = (/* @__PURE__ */ new Date()).toISOString();
+var apiRouter = express13.Router();
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use(express12.urlencoded({ extended: false }));
+apiRouter.use(express13.urlencoded({ extended: false }));
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
@@ -28324,12 +29923,37 @@ apiRouter.use((req, res, next) => {
 apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
+  const env = process.env;
+  const buildTimestamp = "2026-11-23T06:29:11Z" ? "2026-11-23T06:29:11Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",
     storageBackend: getVaultStorageBackend(),
     databaseConfigured: pgHealth.configured,
     databaseHealthy: pgHealth.healthy,
+    dbPingLatencyMs: pgHealth.latencyMs,
+    rateLimitBackend: getConfiguredRateLimitBackend(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    appVersion: "2.1.0",
+    buildTimestamp,
+    integrations: {
+      googleAuth: Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim()),
+      strava: Boolean(env.STRAVA_CLIENT_ID?.trim() && env.STRAVA_CLIENT_SECRET?.trim()),
+      garmin: Boolean(env.GARMIN_CLIENT_ID?.trim() && env.GARMIN_CLIENT_SECRET?.trim()),
+      coros: Boolean(env.COROS_CLIENT_ID?.trim() && env.COROS_CLIENT_SECRET?.trim()),
+      intervals: Boolean(env.INTERVALS_CLIENT_ID?.trim() && env.INTERVALS_CLIENT_SECRET?.trim()),
+      wahoo: Boolean(env.WAHOO_CLIENT_ID?.trim() && env.WAHOO_CLIENT_SECRET?.trim()),
+      polar: Boolean(env.POLAR_CLIENT_ID?.trim() && env.POLAR_CLIENT_SECRET?.trim()),
+      resendEmail: Boolean(env.RESEND_API_KEY?.trim()),
+      stripeBilling: Boolean(env.STRIPE_SECRET_KEY?.trim()),
+      stripeWebhook: Boolean(env.STRIPE_WEBHOOK_SECRET?.trim()),
+      geminiAi: Boolean(
+        (env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENERATIVE_AI_API_KEY || "").trim()
+      ),
+      webPushVapid: Boolean(env.VAPID_PUBLIC_KEY?.trim() && env.VAPID_PRIVATE_KEY?.trim()),
+      sentryObservability: Boolean(parseSentryDsn(env.SENTRY_DSN)),
+      cronAuth: Boolean(env.CRON_SECRET?.trim())
+    },
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
@@ -28352,103 +29976,13 @@ apiRouter.use(stravaRouter);
 apiRouter.use(activitiesRouter);
 apiRouter.use(coachRouter);
 apiRouter.use(webhookRouter);
-
-// server/observability.ts
-import crypto24 from "crypto";
-function sanitizeTelemetryString(raw, maxLen = 300) {
-  return String(raw || "").replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, "$1[REDACTED]").replace(/([?&](?:token|code|secret|key|t)=)[^&\s]+/gi, "$1[REDACTED]").slice(0, maxLen);
-}
-function parseSentryDsn(rawDsn) {
-  const trimmed = String(rawDsn || "").trim();
-  if (!trimmed) return null;
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
-    const publicKey = parsed.username;
-    const pathParts = parsed.pathname.replace(/^\/+/, "").split("/").filter(Boolean);
-    const projectId = pathParts.pop();
-    if (!publicKey || !projectId || !parsed.host) return null;
-    const prefix = pathParts.length > 0 ? `/${pathParts.join("/")}` : "";
-    return {
-      storeUrl: `${parsed.protocol}//${parsed.host}${prefix}/api/${encodeURIComponent(projectId)}/store/`,
-      publicKey,
-      projectId
-    };
-  } catch {
-    return null;
-  }
-}
-async function postSentryEvent(dsn, eventPayload) {
-  try {
-    await fetch(dsn.storeUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Sentry-Auth": `Sentry sentry_version=7, sentry_key=${dsn.publicKey}, sentry_client=meetready-server/2.1`
-      },
-      body: JSON.stringify(eventPayload),
-      signal: AbortSignal.timeout(2e3)
-    });
-  } catch {
-  }
-}
-function shouldSuppressConsoleTelemetry() {
-  return process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
-}
-async function captureServerException(err, context = {}) {
-  const errName = err instanceof Error ? err.name : "Error";
-  const errMsg = sanitizeTelemetryString(
-    err instanceof Error ? err.message : typeof err === "string" ? err : "Unknown server error"
-  );
-  const cleanPath = context.path ? sanitizeTelemetryString(context.path.split("?")[0], 160) : void 0;
-  const scope = sanitizeTelemetryString(context.scope || "server", 80);
-  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-  if (!shouldSuppressConsoleTelemetry()) {
-    console.error(
-      JSON.stringify({
-        level: "error",
-        timestamp,
-        scope,
-        ...context.method ? { method: context.method } : {},
-        ...cleanPath ? { path: cleanPath } : {},
-        ...typeof context.statusCode === "number" ? { statusCode: context.statusCode } : {},
-        errorName: errName,
-        message: errMsg
-      })
-    );
-  }
-  const dsn = parseSentryDsn(process.env.SENTRY_DSN);
-  if (!dsn) return;
-  await postSentryEvent(dsn, {
-    event_id: crypto24.randomBytes(16).toString("hex"),
-    timestamp,
-    level: "error",
-    platform: "node",
-    server_name: "meetready-api",
-    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || "development",
-    message: `${scope}: ${errMsg}`,
-    tags: {
-      scope,
-      ...context.method ? { method: context.method } : {},
-      ...cleanPath ? { path: cleanPath } : {},
-      ...typeof context.statusCode === "number" ? { statusCode: String(context.statusCode) } : {}
-    },
-    exception: {
-      values: [
-        {
-          type: errName,
-          value: errMsg
-        }
-      ]
-    }
-  });
-}
+apiRouter.use(analyticsRouter);
 
 // server/routers/ogPreviewRouter.ts
 import fs9 from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
-import express13 from "express";
+import express14 from "express";
 
 // src/utils/shareWorkoutCodec.ts
 var FORBIDDEN_RAW_TELEMETRY_KEYS = [
@@ -28739,7 +30273,7 @@ function buildJoinOgMetadata(slug, preview) {
   };
 }
 function createOgPreviewRouter(options = {}) {
-  const router = express13.Router();
+  const router = express14.Router();
   let cachedHtmlShell = options.htmlShell ?? null;
   const getHtmlShell = () => {
     if (cachedHtmlShell !== null) {
@@ -28818,10 +30352,10 @@ function createOgPreviewRouter(options = {}) {
 var ogPreviewRouter = createOgPreviewRouter();
 
 // server/vercelApp.ts
-var app = express14();
+var app = express15();
 app.disable("x-powered-by");
 app.use(
-  express14.json({
+  express15.json({
     limit: "2mb",
     reviver: strava64BitJsonReviver,
     verify: (req, _res, buf) => {

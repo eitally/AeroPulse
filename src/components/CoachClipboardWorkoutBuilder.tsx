@@ -33,6 +33,7 @@ import {
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
 import { parseStructuredTrackWorkout } from '../utils/workoutParser';
+import { emitFunnelEvent, resolveFunnelTierFromOrgType } from '../utils/funnelTelemetry';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import {
   exportWorkoutAsErg,
@@ -829,6 +830,10 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             ),
             updatedTeam.brand.teamId
           );
+          emitFunnelEvent('workout_published', {
+            role: 'COACH',
+            tier: resolveFunnelTierFromOrgType(activeTeam.brand.orgType),
+          });
           setAssignFeedback(
             `Assigned "${title}" to ${audienceLabel} for ${workoutDate}${logisticsBadge ? ` (${logisticsBadge})` : ''}.`
           );

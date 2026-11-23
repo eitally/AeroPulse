@@ -76,6 +76,7 @@ import { useWorkspaceOnboarding } from './hooks/useWorkspaceOnboarding';
 import { useSampleDemoWorkspace } from './hooks/useSampleDemoWorkspace';
 import { useStopwatchSyncBridge } from './hooks/useStopwatchSyncBridge';
 import { useAthleteProfileAndGoals } from './hooks/useAthleteProfileAndGoals';
+import { emitFunnelEvent } from './utils/funnelTelemetry';
 import { WorkspaceErrorBoundary } from './components/WorkspaceErrorBoundary';
 import { getLocalDateIso } from './physiology/stravaLoadCalibration';
 import {
@@ -635,6 +636,31 @@ export default function App() {
     hasEnteredWorkspace,
     isSessionLoggedOut,
   });
+
+  const [billingNotice, setBillingNotice] = useState<{ tone: 'success' | 'info'; text: string } | null>(null);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (initialIsSampleQuery) {
+      const r = params.get('sample') === 'coach' ? 'COACH' : 'ATHLETE';
+      emitFunnelEvent('demo_enter', { role: r, tier: r === 'COACH' ? 'DEMO_COACH' : 'DEMO_ATHLETE', dedupeSessionKey: 'demo_enter' });
+    }
+    const billing = params.get('billing');
+    if (billing !== 'success' && billing !== 'cancelled') return;
+    params.delete('billing');
+    try { window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash}`); } catch { /* ignore */ }
+    if (billing === 'cancelled') {
+      setBillingNotice({ tone: 'info', text: 'Stripe checkout cancelled — your Net-30 PO and current team plan remain unchanged.' });
+      return;
+    }
+    setBillingNotice({ tone: 'success', text: 'Annual program billing activated via Stripe. Refreshing your team plan status…' });
+    if (!isSampleDemoMode) {
+      fetch(`/api/teams/mine?origin=${encodeURIComponent(window.location.origin)}`, { credentials: 'include' })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (Array.isArray(d?.teams)) setMyTeams(d.teams); })
+        .catch(() => null);
+    }
+  }, [initialIsSampleQuery, isSampleDemoMode, setMyTeams]);
 
   const effectiveTeams = isSampleDemoMode ? sampleDemoTeams : myTeams;
   const effectiveActiveTeamId = isSampleDemoMode ? sampleDemoActiveTeamId : activeTeamId;
@@ -1810,6 +1836,11 @@ export default function App() {
               onEnterSampleDemo={(preferredRole) => {
                 resetSampleDemoEphemeralState({ clearDemoStopwatch: true });
                 setIsSampleDemoMode(true);
+                emitFunnelEvent('demo_enter', {
+                  role: preferredRole === 'COACH' ? 'COACH' : 'ATHLETE',
+                  tier: preferredRole === 'COACH' ? 'DEMO_COACH' : 'DEMO_ATHLETE',
+                  dedupeSessionKey: 'demo_enter',
+                });
                 if (preferredRole === 'COACH') {
                   setActiveTab('coach');
                   setCoachSubTab('CLIPBOARD');
@@ -1911,6 +1942,12 @@ export default function App() {
               data-testid="cockpit-content-stage"
               className="ap-content-stage space-y-3 sm:space-y-4 min-w-0 flex-1 flex flex-col"
             >
+              {billingNotice && (
+                <div data-testid="stripe-billing-return-banner" role="status" className={`rounded-xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs font-semibold border ${billingNotice.tone === 'success' ? 'ap-status-prime' : 'bg-white/80 dark:bg-ap-carbon border-ap-frame/20 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk'}`}>
+                  <span>{billingNotice.text}</span>
+                  <button type="button" onClick={() => setBillingNotice(null)} className="px-2 py-1 text-2xs font-mono underline cursor-pointer">Dismiss</button>
+                </div>
+              )}
               <CockpitStageBanners
               pendingUrlJoinOffer={pendingUrlJoinOffer}
               onAcceptJoinOffer={handleAcceptJoinOffer}

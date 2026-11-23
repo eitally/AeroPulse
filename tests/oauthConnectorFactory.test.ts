@@ -134,7 +134,9 @@ describe('Sprint 3 PR 3A · OAuth Connector Factory (Polar & Wahoo)', () => {
     expect(parsedUrl.origin + parsedUrl.pathname).toBe('https://api.wahooligan.com/oauth/authorize');
     expect(parsedUrl.searchParams.get('code_challenge')).toBeTruthy();
     expect(parsedUrl.searchParams.get('code_challenge_method')).toBe('S256');
-    expect(parsedUrl.searchParams.get('scope')).toBe('user_read workouts_read');
+    expect(parsedUrl.searchParams.get('scope')).toBe(
+      'user_read workouts_read workouts_write plans_write'
+    );
     expect(jar.headerValue()).toContain('thresh_oauth_state=');
   });
 

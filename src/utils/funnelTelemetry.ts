@@ -31,6 +31,13 @@ export interface EmitFunnelEventOptions {
   useBeacon?: boolean;
 }
 
+export function resolveFunnelTierFromOrgType(orgType: string | undefined): FunnelEventTier {
+  if (orgType === 'HIGH_SCHOOL' || orgType === 'COLLEGIATE' || orgType === 'COACH_SQUAD') {
+    return orgType;
+  }
+  return 'RUNNING_CLUB';
+}
+
 const DEDUPE_STORAGE_PREFIX = 'meetready_funnel_dedupe_v1:';
 
 function normalizeTelemetryPathname(rawPath?: string): string {

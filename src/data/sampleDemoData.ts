@@ -1218,6 +1218,18 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
       name: 'Willow Glen High School XC',
       shortName: 'WGHS XC',
       mascotOrMotto: 'Rams XC & Track',
+      districtName: 'San Jose Unified School District',
+      practiceVenues: [
+        {
+          id: 'venue-wghs-track',
+          name: 'Willow Glen High School Track',
+          category: 'TRACK',
+          latitude: 37.3025,
+          longitude: -121.8942,
+          radiusMeters: 250,
+          enabled: true,
+        },
+      ],
       orgType: 'HIGH_SCHOOL',
       primarySport: 'Running',
       primaryHex: '#B83A24',

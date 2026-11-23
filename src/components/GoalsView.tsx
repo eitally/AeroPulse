@@ -75,6 +75,7 @@ import {
   exportWorkoutAsFit,
   exportWorkoutAsZwo,
 } from '../utils/workoutExportActions';
+import { emitFunnelEvent, resolveFunnelTierFromOrgType } from '../utils/funnelTelemetry';
 import {
   computeAmplitudeHeightPct,
   formatHumanReadableStepLine,
@@ -632,6 +633,10 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           if (Array.isArray(data.teams) && onTeamsUpdated) {
             onTeamsUpdated(data.teams, activeTeam.brand.teamId);
           }
+          emitFunnelEvent('workout_published', {
+            role: 'COACH',
+            tier: resolveFunnelTierFromOrgType(activeTeam.brand.orgType),
+          });
           setLastPopulatedTeamBlock({ teamId: activeTeam.brand.teamId, blockId });
           setLastPopulatedBlockId(null);
           setPopulatedSuccessMsg(

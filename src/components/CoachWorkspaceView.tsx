@@ -33,6 +33,7 @@ import { doesCoachOwnAthlete } from '../physiology/teamOnboardingEngine';
 import { buildCoachSquadExecutionDigest } from '../physiology/sessionCheckInAndDigestEngine';
 import { resolveWorkspaceSportAndRoleScope } from '../utils/workspaceScope';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
+import { emitFunnelEvent, resolveFunnelTierFromOrgType } from '../utils/funnelTelemetry';
 import { hasSessionActiveHint } from '../utils/sessionHint';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { WorkspaceErrorBoundary } from './WorkspaceErrorBoundary';
@@ -408,6 +409,10 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           if (Array.isArray(data.teams)) {
             onTeamsUpdated(data.teams, activeTeam.brand.teamId);
           }
+          emitFunnelEvent('workout_published', {
+            role: 'COACH',
+            tier: resolveFunnelTierFromOrgType(activeTeam.brand.orgType),
+          });
           return;
         }
         setTeamPlanError(data?.error || 'Could not broadcast team session to server.');
@@ -607,6 +612,10 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
           if (Array.isArray(data.teams)) {
             onTeamsUpdated(data.teams, activeTeam.brand.teamId);
           }
+          emitFunnelEvent('workout_published', {
+            role: 'COACH',
+            tier: resolveFunnelTierFromOrgType(activeTeam.brand.orgType),
+          });
           return;
         }
         setTeamPlanError(data?.error || 'Could not batch-broadcast team sessions to server.');

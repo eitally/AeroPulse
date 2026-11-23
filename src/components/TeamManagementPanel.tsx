@@ -35,6 +35,7 @@ import { TeamBrandingStudioForm } from './team/TeamBrandingStudioForm';
 import { TeamBulkRosterImporter } from './team/TeamBulkRosterImporter';
 import { TeamRosterAndAuditSection } from './team/TeamRosterAndAuditSection';
 import { getStoredCoachAttribution } from '../utils/attribution';
+import { emitFunnelEvent, resolveFunnelTierFromOrgType } from '../utils/funnelTelemetry';
 import { markSessionActiveHint } from '../utils/sessionHint';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
@@ -442,6 +443,10 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
           return;
         }
         markSessionActiveHint();
+        emitFunnelEvent('team_created', {
+          role: 'COACH',
+          tier: resolveFunnelTierFromOrgType(orgType),
+        });
         const created = data.team as TeamSummaryWithRole;
         onTeamsUpdated([...myTeams, created], created.brand.teamId);
         setShowCreateOrEditStudio(false);

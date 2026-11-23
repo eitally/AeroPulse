@@ -7,6 +7,11 @@ import {
   loadTenantVaultAsync,
 } from './sessionContext.ts';
 import { checkPostgresHealthAsync, getVaultStorageBackend } from './tokenVault.ts';
+import { getConfiguredRateLimitBackend } from './rateLimiter.ts';
+import { parseSentryDsn } from './observability.ts';
+
+declare const __MEETREADY_BUILD_TIMESTAMP__: string | undefined;
+const SERVER_BOOT_ISO = new Date().toISOString();
 
 // Domain routers
 import { vaultAndPhysiologyRouter } from './routers/vaultAndPhysiologyRouter.ts';
@@ -28,6 +33,7 @@ import { stravaRouter } from './routers/stravaRouter.ts';
 import { activitiesRouter } from './routers/activitiesRouter.ts';
 import { coachRouter } from './routers/coachRouter.ts';
 import { webhookRouter } from './routers/webhookRouter.ts';
+import { analyticsRouter } from './routers/analyticsRouter.ts';
 
 export const apiRouter = express.Router();
 
@@ -51,16 +57,44 @@ apiRouter.use((req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Health probe (bounded Postgres check when configured)
+// Health probe (bounded Postgres check + boolean-only integration readiness)
 apiRouter.get('/api/health', async (_req: Request, res: Response) => {
   const pgHealth = await checkPostgresHealthAsync(2000);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
+  const env = process.env;
+  const buildTimestamp =
+    typeof __MEETREADY_BUILD_TIMESTAMP__ !== 'undefined' && __MEETREADY_BUILD_TIMESTAMP__
+      ? __MEETREADY_BUILD_TIMESTAMP__
+      : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? 'ok' : 'degraded',
     storageBackend: getVaultStorageBackend(),
     databaseConfigured: pgHealth.configured,
     databaseHealthy: pgHealth.healthy,
+    dbPingLatencyMs: pgHealth.latencyMs,
+    rateLimitBackend: getConfiguredRateLimitBackend(),
+    uptimeSeconds: Math.floor(process.uptime()),
+    appVersion: '2.1.0',
+    buildTimestamp,
+    integrations: {
+      googleAuth: Boolean(env.GOOGLE_CLIENT_ID?.trim() && env.GOOGLE_CLIENT_SECRET?.trim()),
+      strava: Boolean(env.STRAVA_CLIENT_ID?.trim() && env.STRAVA_CLIENT_SECRET?.trim()),
+      garmin: Boolean(env.GARMIN_CLIENT_ID?.trim() && env.GARMIN_CLIENT_SECRET?.trim()),
+      coros: Boolean(env.COROS_CLIENT_ID?.trim() && env.COROS_CLIENT_SECRET?.trim()),
+      intervals: Boolean(env.INTERVALS_CLIENT_ID?.trim() && env.INTERVALS_CLIENT_SECRET?.trim()),
+      wahoo: Boolean(env.WAHOO_CLIENT_ID?.trim() && env.WAHOO_CLIENT_SECRET?.trim()),
+      polar: Boolean(env.POLAR_CLIENT_ID?.trim() && env.POLAR_CLIENT_SECRET?.trim()),
+      resendEmail: Boolean(env.RESEND_API_KEY?.trim()),
+      stripeBilling: Boolean(env.STRIPE_SECRET_KEY?.trim()),
+      stripeWebhook: Boolean(env.STRIPE_WEBHOOK_SECRET?.trim()),
+      geminiAi: Boolean(
+        (env.GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENERATIVE_AI_API_KEY || '').trim()
+      ),
+      webPushVapid: Boolean(env.VAPID_PUBLIC_KEY?.trim() && env.VAPID_PRIVATE_KEY?.trim()),
+      sentryObservability: Boolean(parseSentryDsn(env.SENTRY_DSN)),
+      cronAuth: Boolean(env.CRON_SECRET?.trim()),
+    },
     timestamp: new Date().toISOString(),
   });
 });
@@ -85,6 +119,7 @@ apiRouter.use(stravaRouter);
 apiRouter.use(activitiesRouter);
 apiRouter.use(coachRouter);
 apiRouter.use(webhookRouter);
+apiRouter.use(analyticsRouter);
 
 // ----------------------------------------------------------------------------
 // Backward-Compatibility Re-Exports (Test Suites & External Consumers)

@@ -46,6 +46,7 @@ import {
   saveStravaSyncPolicyToStorage,
 } from '../utils/telemetryStorage';
 import { markSessionActiveHint } from '../utils/sessionHint';
+import { emitFunnelEvent } from '../utils/funnelTelemetry';
 
 export interface FirstRunCalibrationPayload {
   athleteName: string;
@@ -335,6 +336,11 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
               const notLoggedOut = !isBrowserSessionLoggedOut();
               if (justSignedIn || notLoggedOut) {
                 markSessionActiveHint();
+                emitFunnelEvent('auth_complete', {
+                  role: onboardingRole === 'COACH' ? 'COACH' : 'ATHLETE',
+                  isMinorUser: isMinorAthlete || isUnder13,
+                  dedupeSessionKey: 'auth_complete',
+                });
               }
             } catch {
               // ignore
@@ -511,6 +517,15 @@ export const StravaAuthGate: React.FC<StravaAuthGateProps> = ({
   }, [initialJoin.codeOrSlug, initialJoin.token, initialJoin.slug, initialJoin.email]);
 
   const activeBrand = invitePreview?.found ? invitePreview.brand : null;
+
+  useEffect(() => {
+    if (step === 1 && !activeBrand) {
+      emitFunnelEvent('landing_view', {
+        role: onboardingRole === 'COACH' ? 'COACH' : 'ATHLETE',
+        dedupeSessionKey: 'landing_view',
+      });
+    }
+  }, [step, activeBrand, onboardingRole]);
 
   const currentJoinContext = useMemo<StravaOAuthJoinContext | undefined>(() => {
     const clean = joinCodeInput.trim();
