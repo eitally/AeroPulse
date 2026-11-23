@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  ArrowsLeftRight,
   ChevronRight,
   Clock,
+  Copy,
   Download,
   FileText,
   Flame,
@@ -19,9 +21,12 @@ import type {
   AthleteProfile,
   DistanceUnit,
   PlannedWorkoutEvent,
+  PracticeVenueCategory,
   SportCategory,
+  TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
+  WorkoutSessionSlot,
 } from '../../types';
 import { formatDistance } from '../../utils/formatters';
 import { formatSessionLogisticsLine } from '../../utils/workoutScheduleUtils';
@@ -34,6 +39,12 @@ import {
   getSportHeaderColor,
   type CalendarWeekSummary,
 } from './calendarEffortUtils';
+import { CalendarCopyWeekPopover } from './CalendarCopyWeekPopover';
+import {
+  buildCopiedWeekBatchItems,
+  buildReschedulePlannedEventPatch,
+} from './calendarDragAndWeekCopyUtils';
+import type { PlannedEventBatchItem } from '../GoalsView';
 
 export interface CalendarMobileAgendaProps {
   calendarWeeks: CalendarWeekSummary[];
@@ -47,7 +58,27 @@ export interface CalendarMobileAgendaProps {
   setPendingDeletePlannedId: React.Dispatch<React.SetStateAction<string | null>>;
   onSelectActivity: (activity: UnifiedActivity) => void;
   onOpenTodayWorkout?: () => void;
+  onUpdatePlannedEvent?: (
+    id: string,
+    patch: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+      scheduledTime?: string;
+      sessionSlot?: WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: PracticeVenueCategory;
+      meetingNotes?: string;
+      trackSpec?: TrackWorkoutSpec;
+    }
+  ) => Promise<void>;
   onDeletePlannedEvent?: (id: string) => Promise<void>;
+  onBatchCreatePlannedEvents?: (events: PlannedEventBatchItem[]) => Promise<void>;
   onOpenCoachWithPrompt?: (prompt: string) => void;
   onOpenTracksideStopwatch?: () => void;
   onOpenBuilderForDate: (dateStr: string, ev?: PlannedWorkoutEvent | null) => void;
@@ -71,7 +102,9 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
   setPendingDeletePlannedId,
   onSelectActivity,
   onOpenTodayWorkout,
+  onUpdatePlannedEvent,
   onDeletePlannedEvent,
+  onBatchCreatePlannedEvents,
   onOpenCoachWithPrompt,
   onOpenTracksideStopwatch,
   onOpenBuilderForDate: handleOpenBuilderForDate,
@@ -82,6 +115,9 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
   handleSharePlannedWorkout,
   getSportIcon,
 }) => {
+  const [copyWeekIndex, setCopyWeekIndex] = useState<number | null>(null);
+  const [movingEventId, setMovingEventId] = useState<string | null>(null);
+  const [moveTargetDate, setMoveTargetDate] = useState<string>('');
   return (
     <section className="xl:hidden space-y-3">
           {calendarWeeks.map((week) => {
@@ -113,18 +149,49 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                         {formatHeaderDate(week.days[6].dateStr)}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onOpenCoachWithPrompt?.(
-                          `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
-                        )
-                      }
-                      className="min-h-[44px] sm:min-h-[32px] inline-flex items-center px-3 sm:px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-sky-400 text-2xs font-semibold"
-                    >
-                      AI Coach
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {onBatchCreatePlannedEvents && (
+                        <button
+                          type="button"
+                          data-testid={`mobile-copy-week-btn-w${week.isoWeekNum}`}
+                          onClick={() =>
+                            setCopyWeekIndex((prev) =>
+                              prev === week.weekIndex ? null : week.weekIndex
+                            )
+                          }
+                          className="min-h-[44px] sm:min-h-[32px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg ap-card-inset text-ap-ink dark:text-ap-chalk text-2xs font-semibold cursor-pointer"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Week</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onOpenCoachWithPrompt?.(
+                            `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
+                          )
+                        }
+                        className="min-h-[44px] sm:min-h-[32px] inline-flex items-center px-3 sm:px-2.5 py-1 rounded-lg bg-blue-500/10 text-blue-600 dark:text-sky-400 text-2xs font-semibold"
+                      >
+                        AI Coach
+                      </button>
+                    </div>
                   </div>
+                  {copyWeekIndex === week.weekIndex && onBatchCreatePlannedEvents && (
+                    <CalendarCopyWeekPopover
+                      isoWeekNum={week.isoWeekNum}
+                      sourceMondayIso={week.days[0].dateStr}
+                      plannedCount={week.days.reduce((sum, d) => sum + d.dayPlanned.length, 0)}
+                      onConfirmCopy={async (targetMondayIso) => {
+                        const batch = buildCopiedWeekBatchItems(week.days, targetMondayIso);
+                        if (batch.length > 0) {
+                          await onBatchCreatePlannedEvents(batch);
+                        }
+                      }}
+                      onClose={() => setCopyWeekIndex(null)}
+                    />
+                  )}
                   <div className="grid grid-cols-4 gap-1.5 text-2xs font-mono">
                     <div className="px-2 py-1 rounded-lg bg-white/80 dark:bg-ap-turf/60 border border-slate-200/70 dark:border-slate-800">
                       <span className="text-2xs uppercase text-slate-600 dark:text-slate-400 block">Time</span>
@@ -381,77 +448,125 @@ export const CalendarMobileAgenda: React.FC<CalendarMobileAgendaProps> = ({
                                   </button>
                                 )}
                               </div>
-                              {(trackSpec || Boolean(ev.workoutSyntax)) && (
-                                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-emerald-900/10 dark:border-white/10">
-                                  {trackSpec && (
-                                    <button
-                                      type="button"
-                                      data-testid="calendar-launch-stopwatch"
-                                      onClick={() => handleLaunchPlannedInStopwatch(ev)}
-                                      className="min-h-[44px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
-                                    >
-                                      <Timer className="w-3.5 h-3.5" weight="bold" />
-                                      <span>Time on Track</span>
-                                    </button>
-                                  )}
-                                  <button
-                                    type="button"
-                                    data-testid="calendar-edit-planned-workout"
-                                    onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
-                                    className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer"
-                                  >
-                                    <span>Edit</span>
-                                  </button>
-                                  <details className="relative inline-block">
-                                    <summary className="min-h-[44px] list-none inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer select-none">
-                                      <Download className="w-3.5 h-3.5" weight="bold" />
-                                      <span>Export ▾</span>
-                                    </summary>
-                                    <div className="absolute right-0 bottom-full mb-1 z-30 w-36 rounded-xl liquid-glass p-1 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
-                                      {ev.workoutSyntax && (
-                                        <button
-                                          type="button"
-                                          data-testid="calendar-export-fit"
-                                          onClick={() => handleExportPlannedFit(ev)}
-                                          className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                                        >
-                                          <Download className="w-3.5 h-3.5" weight="bold" />
-                                          <span>.FIT</span>
-                                        </button>
-                                      )}
-                                      {ev.workoutSyntax && (
-                                        <button
-                                          type="button"
-                                          data-testid="calendar-export-zwo"
-                                          onClick={() => handleExportPlannedZwo(ev)}
-                                          className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                                        >
-                                          <Download className="w-3.5 h-3.5" weight="bold" />
-                                          <span>.ZWO</span>
-                                        </button>
-                                      )}
-                                      {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
-                                        <button
-                                          type="button"
-                                          data-testid="calendar-export-erg"
-                                          onClick={() => handleExportPlannedErg(ev)}
-                                          className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                                        >
-                                          <Download className="w-3.5 h-3.5" weight="bold" />
-                                          <span>.ERG</span>
-                                        </button>
-                                      )}
+                              {(trackSpec || Boolean(ev.workoutSyntax) || Boolean(onUpdatePlannedEvent)) && (
+                                <div className="space-y-2 pt-1 border-t border-emerald-900/10 dark:border-white/10">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {trackSpec && (
                                       <button
                                         type="button"
-                                        data-testid="calendar-share-workout"
-                                        onClick={() => handleSharePlannedWorkout(ev)}
-                                        className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                        data-testid="calendar-launch-stopwatch"
+                                        onClick={() => handleLaunchPlannedInStopwatch(ev)}
+                                        className="min-h-[44px] inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
                                       >
-                                        <ShareNetwork className="w-3.5 h-3.5" weight="bold" />
-                                        <span>Share</span>
+                                        <Timer className="w-3.5 h-3.5" weight="bold" />
+                                        <span>Time on Track</span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      data-testid="calendar-edit-planned-workout"
+                                      onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
+                                      className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer"
+                                    >
+                                      <span>Edit</span>
+                                    </button>
+                                    {onUpdatePlannedEvent && (
+                                      <button
+                                        type="button"
+                                        data-testid={`mobile-move-planned-btn-${ev.id}`}
+                                        aria-label={`Move ${ev.name} to another date`}
+                                        onClick={() => {
+                                          setMovingEventId((prev) =>
+                                            prev === ev.id ? null : ev.id
+                                          );
+                                          setMoveTargetDate(ev.date.slice(0, 10));
+                                        }}
+                                        className="min-h-[44px] inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer"
+                                      >
+                                        <ArrowsLeftRight className="w-3.5 h-3.5" />
+                                        <span>Move</span>
+                                      </button>
+                                    )}
+                                    {ev.workoutSyntax && (
+                                      <details className="relative inline-block">
+                                        <summary className="min-h-[44px] list-none inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-800 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer select-none">
+                                          <Download className="w-3.5 h-3.5" weight="bold" />
+                                          <span>Export ▾</span>
+                                        </summary>
+                                        <div className="absolute right-0 bottom-full mb-1 z-30 w-36 rounded-xl liquid-glass p-1 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                          <button
+                                            type="button"
+                                            data-testid="calendar-export-fit"
+                                            onClick={() => handleExportPlannedFit(ev)}
+                                            className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                          >
+                                            <Download className="w-3.5 h-3.5" weight="bold" />
+                                            <span>.FIT</span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            data-testid="calendar-export-zwo"
+                                            onClick={() => handleExportPlannedZwo(ev)}
+                                            className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                          >
+                                            <Download className="w-3.5 h-3.5" weight="bold" />
+                                            <span>.ZWO</span>
+                                          </button>
+                                          {ev.sportCategory === 'Cycling' && (
+                                            <button
+                                              type="button"
+                                              data-testid="calendar-export-erg"
+                                              onClick={() => handleExportPlannedErg(ev)}
+                                              className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                            >
+                                              <Download className="w-3.5 h-3.5" weight="bold" />
+                                              <span>.ERG</span>
+                                            </button>
+                                          )}
+                                          <button
+                                            type="button"
+                                            data-testid="calendar-share-workout"
+                                            onClick={() => handleSharePlannedWorkout(ev)}
+                                            className="w-full min-h-[44px] flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                          >
+                                            <ShareNetwork className="w-3.5 h-3.5" weight="bold" />
+                                            <span>Share</span>
+                                          </button>
+                                        </div>
+                                      </details>
+                                    )}
+                                  </div>
+                                  {movingEventId === ev.id && onUpdatePlannedEvent && (
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <input
+                                        type="date"
+                                        aria-label={`New date for ${ev.name}`}
+                                        data-testid={`mobile-move-date-input-${ev.id}`}
+                                        value={moveTargetDate}
+                                        onChange={(e) => setMoveTargetDate(e.target.value)}
+                                        className="min-h-[44px] flex-1 min-w-[140px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon px-2.5 text-xs font-mono text-ap-ink dark:text-ap-chalk"
+                                      />
+                                      <button
+                                        type="button"
+                                        data-testid={`mobile-move-confirm-${ev.id}`}
+                                        onClick={() => {
+                                          if (
+                                            moveTargetDate &&
+                                            moveTargetDate !== ev.date.slice(0, 10)
+                                          ) {
+                                            void onUpdatePlannedEvent(
+                                              ev.id,
+                                              buildReschedulePlannedEventPatch(ev, moveTargetDate)
+                                            );
+                                          }
+                                          setMovingEventId(null);
+                                        }}
+                                        className="min-h-[44px] px-3 py-1 rounded-lg bg-ap-clay text-white dark:bg-ap-volt dark:text-ap-obsidian text-xs font-bold cursor-pointer"
+                                      >
+                                        Apply Move
                                       </button>
                                     </div>
-                                  </details>
+                                  )}
                                 </div>
                               )}
                             </div>

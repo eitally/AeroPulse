@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AnnualMileageGoal,
   AthleteCloudStateEnvelope,
+  AthleteGearItem,
   AthletePrivacySettings,
   AthleteProfile,
   DistanceUnit,
@@ -17,11 +18,34 @@ import type {
 } from '../types.ts';
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine.ts';
 import { consumePendingSharedWorkout } from '../utils/shareWorkoutRoute.ts';
-import { getSavedIntervalsHeaders, mergeActivitiesNonDestructive } from '../utils/telemetryStorage.ts';
+import { mergeActivitiesNonDestructive } from '../utils/telemetryStorage.ts';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi.ts';
+import { STORAGE_KEYS } from '../utils/storageKeys.ts';
 
 const CLOUD_UPDATED_AT_KEY = 'thresh_cloud_state_updated_at';
 const CHECKINS_STORAGE_KEY = 'thresh_session_checkins_v1';
+
+function isCloudStateDirty(): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  try {
+    return localStorage.getItem(STORAGE_KEYS.CLOUD_STATE_DIRTY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setCloudStateDirty(dirty: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (dirty) {
+      localStorage.setItem(STORAGE_KEYS.CLOUD_STATE_DIRTY, '1');
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.CLOUD_STATE_DIRTY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
 
 interface UseAthleteCloudSyncParams {
   isSampleDemoMode: boolean;
@@ -39,6 +63,8 @@ interface UseAthleteCloudSyncParams {
   setAthleteProfile: React.Dispatch<React.SetStateAction<AthleteProfile>>;
   distanceUnit: DistanceUnit;
   setDistanceUnit: React.Dispatch<React.SetStateAction<DistanceUnit>>;
+  gearItems?: AthleteGearItem[];
+  setGearItems?: React.Dispatch<React.SetStateAction<AthleteGearItem[]>>;
   activities: UnifiedActivity[];
   setActivities?: React.Dispatch<React.SetStateAction<UnifiedActivity[]>>;
   wellnessDays: UnifiedWellnessDay[];
@@ -64,7 +90,7 @@ interface UseAthleteCloudSyncParams {
 }
 
 /**
- * Synchronizes first-party plans, goals, threshold settings, unit preferences, and
+ * Synchronizes first-party plans, goals, gear, threshold settings, unit preferences, and
  * RPE/pain session check-ins via AES-256-GCM /api/athlete-state and /api/teams/sync-snapshot,
  * and auto-imports any pending shared workout across OAuth login.
  */
@@ -84,6 +110,8 @@ export function useAthleteCloudSync({
   setAthleteProfile,
   distanceUnit,
   setDistanceUnit,
+  gearItems,
+  setGearItems,
   activities,
   setActivities,
   wellnessDays,
@@ -98,7 +126,12 @@ export function useAthleteCloudSync({
 }: UseAthleteCloudSyncParams) {
   const hydratedIdentityRef = useRef<string | null>(null);
   const skipNextSaveRef = useRef<boolean>(false);
+  const applyingCloudHydrationRef = useRef<boolean>(false);
+  const localMutationRevRef = useRef<number>(0);
+  const syncedRevRef = useRef<number>(0);
   const prevTeamsCountRef = useRef<number>(myTeamsCount);
+  const inFlightSaveRef = useRef<Promise<void> | null>(null);
+  const pendingSaveNeededRef = useRef<boolean>(false);
 
   const [sessionCheckIns, setSessionCheckIns] = useState<SessionCheckInRecord[]>(() => {
     try {
@@ -117,6 +150,178 @@ export function useAthleteCloudSync({
 
   const effectiveSessionCheckIns = isSampleDemoMode ? sampleDemoCheckIns : sessionCheckIns;
 
+  const hasLiveWorkspace = !isSampleDemoMode && hasEnteredWorkspace && !isSessionLoggedOut;
+  const hasAnyWorkspace = isSampleDemoMode || hasLiveWorkspace;
+  const identityKey = hasLiveWorkspace
+    ? `live:${stravaAthleteId || currentUser?.id || 'session'}`
+    : isSampleDemoMode
+      ? 'demo'
+      : 'logged_out';
+
+  const hasLiveWorkspaceRef = useRef<boolean>(hasLiveWorkspace);
+  hasLiveWorkspaceRef.current = hasLiveWorkspace;
+
+  const latestSyncStateRef = useRef({
+    plannedEvents,
+    targetGoals,
+    annualMileageGoals,
+    athleteProfile,
+    distanceUnit,
+    gearItems,
+    sessionCheckIns,
+  });
+  latestSyncStateRef.current = {
+    plannedEvents,
+    targetGoals,
+    annualMileageGoals,
+    athleteProfile,
+    distanceUnit,
+    gearItems,
+    sessionCheckIns,
+  };
+
+  const prevLiveTrackedRef = useRef<{
+    hasLive: boolean;
+    plannedEvents: PlannedWorkoutEvent[];
+    targetGoals: TargetGoal[];
+    annualMileageGoals: AnnualMileageGoal[];
+    athleteProfile: AthleteProfile;
+    distanceUnit: DistanceUnit;
+    gearItems: AthleteGearItem[] | undefined;
+    sessionCheckIns: SessionCheckInRecord[];
+  }>({
+    hasLive: hasLiveWorkspace,
+    plannedEvents,
+    targetGoals,
+    annualMileageGoals,
+    athleteProfile,
+    distanceUnit,
+    gearItems,
+    sessionCheckIns,
+  });
+
+  // Track monotonic local mutation revisions whenever user state changes in live mode
+  useEffect(() => {
+    const prev = prevLiveTrackedRef.current;
+    const changed =
+      prev.plannedEvents !== plannedEvents ||
+      prev.targetGoals !== targetGoals ||
+      prev.annualMileageGoals !== annualMileageGoals ||
+      prev.athleteProfile !== athleteProfile ||
+      prev.distanceUnit !== distanceUnit ||
+      prev.gearItems !== gearItems ||
+      prev.sessionCheckIns !== sessionCheckIns;
+
+    prevLiveTrackedRef.current = {
+      hasLive: hasLiveWorkspace,
+      plannedEvents,
+      targetGoals,
+      annualMileageGoals,
+      athleteProfile,
+      distanceUnit,
+      gearItems,
+      sessionCheckIns,
+    };
+
+    if (applyingCloudHydrationRef.current) {
+      applyingCloudHydrationRef.current = false;
+      return;
+    }
+
+    if (prev.hasLive && hasLiveWorkspace && changed) {
+      localMutationRevRef.current += 1;
+      setCloudStateDirty(true);
+    }
+  }, [
+    hasLiveWorkspace,
+    plannedEvents,
+    targetGoals,
+    annualMileageGoals,
+    athleteProfile,
+    distanceUnit,
+    gearItems,
+    sessionCheckIns,
+  ]);
+
+  const flushCloudStateSave = useCallback(async () => {
+    if (inFlightSaveRef.current) {
+      pendingSaveNeededRef.current = true;
+      return inFlightSaveRef.current;
+    }
+
+    const runSaveLoop = async () => {
+      do {
+        pendingSaveNeededRef.current = false;
+        if (!hasLiveWorkspaceRef.current) break;
+
+        const targetRev = localMutationRevRef.current;
+        const snap = latestSyncStateRef.current;
+        try {
+          const cleanProfile: Partial<AthleteProfile> = {
+            name: snap.athleteProfile.name,
+            primarySport: snap.athleteProfile.primarySport,
+            weightKg: snap.athleteProfile.weightKg,
+            restingHr: snap.athleteProfile.restingHr,
+            ftp: snap.athleteProfile.ftp,
+            indoorFtp: snap.athleteProfile.indoorFtp,
+            runFtp: snap.athleteProfile.runFtp,
+            lthr: snap.athleteProfile.lthr,
+            maxHr: snap.athleteProfile.maxHr,
+            runLthr: snap.athleteProfile.runLthr,
+            runMaxHr: snap.athleteProfile.runMaxHr,
+            thresholdPaceSecsPerKm: snap.athleteProfile.thresholdPaceSecsPerKm,
+            thresholdHistory: snap.athleteProfile.thresholdHistory,
+            safeSportHideWeight: snap.athleteProfile.safeSportHideWeight,
+            birthMonthYear: snap.athleteProfile.birthMonthYear,
+            academicDivision: snap.athleteProfile.academicDivision,
+            competitionGender: snap.athleteProfile.competitionGender,
+          };
+
+          const res = await fetch('/api/athlete-state', {
+            method: 'PUT',
+            credentials: 'include',
+            headers: buildThreshSessionHeaders(),
+            body: JSON.stringify({
+              plannedEvents: snap.plannedEvents,
+              targetGoals: snap.targetGoals,
+              annualMileageGoals: snap.annualMileageGoals,
+              athleteProfile: cleanProfile,
+              distanceUnit: snap.distanceUnit,
+              ...(snap.gearItems !== undefined ? { gearItems: snap.gearItems } : {}),
+              sessionCheckIns: snap.sessionCheckIns,
+            }),
+          });
+          if (res.ok) {
+            const data = (await res.json()) as { state?: { updatedAt?: string } };
+            if (data.state?.updatedAt) {
+              try {
+                localStorage.setItem(CLOUD_UPDATED_AT_KEY, data.state.updatedAt);
+              } catch {
+                // ignore storage errors
+              }
+            }
+            syncedRevRef.current = targetRev;
+            if (localMutationRevRef.current === targetRev && !pendingSaveNeededRef.current) {
+              setCloudStateDirty(false);
+            } else {
+              pendingSaveNeededRef.current = true;
+            }
+          } else {
+            setCloudStateDirty(true);
+          }
+        } catch {
+          setCloudStateDirty(true);
+        }
+      } while (pendingSaveNeededRef.current && hasLiveWorkspaceRef.current);
+    };
+
+    const activePromise = runSaveLoop().finally(() => {
+      inFlightSaveRef.current = null;
+    });
+    inFlightSaveRef.current = activePromise;
+    return activePromise;
+  }, []);
+
   const resetDemoSessionCheckIns = useCallback(() => {
     setSampleDemoCheckIns([]);
   }, []);
@@ -124,11 +329,16 @@ export function useAthleteCloudSync({
   const resetUserCloudSyncState = useCallback(() => {
     hydratedIdentityRef.current = null;
     skipNextSaveRef.current = false;
+    applyingCloudHydrationRef.current = false;
+    localMutationRevRef.current = 0;
+    syncedRevRef.current = 0;
+    pendingSaveNeededRef.current = false;
     setSessionCheckIns([]);
     setArchivedCoachActivities([]);
     try {
       localStorage.removeItem(CHECKINS_STORAGE_KEY);
       localStorage.removeItem(CLOUD_UPDATED_AT_KEY);
+      localStorage.removeItem(STORAGE_KEYS.CLOUD_STATE_DIRTY);
     } catch {
       // ignore storage errors
     }
@@ -180,14 +390,6 @@ export function useAthleteCloudSync({
     [isSampleDemoMode, handleCreatePlannedEvent]
   );
 
-  const hasLiveWorkspace = !isSampleDemoMode && hasEnteredWorkspace && !isSessionLoggedOut;
-  const hasAnyWorkspace = isSampleDemoMode || hasLiveWorkspace;
-  const identityKey = hasLiveWorkspace
-    ? `live:${stravaAthleteId || currentUser?.id || 'session'}`
-    : isSampleDemoMode
-      ? 'demo'
-      : 'logged_out';
-
   // Reset hydration tracking on logout
   useEffect(() => {
     if (!hasLiveWorkspace && !isSampleDemoMode) {
@@ -228,6 +430,9 @@ export function useAthleteCloudSync({
     if (hydratedIdentityRef.current === identityKey) return;
 
     let cancelled = false;
+    const revAtStart = localMutationRevRef.current;
+    const dirtyAtStart = isCloudStateDirty();
+
     const hydrate = async () => {
       try {
         const res = await fetch('/api/athlete-state', {
@@ -235,7 +440,6 @@ export function useAthleteCloudSync({
           headers: buildThreshSessionHeaders(),
         });
         if (!res.ok || cancelled) {
-          hydratedIdentityRef.current = identityKey;
           return;
         }
         const data = (await res.json()) as {
@@ -247,50 +451,6 @@ export function useAthleteCloudSync({
 
         const cloudState = data?.authenticated ? data.state : null;
         if (cloudState) {
-          let localUpdatedAt = '';
-          try {
-            localUpdatedAt = localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '';
-          } catch {
-            // ignore storage errors
-          }
-          const serverIsNewer =
-            Boolean(cloudState.updatedAt) &&
-            (!localUpdatedAt || cloudState.updatedAt >= localUpdatedAt);
-
-          skipNextSaveRef.current = true;
-
-          if (serverIsNewer && Array.isArray(cloudState.plannedEvents)) {
-            setPlannedEvents(cloudState.plannedEvents);
-          } else if (cloudState.plannedEvents.length > 0 && plannedEvents.length === 0) {
-            setPlannedEvents(cloudState.plannedEvents);
-          }
-
-          if (serverIsNewer && Array.isArray(cloudState.targetGoals)) {
-            setTargetGoals(cloudState.targetGoals);
-          } else if (cloudState.targetGoals.length > 0 && targetGoals.length === 0) {
-            setTargetGoals(cloudState.targetGoals);
-          }
-
-          if (serverIsNewer && Array.isArray(cloudState.annualMileageGoals)) {
-            setAnnualMileageGoals(cloudState.annualMileageGoals);
-          } else if (
-            cloudState.annualMileageGoals.length > 0 &&
-            annualMileageGoals.length === 0
-          ) {
-            setAnnualMileageGoals(cloudState.annualMileageGoals);
-          }
-
-          if (cloudState.distanceUnit && serverIsNewer) {
-            setDistanceUnit(cloudState.distanceUnit);
-          }
-
-          if (cloudState.athleteProfile && serverIsNewer) {
-            setAthleteProfile((prev) => ({
-              ...prev,
-              ...cloudState.athleteProfile,
-            }));
-          }
-
           if (
             Array.isArray(cloudState.coachArchivedActivities) &&
             cloudState.coachArchivedActivities.length > 0
@@ -303,27 +463,104 @@ export function useAthleteCloudSync({
             setArchivedCoachActivities([]);
           }
 
-          if (
-            Array.isArray(cloudState.sessionCheckIns) &&
-            (serverIsNewer ||
-              (cloudState.sessionCheckIns.length > 0 && sessionCheckIns.length === 0))
-          ) {
-            setSessionCheckIns(cloudState.sessionCheckIns);
+          const hasUnsavedLocalMutations =
+            dirtyAtStart ||
+            isCloudStateDirty() ||
+            localMutationRevRef.current > revAtStart;
+
+          if (!hasUnsavedLocalMutations) {
+            const latest = latestSyncStateRef.current;
+            let localUpdatedAt = '';
             try {
-              localStorage.setItem(
-                CHECKINS_STORAGE_KEY,
-                JSON.stringify(cloudState.sessionCheckIns)
-              );
+              localUpdatedAt = localStorage.getItem(CLOUD_UPDATED_AT_KEY) || '';
             } catch {
               // ignore storage errors
             }
-          }
+            const serverIsNewer =
+              Boolean(cloudState.updatedAt) &&
+              (!localUpdatedAt || cloudState.updatedAt >= localUpdatedAt);
 
-          if (cloudState.updatedAt) {
-            try {
-              localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudState.updatedAt);
-            } catch {
-              // ignore
+            let didUpdateState = false;
+
+            if (
+              Array.isArray(cloudState.plannedEvents) &&
+              (serverIsNewer ||
+                (cloudState.plannedEvents.length > 0 && latest.plannedEvents.length === 0))
+            ) {
+              setPlannedEvents(cloudState.plannedEvents);
+              didUpdateState = true;
+            }
+
+            if (
+              Array.isArray(cloudState.targetGoals) &&
+              (serverIsNewer ||
+                (cloudState.targetGoals.length > 0 && latest.targetGoals.length === 0))
+            ) {
+              setTargetGoals(cloudState.targetGoals);
+              didUpdateState = true;
+            }
+
+            if (
+              Array.isArray(cloudState.annualMileageGoals) &&
+              (serverIsNewer ||
+                (cloudState.annualMileageGoals.length > 0 &&
+                  latest.annualMileageGoals.length === 0))
+            ) {
+              setAnnualMileageGoals(cloudState.annualMileageGoals);
+              didUpdateState = true;
+            }
+
+            if (
+              setGearItems &&
+              Array.isArray(cloudState.gearItems) &&
+              (serverIsNewer ||
+                (cloudState.gearItems.length > 0 && (latest.gearItems?.length ?? 0) === 0))
+            ) {
+              setGearItems(cloudState.gearItems);
+              didUpdateState = true;
+            }
+
+            if (cloudState.distanceUnit && serverIsNewer) {
+              setDistanceUnit(cloudState.distanceUnit);
+              didUpdateState = true;
+            }
+
+            if (cloudState.athleteProfile && serverIsNewer) {
+              setAthleteProfile((prev) => ({
+                ...prev,
+                ...cloudState.athleteProfile,
+              }));
+              didUpdateState = true;
+            }
+
+            if (
+              Array.isArray(cloudState.sessionCheckIns) &&
+              (serverIsNewer ||
+                (cloudState.sessionCheckIns.length > 0 && latest.sessionCheckIns.length === 0))
+            ) {
+              setSessionCheckIns(cloudState.sessionCheckIns);
+              didUpdateState = true;
+              try {
+                localStorage.setItem(
+                  CHECKINS_STORAGE_KEY,
+                  JSON.stringify(cloudState.sessionCheckIns)
+                );
+              } catch {
+                // ignore storage errors
+              }
+            }
+
+            if (didUpdateState) {
+              skipNextSaveRef.current = true;
+              applyingCloudHydrationRef.current = true;
+            }
+
+            if (cloudState.updatedAt && (serverIsNewer || didUpdateState)) {
+              try {
+                localStorage.setItem(CLOUD_UPDATED_AT_KEY, cloudState.updatedAt);
+              } catch {
+                // ignore
+              }
             }
           }
         }
@@ -332,6 +569,9 @@ export function useAthleteCloudSync({
       } finally {
         if (!cancelled) {
           hydratedIdentityRef.current = identityKey;
+          if (isCloudStateDirty() || localMutationRevRef.current > syncedRevRef.current) {
+            void flushCloudStateSave();
+          }
         }
       }
     };
@@ -343,15 +583,14 @@ export function useAthleteCloudSync({
   }, [
     hasLiveWorkspace,
     identityKey,
-    plannedEvents.length,
-    targetGoals.length,
-    annualMileageGoals.length,
-    sessionCheckIns.length,
     setPlannedEvents,
     setTargetGoals,
     setAnnualMileageGoals,
     setDistanceUnit,
     setAthleteProfile,
+    setGearItems,
+    setActivities,
+    flushCloudStateSave,
   ]);
 
   // 1b. When leaving/graduating from a team in-session, re-pull coachArchivedActivities immediately
@@ -385,53 +624,13 @@ export function useAthleteCloudSync({
     if (hydratedIdentityRef.current !== identityKey) return;
     if (skipNextSaveRef.current) {
       skipNextSaveRef.current = false;
-      return;
+      if (!isCloudStateDirty() && localMutationRevRef.current <= syncedRevRef.current) {
+        return;
+      }
     }
 
-    const timer = window.setTimeout(async () => {
-      try {
-        const cleanProfile: Partial<AthleteProfile> = {
-          name: athleteProfile.name,
-          primarySport: athleteProfile.primarySport,
-          weightKg: athleteProfile.weightKg,
-          restingHr: athleteProfile.restingHr,
-          ftp: athleteProfile.ftp,
-          indoorFtp: athleteProfile.indoorFtp,
-          runFtp: athleteProfile.runFtp,
-          lthr: athleteProfile.lthr,
-          maxHr: athleteProfile.maxHr,
-          runLthr: athleteProfile.runLthr,
-          runMaxHr: athleteProfile.runMaxHr,
-          thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
-          thresholdHistory: athleteProfile.thresholdHistory,
-          safeSportHideWeight: athleteProfile.safeSportHideWeight,
-          birthMonthYear: athleteProfile.birthMonthYear,
-          academicDivision: athleteProfile.academicDivision,
-          competitionGender: athleteProfile.competitionGender,
-        };
-
-        const res = await fetch('/api/athlete-state', {
-          method: 'PUT',
-          credentials: 'include',
-          headers: buildThreshSessionHeaders(),
-          body: JSON.stringify({
-            plannedEvents,
-            targetGoals,
-            annualMileageGoals,
-            athleteProfile: cleanProfile,
-            distanceUnit,
-            sessionCheckIns,
-          }),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as { state?: { updatedAt?: string } };
-          if (data.state?.updatedAt) {
-            localStorage.setItem(CLOUD_UPDATED_AT_KEY, data.state.updatedAt);
-          }
-        }
-      } catch {
-        // Non-fatal offline persistence continues in IndexedDB/localStorage
-      }
+    const timer = window.setTimeout(() => {
+      void flushCloudStateSave();
     }, 600);
 
     return () => window.clearTimeout(timer);
@@ -443,8 +642,23 @@ export function useAthleteCloudSync({
     annualMileageGoals,
     athleteProfile,
     distanceUnit,
+    gearItems,
     sessionCheckIns,
+    flushCloudStateSave,
   ]);
+
+  // 2b. Retry failed dirty state automatically when network connectivity returns
+  useEffect(() => {
+    if (!hasLiveWorkspace || typeof window === 'undefined') return;
+    const handleOnline = () => {
+      if (hydratedIdentityRef.current !== identityKey) return;
+      if (isCloudStateDirty() || localMutationRevRef.current > syncedRevRef.current) {
+        void flushCloudStateSave();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [hasLiveWorkspace, identityKey, flushCloudStateSave]);
 
   // 3. Debounced Clean-Room readiness, check-ins & 7d productivity sync across joined teams
   useEffect(() => {

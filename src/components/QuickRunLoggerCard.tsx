@@ -114,14 +114,14 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
           className={
             compact
               ? 'ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer'
-              : 'min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-[#28573B] text-slate-800 dark:text-slate-100 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer'
+              : 'min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl liquid-glass-subtle hover:border-ap-clay dark:hover:border-ap-volt text-slate-800 dark:text-slate-100 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer'
           }
         >
           <Plus className="w-3.5 h-3.5 ap-text-brand" />
           <span>Log Run</span>
         </button>
         {savedToast && (
-          <span className="inline-flex items-center gap-1 text-2xs font-mono font-semibold text-emerald-700 dark:text-emerald-300">
+          <span className="inline-flex items-center gap-1 text-2xs font-mono font-semibold ap-ink-emerald">
             <CheckCircle2 className="w-3.5 h-3.5" />
             <span>{savedToast}</span>
           </span>
@@ -134,7 +134,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
     <form
       onSubmit={handleSubmit}
       data-testid="quick-log-run-form"
-      className="rounded-xl border border-emerald-900/15 dark:border-ap-edge-dark bg-[#F4F7F2] dark:bg-[#0D1711] p-3.5 space-y-3 text-xs"
+      className="rounded-xl border border-stone-300/80 dark:border-ap-edge-dark bg-ap-inset dark:bg-ap-turf p-3.5 space-y-3 text-xs"
     >
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 font-bold text-slate-900 dark:text-white">
@@ -202,7 +202,7 @@ export const QuickRunLoggerCard: React.FC<QuickRunLoggerCardProps> = ({
             max={10}
             value={rpe}
             onChange={(e) => setRpe(Number(e.target.value))}
-            className="min-h-[40px] accent-[#1C5436] dark:accent-[#C8FF00]"
+            className="min-h-[40px] accent-[#B83A24] dark:accent-[#D8FF2A]"
           />
         </label>
       </div>

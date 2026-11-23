@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useModalDialog } from '../hooks/useModalDialog';
 import {
   Activity,
+  ArrowsLeftRight,
   Bike,
   Calendar as CalendarIcon,
   ChevronDown,
@@ -10,6 +11,7 @@ import {
   ChevronRight,
   ChevronUp,
   Clock,
+  Copy,
   Download,
   Dumbbell,
   FileText,
@@ -79,6 +81,14 @@ import {
 } from './calendar/calendarEffortUtils';
 import { CalendarMobileAgenda } from './calendar/CalendarMobileAgenda';
 import { CalendarPlannedTooltip } from './calendar/CalendarPlannedTooltip';
+import { CalendarCopyWeekPopover } from './calendar/CalendarCopyWeekPopover';
+import {
+  buildCopiedWeekBatchItems,
+  buildReschedulePlannedEventPatch,
+  getCalendarDragPayload,
+  setCalendarDragPayload,
+} from './calendar/calendarDragAndWeekCopyUtils';
+import type { PlannedEventBatchItem } from './GoalsView';
 
 export { INTERVALS_EFFORT_ZONES };
 export type { DayPlannedEffortStripe, EffortSlice, ActivityEffortPresentation };
@@ -134,17 +144,7 @@ interface CalendarViewProps {
   onDeletePlannedEvent: (id: string) => Promise<void>;
   onDeletePlanBlock?: (planBlockId: string) => Promise<void>;
   onBatchCreatePlannedEvents?: (
-    events: {
-      date: string;
-      name: string;
-      sportCategory: SportCategory;
-      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
-      plannedDurationSecs: number;
-      plannedLoad: number;
-      workoutSyntax: string;
-      description: string;
-      trackSpec?: TrackWorkoutSpec;
-    }[],
+    events: PlannedEventBatchItem[],
     clearFutureEvents?: boolean
   ) => Promise<void>;
   onOpenTodayWorkout?: () => void;
@@ -234,6 +234,11 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const actionsRef = useRef<HTMLDivElement>(null);
   const [pendingDeletePlannedId, setPendingDeletePlannedId] = useState<string | null>(null);
+  const [draggingEventId, setDraggingEventId] = useState<string | null>(null);
+  const [dragOverDateStr, setDragOverDateStr] = useState<string | null>(null);
+  const [copyWeekIndex, setCopyWeekIndex] = useState<number | null>(null);
+  const [movingEventId, setMovingEventId] = useState<string | null>(null);
+  const [moveTargetDate, setMoveTargetDate] = useState<string>('');
   const builderDialogRef = useRef<HTMLDivElement>(null);
 
   const activePlanBlock = useMemo(() => {
@@ -1134,7 +1139,9 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
           setPendingDeletePlannedId={setPendingDeletePlannedId}
           onSelectActivity={onSelectActivity}
           onOpenTodayWorkout={onOpenTodayWorkout}
+          onUpdatePlannedEvent={onUpdatePlannedEvent}
           onDeletePlannedEvent={onDeletePlannedEvent}
+          onBatchCreatePlannedEvents={onBatchCreatePlannedEvents}
           onOpenCoachWithPrompt={onOpenCoachWithPrompt}
           onOpenTracksideStopwatch={onOpenTracksideStopwatch}
           onOpenBuilderForDate={handleOpenBuilderForDate}
@@ -1151,9 +1158,9 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
       <section
         className={`${
           mobileLayout === 'agenda' ? 'hidden xl:block' : 'block'
-        } rounded-2xl liquid-glass overflow-hidden border border-slate-200/90 dark:border-slate-800/90`}
+        } rounded-2xl liquid-glass overflow-visible border border-slate-200/90 dark:border-slate-800/90`}
       >
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto xl:overflow-visible">
           <div className="min-w-[940px]">
             {/* Sticky 8-Column Day Header Row */}
             <div className="grid grid-cols-8 border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-900/90 text-2xs font-bold tracking-wider uppercase text-slate-500 dark:text-slate-400">
@@ -1193,26 +1200,73 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                     className="grid grid-cols-8 min-h-[210px] bg-white/60 dark:bg-ap-turf/40"
                   >
                     {/* COLUMN 1 (LEFT): STREAMLINED WEEKLY SUMMARY COLUMN */}
-                    <div className="p-3 border-r border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/50 flex flex-col justify-between space-y-2.5 text-2xs">
+                    <div className="relative p-3 border-r border-slate-200 dark:border-slate-800 bg-slate-50/75 dark:bg-slate-900/50 flex flex-col justify-between space-y-2.5 text-2xs">
                       <div className="space-y-2">
                         {/* Week Number Title */}
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-1">
                           <span className="text-xs font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
                             W{week.isoWeekNum}
                           </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onOpenCoachWithPrompt(
-                                `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Fatigue ${eow ? Math.round(eow.atl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
-                              )
-                            }
-                            className="text-2xs font-semibold ap-text-brand hover:underline cursor-pointer"
-                            title="Ask AI Coach about this week"
-                          >
-                            Coach
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {onBatchCreatePlannedEvents && (
+                              <button
+                                type="button"
+                                data-testid={`calendar-copy-week-btn-w${week.isoWeekNum}`}
+                                onClick={() =>
+                                  setCopyWeekIndex((prev) =>
+                                    prev === week.weekIndex ? null : week.weekIndex
+                                  )
+                                }
+                                className="text-2xs font-semibold text-slate-700 dark:text-slate-200 hover:text-ap-clay dark:hover:text-ap-volt inline-flex items-center gap-0.5 cursor-pointer"
+                                title={`Copy Week ${week.isoWeekNum} planned workouts`}
+                              >
+                                <Copy className="w-3 h-3" />
+                                <span>Copy Week</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onOpenCoachWithPrompt(
+                                  `Analyze Week ${week.isoWeekNum} (${week.days[0].dateStr} to ${week.days[6].dateStr}): Total time ${formatCompactDuration(week.totalDurationSecs)}, Load ${week.totalLoad}, Fitness ${eow ? Math.round(eow.ctl) : '-'}, Fatigue ${eow ? Math.round(eow.atl) : '-'}, Form ${tsbVal ?? '-'}, Zone focus ${week.weekZoneLabel}.`
+                                )
+                              }
+                              className="text-2xs font-semibold ap-text-brand hover:underline cursor-pointer"
+                              title="Ask AI Coach about this week"
+                            >
+                              Coach
+                            </button>
+                          </div>
                         </div>
+
+                        {copyWeekIndex === week.weekIndex && onBatchCreatePlannedEvents && (
+                          <div
+                            className={`absolute left-2 z-40 w-[248px] ${
+                              week.weekIndex === calendarWeeks.length - 1
+                                ? 'bottom-2'
+                                : 'top-9'
+                            }`}
+                          >
+                            <CalendarCopyWeekPopover
+                              isoWeekNum={week.isoWeekNum}
+                              sourceMondayIso={week.days[0].dateStr}
+                              plannedCount={week.days.reduce(
+                                (sum, d) => sum + d.dayPlanned.length,
+                                0
+                              )}
+                              onConfirmCopy={async (targetMondayIso) => {
+                                const batch = buildCopiedWeekBatchItems(
+                                  week.days,
+                                  targetMondayIso
+                                );
+                                if (batch.length > 0) {
+                                  await onBatchCreatePlannedEvents(batch);
+                                }
+                              }}
+                              onClose={() => setCopyWeekIndex(null)}
+                            />
+                          </div>
+                        )}
 
                         {/* 4 Core Weekly Metrics: Time, Load, CTL, Form */}
                         <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-2xs leading-tight">
@@ -1343,12 +1397,47 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                       return (
                         <div
                           key={cell.dateStr}
+                          data-testid={`calendar-day-cell-${cell.dateStr}`}
+                          onDragOver={(e) => {
+                            if (!onUpdatePlannedEvent) return;
+                            if (draggingEventId || (e.dataTransfer && e.dataTransfer.types.length > 0)) {
+                              e.preventDefault();
+                              if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+                              if (dragOverDateStr !== cell.dateStr) {
+                                setDragOverDateStr(cell.dateStr);
+                              }
+                            }
+                          }}
+                          onDragLeave={(e) => {
+                            if (
+                              dragOverDateStr === cell.dateStr &&
+                              !e.currentTarget.contains(e.relatedTarget as Node | null)
+                            ) {
+                              setDragOverDateStr(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            const draggedId =
+                              draggingEventId || getCalendarDragPayload(e.dataTransfer);
+                            setDraggingEventId(null);
+                            setDragOverDateStr(null);
+                            if (!draggedId || !onUpdatePlannedEvent) return;
+                            const draggedEv = plannedEvents.find((p) => p.id === draggedId);
+                            if (!draggedEv || draggedEv.date.slice(0, 10) === cell.dateStr) return;
+                            void onUpdatePlannedEvent(
+                              draggedEv.id,
+                              buildReschedulePlannedEventPatch(draggedEv, cell.dateStr)
+                            );
+                          }}
                           className={`p-2 min-w-0 overflow-hidden border-r last:border-r-0 border-slate-200 dark:border-slate-800 flex flex-col justify-between transition-colors group ${
-                            !cell.isCurrentMonth
-                              ? 'bg-slate-200/55 dark:bg-ap-turf/80'
-                              : isToday
-                                ? 'bg-blue-50/40 dark:bg-blue-950/20'
-                                : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/30'
+                            dragOverDateStr === cell.dateStr
+                              ? 'ring-2 ring-inset ring-ap-clay dark:ring-ap-volt bg-ap-clay/10 dark:bg-ap-volt/10'
+                              : !cell.isCurrentMonth
+                                ? 'bg-slate-200/55 dark:bg-ap-turf/80'
+                                : isToday
+                                  ? 'bg-blue-50/40 dark:bg-blue-950/20'
+                                  : 'hover:bg-slate-50/60 dark:hover:bg-slate-900/30'
                           }`}
                         >
                           <div className="space-y-2">
@@ -1739,7 +1828,19 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                 return (
                                   <div
                                     key={ev.id}
-                                    className="rounded-lg border border-dashed border-blue-500/60 bg-blue-500/5 dark:bg-blue-500/10 overflow-hidden flex flex-col"
+                                    data-testid={`calendar-planned-card-${ev.id}`}
+                                    draggable={Boolean(onUpdatePlannedEvent)}
+                                    onDragStart={(e) => {
+                                      setDraggingEventId(ev.id);
+                                      setCalendarDragPayload(e.dataTransfer, ev.id);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggingEventId(null);
+                                      setDragOverDateStr(null);
+                                    }}
+                                    className={`rounded-lg border border-dashed border-blue-500/60 bg-blue-500/5 dark:bg-blue-500/10 overflow-hidden flex flex-col ${
+                                      onUpdatePlannedEvent ? 'cursor-grab active:cursor-grabbing' : ''
+                                    } ${draggingEventId === ev.id ? 'opacity-50' : ''}`}
                                   >
                                     {/* Top Intervals.icu Effort Stripe along Planned Card Header */}
                                     <div className="h-[4px] w-full flex">
@@ -1840,84 +1941,137 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
 
                                       {(ev.sportCategory === 'Running' &&
                                         Boolean(inferTrackWorkoutSpecFromPlannedEvent(ev))) ||
-                                      Boolean(ev.workoutSyntax) ? (
-                                        <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-slate-200/70 dark:border-slate-800/70">
-                                          {ev.sportCategory === 'Running' &&
-                                            inferTrackWorkoutSpecFromPlannedEvent(ev) && (
+                                      Boolean(ev.workoutSyntax) ||
+                                      Boolean(onUpdatePlannedEvent) ? (
+                                        <div className="space-y-1.5 pt-1 border-t border-slate-200/70 dark:border-slate-800/70">
+                                          <div className="flex flex-wrap items-center gap-1">
+                                            {ev.sportCategory === 'Running' &&
+                                              inferTrackWorkoutSpecFromPlannedEvent(ev) && (
+                                                <button
+                                                  type="button"
+                                                  data-testid="calendar-launch-stopwatch"
+                                                  onClick={() => handleLaunchPlannedInStopwatch(ev)}
+                                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
+                                                  title="Stage this track session in Trackside Stopwatch"
+                                                >
+                                                  <Timer className="w-3 h-3" weight="bold" />
+                                                  <span>Time on Track</span>
+                                                </button>
+                                              )}
+                                            <button
+                                              type="button"
+                                              data-testid="calendar-edit-planned-workout"
+                                              onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer"
+                                              title="Edit workout in place"
+                                            >
+                                              <span>Edit</span>
+                                            </button>
+                                            {onUpdatePlannedEvent && (
                                               <button
                                                 type="button"
-                                                data-testid="calendar-launch-stopwatch"
-                                                onClick={() => handleLaunchPlannedInStopwatch(ev)}
-                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ap-cobalt hover:bg-ap-clay-dark dark:bg-ap-volt dark:hover:bg-[#C8EF1E] text-white dark:text-ap-obsidian text-2xs font-mono font-bold transition-colors cursor-pointer"
-                                                title="Stage this track session in Trackside Stopwatch"
+                                                data-testid={`calendar-move-planned-btn-${ev.id}`}
+                                                aria-label={`Move ${ev.name} to another date`}
+                                                onClick={() => {
+                                                  setMovingEventId((prev) =>
+                                                    prev === ev.id ? null : ev.id
+                                                  );
+                                                  setMoveTargetDate(ev.date.slice(0, 10));
+                                                }}
+                                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer"
+                                                title="Move workout to another date"
                                               >
-                                                <Timer className="w-3 h-3" weight="bold" />
-                                                <span>Time on Track</span>
+                                                <ArrowsLeftRight className="w-3 h-3" />
+                                                <span>Move</span>
                                               </button>
                                             )}
-                                          <button
-                                            type="button"
-                                            data-testid="calendar-edit-planned-workout"
-                                            onClick={() => handleOpenBuilderForDate(ev.date.slice(0, 10), ev)}
-                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer"
-                                            title="Edit workout in place"
-                                          >
-                                            <span>Edit</span>
-                                          </button>
-                                          <details className="relative inline-block">
-                                            <summary className="list-none inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer select-none">
-                                              <Download className="w-3 h-3" weight="bold" />
-                                              <span>Export ▾</span>
-                                            </summary>
-                                            <div className="absolute right-0 bottom-full mb-1 z-30 w-32 rounded-xl liquid-glass p-1 space-y-0.5 shadow-xl border border-emerald-900/15 dark:border-white/15">
-                                              {ev.workoutSyntax && (
-                                                <button
-                                                  type="button"
-                                                  data-testid="calendar-export-fit"
-                                                  onClick={() => handleExportPlannedFit(ev)}
-                                                  className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                                                  title="Download Garmin .FIT workout file"
-                                                >
+                                            {ev.workoutSyntax && (
+                                              <details className="relative inline-block">
+                                                <summary className="list-none inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon text-slate-700 dark:text-slate-200 text-2xs font-mono font-semibold hover:border-ap-cobalt transition-colors cursor-pointer select-none">
                                                   <Download className="w-3 h-3" weight="bold" />
-                                                  <span>.FIT</span>
-                                                </button>
-                                              )}
-                                              {ev.workoutSyntax && (
-                                                <button
-                                                  type="button"
-                                                  data-testid="calendar-export-zwo"
-                                                  onClick={() => handleExportPlannedZwo(ev)}
-                                                  className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                                                  title="Download Zwift .ZWO workout file"
-                                                >
-                                                  <Download className="w-3 h-3" weight="bold" />
-                                                  <span>.ZWO</span>
-                                                </button>
-                                              )}
-                                              {ev.workoutSyntax && ev.sportCategory === 'Cycling' && (
-                                                <button
-                                                  type="button"
-                                                  data-testid="calendar-export-erg"
-                                                  onClick={() => handleExportPlannedErg(ev)}
-                                                  className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                                                  title="Download TrainerRoad .ERG workout file"
-                                                >
-                                                  <Download className="w-3 h-3" weight="bold" />
-                                                  <span>.ERG</span>
-                                                </button>
-                                              )}
+                                                  <span>Export ▾</span>
+                                                </summary>
+                                                <div className="absolute right-0 bottom-full mb-1 z-30 w-32 rounded-xl liquid-glass p-1 space-y-0.5 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                                  <button
+                                                    type="button"
+                                                    data-testid="calendar-export-fit"
+                                                    onClick={() => handleExportPlannedFit(ev)}
+                                                    className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                    title="Download Garmin .FIT workout file"
+                                                  >
+                                                    <Download className="w-3 h-3" weight="bold" />
+                                                    <span>.FIT</span>
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    data-testid="calendar-export-zwo"
+                                                    onClick={() => handleExportPlannedZwo(ev)}
+                                                    className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                    title="Download Zwift .ZWO workout file"
+                                                  >
+                                                    <Download className="w-3 h-3" weight="bold" />
+                                                    <span>.ZWO</span>
+                                                  </button>
+                                                  {ev.sportCategory === 'Cycling' && (
+                                                    <button
+                                                      type="button"
+                                                      data-testid="calendar-export-erg"
+                                                      onClick={() => handleExportPlannedErg(ev)}
+                                                      className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                      title="Download TrainerRoad .ERG workout file"
+                                                    >
+                                                      <Download className="w-3 h-3" weight="bold" />
+                                                      <span>.ERG</span>
+                                                    </button>
+                                                  )}
+                                                  <button
+                                                    type="button"
+                                                    data-testid="calendar-share-workout"
+                                                    onClick={() => handleSharePlannedWorkout(ev)}
+                                                    className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
+                                                    title="Share interactive preview or PNG card"
+                                                  >
+                                                    <ShareNetwork className="w-3 h-3" weight="bold" />
+                                                    <span>Share</span>
+                                                  </button>
+                                                </div>
+                                              </details>
+                                            )}
+                                          </div>
+                                          {movingEventId === ev.id && onUpdatePlannedEvent && (
+                                            <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                              <input
+                                                type="date"
+                                                aria-label={`New date for ${ev.name}`}
+                                                data-testid={`calendar-move-date-input-${ev.id}`}
+                                                value={moveTargetDate}
+                                                onChange={(e) => setMoveTargetDate(e.target.value)}
+                                                className="min-w-0 flex-1 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-ap-carbon px-1.5 py-0.5 text-2xs font-mono text-ap-ink dark:text-ap-chalk"
+                                              />
                                               <button
                                                 type="button"
-                                                data-testid="calendar-share-workout"
-                                                onClick={() => handleSharePlannedWorkout(ev)}
-                                                className="w-full min-h-[34px] flex items-center gap-1.5 px-2 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
-                                                title="Share interactive preview or PNG card"
+                                                data-testid={`calendar-move-confirm-${ev.id}`}
+                                                onClick={() => {
+                                                  if (
+                                                    moveTargetDate &&
+                                                    moveTargetDate !== ev.date.slice(0, 10)
+                                                  ) {
+                                                    void onUpdatePlannedEvent(
+                                                      ev.id,
+                                                      buildReschedulePlannedEventPatch(
+                                                        ev,
+                                                        moveTargetDate
+                                                      )
+                                                    );
+                                                  }
+                                                  setMovingEventId(null);
+                                                }}
+                                                className="px-2 py-0.5 rounded bg-ap-clay text-white dark:bg-ap-volt dark:text-ap-obsidian text-2xs font-bold cursor-pointer"
                                               >
-                                                <ShareNetwork className="w-3 h-3" weight="bold" />
-                                                <span>Share</span>
+                                                Apply
                                               </button>
                                             </div>
-                                          </details>
+                                          )}
                                         </div>
                                       ) : null}
                                     </div>

@@ -97,7 +97,7 @@ interface AthleteRosterModalProps {
   onOpenCoachWorkspace?: () => void;
 }
 
-const AVATAR_PALETTE = ['#1C5436', '#0D9488', '#0284C7', '#D97706', '#E11D48'];
+const AVATAR_PALETTE = ['#B83A24', '#0D9488', '#0284C7', '#D97706', '#E11D48'];
 
 export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
   isOpen,
@@ -363,7 +363,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         }
         onClose();
       }}
-      className="fixed inset-0 z-[60] bg-[#070F0B]/82 flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
+      className="fixed inset-0 z-[60] bg-ap-obsidian/82 flex items-center justify-center p-2 sm:p-4 overflow-y-auto"
     >
       <div
         ref={dialogRef}
@@ -392,7 +392,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden md:flex items-center gap-2 liquid-glass-subtle border border-[#C5D4C9] dark:border-[#244230] rounded-lg px-3 py-1.5">
+            <div className="hidden md:flex items-center gap-2 liquid-glass-subtle border border-stone-300/80 dark:border-ap-edge-dark rounded-lg px-3 py-1.5">
               <span className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark">
                 Invite Code:
               </span>
@@ -404,7 +404,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 aria-label="Copy your MeetReady Invite Code"
               >
                 {copiedCode ? (
-                  <Check className="w-3.5 h-3.5 text-[#10B981]" />
+                  <Check className="w-3.5 h-3.5 ap-ink-emerald" />
                 ) : (
                   <Copy className="w-3.5 h-3.5" />
                 )}
@@ -415,7 +415,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Close Connections & Privacy"
-              className="min-h-[44px] px-3 py-2 rounded-xl liquid-glass-subtle hover:bg-[#DDE7DF] dark:hover:bg-[#1B2E23] border border-[#C5D4C9] dark:border-[#244230] text-slate-700 dark:text-slate-200 flex items-center gap-1.5 text-xs font-mono cursor-pointer"
+              className="min-h-[44px] px-3 py-2 rounded-xl liquid-glass-subtle hover:bg-ap-inset dark:hover:bg-ap-edge border border-stone-300/80 dark:border-ap-edge-dark text-slate-700 dark:text-slate-200 flex items-center gap-1.5 text-xs font-mono cursor-pointer"
             >
               <span>Close</span>
               <X className="w-4 h-4" />
@@ -443,7 +443,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
         )}
 
         {/* 2 Focused Tabs */}
-        <div className="px-3 sm:px-6 border-b border-[#C5D4C9] dark:border-[#244230] bg-[#E9EFE9] dark:bg-ap-carbon">
+        <div className="px-3 sm:px-6 border-b border-stone-300/70 dark:border-ap-edge-dark bg-ap-inset dark:bg-ap-carbon">
           <div
             role="tablist"
             aria-label="Connections and privacy sections"
@@ -474,7 +474,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               <UserPlus className="w-3.5 h-3.5 ap-text-brand shrink-0" />
               <span>Connections ({connectedRoster.length})</span>
               {pendingRequests.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full bg-[#F59E0B] text-ap-obsidian font-bold text-2xs">
+                <span className="px-1.5 py-0.5 rounded-full bg-amber-500 text-ap-obsidian font-bold text-2xs">
                   {pendingRequests.length}
                 </span>
               )}
@@ -492,7 +492,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   : 'border-transparent text-ap-muted dark:text-ap-muted-dark hover:text-ap-ink dark:hover:text-white'
               }`}
             >
-              <Shield className="w-3.5 h-3.5 text-emerald-700 dark:text-[#10B981] shrink-0" />
+              <Shield className="w-3.5 h-3.5 ap-ink-emerald shrink-0" />
               <span>Privacy Shield</span>
             </button>
           </div>
@@ -607,7 +607,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                   >
                     {copiedCode ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-[#10B981]" />
+                        <Check className="w-3.5 h-3.5 ap-ink-emerald" />
                         <span>Copied</span>
                       </>
                     ) : (
@@ -767,7 +767,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                     Control what Teammates (View Only) and Coached Athletes can inspect on your profile.
                   </p>
                 </div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded bg-[#059669]/10 border border-[#059669]/30 text-xs font-mono text-emerald-700 dark:text-[#10B981]">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded ap-status-prime text-xs font-mono">
                   <span>Shield Active</span>
                 </div>
               </div>
@@ -778,7 +778,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                     htmlFor={`${formIdPrefix}-priv-hrv`}
                     className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5"
                   >
-                    <HeartPulse className="w-4 h-4 text-[#10B981]" />
+                    <HeartPulse className="w-4 h-4 ap-ink-emerald" />
                     <span>Morning HRV, RHR &amp; Sleep</span>
                   </label>
                   <select
@@ -850,7 +850,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                <label className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-emerald-400/20 rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
+                <label className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-ap-edge rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
                   <span>
                     <span className="block text-xs font-semibold text-slate-900 dark:text-white">
                       Allow Coached Athlete (Edit Calendar) Push
@@ -868,11 +868,11 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         allowCoachCalendarEdits: e.target.checked,
                       })
                     }
-                    className="mt-1 accent-[#1C5436] dark:accent-[#C8FF00] w-4 h-4"
+                    className="mt-1 accent-[#B83A24] dark:accent-[#D8FF2A] w-4 h-4"
                   />
                 </label>
 
-                <label className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-emerald-400/20 rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
+                <label className="bg-white/80 dark:bg-ap-carbon border border-stone-200/90 dark:border-ap-edge rounded-lg p-3.5 flex items-start justify-between gap-3 cursor-pointer">
                   <span>
                     <span className="block text-xs font-semibold text-slate-900 dark:text-white">
                       Strava Compliance Isolation
@@ -890,7 +890,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         stravaComplianceShield: e.target.checked,
                       })
                     }
-                    className="mt-1 accent-[#10B981] w-4 h-4"
+                    className="mt-1 accent-[#B83A24] dark:accent-[#D8FF2A] w-4 h-4"
                   />
                 </label>
               </div>
@@ -901,7 +901,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                 </div>
               )}
               {privacyActionMsg && (
-                <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+                <div className="rounded-lg ap-status-prime px-3 py-2 text-xs">
                   {privacyActionMsg}
                 </div>
               )}
@@ -1078,7 +1078,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         }
                       }}
                       placeholder="personal.email@example.com"
-                      className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                      className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
@@ -1109,12 +1109,12 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                         value={emailVerifyCodeInput}
                         onChange={(e) => setEmailVerifyCodeInput(e.target.value)}
                         placeholder="6-digit verification code"
-                        className="w-full sm:w-48 min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
+                        className="w-full sm:w-48 min-h-[44px] sm:min-h-[36px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 font-mono text-xs text-slate-900 dark:text-slate-100"
                       />
                       {emailVerifyDevCode && (
                         <span
                           data-testid="account-change-email-dev-code"
-                          className="text-2xs font-mono text-emerald-700 dark:text-emerald-300"
+                          className="text-2xs font-mono ap-ink-emerald"
                         >
                           Dev code: <strong>{emailVerifyDevCode}</strong>
                         </span>
@@ -1147,7 +1147,7 @@ export const AthleteRosterModal: React.FC<AthleteRosterModalProps> = ({
                           value={deleteConfirmText}
                           onChange={(e) => setDeleteConfirmText(e.target.value)}
                           placeholder="Type DELETE to confirm"
-                          className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-rose-400/60 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                          className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-rose-400/60 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                         />
                         <button
                           type="button"

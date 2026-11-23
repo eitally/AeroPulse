@@ -58,6 +58,7 @@ import {
   mergeActivitiesNonDestructive,
   reRankActivitiesSegments,
   recomputeWellnessDaysWithActivityImport,
+  replaceGearItemsInStore,
   savePersistedTelemetrySnapshot,
   getSavedIntervalsHeaders,
 } from './utils/telemetryStorage';
@@ -476,6 +477,9 @@ export default function App() {
   const [sampleDemoTargetGoals, setSampleDemoTargetGoals] = useState<TargetGoal[]>(
     () => sampleDemoDataset.targetGoals
   );
+  const [sampleDemoGearItems, setSampleDemoGearItems] = useState<AthleteGearItem[]>(
+    () => sampleDemoDataset.gearItems
+  );
   const [sampleDemoPrivacySettings, setSampleDemoPrivacySettings] =
     useState<AthletePrivacySettings>(() => DEFAULT_SELF_PRIVACY_SETTINGS);
   const [sampleDemoConnectedAthletes, setSampleDemoConnectedAthletes] = useState<
@@ -498,6 +502,7 @@ export default function App() {
       setSampleDemoWellnessDays(fresh.wellnessDays);
       setSampleDemoAnnualGoals(INITIAL_ANNUAL_MILEAGE_GOALS);
       setSampleDemoTargetGoals(fresh.targetGoals);
+      setSampleDemoGearItems(fresh.gearItems);
       setSampleDemoPrivacySettings(DEFAULT_SELF_PRIVACY_SETTINGS);
       setSampleDemoConnectedAthletes(buildInitialConnectedAthletes());
       setSampleDemoTeams(fresh.demoTeams || []);
@@ -941,6 +946,7 @@ export default function App() {
     handleTeamsUpdated: effectiveOnTeamsUpdated,
     isSampleDemoMode,
     triggerReadOnlyAlert,
+    plannedEventsRef,
     setPlannedEvents,
     setSampleDemoPlannedEvents,
     setConnectedAthletes,
@@ -1212,8 +1218,8 @@ export default function App() {
     ? sampleDemoAnnualGoals
     : annualMileageGoals;
   const effectiveGearItems = useMemo(
-    () => (isSampleDemoMode ? [] : gearItems),
-    [isSampleDemoMode, gearItems]
+    () => (isSampleDemoMode ? sampleDemoGearItems : gearItems),
+    [isSampleDemoMode, sampleDemoGearItems, gearItems]
   );
   const effectiveSelfPrivacySettings = isSampleDemoMode
     ? sampleDemoPrivacySettings
@@ -1234,6 +1240,7 @@ export default function App() {
     stravaAthleteId: connectionStatus.stravaAthleteId, plannedEvents, setPlannedEvents,
     targetGoals, setTargetGoals, annualMileageGoals, setAnnualMileageGoals,
     athleteProfile, setAthleteProfile, distanceUnit, setDistanceUnit,
+    gearItems, setGearItems,
     activities, setActivities, wellnessDays, selfLatestWellness, selfPrivacySettings,
     garminConnected: Boolean(connectionStatus.garminConnected),
     intervalsConnected: Boolean(connectionStatus.intervalsConnected),
@@ -1472,6 +1479,19 @@ export default function App() {
       setTargetGoals((prev) => prev.filter((g) => g.id !== id));
     },
     [activeConnectedAthlete, isSampleDemoMode, triggerReadOnlyAlert]
+  );
+
+  const handleSaveGearItems = useCallback(
+    async (nextItems: AthleteGearItem[]) => {
+      if (isSampleDemoMode) {
+        setSampleDemoGearItems(nextItems);
+        return;
+      }
+      gearItemsRef.current = nextItems;
+      setGearItems(nextItems);
+      await replaceGearItemsInStore(nextItems);
+    },
+    [isSampleDemoMode]
   );
 
   const closeAllGlobalModals = useCallback(() => {
@@ -1974,6 +1994,7 @@ export default function App() {
       handleUpdateAnnualMileageGoal,
       handleAddTargetGoal,
       handleDeleteTargetGoal,
+      handleSaveGearItems,
       handleSaveProfileOverride,
       handleOpenTodayTab,
       handleOpenActivitiesTab,
@@ -2027,6 +2048,7 @@ export default function App() {
       handleUpdateAnnualMileageGoal,
       handleAddTargetGoal,
       handleDeleteTargetGoal,
+      handleSaveGearItems,
       handleSaveProfileOverride,
       handleOpenTodayTab,
       handleOpenActivitiesTab,

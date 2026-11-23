@@ -198,7 +198,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       value={athleteName}
                       onChange={(e) => setAthleteName(e.target.value)}
                       placeholder="Coach Name (e.g. Coach Vega)"
-                      className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs text-slate-900 dark:text-slate-100"
+                      className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-2 text-xs text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="button"
@@ -329,8 +329,8 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                             opt.disabled
                               ? 'opacity-45 cursor-not-allowed border-slate-300/50 dark:border-white/10'
                               : selected
-                                ? 'border-[#1E6B38] dark:border-ap-volt bg-emerald-500/10 dark:bg-ap-volt/10 cursor-pointer'
-                                : 'liquid-glass hover:border-[#28573B] dark:hover:border-[#2E6B47] cursor-pointer'
+                                ? 'border-ap-clay dark:border-ap-volt bg-ap-clay/8 dark:bg-ap-volt/10 cursor-pointer'
+                                : 'liquid-glass hover:border-ap-clay/60 dark:hover:border-ap-volt/60 cursor-pointer'
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2">
@@ -376,7 +376,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                     Athlete Profile &amp; Eligibility
                   </h2>
                   {isMinorAthlete && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-2xs font-mono font-semibold ap-status-prime">
                       <ShieldCheck className="w-3.5 h-3.5" />
                       <span>Safe-Sport Minor Protection</span>
                     </span>
@@ -397,7 +397,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       value={athleteName}
                       onChange={(e) => setAthleteName(e.target.value)}
                       placeholder="e.g. Maya Lin"
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                     />
                   </div>
 
@@ -413,7 +413,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                         aria-label="Birth month (optional)"
                         value={birthMonth}
                         onChange={(e) => setBirthMonth(e.target.value)}
-                        className="w-28 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                        className="w-28 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                       >
                         <option value="">Month</option>
                         <option value="01">Jan</option>
@@ -437,7 +437,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                         value={birthYear}
                         onChange={(e) => setBirthYear(e.target.value)}
                         placeholder={`e.g. ${currentYear - 17}`}
-                        className="flex-1 min-w-0 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                        className="flex-1 min-w-0 min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                       />
                     </div>
                   </div>
@@ -496,7 +496,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                             setInviteToken('');
                           }}
                           placeholder="Enter 6-char Team Code (e.g. PAXC-26)"
-                          className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100"
+                          className="flex-1 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-2 text-xs font-mono font-bold uppercase tracking-wider text-slate-900 dark:text-slate-100"
                         />
                         <button
                           type="button"
@@ -530,7 +530,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       value={parentGuardianEmail}
                       onChange={(e) => setParentGuardianEmail(e.target.value)}
                       placeholder="parent.guardian@example.com"
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 disabled:opacity-50"
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 disabled:opacity-50"
                     />
                     <label className="flex items-start gap-2.5 text-xs text-slate-700 dark:text-slate-200 cursor-pointer select-none min-h-[44px] sm:min-h-[28px] py-1">
                       <input
@@ -538,7 +538,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                         data-testid="step2-defer-parent-email-checkbox"
                         checked={deferParentEmail}
                         onChange={(e) => onToggleDeferParentEmail(e.target.checked)}
-                        className="mt-0.5 w-4 h-4 rounded accent-emerald-600 shrink-0"
+                        className="mt-0.5 w-4 h-4 rounded accent-[#B83A24] dark:accent-[#D8FF2A] shrink-0"
                       />
                       <span>
                         I&apos;ll add my parent&apos;s email later (coach can share the link)
@@ -681,7 +681,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       value={rawSeedValue}
                       onChange={(e) => setRawSeedValue(e.target.value)}
                       placeholder={selectedSeedPill.placeholder}
-                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-2 text-xs sm:text-sm font-mono text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] sm:min-h-[42px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-2 text-xs sm:text-sm font-mono text-slate-900 dark:text-slate-100"
                     />
 
                     {composedSeedMark.trim() && (
@@ -716,7 +716,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
 
               {/* 3. Team Roster Consent & Coach Sharing Tier (Only when joining a team) */}
               {activeBrand && (
-                <div className="liquid-glass rounded-2xl p-4 space-y-3 border-2 border-[#25573A]">
+                <div className="liquid-glass rounded-2xl p-4 space-y-3 border-2 border-ap-clay dark:border-ap-volt">
                   <div className="flex items-center justify-between gap-2">
                     <div>
                       <h2 className="text-sm font-bold text-slate-900 dark:text-white">
@@ -739,7 +739,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       id={`${formId}-sharing-tier`}
                       value={sharingTier}
                       onChange={(e) => setSharingTier(e.target.value as CoachDataSharingTier)}
-                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
+                      className="w-full min-h-[44px] sm:min-h-[40px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-semibold text-slate-900 dark:text-slate-100"
                     >
                       <option value="SUMMARY_ONLY">
                         Workout Summaries &amp; Readiness (Recommended)
@@ -763,14 +763,14 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                       checked={isMinorAthlete ? true : safeSportHideWeight}
                       disabled={isMinorAthlete}
                       onChange={(e) => !isMinorAthlete && setSafeSportHideWeight(e.target.checked)}
-                      className="w-4 h-4 mt-0.5 rounded accent-emerald-600"
+                      className="w-4 h-4 mt-0.5 rounded accent-[#B83A24] dark:accent-[#D8FF2A]"
                     />
                     <div>
                       <span>
                         <strong>Safe-Sport Privacy Mode:</strong> Hide body weight &amp; W/kg on team views
                       </span>
                       {isMinorAthlete && (
-                        <span className="block text-2xs text-emerald-700 dark:text-emerald-400 font-medium mt-0.5">
+                        <span className="block text-2xs ap-ink-emerald font-medium mt-0.5">
                           Enforced &amp; locked ON for minor athletes to prevent RED-S &amp; weight-sensitive eating disorder risks.
                         </span>
                       )}
@@ -784,7 +784,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                   href="/privacy"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-emerald-400 inline-flex items-center gap-1"
+                  className="underline hover:text-ap-clay dark:hover:text-ap-volt inline-flex items-center gap-1"
                 >
                   <ShieldCheck className="w-3.5 h-3.5 inline" />
                   <span>Privacy Policy, COPPA &amp; Safe-Sport Shield</span>
@@ -793,7 +793,7 @@ export const AuthOnboardingStepTwo: React.FC<AuthOnboardingStepTwoProps> = ({
                   href="/procurement"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="underline hover:text-emerald-400"
+                  className="underline hover:text-ap-clay dark:hover:text-ap-volt"
                 >
                   District NDPA &amp; Terms
                 </a>

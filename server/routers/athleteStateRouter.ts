@@ -13,11 +13,13 @@ import type { RuntimeSessionStore } from '../sessionContext.ts';
 import type {
   AnnualMileageGoal,
   AthleteCloudStateEnvelope,
+  AthleteGearItem,
   AthleteProfile,
   DistanceUnit,
   PlannedWorkoutEvent,
   SessionCheckInRecord,
   TargetGoal,
+  TrackFootwearClass,
   UnifiedActivity,
 } from '../../src/types.ts';
 import { sanitizePracticeVenueCategory } from '../../src/utils/workoutScheduleUtils.ts';
@@ -47,6 +49,14 @@ async function ensureStoreSessionHydrated(req: Request): Promise<void> {
     store.stravaAthleteId = String(persisted.stravaAthleteId);
   }
 }
+
+const VALID_FOOTWEAR_CLASSES: ReadonlySet<TrackFootwearClass> = new Set([
+  'DAILY_TRAINER',
+  'LIGHTWEIGHT_FLAT_SUPER_TRAINER',
+  'CARBON_ROAD_RACER',
+  'TRADITIONAL_TRACK_SPIKE',
+  'CARBON_SUPER_SPIKE',
+]);
 
 const SAFE_PROFILE_KEYS: Array<keyof AthleteProfile> = [
   'name',
@@ -213,6 +223,41 @@ export function sanitizeAthleteCloudState(
       }))
     : base.coachArchivedActivities;
 
+  const gearItems: AthleteGearItem[] | undefined = Array.isArray(input.gearItems)
+    ? input.gearItems.slice(0, 40).map((item, idx) => {
+        const cleanType = item?.type === 'BIKE' ? 'BIKE' : 'SHOE';
+        const cleanFootwear =
+          item?.footwearClass && VALID_FOOTWEAR_CLASSES.has(item.footwearClass)
+            ? item.footwearClass
+            : undefined;
+        const dist = Number(item?.distanceMeters);
+        const maxDist = Number(item?.maxRecommendedMeters);
+        return {
+          id: String(item?.id || `gear-${Date.now()}-${idx}`).slice(0, 80),
+          name: String(item?.name || 'Running Shoe').trim().slice(0, 120) || 'Running Shoe',
+          type: cleanType,
+          distanceMeters: Number.isFinite(dist) && dist >= 0 ? Math.round(dist) : 0,
+          maxRecommendedMeters:
+            Number.isFinite(maxDist) && maxDist >= 1000 ? Math.round(maxDist) : 724205,
+          primary: Boolean(item?.primary),
+          ...(typeof item?.brand === 'string' && item.brand.trim()
+            ? { brand: item.brand.trim().slice(0, 60) }
+            : {}),
+          ...(cleanFootwear ? { footwearClass: cleanFootwear } : {}),
+          ...(item?.retired ? { retired: true } : {}),
+          ...(typeof item?.retiredAt === 'string' && item.retiredAt.trim()
+            ? { retiredAt: item.retiredAt.trim().slice(0, 32) }
+            : {}),
+          ...(typeof item?.purchaseDate === 'string' && item.purchaseDate.trim()
+            ? { purchaseDate: item.purchaseDate.trim().slice(0, 16) }
+            : {}),
+          ...(typeof item?.notes === 'string' && item.notes.trim()
+            ? { notes: item.notes.trim().slice(0, 300) }
+            : {}),
+        };
+      })
+    : base.gearItems;
+
   return {
     version: 1,
     updatedAt: new Date().toISOString(),
@@ -221,6 +266,7 @@ export function sanitizeAthleteCloudState(
     annualMileageGoals,
     ...(athleteProfile ? { athleteProfile } : {}),
     ...(distanceUnit ? { distanceUnit } : {}),
+    ...(gearItems !== undefined ? { gearItems } : {}),
     ...(sessionCheckIns ? { sessionCheckIns } : {}),
     ...(coachArchivedActivities?.length ? { coachArchivedActivities } : {}),
   };

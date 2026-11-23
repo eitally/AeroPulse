@@ -426,7 +426,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-[#070F0B]/82 p-3 sm:p-6 overflow-y-auto"
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-ap-obsidian/82 p-3 sm:p-6 overflow-y-auto"
     >
       <div
         ref={dialogRef}
@@ -437,7 +437,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
         className="w-full max-w-2xl ap-content-stage overflow-hidden my-auto"
       >
         {/* Clean Header */}
-        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-[#28573B]/25 dark:border-[#25573A] bg-white/95 dark:bg-[#0F1B14]">
+        <div className="flex items-center justify-between gap-3 px-5 sm:px-6 py-4 border-b border-stone-200/80 dark:border-ap-edge bg-[#FAF8F4] dark:bg-ap-carbon">
           <div>
             <h2
               id="thresh-data-sources-title"
@@ -587,8 +587,8 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                         onClick={() => handleSaveSyncPolicy(opt.id, includeGearAndProfile)}
                         className={`text-left rounded-xl p-2.5 border transition-all cursor-pointer ${
                           active
-                            ? 'border-[#28573B] dark:border-ap-volt bg-emerald-500/10 dark:bg-[#193524]'
-                            : 'border-slate-200 dark:border-white/10 hover:border-[#28573B]/60'
+                            ? 'border-ap-clay dark:border-ap-volt bg-ap-clay/8 dark:bg-ap-volt/10'
+                            : 'border-stone-200 dark:border-white/10 hover:border-ap-clay/60 dark:hover:border-ap-volt/60'
                         }`}
                       >
                         <div className="text-xs font-bold text-slate-900 dark:text-white">
@@ -609,14 +609,14 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     onChange={(e) =>
                       handleSaveSyncPolicy(selectedSyncWindow, e.target.checked)
                     }
-                    className="rounded border-slate-400 accent-[#28573B]"
+                    className="rounded border-slate-400 accent-[#B83A24] dark:accent-[#D8FF2A]"
                   />
                   <span>Sync Strava shoe/bike mileage &amp; profile FTP / weight</span>
                 </label>
               </div>
             )}
 
-            <div className="rounded-xl bg-emerald-950/5 dark:bg-[#0C1D14]/80 border border-[#28573B]/20 dark:border-[#25573A] px-3 py-2 flex items-center gap-2 text-2xs text-emerald-950/85 dark:text-emerald-100/85">
+            <div className="rounded-xl ap-card-inset px-3 py-2 flex items-center gap-2 text-2xs text-ap-ink dark:text-ap-chalk">
               <Lock className="w-3.5 h-3.5 ap-text-brand shrink-0" />
               <span>
                 <strong>Read-Only Pledge:</strong> MeetReady never posts to your Strava feed, edits activity titles, or sends kudos without you clicking it.
@@ -655,7 +655,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     >
                       {copiedLabel === 'domain' ? (
                         <>
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          <CheckCircle2 className="w-3.5 h-3.5 ap-ink-emerald" />
                           <span>Copied</span>
                         </>
                       ) : (
@@ -677,7 +677,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       value={stravaClientId}
                       onChange={(e) => setStravaClientId(e.target.value)}
                       placeholder="Client ID"
-                      className="sm:col-span-4 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-4 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <input
                       type="password"
@@ -685,7 +685,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       value={stravaClientSecret}
                       onChange={(e) => setStravaClientSecret(e.target.value)}
                       placeholder="Client Secret"
-                      className="sm:col-span-5 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-5 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
@@ -705,7 +705,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       value={stravaFallbackInput}
                       onChange={(e) => setStravaFallbackInput(e.target.value)}
                       placeholder="Or paste Strava Refresh Token / redirect URL..."
-                      className="flex-1 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="flex-1 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                     <button
                       type="submit"
@@ -801,7 +801,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     value={garminEmail}
                     onChange={(e) => setGarminEmail(e.target.value)}
                     placeholder="Garmin Connect Email"
-                    className="sm:col-span-5 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-5 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                   <input
                     type="password"
@@ -810,7 +810,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     value={garminPassword}
                     onChange={(e) => setGarminPassword(e.target.value)}
                     placeholder="Garmin Password"
-                    className="sm:col-span-4 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-4 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   />
                   {garminNeedsMfa && (
                     <input
@@ -820,7 +820,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       value={garminMfaCode}
                       onChange={(e) => setGarminMfaCode(e.target.value)}
                       placeholder="6-digit 2FA Code"
-                      className="sm:col-span-12 min-h-[44px] rounded-xl border border-amber-500 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                      className="sm:col-span-12 min-h-[44px] rounded-xl border border-amber-500 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                     />
                   )}
                   <button
@@ -848,7 +848,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     value={garminPersonalApiKey}
                     onChange={(e) => setGarminPersonalApiKey(e.target.value)}
                     placeholder="Paste Garmin Personal API Token (GCDC_...)"
-                    className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"
@@ -895,7 +895,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
 
             <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
               {status.intervalsConnected ? (
-                <div className="flex items-center justify-between p-3.5 rounded-xl bg-lime-500/10 border border-lime-500/20 text-xs">
+                <div className="flex items-center justify-between p-3.5 rounded-xl ap-card-inset text-xs">
                   <div>
                     <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                       <span>
@@ -928,7 +928,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       onClick={() => onLaunchIntervalsOAuth?.()}
                       className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                     >
-                      <Lightning className="w-4 h-4 text-lime-400" />
+                      <Lightning className="w-4 h-4 text-current" />
                       <span>1-Click Connect with Intervals.icu (OAuth 2.0)</span>
                     </button>
                   )}
@@ -961,7 +961,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                           value={athleteId}
                           onChange={(e) => setAthleteId(e.target.value)}
                           placeholder="Athlete ID (0 for self)"
-                          className="sm:col-span-3 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                          className="sm:col-span-3 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                         />
                         <input
                           type="password"
@@ -969,7 +969,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                           value={intervalsKey}
                           onChange={(e) => setIntervalsKey(e.target.value)}
                           placeholder="Paste Intervals.icu API Key"
-                          className="sm:col-span-6 min-h-[44px] rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                          className="sm:col-span-6 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                         />
                         <div className="sm:col-span-3 flex gap-2">
                           <button
@@ -995,7 +995,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
           >
             <summary className="flex items-center justify-between cursor-pointer list-none">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-500 flex items-center justify-center font-bold text-xs">
+                <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center font-bold text-xs">
                   W
                 </div>
                 <div>
@@ -1004,7 +1004,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       Wahoo Cloud API
                     </h4>
                     {status.wahooConnected ? (
-                      <span className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full ap-status-prime font-medium">
                         <CheckCircle2 className="w-3 h-3" /> Connected
                       </span>
                     ) : (
@@ -1069,7 +1069,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
           >
             <summary className="flex items-center justify-between cursor-pointer list-none">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center font-bold text-xs">
+                <div className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 flex items-center justify-center font-bold text-xs">
                   P
                 </div>
                 <div>
@@ -1078,7 +1078,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       Polar AccessLink
                     </h4>
                     {status.polarConnected ? (
-                      <span className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                      <span className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full ap-status-prime font-medium">
                         <CheckCircle2 className="w-3 h-3" /> Connected
                       </span>
                     ) : (
@@ -1208,7 +1208,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   </div>
                   <div className="h-1.5 w-full rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden">
                     <div
-                      className="h-full bg-[#84CC16] dark:bg-ap-volt transition-all duration-150"
+                      className="h-full bg-ap-clay dark:bg-ap-volt transition-all duration-150"
                       style={{
                         width: `${Math.min(
                           100,
@@ -1259,7 +1259,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     aria-label="Activity map tile provider"
                     value={mapTileProvider}
                     onChange={(e) => setMapTileProvider(e.target.value as MapTileProvider)}
-                    className="sm:col-span-4 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-4 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2.5 py-1.5 text-xs text-slate-900 dark:text-slate-100"
                   >
                     <option value="OSM_KEYLESS">OpenStreetMap (Free / No Key)</option>
                     <option value="MAPBOX">Mapbox High-DPI</option>
@@ -1275,7 +1275,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       if (val.trim().startsWith('pk.')) setMapTileProvider('MAPBOX');
                     }}
                     placeholder="Optional Mapbox (pk.ey...) or Thunderforest key"
-                    className="sm:col-span-5 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="sm:col-span-5 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"
@@ -1305,7 +1305,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     className="ap-btn-secondary !min-h-[44px] sm:!min-h-[40px] text-xs cursor-pointer"
                   >
                     {copiedLabel === 'bundle' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      <CheckCircle2 className="w-3.5 h-3.5 ap-ink-emerald" />
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
                     )}
@@ -1330,7 +1330,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     value={bundleInput}
                     onChange={(e) => setBundleInput(e.target.value)}
                     placeholder="Paste Connection Bundle here to restore optional keys..."
-                    className="flex-1 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="flex-1 min-h-[44px] sm:min-h-[40px] rounded-lg border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1 text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                   <button
                     type="submit"

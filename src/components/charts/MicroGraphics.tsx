@@ -75,10 +75,10 @@ export const LoginCapabilitySparkStrip: React.FC<{ className?: string }> = ({ cl
 
     <div className="rounded-xl ap-card-inset px-2.5 py-2 flex items-center gap-2">
       <svg viewBox="0 0 36 16" className="w-9 h-4 shrink-0" aria-hidden="true">
-        <rect x="1" y="2" width="34" height="12" rx="3" fill="#0B120E" stroke="#2B5B3F" strokeWidth="1" />
-        <line x1="7" y1="8" x2="14" y2="8" stroke="#C8FF00" strokeWidth="2" strokeLinecap="round" />
-        <circle cx="20" cy="8" r="2" fill="#C8FF00" />
-        <circle cx="28" cy="8" r="2" fill="#56BA00" />
+        <rect x="1" y="2" width="34" height="12" rx="3" fill="#121413" stroke="#2C312E" strokeWidth="1" />
+        <line x1="7" y1="8" x2="14" y2="8" stroke="#D8FF2A" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="20" cy="8" r="2" fill="#D8FF2A" />
+        <circle cx="28" cy="8" r="2" fill="#E05238" />
       </svg>
       <div className="min-w-0">
         <div className="text-2xs font-bold text-ap-ink dark:text-ap-chalk truncate">
@@ -95,18 +95,19 @@ export const LoginCapabilitySparkStrip: React.FC<{ className?: string }> = ({ cl
 export const SyncScopeTimelineBar: React.FC<{ days?: 90 | 365 }> = ({ days = 90 }) => (
   <div className="rounded-xl ap-card-inset px-3 py-2 flex items-center justify-between gap-3">
     <svg viewBox="0 0 180 14" className="flex-1 h-3.5 max-w-[200px]" aria-hidden="true">
-      <rect x="2" y="4" width="176" height="6" rx="3" fill="#E3ECE5" />
+      <rect x="2" y="4" width="176" height="6" rx="3" fill="#CFC9BC" className="fill-[#CFC9BC] dark:fill-[#2C312E]" />
       <rect
         x="2"
         y="4"
         width={days >= 365 ? '176' : '46'}
         height="6"
         rx="3"
-        fill="#1C5436"
+        fill="#B83A24"
+        className="fill-[#B83A24] dark:fill-[#D8FF2A]"
       />
-      <circle cx="48" cy="7" r="2.5" fill="#C8FF00" stroke="#101411" strokeWidth="1" />
+      <circle cx="48" cy="7" r="2.5" fill="#D8FF2A" stroke="#121413" strokeWidth="1" />
       {days >= 365 && (
-        <circle cx="176" cy="7" r="2.5" fill="#C8FF00" stroke="#101411" strokeWidth="1" />
+        <circle cx="176" cy="7" r="2.5" fill="#D8FF2A" stroke="#121413" strokeWidth="1" />
       )}
     </svg>
     <span className="font-mono text-2xs font-bold text-ap-cobalt dark:text-ap-volt whitespace-nowrap">
@@ -141,7 +142,7 @@ export const VitalsCorridorBulletRow: React.FC<{
 
   return (
     <svg viewBox="0 0 64 10" className="w-16 h-2.5 shrink-0" aria-hidden="true">
-      <rect x="1" y="3" width="62" height="4" rx="2" fill="#E3ECE5" />
+      <rect x="1" y="3" width="62" height="4" rx="2" fill="#CFC9BC" className="fill-[#CFC9BC] dark:fill-[#2C312E]" />
       <rect
         x={(bandStartPct / 100) * 62 + 1}
         y="2"
@@ -214,7 +215,8 @@ export const GhostDiffSkyline: React.FC<{
         <polyline
           points={outlinePoints}
           fill="none"
-          stroke="#101411"
+          stroke="#121413"
+          className="stroke-[#121413] dark:stroke-[#F6F3EC]"
           strokeWidth="1.5"
           strokeDasharray="3 2"
           strokeOpacity="0.7"
@@ -344,7 +346,7 @@ export const PodStaggerLaneMatrix: React.FC<{
         const y = 5 + idx * 13;
         const startX = 48 + Math.round((pod.offsetSecs / maxOffset) * 58);
         const barColor =
-          idx === 0 ? '#1C5436' : idx === 1 ? '#0D9488' : '#0284C7';
+          idx === 0 ? '#B83A24' : idx === 1 ? '#0D9488' : '#0284C7';
         return (
           <g key={pod.podLabel}>
             <text
@@ -352,12 +354,21 @@ export const PodStaggerLaneMatrix: React.FC<{
               y={y + 8}
               fontSize="8"
               fontWeight="700"
-              fill="#43584B"
+              fill="#57544D"
+              className="fill-[#57544D] dark:fill-[#A39E93]"
               fontFamily="monospace"
             >
               {pod.podLabel.slice(0, 7)}
             </text>
-            <rect x="48" y={y + 1} width="166" height="8" rx="4" fill="#E3ECE5" />
+            <rect
+              x="48"
+              y={y + 1}
+              width="166"
+              height="8"
+              rx="4"
+              fill="#EDE9DF"
+              className="fill-[#EDE9DF] dark:fill-[#2C312E]"
+            />
             <rect
               x={startX}
               y={y + 1}
@@ -365,6 +376,7 @@ export const PodStaggerLaneMatrix: React.FC<{
               height="8"
               rx="4"
               fill={barColor}
+              className={idx === 0 ? 'fill-[#B83A24] dark:fill-[#E05238]' : undefined}
             />
           </g>
         );
@@ -387,10 +399,15 @@ export const ArchetypeProgressionSparkline: React.FC<{
         const bh = Math.max(3, Math.round((v / maxVal) * 14));
         const isTaper = idx === 5 && v < levels[4];
         const fill = active
-          ? '#56BA00'
+          ? '#B83A24'
           : isTaper
             ? '#0D9488'
-            : '#1C5436';
+            : '#57544D';
+        const fillClass = active
+          ? 'fill-[#B83A24] dark:fill-[#D8FF2A]'
+          : isTaper
+            ? undefined
+            : 'fill-[#57544D] dark:fill-[#A39E93]';
         return (
           <rect
             key={idx}
@@ -400,6 +417,7 @@ export const ArchetypeProgressionSparkline: React.FC<{
             height={bh}
             rx="1"
             fill={fill}
+            className={fillClass}
             fillOpacity={isTaper ? 0.7 : 0.9}
           />
         );
@@ -421,14 +439,23 @@ export const PublishWindowTimelineBracket: React.FC<{
   return (
     <div className="flex items-center gap-2 text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
       <svg viewBox="0 0 120 12" className="w-28 h-3 shrink-0" aria-hidden="true">
-        <rect x="1" y="4" width="118" height="4" rx="2" fill="#E3ECE5" />
+        <rect
+          x="1"
+          y="4"
+          width="118"
+          height="4"
+          rx="2"
+          fill="#CFC9BC"
+          className="fill-[#CFC9BC] dark:fill-[#2C312E]"
+        />
         <rect
           x="1"
           y="3"
           width={Math.max(10, Math.round((pct / 100) * 118))}
           height="6"
           rx="3"
-          fill="#56BA00"
+          fill="#B83A24"
+          className="fill-[#B83A24] dark:fill-[#D8FF2A]"
         />
       </svg>
       <span>
@@ -452,7 +479,7 @@ export const SpikeBudgetSegmentedMeter: React.FC<{
       {Array.from({ length: 10 }, (_, idx) => {
         const filled = idx < activeSegments;
         const fill = !filled
-          ? '#E3ECE5'
+          ? '#CFC9BC'
           : idx >= 8
             ? '#DC2626'
             : idx >= 6
@@ -467,6 +494,7 @@ export const SpikeBudgetSegmentedMeter: React.FC<{
             height="6"
             rx="1.5"
             fill={fill}
+            className={!filled ? 'fill-[#CFC9BC] dark:fill-[#2C312E]' : undefined}
           />
         );
       })}
@@ -500,7 +528,15 @@ export const AcwrThreeChannelBullets: React.FC<{
               </span>
             </div>
             <svg viewBox="0 0 60 8" className="w-full h-2" aria-hidden="true">
-              <rect x="0" y="2" width="60" height="4" rx="2" fill="#E3ECE5" />
+              <rect
+                x="0"
+                y="2"
+                width="60"
+                height="4"
+                rx="2"
+                fill="#CFC9BC"
+                className="fill-[#CFC9BC] dark:fill-[#2C312E]"
+              />
               <rect x="17" y="1" width="21" height="6" rx="1.5" fill="#059669" fillOpacity="0.22" />
               <circle cx={(pct / 100) * 58 + 1} cy="4" r="2.8" fill={r.hex} />
             </svg>
@@ -523,12 +559,22 @@ export const Adherence7dDots: React.FC<{
     <svg viewBox="0 0 64 10" className="w-16 h-2.5 shrink-0" aria-hidden="true">
       {Array.from({ length: 7 }, (_, i) => {
         const isLastFlag = hasPainFlag && i === 6;
+        const isEmpty = !isLastFlag && i >= count;
         const fill = isLastFlag
           ? '#DC2626'
           : i < count
             ? '#059669'
-            : '#C8D8CE';
-        return <circle key={i} cx={5 + i * 9} cy="5" r="3" fill={fill} />;
+            : '#CFC9BC';
+        return (
+          <circle
+            key={i}
+            cx={5 + i * 9}
+            cy="5"
+            r="3"
+            fill={fill}
+            className={isEmpty ? 'fill-[#CFC9BC] dark:fill-[#2C312E]' : undefined}
+          />
+        );
       })}
     </svg>
   );

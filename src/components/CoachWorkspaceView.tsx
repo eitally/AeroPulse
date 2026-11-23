@@ -13,12 +13,14 @@ import type {
   SessionCheckInRecord,
   SportCategory,
   TargetGoal,
+  TeamBroadcastWorkout,
   TeamSummaryWithRole,
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
   WorkoutSessionSlot,
 } from '../types';
+import type { PlannedEventBatchItem } from './GoalsView';
 import {
   buildNcaaCaraComplianceCsv,
   summarizeNcaaCaraWeeklyHours,
@@ -398,6 +400,206 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
       }
     }
     await onCreatePlannedEvent(eventInput);
+  };
+
+  const handleTeamPlanUpdate = async (
+    id: string,
+    patch: {
+      date: string;
+      name: string;
+      sportCategory: SportCategory;
+      environmentPreference: 'OUTDOOR' | 'INDOOR' | 'FLEXIBLE';
+      plannedDurationSecs: number;
+      plannedLoad: number;
+      workoutSyntax: string;
+      description: string;
+      scheduledTime?: string;
+      sessionSlot?: WorkoutSessionSlot;
+      locationName?: string;
+      locationCategory?: PracticeVenueCategory;
+      meetingNotes?: string;
+      trackSpec?: TrackWorkoutSpec;
+    }
+  ) => {
+    setTeamPlanError(null);
+    const canBroadcastTeam =
+      activeTeam &&
+      (activeTeam.myRole === 'HEAD_COACH' ||
+        activeTeam.myRole === 'ASSISTANT_COACH' ||
+        activeTeam.myRole === 'ORG_ADMIN');
+    const isTeamBroadcast = Boolean(
+      activeTeam &&
+        (activeTeam.broadcastWorkouts?.some((bw) => bw.broadcastId === id) ||
+          id.startsWith('bw_'))
+    );
+    if (canBroadcastTeam && activeTeam && isTeamBroadcast) {
+      if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')) {
+        const updatedBroadcasts = (activeTeam.broadcastWorkouts || []).map((bw) =>
+          bw.broadcastId === id
+            ? {
+                ...bw,
+                date: patch.date,
+                name: patch.name,
+                sportCategory: patch.sportCategory,
+                plannedDurationSecs: patch.plannedDurationSecs,
+                plannedLoad: patch.plannedLoad,
+                workoutSyntax: patch.workoutSyntax,
+                description: patch.description,
+                scheduledTime: patch.scheduledTime,
+                sessionSlot: patch.sessionSlot,
+                locationName: patch.locationName,
+                locationCategory: patch.locationCategory,
+                meetingNotes: patch.meetingNotes,
+                ...(patch.trackSpec ? { trackSpec: patch.trackSpec } : {}),
+              }
+            : bw
+        );
+        const updatedTeam = { ...activeTeam, broadcastWorkouts: updatedBroadcasts };
+        onTeamsUpdated(
+          myTeams.map((t) =>
+            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+          ),
+          updatedTeam.brand.teamId
+        );
+        return;
+      }
+      try {
+        const resp = await fetch(
+          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/${encodeURIComponent(id)}`,
+          {
+            method: 'PUT',
+            credentials: 'include',
+            headers: buildThreshSessionHeaders(),
+            body: JSON.stringify({
+              origin: window.location.origin,
+              ...patch,
+            }),
+          }
+        );
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok) {
+          if (Array.isArray(data.teams)) {
+            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
+          }
+          return;
+        }
+        setTeamPlanError(data?.error || 'Could not update team session on server.');
+        return;
+      } catch {
+        setTeamPlanError('Offline — unable to update team session on server.');
+        return;
+      }
+    }
+    await onUpdatePlannedEvent?.(id, patch);
+  };
+
+  const handleTeamPlanBatchCreate = async (items: PlannedEventBatchItem[]) => {
+    setTeamPlanError(null);
+    if (!items || items.length === 0) return;
+    const canBroadcastTeam =
+      activeTeam &&
+      (activeTeam.myRole === 'HEAD_COACH' ||
+        activeTeam.myRole === 'ASSISTANT_COACH' ||
+        activeTeam.myRole === 'ORG_ADMIN');
+    if (canBroadcastTeam && activeTeam) {
+      if (isSampleDemoMode || activeTeam.brand.teamId.startsWith('demo_team_')) {
+        const nowIso = new Date().toISOString();
+        const nowTs = Date.now();
+        const createdBroadcasts: TeamBroadcastWorkout[] = items.map((item, idx) => ({
+          broadcastId: `bw_demo_${nowTs}_${idx}`,
+          teamId: activeTeam.brand.teamId,
+          targetSquadGroup: 'ALL',
+          date: item.date,
+          name: item.name,
+          sportCategory: item.sportCategory,
+          plannedDurationSecs: item.plannedDurationSecs,
+          plannedLoad: item.plannedLoad,
+          workoutSyntax: item.workoutSyntax,
+          description: item.description,
+          ...(item.scheduledTime ? { scheduledTime: item.scheduledTime } : {}),
+          ...(item.sessionSlot ? { sessionSlot: item.sessionSlot } : {}),
+          ...(item.locationName ? { locationName: item.locationName } : {}),
+          ...(item.locationCategory ? { locationCategory: item.locationCategory } : {}),
+          ...(item.meetingNotes ? { meetingNotes: item.meetingNotes } : {}),
+          ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
+          ...(item.planBlockId ? { planBlockId: item.planBlockId } : {}),
+          ...(item.planBlockName ? { planBlockName: item.planBlockName } : {}),
+          ...(typeof item.planWeekNum === 'number' ? { planWeekNum: item.planWeekNum } : {}),
+          pushedByCoachName: activeTeam.brand.coachDisplayName || 'Coach',
+          createdAt: nowIso,
+        }));
+        const exactSigs = new Set(
+          createdBroadcasts.map(
+            (b) => `${b.date.slice(0, 10)}:${b.sportCategory}:${b.name.trim().toLowerCase()}`
+          )
+        );
+        const existing = (activeTeam.broadcastWorkouts || []).filter(
+          (bw) =>
+            !exactSigs.has(
+              `${bw.date.slice(0, 10)}:${bw.sportCategory}:${bw.name.trim().toLowerCase()}`
+            )
+        );
+        const updatedTeam = {
+          ...activeTeam,
+          broadcastWorkouts: [...existing, ...createdBroadcasts],
+        };
+        onTeamsUpdated(
+          myTeams.map((t) =>
+            t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+          ),
+          updatedTeam.brand.teamId
+        );
+        return;
+      }
+      try {
+        const resp = await fetch(
+          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/workouts/broadcast-batch`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            headers: buildThreshSessionHeaders(),
+            body: JSON.stringify({
+              origin: window.location.origin,
+              targetSquadGroup: 'ALL',
+              planBlockId: items[0]?.planBlockId,
+              planBlockName: items[0]?.planBlockName,
+              replaceExistingCohortRange: false,
+              workouts: items.map((item) => ({
+                date: item.date,
+                name: item.name,
+                sportCategory: item.sportCategory,
+                plannedDurationSecs: item.plannedDurationSecs,
+                plannedLoad: item.plannedLoad,
+                workoutSyntax: item.workoutSyntax,
+                description: item.description,
+                ...(item.scheduledTime ? { scheduledTime: item.scheduledTime } : {}),
+                ...(item.sessionSlot ? { sessionSlot: item.sessionSlot } : {}),
+                ...(item.locationName ? { locationName: item.locationName } : {}),
+                ...(item.locationCategory ? { locationCategory: item.locationCategory } : {}),
+                ...(item.meetingNotes ? { meetingNotes: item.meetingNotes } : {}),
+                ...(item.trackSpec ? { trackSpec: item.trackSpec } : {}),
+                ...(typeof item.planWeekNum === 'number'
+                  ? { planWeekNum: item.planWeekNum }
+                  : {}),
+              })),
+            }),
+          }
+        );
+        const data = await resp.json().catch(() => ({}));
+        if (resp.ok) {
+          if (Array.isArray(data.teams)) {
+            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
+          }
+          return;
+        }
+        setTeamPlanError(data?.error || 'Could not batch-broadcast team sessions to server.');
+        return;
+      } catch {
+        setTeamPlanError('Offline — unable to batch-broadcast team sessions to server.');
+        return;
+      }
+    }
+    await onBatchCreatePlannedEvents(items);
   };
   const connectedAthletesOnly = useMemo(
     () =>
@@ -1042,10 +1244,10 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 athleteProfile={selfProfile}
                 onSelectActivity={onSelectActivityAndOpenTab}
                 onCreatePlannedEvent={handleTeamPlanCreate}
-                onUpdatePlannedEvent={onUpdatePlannedEvent}
+                onUpdatePlannedEvent={handleTeamPlanUpdate}
                 onDeletePlannedEvent={onDeletePlannedEvent}
                 onDeletePlanBlock={onDeletePlanBlock}
-                onBatchCreatePlannedEvents={onBatchCreatePlannedEvents}
+                onBatchCreatePlannedEvents={handleTeamPlanBatchCreate}
                 onOpenTodayWorkout={onOpenAthleteToday}
                 onOpenAthleteProfileModal={onOpenProfileModal}
                 onOpenGoalsArchitect={onOpenGoalsTab}

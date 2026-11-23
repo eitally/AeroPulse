@@ -1,5 +1,6 @@
 import type {
   ActivityStreamSet,
+  AthleteGearItem,
   AthleteProfile,
   CoachEventGroup,
   FieldEventLogRecord,
@@ -144,7 +145,64 @@ export interface SampleDemoDataset {
   wellnessDays: UnifiedWellnessDay[];
   plannedEvents: PlannedWorkoutEvent[];
   targetGoals: TargetGoal[];
+  gearItems: AthleteGearItem[];
   demoTeams: TeamSummaryWithRole[];
+}
+
+export function buildSampleDemoGearItems(anchorDateIso?: string): AthleteGearItem[] {
+  const todayIso = anchorDateIso || getLocalDateIso();
+  return [
+    {
+      id: 'demo-shoe-daily',
+      name: 'Pegasus 41',
+      brand: 'Nike',
+      type: 'SHOE',
+      footwearClass: 'DAILY_TRAINER',
+      distanceMeters: Math.round(304 * 1609.344),
+      maxRecommendedMeters: Math.round(450 * 1609.344),
+      primary: true,
+      purchaseDate: shiftDateIso(todayIso, -110),
+      notes: 'Everyday aerobic base, warmups & strides',
+    },
+    {
+      id: 'demo-shoe-tempo',
+      name: 'Endorphin Speed 4',
+      brand: 'Saucony',
+      type: 'SHOE',
+      footwearClass: 'LIGHTWEIGHT_FLAT_SUPER_TRAINER',
+      distanceMeters: Math.round(268 * 1609.344),
+      maxRecommendedMeters: Math.round(300 * 1609.344),
+      primary: false,
+      purchaseDate: shiftDateIso(todayIso, -160),
+      notes: 'Threshold tempos & progression long runs',
+    },
+    {
+      id: 'demo-spike-super',
+      name: 'Dragonfly 2 Elite',
+      brand: 'Nike',
+      type: 'SHOE',
+      footwearClass: 'CARBON_SUPER_SPIKE',
+      distanceMeters: Math.round(44 * 1609.344),
+      maxRecommendedMeters: Math.round(80 * 1609.344),
+      primary: false,
+      purchaseDate: shiftDateIso(todayIso, -48),
+      notes: '5000m / 1600m championship meets (6mm pyramid pins)',
+    },
+    {
+      id: 'demo-shoe-retired',
+      name: 'Clifton 9',
+      brand: 'Hoka',
+      type: 'SHOE',
+      footwearClass: 'DAILY_TRAINER',
+      distanceMeters: Math.round(462 * 1609.344),
+      maxRecommendedMeters: Math.round(450 * 1609.344),
+      primary: false,
+      retired: true,
+      retiredAt: shiftDateIso(todayIso, -21),
+      purchaseDate: shiftDateIso(todayIso, -280),
+      notes: 'Midsole compressed — retired to recovery walking',
+    },
+  ];
 }
 
 interface DemoCoachAthleteSpec {
@@ -1714,6 +1772,7 @@ export function buildSampleDemoDataset(anchorDateIso?: string): SampleDemoDatase
     wellnessDays,
     plannedEvents,
     targetGoals,
+    gearItems: buildSampleDemoGearItems(todayIso),
     demoTeams: [buildSampleDemoCoachSquad(todayIso)],
   };
 }

@@ -98,6 +98,7 @@ export const WorkspaceRouter: React.FC = () => {
     handleUpdateAnnualMileageGoal,
     handleAddTargetGoal,
     handleDeleteTargetGoal,
+    handleSaveGearItems,
     handleSaveProfileOverride,
     handleSwitchToCalendarTab,
   } = useTelemetryWorkspace();
@@ -340,6 +341,7 @@ export const WorkspaceRouter: React.FC = () => {
           wellnessDays={effectiveWellnessDays}
           plannedEvents={effectivePlannedEvents}
           gearItems={effectiveGearItems}
+          onSaveGearItems={handleSaveGearItems}
           envFilter={envFilter}
           onSelectEnvFilter={setEnvFilter}
           distanceUnit={distanceUnit}

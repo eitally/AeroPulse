@@ -91,6 +91,7 @@ export interface TelemetryWorkspaceContextValue {
   handleUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling' | 'Swimming', targetMeters: number) => void;
   handleAddTargetGoal: (newGoal: Omit<TargetGoal, 'id'>) => void;
   handleDeleteTargetGoal: (id: string) => void;
+  handleSaveGearItems?: (nextItems: AthleteGearItem[]) => Promise<void> | void;
   handleSaveProfileOverride: (updatedProfile: AthleteProfile) => Promise<void>;
   handleOpenTodayTab: () => void;
   handleOpenActivitiesTab: () => void;

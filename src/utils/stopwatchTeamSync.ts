@@ -6,6 +6,9 @@ import type {
 } from '../types';
 import { STORAGE_KEYS } from './storageKeys';
 
+export const MAX_OUTBOX_ATTEMPTS = 8;
+const PERMANENT_ERROR_STATUSES = new Set([400, 403, 404, 422]);
+
 export interface WalkOnStopwatchEntry {
   runnerId: string;
   runnerName: string;
@@ -20,6 +23,20 @@ export interface StopwatchOutboxBatch {
   createdAt: string;
   attempts: number;
   lastError?: string;
+}
+
+export interface StopwatchDeadLetterBatch extends StopwatchOutboxBatch {
+  failedAt: string;
+  status?: number;
+  reason: string;
+}
+
+export interface PersistStopwatchResult {
+  ok: boolean;
+  team: TeamSummaryWithRole | null;
+  status: number | null;
+  error?: string;
+  permanentFailure: boolean;
 }
 
 export interface StopwatchSaveResult {
@@ -38,6 +55,7 @@ export interface StopwatchOutboxFlushResult {
   syncedEntries: number;
   remainingBatches: number;
   remainingEntries: number;
+  deadLetteredBatches?: number;
 }
 
 export interface PartitionedStopwatchSave {
@@ -172,6 +190,62 @@ export function saveStopwatchOutbox(batches: StopwatchOutboxBatch[]): void {
   }
 }
 
+export function listDeadLetterStopwatchBatches(): StopwatchDeadLetterBatch[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.STOPWATCH_OUTBOX_DEAD_LETTER);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (b): b is StopwatchDeadLetterBatch =>
+        Boolean(b && typeof b.batchId === 'string' && typeof b.teamId === 'string' && Array.isArray(b.entries))
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveDeadLetterStopwatchBatches(batches: StopwatchDeadLetterBatch[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (batches.length === 0) {
+      localStorage.removeItem(STORAGE_KEYS.STOPWATCH_OUTBOX_DEAD_LETTER);
+    } else {
+      localStorage.setItem(
+        STORAGE_KEYS.STOPWATCH_OUTBOX_DEAD_LETTER,
+        JSON.stringify(batches.slice(0, 50))
+      );
+    }
+    emitOutboxUpdatedEvent();
+  } catch {
+    // ignore quota errors
+  }
+}
+
+export function moveStopwatchBatchToDeadLetter(
+  batch: StopwatchOutboxBatch,
+  reason: string,
+  status?: number
+): void {
+  const existing = listDeadLetterStopwatchBatches().filter(
+    (item) => item.batchId !== batch.batchId
+  );
+  const deadLetterItem: StopwatchDeadLetterBatch = {
+    ...batch,
+    failedAt: new Date().toISOString(),
+    reason,
+    ...(typeof status === 'number' ? { status } : {}),
+  };
+  saveDeadLetterStopwatchBatches([deadLetterItem, ...existing]);
+  removeStopwatchOutboxBatch(batch.batchId);
+}
+
+export function dismissDeadLetterStopwatchBatch(batchId: string): void {
+  const remaining = listDeadLetterStopwatchBatches().filter((b) => b.batchId !== batchId);
+  saveDeadLetterStopwatchBatches(remaining);
+}
+
 export function enqueueStopwatchOutboxBatch(
   teamId: string,
   entries: Array<{ membershipId: string; activity: UnifiedActivity }>
@@ -286,8 +360,16 @@ export function persistWalkOnStopwatchEntriesLocal(
 export async function persistCoachStopwatchActivitiesToServer(
   teamId: string,
   entries: Array<{ membershipId: string; activity: UnifiedActivity }>
-): Promise<TeamSummaryWithRole | null> {
-  if (!teamId || entries.length === 0 || typeof fetch !== 'function') return null;
+): Promise<PersistStopwatchResult> {
+  if (!teamId || entries.length === 0 || typeof fetch !== 'function') {
+    return {
+      ok: false,
+      team: null,
+      status: null,
+      error: 'Missing team or entries',
+      permanentFailure: true,
+    };
+  }
 
   try {
     const token =
@@ -306,11 +388,38 @@ export async function persistCoachStopwatchActivitiesToServer(
         body: JSON.stringify({ entries }),
       }
     );
-    if (!res.ok) return null;
-    const data = (await res.json()) as { ok?: boolean; team?: TeamSummaryWithRole };
-    return data.ok && data.team ? data.team : null;
-  } catch {
-    return null;
+    const data = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      team?: TeamSummaryWithRole;
+      error?: string;
+    };
+    if (!res.ok) {
+      return {
+        ok: false,
+        team: null,
+        status: res.status,
+        error: data?.error || `HTTP ${res.status}`,
+        permanentFailure: PERMANENT_ERROR_STATUSES.has(res.status),
+      };
+    }
+    if (data.ok && data.team) {
+      return { ok: true, team: data.team, status: res.status, permanentFailure: false };
+    }
+    return {
+      ok: false,
+      team: null,
+      status: res.status,
+      error: data?.error || 'Invalid server response',
+      permanentFailure: false,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      team: null,
+      status: null,
+      error: err instanceof Error ? err.message : 'Network failure',
+      permanentFailure: false,
+    };
   }
 }
 
@@ -318,6 +427,8 @@ let inFlightOutboxFlush: Promise<StopwatchOutboxFlushResult> | null = null;
 
 /**
  * Flushes pending offline stopwatch team split batches in FIFO order whenever the network is reachable.
+ * Permanent 4xx poison pills (400/403/404/422) and batches exceeding MAX_OUTBOX_ATTEMPTS are moved
+ * to dead-letter storage so valid batches queued behind them flush immediately.
  */
 export async function flushStopwatchOutbox(
   onTeamUpdated?: (team: TeamSummaryWithRole) => void
@@ -329,7 +440,13 @@ export async function flushStopwatchOutbox(
   inFlightOutboxFlush = (async () => {
     const initialOutbox = loadStopwatchOutbox();
     if (initialOutbox.length === 0) {
-      return { syncedBatches: 0, syncedEntries: 0, remainingBatches: 0, remainingEntries: 0 };
+      return {
+        syncedBatches: 0,
+        syncedEntries: 0,
+        remainingBatches: 0,
+        remainingEntries: 0,
+        deadLetteredBatches: 0,
+      };
     }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       const remainingEntries = initialOutbox.reduce((s, b) => s + b.entries.length, 0);
@@ -338,30 +455,61 @@ export async function flushStopwatchOutbox(
         syncedEntries: 0,
         remainingBatches: initialOutbox.length,
         remainingEntries,
+        deadLetteredBatches: 0,
       };
     }
 
     let syncedBatches = 0;
     let syncedEntries = 0;
+    let deadLetteredBatches = 0;
 
     for (const batch of initialOutbox) {
-      const updatedTeam = await persistCoachStopwatchActivitiesToServer(batch.teamId, batch.entries);
-      if (updatedTeam) {
+      if ((batch.attempts || 0) >= MAX_OUTBOX_ATTEMPTS) {
+        moveStopwatchBatchToDeadLetter(
+          batch,
+          batch.lastError || `Exhausted ${MAX_OUTBOX_ATTEMPTS} sync attempts`
+        );
+        deadLetteredBatches += 1;
+        continue;
+      }
+
+      const result = await persistCoachStopwatchActivitiesToServer(batch.teamId, batch.entries);
+      if (result.ok && result.team) {
         syncedBatches += 1;
         syncedEntries += batch.entries.length;
         removeStopwatchOutboxBatch(batch.batchId);
-        onTeamUpdated?.(updatedTeam);
-      } else {
-        const latestOutbox = loadStopwatchOutbox().map((b) =>
-          b.batchId === batch.batchId
-            ? {
-                ...b,
-                attempts: (b.attempts || 0) + 1,
-                lastError: 'Pending network sync',
-              }
-            : b
+        onTeamUpdated?.(result.team);
+      } else if (result.permanentFailure) {
+        const nextAttempts = (batch.attempts || 0) + 1;
+        const reason = result.error || `HTTP ${result.status ?? 'error'}`;
+        moveStopwatchBatchToDeadLetter(
+          { ...batch, attempts: nextAttempts, lastError: reason },
+          reason,
+          result.status ?? undefined
         );
-        saveStopwatchOutbox(latestOutbox);
+        deadLetteredBatches += 1;
+      } else {
+        const nextAttempts = (batch.attempts || 0) + 1;
+        const reason = result.error || 'Pending network sync';
+        if (nextAttempts >= MAX_OUTBOX_ATTEMPTS) {
+          moveStopwatchBatchToDeadLetter(
+            { ...batch, attempts: nextAttempts, lastError: reason },
+            `Exhausted ${MAX_OUTBOX_ATTEMPTS} attempts (${reason})`,
+            result.status ?? undefined
+          );
+          deadLetteredBatches += 1;
+        } else {
+          const latestOutbox = loadStopwatchOutbox().map((b) =>
+            b.batchId === batch.batchId
+              ? {
+                  ...b,
+                  attempts: nextAttempts,
+                  lastError: reason,
+                }
+              : b
+          );
+          saveStopwatchOutbox(latestOutbox);
+        }
       }
     }
 
@@ -371,6 +519,7 @@ export async function flushStopwatchOutbox(
       syncedEntries,
       remainingBatches: finalOutbox.length,
       remainingEntries: finalOutbox.reduce((s, b) => s + b.entries.length, 0),
+      deadLetteredBatches,
     };
   })().finally(() => {
     inFlightOutboxFlush = null;

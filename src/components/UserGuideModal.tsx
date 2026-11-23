@@ -198,13 +198,13 @@ const GLOSSARY_ENTRIES: GlossaryEntry[] = [
   },
   {
     code: 'kJ/kg & kcal Durability',
-    name: 'Fatigue-Sliced Physiological Durability',
+    name: 'Spikes, Shoe & Fatigue-Sliced Durability',
     category: 'Power & Pace',
-    formula: 'Retention(%) = MMP_{20m}(@ 30 kJ/kg or 1,500 kcal) / MMP_{20m}(Fresh) × 100%',
-    benchmark: '>= 95% Pro-Tour Resilient · 90–94% Well-Conditioned · < 88% Glycogen Fragile',
+    formula: 'Retention(%) = GAP_{20m}(@ 1,500 kcal or 30 kJ/kg) / GAP_{20m}(Fresh) × 100%',
+    benchmark: '>= 95% Resilient · 90–94% Well-Conditioned · < 88% Glycogen Fragile',
     colorHex: '#0d9488',
     explanation:
-      'Measures how well your 5-minute and 20-minute power or Grade-Adjusted Pace holds up after accumulating 10–40 kJ/kg of mechanical work (Cycling) or 500–2,000 kcal (Running).',
+      'Measures how well your Grade-Adjusted Pace (Running 500–2,000 kcal) or secondary cycling power (10–40 kJ/kg) holds up under late-race fatigue, paired with track spike and running shoe mileage durability.',
   },
   {
     code: '3-Channel Ortho ACWR',
@@ -295,17 +295,17 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       shortTitle: 'Quick Start & Vision',
       fullTitle: 'Ch 1 · Quick Start & Why MeetReady',
       subtitle:
-        'How MeetReady unifies Intervals.icu physiological rigor, daily readiness morphing, and multi-source telemetry.',
+        'Track & field splits, VDOT pace pods, Critical Speed, spikes & shoe durability, meet operations, and SafeSport/FERPA readiness—with cycling cross-training built in.',
       icon: Sparkles,
       accentClass: 'text-sky-500 bg-sky-500/12 border-sky-500/30',
     },
     {
       id: 'ch2-sync',
       number: '02',
-      shortTitle: 'Strava, Sync & .FIT',
-      fullTitle: 'Ch 2 · Strava Sign-In, Sync Windows & Optional Add-Ons',
+      shortTitle: 'Sync, Strava & .FIT',
+      fullTitle: 'Ch 2 · Track Telemetry, Sync Windows & Optional Hardware',
       subtitle:
-        'Sign in with Strava identity, choose what syncs (90d / 6mo / All / Identity Only), optionally add Garmin Connect or Intervals.icu sleep/HRV, or drop .FIT files.',
+        'Sign in with Google, Passkey, Email, or optional Strava; choose sync windows (90d / 6mo / All / Identity Only), add Garmin/Polar/Intervals.icu/Wahoo, or drop .FIT track files.',
       icon: Database,
       accentClass: 'text-orange-500 bg-orange-500/12 border-orange-500/30',
     },
@@ -323,9 +323,9 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       id: 'ch4-calendar',
       number: '04',
       shortTitle: 'Calendar & Builder',
-      fullTitle: 'Ch 4 · Training Calendar, Effort Skylines & Block Builder',
+      fullTitle: 'Ch 4 · Training Calendar, Effort Skylines & Track Builder',
       subtitle:
-        'Navigate the 8-column training calendar, Effort Zone Skylines (Z1–Z6), Intervals-syntax Workout Builder, and 3:1 Periodized Block Generator.',
+        'Navigate the 8-column training calendar, Effort Zone Skylines (Z1–Z6), Track & Endurance Workout Builder, and 3:1 Periodized Block Generator.',
       icon: Calendar,
       accentClass: 'text-indigo-500 bg-indigo-500/12 border-indigo-500/30',
     },
@@ -342,10 +342,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
     {
       id: 'ch6-lab',
       number: '06',
-      shortTitle: 'Lab, Curves & Goals',
-      fullTitle: 'Ch 6 · Lab & Goals: Power/Pace Curves, Biometrics & Benchmarks',
+      shortTitle: 'Lab, Curves & Gear',
+      fullTitle: 'Ch 6 · Lab & Goals: Pace/Power Curves, Spikes & Benchmarks',
       subtitle:
-        "Explore CP & W' hyperbolic modeling, 6-axis phenotype radar, 7d HRV CV, EF vs. Decoupling quadrants, VDOT predictor, and 2-Athlete Comparator.",
+        "Explore Critical Speed (CS/D') & VDOT pace curves, spikes & shoe durability, 7d HRV CV, EF vs. Decoupling, and 2-Athlete Comparator—plus secondary cycling CP/W'.",
       icon: LineChart,
       accentClass: 'text-fuchsia-500 bg-fuchsia-500/12 border-fuchsia-500/30',
     },
@@ -387,34 +387,34 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c1-1',
         chapterId: 'ch1-quickstart',
-        badge: 'PILLAR 1 · INTERVALS.ICU RIGOR',
+        badge: 'PILLAR 1 · TRACK & XC PHYSIOLOGY',
         badgeColor: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/25',
-        title: 'Banister Impulse-Response & Critical Power Physics',
+        title: "VDOT Pace Pods, Critical Speed (CS/D') & Banister Load Physics",
         summary:
-          "MeetReady computes true 42-day CTL, 7-day ATL, Form (TSB), Monod-Scherrer Critical Power (CP) & W' anaerobic battery, and first-vs-second-half Aerobic Decoupling (Pa:Hr).",
+          "MeetReady computes Jack Daniels VDOT training paces, 42-day CTL, 7-day ATL, Form (TSB), Critical Speed (CS/D'), and Aerobic Decoupling (Pa:Hr)—plus secondary cycling CP/W' for cross-training.",
         bullets: [
-          'Separate Outdoor vs. Indoor/Smart-Trainer FTP, LTHR, and 7-zone tables.',
-          'High-performance interactive uPlot PMC with brush zoom, custom date windows (7D to ALL), and milestone pins.',
-          '14-Day Autonomic Readiness Ledger correlating HRV rMSSD, Resting HR, and Sleep Score.',
+          'Track & XC VDOT pace zones (E, M, T, I, R), threshold pace, LTHR, plus optional Outdoor/Indoor cycling FTP.',
+          'High-performance interactive uPlot PMC with brush zoom, custom date windows (7D to ALL), and meet PR pins.',
+          '14-Day Autonomic Readiness Ledger correlating HRV rMSSD, Resting HR, Sleep Score, and SafeSport/FERPA guardrails.',
         ],
-        formulaOrSyntax: 'TSB_t = CTL_{t-1} - ATL_{t-1}  |  P(t) = CP + W′ / t',
+        formulaOrSyntax: "VDOT = VO2(v) / %VO2max(t)  |  D(t) = CS·t + D′  |  TSB_t = CTL_{t-1} - ATL_{t-1}",
         ctaLabel: 'Try It Live: Open Load & Readiness →',
         onAction: () => triggerAndClose(() => onNavigateTab('fitness')),
       },
       {
         id: 'c1-2',
         chapterId: 'ch1-quickstart',
-        badge: 'PILLAR 2 · RUNNA / TRAINERROAD ADAPTIVITY',
+        badge: 'PILLAR 2 · ADAPTIVE TRACK & XC LOAD',
         badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
-        title: 'Closed-Loop Daily Readiness Workout Morphing',
+        title: 'Closed-Loop Daily Readiness & Shin/Impact Workout Morphing',
         summary:
-          'Static training plans break when life stress, poor sleep, or autonomic suppression hits. MeetReady evaluates your morning HRV, RHR, and TSB to morph today’s workout in one click.',
+          'Static plans break when shin soreness, poor sleep, or exam stress hits. MeetReady evaluates morning HRV, RHR, TSB, and orthopedic impact load to morph today’s track session in one click.',
         bullets: [
-          'Green (Optimal): Preserves full VO2max / Threshold interval prescription.',
-          'Amber (Modulated -15% Load): Downshifts Z5/Z4 repeats into controlled Sweet Spot / Tempo.',
-          'Red (Strain Recovery): Converts high-strain days into 45m Z1/Z2 parasympathetic flush.',
+          'Green (Optimal): Preserves full VO2max track intervals, VDOT reps, or threshold prescription.',
+          'Amber (Modulated -15% Load): Downshifts fast track repeats into controlled Threshold Cruise or Tempo.',
+          'Red (Strain / BSI Guard): Converts high-impact running days into 45m Z1/Z2 pool, aqua-jog, or stationary bike cross-training.',
         ],
-        formulaOrSyntax: '- 15m 60% FTP\n- 4x8m 90% FTP / 3m 55% FTP\n- 10m 50% FTP',
+        formulaOrSyntax: '- 15m Easy Warmup\n- 4x1000m @ T-Pace (60s jog)\n- 10m Easy Cooldown',
         ctaLabel: 'Try It Live: Launch Gemini AI Coach →',
         onAction: () =>
           triggerAndClose(() =>
@@ -426,15 +426,15 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c1-3',
         chapterId: 'ch1-quickstart',
-        badge: 'PILLAR 3 · STRAVA & OFFICIAL FAT RACE INTEL',
+        badge: 'PILLAR 3 · MEET OPS & OFFICIAL FAT MARKS',
         badgeColor: 'text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/25',
-        title: 'GPS Segment PRs, Modality Split & Official Track/XC Marks',
+        title: 'Official FAT Track/XC Marks, Spikes Durability & GPS Splits',
         summary:
-          'Combines Strava GPS polylines and segment leaderboards with verified 0.01s Fully Automatic Timing (FAT) track/road/XC race results.',
+          'Unifies verified 0.01s Fully Automatic Timing (FAT) track, field, and XC meet results with watchless stopwatch splits, spikes & shoe durability tracking, and GPS segments.',
         bullets: [
-          'Instant global filter for Combined vs. Outdoor Only vs. Virtual/Trainer workouts.',
-          'Interactive Leaflet route maps with color-coded power/HR/grade segment overlays.',
-          'Log official Athletic.net, TFRRS, MileSplit, and RunSignup marks with VDOT calculation.',
+          'Log official Athletic.net, TFRRS, MileSplit, and RunSignup marks with NCAA facility indexing and VDOT calculation.',
+          'Track spikes, racing flats, and daily trainer mileage durability alongside Outdoor vs. Indoor/Cross-Train filters.',
+          'Interactive Leaflet route maps with color-coded pace, HR, grade, and optional cycling power overlays.',
         ],
         ctaLabel: 'Try It Live: Log Official Race Result →',
         onAction: () => triggerAndClose(() => onOpenOfficialRaceModal()),
@@ -444,15 +444,15 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c2-1',
         chapterId: 'ch2-sync',
-        badge: 'STEP 1 & 2 · STRAVA IDENTITY + SYNC CHOICE',
+        badge: 'STEP 1 & 2 · SCHOOL IDENTITY + SYNC CHOICE',
         badgeColor: 'text-orange-600 dark:text-orange-400 bg-orange-500/10 border-orange-500/25',
         title: 'Flexible Sign-In, Explicit Sync Window & Optional Sleep/HRV Add-Ons',
         summary:
-          'Google, Passkey, Email, or optional Strava handle your MeetReady identity across every device. When connecting Strava or wearables, you explicitly choose what imports—zero mandatory wearables for team athletes.',
+          'Google, Passkey, Email, or optional Strava handle your MeetReady identity across every device. Student-athletes can time watchlessly without a wearable, or explicitly choose what imports.',
         bullets: [
           'Choose Last 90 Days (Recommended), Last 6 Months, Full Archive, or Identity Only (0 workouts imported).',
-          'Optional Secondary Connections: Garmin Connect and Intervals.icu supply overnight HRV & Sleep Score whenever you want, but are never required.',
-          'Smart ±5-minute multi-source deduplicator merges workouts without double-counting TSS, while automatic token rotation keeps your session signed in across devices.',
+          'Optional Hardware Connections: Garmin Connect, Polar AccessLink, Intervals.icu, and Wahoo supply HRV, sleep & cross-train telemetry when desired.',
+          'Smart ±5-minute multi-source deduplicator merges workouts without double-counting TSS while enforcing SafeSport/FERPA consent rules.',
         ],
         ctaLabel: 'Try It Live: Open Data Sources & Sync Policy →',
         onAction: () => triggerAndClose(() => onOpenDataSources()),
@@ -464,10 +464,10 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/25',
         title: 'Drag-and-Drop .FIT / .GPX / .TCX Import & Local IndexedDB Backup',
         summary:
-          'Drop raw Garmin/Wahoo/Zwift files directly into the browser. A dedicated Web Worker parses 1Hz streams off the main thread and stores them permanently in IndexedDB.',
+          'Drop raw Garmin, COROS, Polar, or Wahoo files directly into the browser. A dedicated Web Worker parses 1Hz track and road streams off the main thread and stores them permanently in IndexedDB.',
         bullets: [
-          'Zero-latency 1Hz stream extraction (Watts, Heart Rate, Velocity, Cadence, Altitude, Lat/Lng).',
-          "Computes NP, IF, TSS, 7-zone buckets, Skiba W' Balance, and Mean Maximal Power curves locally.",
+          'Zero-latency 1Hz stream extraction (Pace, Velocity, Heart Rate, Cadence, Altitude, Lat/Lng, and cycling Watts).',
+          "Computes VDOT/GAP, Critical Speed (CS/D'), 7-zone buckets, rTSS/TSS, and Mean Maximal curves locally.",
           'One-click JSON Archive Export & Import ensures your historical database survives any deployment.',
         ],
         ctaLabel: 'Try It Live: Import .FIT or Manage Archive →',
@@ -476,15 +476,15 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c2-3',
         chapterId: 'ch2-sync',
-        badge: 'ATHLETE THRESHOLDS & ZONES',
+        badge: 'PACE ZONES, SPIKES & GEAR',
         badgeColor: 'text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/25',
-        title: 'Calibrating Outdoor FTP, Indoor FTP, LTHR & Threshold Pace',
+        title: 'Calibrating VDOT, Threshold Pace, LTHR & Optional Cross-Train FTP',
         summary:
-          'Keep your 7-zone Coggan Power and Friel LTHR tables accurate across both outdoor road/track sessions and indoor smart-trainer/treadmill workouts.',
+          'Keep your running VDOT/Critical Speed pace zones, Friel LTHR heart-rate tables, and spikes/shoe mileage accurate—with optional Outdoor/Indoor cycling FTP for cross-training days.',
         bullets: [
-          "Configure separate Outdoor FTP (W), Indoor FTP (W), W' (J), Pmax (W), and Running Critical Power.",
-          'Live zone preview automatically recalculates wattage and BPM boundaries as you type.',
-          'Syncs directly from Intervals.icu sportSettings or saves custom local overrides.',
+          "Configure Threshold Pace (min/mi or min/km), Critical Speed (CS / D'), LTHR, and optional Outdoor/Indoor cycling FTP (W).",
+          'Track shoe & spike rotation durability (Daily Trainers, Racing Flats, Track Spikes) with automated mileage alerts.',
+          'Live zone preview automatically recalculates pace, BPM, and optional wattage boundaries as you type.',
         ],
         ctaLabel: 'Try It Live: Edit Athlete Profile & Zones →',
         onAction: () => triggerAndClose(() => onOpenProfileModal()),
@@ -551,11 +551,11 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         badgeColor: 'text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 border-indigo-500/25',
         title: 'Effort Zone Skylines (Z1–Z6) & Weekly Load Compliance',
         summary:
-          'The 8-column desktop layout displays Monday–Sunday cells alongside a dedicated Weekly Summary Ledger comparing completed vs. planned TSS, duration, and distance.',
+          'The 8-column desktop layout displays Monday–Sunday cells alongside a dedicated Weekly Summary Ledger comparing completed vs. planned mileage, TSS, and duration.',
         bullets: [
-          'Each completed or planned card renders a miniature Z1–Z6 Effort Skyline bar chart proportional to step duration and zone height.',
-          'Inline readiness indicators show morning HRV rMSSD and TSB directly inside each calendar day header.',
-          'Click any completed workout to inspect 1Hz telemetry, or click "+ Plan" on any date to prescribe a session.',
+          'Each completed or planned session renders a miniature Z1–Z6 Effort Skyline bar chart proportional to rep/interval duration and zone height.',
+          'Inline readiness indicators show morning HRV rMSSD, TSB, and SafeSport check-ins inside each calendar day header.',
+          'Click any completed workout to inspect 1Hz telemetry, or click "+ Plan" on any date to schedule a track or XC workout.',
         ],
         ctaLabel: 'Try It Live: Open Training Calendar →',
         onAction: () => triggerAndClose(() => onNavigateTab('calendar')),
@@ -563,17 +563,17 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c4-2',
         chapterId: 'ch4-calendar',
-        badge: 'INTERVALS-SYNTAX WORKOUT BUILDER',
+        badge: 'TRACK & INTERVALS WORKOUT BUILDER',
         badgeColor: 'text-sky-600 dark:text-sky-400 bg-sky-500/10 border-sky-500/25',
-        title: 'Plain-Text Structured Workout Parser & Auto-TSS Estimator',
+        title: 'Plain-Text Track & Endurance Workout Parser & Auto-TSS Estimator',
         summary:
-          'Write workouts using clean Intervals.icu plain-text shorthand and watch the visual Effort Skyline, total duration, and estimated TSS update on every keystroke.',
+          'Write track repeats or aerobic workouts using clean plain-text shorthand and watch the visual Effort Skyline, total distance, and estimated TSS update on every keystroke.',
         bullets: [
-          'Supports percentage FTP (`- 20m 90% FTP`), watt targets (`- 5m 310W`), zone codes (`- 45m Z2`), and nested repeats (`4x8m 105% FTP / 4m 50% FTP`).',
-          'One-click preset templates for Sweet Spot Base, VO2max 30/30s, Threshold Over-Unders, and Track 400m Repeats.',
-          'Project planned workouts onto the PMC to preview your future CTL and Form on race day.',
+          'Supports pace & distance syntax (`- 6x400m 108% Pace / 90s jog`, `- 3x1mi @ T-Pace`), zone codes (`- 45m Z2`), plus secondary cycling targets (`- 20m 90% FTP`, `- 5m 310W`).',
+          'One-click preset templates for Track 400m Repeats, Threshold Cruise, 5K/10K Specific, and Cycling Sweet Spot cross-training.',
+          'Project planned workouts onto the PMC to preview your future CTL and Form on championship meet day.',
         ],
-        formulaOrSyntax: '- 15m 60% FTP\n- 5x4m 112% FTP / 3m 50% FTP\n- 10m 55% FTP',
+        formulaOrSyntax: '- 15m Easy Warmup\n- 6x400m 108% Pace / 90s jog\n- 10m Easy Cooldown',
         ctaLabel: 'Try It Live: Build a Structured Workout →',
         onAction: () => triggerAndClose(() => onNavigateTab('calendar')),
       },
@@ -582,13 +582,13 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         chapterId: 'ch4-calendar',
         badge: 'MESOCYCLE BLOCK GENERATOR',
         badgeColor: 'text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-500/25',
-        title: 'Multi-Week 3:1 Periodized Training Block & Taper Builder',
+        title: 'Multi-Week 3:1 Periodized Track/XC Block & Taper Builder',
         summary:
-          'Generate a complete 4-to-8-week polarized or sweet-spot training block anchored to your A-Race date with automatic progressive overload and recovery weeks.',
+          'Generate a complete 4-to-8-week polarized, threshold, or championship track/XC training block anchored to your Championship Meet date with automatic overload and taper weeks.',
         bullets: [
           'Applies a physiological 3:1 loading rhythm (3 progressive build weeks followed by 1 deload week at -30% volume).',
-          'Final 10–14 days automatically transition into a race taper that preserves high-intensity openers while shedding ATL.',
-          'Pushes the entire mesocycle to your calendar (or a coached athlete’s calendar) in one transaction.',
+          'Final 10–14 days automatically transition into a championship taper that preserves speed openers while shedding ATL.',
+          'Pushes the entire mesocycle to your calendar (or a coached squad’s event groups) in one transaction.',
         ],
         ctaLabel: 'Try It Live: Generate Periodized Block →',
         onAction: () => triggerAndClose(() => onNavigateTab('calendar')),
@@ -633,15 +633,15 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c6-1',
         chapterId: 'ch6-lab',
-        badge: 'POWER & PACE CURVES (CP / W′)',
+        badge: "PACE & POWER CURVES (CS/D' · CP/W')",
         badgeColor: 'text-fuchsia-600 dark:text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/25',
-        title: 'Mean Maximal Power/Pace Envelope & 6-Axis Phenotype Radar',
+        title: 'Mean Maximal Pace/Power Envelope & Track/Endurance Phenotype Radar',
         summary:
-          'Compare Outdoor, Indoor, and All-Time Season Best power/pace curves from 5 seconds to 3 hours alongside a 6-axis physiological phenotype radar.',
+          'Compare Track, Road/XC, and All-Season pace curves alongside optional cycling power envelopes from 5 seconds to 3 hours and a 6-axis physiological phenotype radar.',
         bullets: [
-          "Solves the Monod-Scherrer hyperbolic equation to isolate Critical Power (CP) and anaerobic work capacity (W' in kJ).",
-          '6-Axis Radar benchmarks Neuromuscular 5s, Anaerobic 1m, VO2max 5m, Threshold 20m, Stamina 60m, and Durability.',
-          'Toggle between absolute Watts, relative W/kg, and Running Pace (min/km or min/mi).',
+          "Solves Critical Speed (CS / D') for track & XC running and Monod-Scherrer Critical Power (CP / W') for secondary cycling cross-training.",
+          '6-Axis Radar benchmarks Speed/Neuromuscular 5s, Glycolytic 1m, VO2max 5m, Threshold 20m, Stamina 60m, and Fatigue Durability.',
+          'Toggle between Running Pace (min/km or min/mi), Grade-Adjusted Pace (GAP), and optional Cycling Watts / W/kg.',
         ],
         ctaLabel: 'Try It Live: Open Power & Pace Curves →',
         onAction: () => triggerAndClose(() => onNavigateTab('curves')),
@@ -649,14 +649,14 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
       {
         id: 'c6-2',
         chapterId: 'ch6-lab',
-        badge: 'BIOMETRICS & GOALS',
+        badge: 'BIOMETRICS, SPIKES & GOALS',
         badgeColor: 'text-teal-600 dark:text-teal-400 bg-teal-500/10 border-teal-500/25',
-        title: '7d HRV CV, EF vs. Decoupling Quadrant, VDOT Predictor & Custom Lab',
+        title: '7d HRV CV, Spikes/Shoe Durability, VDOT Predictor & Custom Lab',
         summary:
-          'Monitor long-term autonomic stability in Biometrics, track annual mileage & gear wear in Goals & Totals, or build dual-metric regressions in Benchmarks.',
+          'Monitor autonomic stability in Biometrics, track spikes & running shoe mileage in Goals & Totals, or build dual-metric regressions in Benchmarks.',
         bullets: [
           'Biometrics Tab: 60-day HRV normal corridor, 7-day HRV Coefficient of Variation (CV%), Sleep Debt, and EF vs. Pa:Hr scatter quadrant.',
-          'Goals & Totals Tab: Independent Running & Cycling annual distance pacing, VDOT + Riegel race equivalency table, and shoe/bike drivetrain wear alerts.',
+          'Goals & Totals Tab: Track/XC & Road mileage pacing, VDOT + Riegel race equivalency table, and spikes/running shoe (plus secondary bike) wear alerts.',
           'Benchmarks Tab: 2-Athlete Side-by-Side Comparator and Custom Dual-Axis Time-Series / Scatter Chart Builder.',
         ],
         ctaLabel: 'Try It Live: Open Biometrics & Trends →',
@@ -912,8 +912,8 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 aria-label="Search user guide metrics, workflows, and formulas"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search any metric, workflow, or formula (e.g., CTL, Pa:Hr, W', Strava, Block Builder)..."
-                className="w-full min-h-[44px] pl-9 pr-20 py-2 rounded-xl text-xs sm:text-sm bg-slate-100/90 dark:bg-ap-turf border border-slate-300/80 dark:border-ap-edge-dark text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#558B00] dark:focus:ring-ap-volt"
+                placeholder="Search any metric, workflow, or formula (e.g., VDOT, Critical Speed, Pa:Hr, Strava, Splits)..."
+                className="w-full min-h-[44px] pl-9 pr-20 py-2 rounded-xl text-xs sm:text-sm bg-slate-100/90 dark:bg-ap-turf border border-slate-300/80 dark:border-ap-edge-dark text-slate-900 dark:text-slate-100 placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-ap-clay dark:focus:ring-ap-volt"
               />
               {searchQuery && (
                 <button
@@ -1062,28 +1062,28 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenDataSources())}
-                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-emerald-950/8 dark:hover:bg-emerald-400/12 text-emerald-950 dark:text-emerald-100 truncate text-center transition-colors"
+                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-ap-inset dark:hover:bg-white/10 text-ap-ink dark:text-ap-chalk truncate text-center transition-colors"
                 >
                   Data Sync
                 </button>
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenProfileModal())}
-                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-emerald-950/8 dark:hover:bg-emerald-400/12 text-emerald-950 dark:text-emerald-100 truncate text-center transition-colors"
+                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-ap-inset dark:hover:bg-white/10 text-ap-ink dark:text-ap-chalk truncate text-center transition-colors"
                 >
-                  FTP &amp; Zones
+                  VDOT &amp; Zones
                 </button>
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenRosterModal())}
-                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-emerald-950/8 dark:hover:bg-emerald-400/12 text-emerald-950 dark:text-emerald-100 truncate text-center transition-colors"
+                  className="min-h-[38px] px-2 py-1.5 rounded-lg text-2xs font-medium liquid-glass-subtle hover:bg-ap-inset dark:hover:bg-white/10 text-ap-ink dark:text-ap-chalk truncate text-center transition-colors"
                 >
                   Coach Roster
                 </button>
                 <button
                   type="button"
                   onClick={() => triggerAndClose(() => onOpenAICoach())}
-                  className="px-2 py-1.5 rounded-lg text-2xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 truncate text-center transition-colors"
+                  className="px-2 py-1.5 rounded-lg text-2xs font-medium bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-400 truncate text-center transition-colors"
                 >
                   AI Coach
                 </button>
@@ -1255,8 +1255,8 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <div className="p-3.5 rounded-xl liquid-glass-subtle flex flex-col justify-between gap-3">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-2xs font-mono font-bold uppercase text-orange-500">
-                              Step 1 · Data Ingest
+                            <span className="text-2xs font-mono font-bold uppercase text-ap-clay dark:text-ap-volt">
+                              Step 1 · Track &amp; XC Sync
                             </span>
                             <input
                               type="checkbox"
@@ -1267,21 +1267,21 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                                   step1: e.target.checked,
                                 }))
                               }
-                              className="rounded border-slate-400 text-sky-500 focus:ring-sky-500"
+                              className="rounded border-slate-400 accent-[#B83A24] dark:accent-[#D8FF2A]"
                               aria-label="Mark Step 1 Complete"
                             />
                           </div>
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
-                            Choose Strava Sync Window or Add Optional Sleep
+                            Connect Telemetry or Drop .FIT Splits
                           </div>
                           <p className="text-2xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                            Pick 90d / 6mo / Full Strava history, optionally connect Garmin or Intervals.icu, or drop .FIT files.
+                            Time watchlessly on day one, pick a Strava sync window, link Garmin/Polar/Intervals.icu, or upload .FIT track splits.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => triggerAndClose(() => onOpenDataSources())}
-                          className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-orange-500/15 hover:bg-orange-500/25 text-orange-600 dark:text-orange-400 border border-orange-500/30 flex items-center justify-center gap-1 transition-colors"
+                          className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-orange-500/15 hover:bg-orange-500/25 text-orange-700 dark:text-orange-400 border border-orange-500/30 flex items-center justify-center gap-1 transition-colors"
                         >
                           <span>Open Data Sources</span>
                           <ArrowRight className="w-3.5 h-3.5" />
@@ -1291,8 +1291,8 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <div className="p-3.5 rounded-xl liquid-glass-subtle flex flex-col justify-between gap-3">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-2xs font-mono font-bold uppercase text-sky-500">
-                              Step 2 · Thresholds
+                            <span className="text-2xs font-mono font-bold uppercase text-sky-700 dark:text-sky-400">
+                              Step 2 · VDOT &amp; Spikes
                             </span>
                             <input
                               type="checkbox"
@@ -1303,21 +1303,21 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                                   step2: e.target.checked,
                                 }))
                               }
-                              className="rounded border-slate-400 text-sky-500 focus:ring-sky-500"
+                              className="rounded border-slate-400 accent-[#B83A24] dark:accent-[#D8FF2A]"
                               aria-label="Mark Step 2 Complete"
                             />
                           </div>
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
-                            Verify Outdoor/Indoor FTP & LTHR Zones
+                            Calibrate VDOT Pace, Critical Speed &amp; Zones
                           </div>
                           <p className="text-2xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                            Calibrate Cycling FTP, Smart-Trainer FTP, W&apos;, and Running Threshold Pace.
+                            Set Track &amp; XC Threshold Pace, Critical Speed (CS/D&apos;), LTHR, spikes &amp; shoe durability, and optional cross-train FTP.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => triggerAndClose(() => onOpenProfileModal())}
-                          className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-600 dark:text-sky-400 border border-sky-500/30 flex items-center justify-center gap-1 transition-colors"
+                          className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-sky-500/15 hover:bg-sky-500/25 text-sky-700 dark:text-sky-400 border border-sky-500/30 flex items-center justify-center gap-1 transition-colors"
                         >
                           <span>Calibrate Athlete Zones</span>
                           <ArrowRight className="w-3.5 h-3.5" />
@@ -1327,7 +1327,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                       <div className="p-3.5 rounded-xl liquid-glass-subtle flex flex-col justify-between gap-3">
                         <div className="space-y-1.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-2xs font-mono font-bold uppercase text-emerald-500">
+                            <span className="text-2xs font-mono font-bold uppercase text-emerald-700 dark:text-emerald-400">
                               Step 3 · Daily Morphing
                             </span>
                             <input
@@ -1339,23 +1339,23 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
                                   step3: e.target.checked,
                                 }))
                               }
-                              className="rounded border-slate-400 text-sky-500 focus:ring-sky-500"
+                              className="rounded border-slate-400 accent-[#B83A24] dark:accent-[#D8FF2A]"
                               aria-label="Mark Step 3 Complete"
                             />
                           </div>
                           <div className="text-xs font-bold text-slate-900 dark:text-white">
-                            Inspect PMC & Morph Today&apos;s Workout
+                            Inspect Readiness &amp; Morph Today&apos;s Session
                           </div>
                           <p className="text-2xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                            Review your 14-day HRV readiness ledger and sync today&apos;s adapted session.
+                            Review 14-day HRV, shin BSI guardrails, and SafeSport/FERPA status before track or cross-train workouts.
                           </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => triggerAndClose(() => onNavigateTab('fitness'))}
-                          className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center gap-1 transition-colors"
+                          className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center gap-1 transition-colors"
                         >
-                          <span>Go to Load & Readiness</span>
+                          <span>Go to Load &amp; Readiness</span>
                           <ArrowRight className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -1542,7 +1542,7 @@ export const UserGuideModal: React.FC<UserGuideModalProps> = ({
         </div>
 
         {/* Bottom Footer with Chapter Prev/Next Controls */}
-        <div className="px-4 sm:px-6 py-3 border-t border-emerald-900/15 dark:border-ap-edge bg-white dark:bg-ap-carbon flex items-center justify-between gap-3 shrink-0">
+        <div className="px-4 sm:px-6 py-3 border-t border-stone-200/80 dark:border-ap-edge bg-white dark:bg-ap-carbon flex items-center justify-between gap-3 shrink-0">
           <div className="text-2xs font-mono text-slate-500 dark:text-slate-400 truncate">
             MeetReady Documentation · <a href="/docs/coach.html" className="underline text-ap-cobalt dark:text-ap-volt">Coach Playbook</a> · <a href="/for-athletic-directors" className="underline text-ap-cobalt dark:text-ap-volt">For ADs</a>
           </div>

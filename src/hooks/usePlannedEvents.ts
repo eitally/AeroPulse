@@ -10,6 +10,7 @@ import type {
 } from '../types';
 import { sortPlannedEventsChronologically } from '../utils/workoutScheduleUtils';
 import { buildThreshSessionHeaders } from '../utils/teamLifecycleApi';
+import { STORAGE_KEYS } from '../utils/storageKeys';
 
 interface EventLogisticsFields {
   scheduledTime?: string;
@@ -53,6 +54,7 @@ interface UsePlannedEventsParams {
   handleTeamsUpdated: (teams: TeamSummaryWithRole[], preferredActiveId?: string | null) => void;
   isSampleDemoMode: boolean;
   triggerReadOnlyAlert: (athleteName: string, actionLabel: string) => void;
+  plannedEventsRef?: React.MutableRefObject<PlannedWorkoutEvent[]>;
   setPlannedEvents: React.Dispatch<React.SetStateAction<PlannedWorkoutEvent[]>>;
   setSampleDemoPlannedEvents: React.Dispatch<React.SetStateAction<PlannedWorkoutEvent[]>>;
   setConnectedAthletes: React.Dispatch<React.SetStateAction<ConnectedAthleteRecord[]>>;
@@ -65,6 +67,7 @@ export function usePlannedEvents({
   handleTeamsUpdated,
   isSampleDemoMode,
   triggerReadOnlyAlert,
+  plannedEventsRef,
   setPlannedEvents,
   setSampleDemoPlannedEvents,
   setConnectedAthletes,
@@ -398,24 +401,72 @@ export function usePlannedEvents({
         return;
       }
 
+      const replaceDates = new Set(
+        items
+          .filter((i) => i.replaceExistingDate !== false)
+          .map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`)
+      );
+      const exactSigs = new Set(
+        items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}:${i.name.trim().toLowerCase()}`)
+      );
+      const mergeBatch = (prev: PlannedWorkoutEvent[]): PlannedWorkoutEvent[] => {
+        const filtered = prev.filter(
+          (e) =>
+            !replaceDates.has(`${e.date.slice(0, 10)}:${e.sportCategory}`) &&
+            !exactSigs.has(
+              `${e.date.slice(0, 10)}:${e.sportCategory}:${e.name.trim().toLowerCase()}`
+            )
+        );
+        return [...filtered, ...createdEvents].sort((a, b) => a.date.localeCompare(b.date));
+      };
+
       if (isSampleDemoMode) {
-        setSampleDemoPlannedEvents((prev) => {
-          const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
-          const filtered = prev.filter(
-            (e) => !targetDates.has(`${e.date.slice(0, 10)}:${e.sportCategory}`)
-          );
-          return [...filtered, ...createdEvents].sort((a, b) => a.date.localeCompare(b.date));
-        });
+        setSampleDemoPlannedEvents(mergeBatch);
         return;
       }
 
-      setPlannedEvents((prev) => {
-        const targetDates = new Set(items.map((i) => `${i.date.slice(0, 10)}:${i.sportCategory}`));
-        const filtered = prev.filter(
-          (e) => !targetDates.has(`${e.date.slice(0, 10)}:${e.sportCategory}`)
-        );
-        return [...filtered, ...createdEvents].sort((a, b) => a.date.localeCompare(b.date));
-      });
+      let mergedEvents: PlannedWorkoutEvent[] | null = null;
+      if (plannedEventsRef) {
+        mergedEvents = mergeBatch(plannedEventsRef.current);
+        plannedEventsRef.current = mergedEvents;
+        setPlannedEvents(mergedEvents);
+      } else {
+        setPlannedEvents((prev) => {
+          const next = mergeBatch(prev);
+          mergedEvents = next;
+          return next;
+        });
+      }
+
+      if (mergedEvents) {
+        try {
+          const resp = await fetch('/api/athlete-state', {
+            method: 'PUT',
+            credentials: 'include',
+            headers: buildThreshSessionHeaders(),
+            body: JSON.stringify({ plannedEvents: mergedEvents }),
+          });
+          if (resp.ok) {
+            const data = (await resp.json()) as { state?: { updatedAt?: string } };
+            if (typeof localStorage !== 'undefined') {
+              if (data.state?.updatedAt) {
+                localStorage.setItem('thresh_cloud_state_updated_at', data.state.updatedAt);
+              }
+              localStorage.removeItem(STORAGE_KEYS.CLOUD_STATE_DIRTY);
+            }
+          } else if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(STORAGE_KEYS.CLOUD_STATE_DIRTY, '1');
+          }
+        } catch {
+          if (typeof localStorage !== 'undefined') {
+            try {
+              localStorage.setItem(STORAGE_KEYS.CLOUD_STATE_DIRTY, '1');
+            } catch {
+              // ignore storage error
+            }
+          }
+        }
+      }
     },
     [
       activeConnectedAthlete,
@@ -423,6 +474,7 @@ export function usePlannedEvents({
       handleTeamsUpdated,
       isSampleDemoMode,
       triggerReadOnlyAlert,
+      plannedEventsRef,
       setConnectedAthletes,
       setPlannedEvents,
       setSampleDemoConnectedAthletes,

@@ -1070,8 +1070,11 @@ export async function savePersistedTelemetrySnapshot(
             await db.plannedEvents.bulkPut(snapshot.plannedEvents);
           }
         }
-        if (Array.isArray(snapshot.gearItems) && snapshot.gearItems.length > 0) {
-          await db.gearItems.bulkPut(snapshot.gearItems);
+        if (Array.isArray(snapshot.gearItems)) {
+          await db.gearItems.clear();
+          if (snapshot.gearItems.length > 0) {
+            await db.gearItems.bulkPut(snapshot.gearItems);
+          }
         }
         let ownerAthleteId = snapshot.ownerAthleteId;
         if (!ownerAthleteId && typeof localStorage !== 'undefined') {
@@ -1098,6 +1101,20 @@ export async function savePersistedTelemetrySnapshot(
     return savedAt;
   } catch {
     return null;
+  }
+}
+
+export async function replaceGearItemsInStore(items: AthleteGearItem[]): Promise<void> {
+  try {
+    if (isBrowserSessionLoggedOut()) return;
+    await db.transaction('rw', db.gearItems, async () => {
+      await db.gearItems.clear();
+      if (Array.isArray(items) && items.length > 0) {
+        await db.gearItems.bulkPut(items);
+      }
+    });
+  } catch {
+    // Non-fatal IndexedDB persistence fallback
   }
 }
 

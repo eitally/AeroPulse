@@ -111,6 +111,7 @@ import {
 } from './goals/goalArchetypeTemplates';
 import { getTrackEventSeedPresets, TrackSpeedReservePanel } from './goals/TrackSpeedReservePanel';
 import { RacePhysicsSimulatorBody } from './goals/RacePhysicsSimulatorBody';
+import { ShoeSpikeClosetSection } from './goals/ShoeSpikeClosetSection';
 export type {
   GoalArchetypeCategory,
   GoalArchetypeId,
@@ -127,6 +128,11 @@ export interface PlannedEventBatchItem {
   plannedLoad: number;
   workoutSyntax: string;
   description: string;
+  scheduledTime?: string;
+  sessionSlot?: import('../types').WorkoutSessionSlot;
+  locationName?: string;
+  locationCategory?: import('../types').PracticeVenueCategory;
+  meetingNotes?: string;
   trackSpec?: TrackWorkoutSpec;
   replaceExistingDate?: boolean;
   planBlockId?: string;
@@ -145,6 +151,7 @@ interface GoalsViewProps {
   plannedEvents?: PlannedWorkoutEvent[];
   athleteProfile?: AthleteProfile;
   gearItems?: AthleteGearItem[];
+  onSaveGearItems?: (nextItems: AthleteGearItem[]) => Promise<void> | void;
   envFilter: EnvironmentFilter;
   onSelectEnvFilter: (env: EnvironmentFilter) => void;
   distanceUnit: DistanceUnit;
@@ -187,6 +194,8 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
   wellnessDays,
   plannedEvents = [],
   athleteProfile,
+  gearItems = [],
+  onSaveGearItems,
   distanceUnit,
   currentCtl,
   activeTeam = null,
@@ -2031,6 +2040,16 @@ const GoalsViewInner: React.FC<GoalsViewProps> = ({
           </div>
         </form>
       </section>
+
+      {/* ==========================================================================
+          SHOE & TRACK SPIKE CLOSET
+         ========================================================================== */}
+      <ShoeSpikeClosetSection
+        gearItems={gearItems}
+        activities={activities}
+        distanceUnit={distanceUnit}
+        onSaveGearItems={onSaveGearItems || (() => {})}
+      />
 
       {/* ==========================================================================
           UNIT-AWARE RACE PHYSICS & FUELING SIMULATOR

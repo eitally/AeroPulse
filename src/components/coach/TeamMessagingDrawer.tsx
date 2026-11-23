@@ -8,8 +8,10 @@ import {
   Flag,
   Lock,
   MessageSquare,
+  RefreshCw,
   Send,
   ShieldCheck,
+  WifiOff,
   X,
 } from '../icons/PhosphorIcons';
 import { COACH_EVENT_GROUP_OPTIONS } from '../../physiology/teamOnboardingEngine';
@@ -17,6 +19,7 @@ import {
   acknowledgeTeamMessageApi,
   flagTeamMessageApi,
   postTeamMessageApi,
+  TeamLifecycleApiError,
   updateTeamMessagingPolicyApi,
 } from '../../utils/teamLifecycleApi';
 import {
@@ -66,6 +69,18 @@ function sanitizeCsvCell(raw: unknown): string {
   return `"${safe}"`;
 }
 
+interface QueuedOfflineTeamMessage {
+  localId: string;
+  teamId: string;
+  channelScope: TeamMessageChannelScope;
+  eventGroup?: CoachEventGroup;
+  targetMembershipId?: string;
+  body: string;
+  clientLocalHour: number;
+  isEmergencyOverride: boolean;
+  createdAt: string;
+}
+
 export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   isOpen,
   onClose,
@@ -82,6 +97,8 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   const [sending, setSending] = useState<boolean>(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusInfo, setStatusInfo] = useState<string | null>(null);
+  const [queuedOfflineMessages, setQueuedOfflineMessages] = useState<QueuedOfflineTeamMessage[]>([]);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [pushEnabled, setPushEnabled] = useState<boolean>(false);
   const [pushCount, setPushCount] = useState<number>(0);
   const [pushLoading, setPushLoading] = useState<boolean>(false);
@@ -173,6 +190,21 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }, [activeScope, activeTeam?.teamMessages, isStaff, resolvedDirectAthlete, selectedGroup]);
 
+  const visibleQueuedMessages = useMemo(
+    () =>
+      queuedOfflineMessages.filter(
+        (q) =>
+          activeTeam &&
+          q.teamId === activeTeam.brand.teamId &&
+          q.channelScope === activeScope &&
+          (activeScope !== 'EVENT_GROUP' || q.eventGroup === selectedGroup) &&
+          (activeScope !== 'DIRECT_TRANSPARENT' ||
+            !resolvedDirectAthlete ||
+            q.targetMembershipId === resolvedDirectAthlete.membershipId)
+      ),
+    [activeScope, activeTeam, queuedOfflineMessages, resolvedDirectAthlete, selectedGroup]
+  );
+
   if (!isOpen || !activeTeam) return null;
 
   const applyUpdatedTeam = (updated: TeamSummaryWithRole) => {
@@ -236,6 +268,35 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       );
     };
 
+    if (isSampleDemo) {
+      fallbackLocalSend();
+      return;
+    }
+
+    const queueOffline = () => {
+      const queuedItem: QueuedOfflineTeamMessage = {
+        localId: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        teamId: activeTeam.brand.teamId,
+        channelScope: activeScope,
+        eventGroup: activeScope === 'EVENT_GROUP' ? selectedGroup : undefined,
+        targetMembershipId:
+          activeScope === 'DIRECT_TRANSPARENT'
+            ? resolvedDirectAthlete?.membershipId
+            : undefined,
+        body: clean,
+        clientLocalHour: localHour,
+        isEmergencyOverride: emergencyOverride,
+        createdAt: new Date().toISOString(),
+      };
+      setQueuedOfflineMessages((prev) => [...prev, queuedItem]);
+      setDraftBody('');
+    };
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      queueOffline();
+      return;
+    }
+
     setSending(true);
     try {
       const resp = await postTeamMessageApi({
@@ -255,14 +316,56 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       }
       setDraftBody('');
       setStatusInfo('Message delivered ✓');
-    } catch {
-      fallbackLocalSend();
+    } catch (err) {
+      if (err instanceof TeamLifecycleApiError) {
+        setStatusError(err.message);
+      } else {
+        queueOffline();
+      }
     } finally {
       setSending(false);
     }
   };
 
+  const handleRetryQueuedMessage = async (item: QueuedOfflineTeamMessage) => {
+    setStatusError(null);
+    setStatusInfo(null);
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setStatusError('Still offline — reconnect to deliver queued message.');
+      return;
+    }
+    setRetryingId(item.localId);
+    try {
+      const resp = await postTeamMessageApi({
+        teamId: item.teamId,
+        channelScope: item.channelScope,
+        eventGroup: item.eventGroup,
+        targetMembershipId: item.targetMembershipId,
+        body: item.body,
+        guardianCc: true,
+        clientLocalHour: item.clientLocalHour,
+        isEmergencyOverride: item.isEmergencyOverride,
+      });
+      if (resp.teams && resp.teams.length > 0) {
+        onTeamsUpdated(resp.teams, item.teamId);
+      } else if (resp.team) {
+        applyUpdatedTeam(resp.team);
+      }
+      setQueuedOfflineMessages((prev) => prev.filter((q) => q.localId !== item.localId));
+      setStatusInfo('Message delivered ✓');
+    } catch (err) {
+      if (err instanceof TeamLifecycleApiError) {
+        setStatusError(err.message);
+      } else {
+        setStatusError('Network error — queued message could not be delivered yet.');
+      }
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
   const handleAck = async (msgId: string) => {
+    setStatusError(null);
     const localAck = () => {
       applyUpdatedTeam({
         ...activeTeam,
@@ -278,16 +381,25 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         ),
       });
     };
+    if (isSampleDemo) {
+      localAck();
+      return;
+    }
     try {
       const resp = await acknowledgeTeamMessageApi({ teamId: activeTeam.brand.teamId, messageId: msgId });
-      if (resp.team) applyUpdatedTeam(resp.team);
-      else localAck();
-    } catch {
-      localAck();
+      if (resp.teams && resp.teams.length > 0) onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
+      else if (resp.team) applyUpdatedTeam(resp.team);
+    } catch (err) {
+      setStatusError(
+        err instanceof TeamLifecycleApiError
+          ? err.message
+          : 'Offline — acknowledgement not saved. Reconnect and try again.'
+      );
     }
   };
 
   const handleFlag = async (msgId: string) => {
+    setStatusError(null);
     const localFlag = () => {
       applyUpdatedTeam({
         ...activeTeam,
@@ -297,29 +409,47 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       });
       setStatusInfo('Flagged for Athletic Administrator review.');
     };
+    if (isSampleDemo) {
+      localFlag();
+      return;
+    }
     try {
       const resp = await flagTeamMessageApi({ teamId: activeTeam.brand.teamId, messageId: msgId });
-      if (resp.team) applyUpdatedTeam(resp.team);
-      else localFlag();
-    } catch {
-      localFlag();
+      if (resp.teams && resp.teams.length > 0) onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
+      else if (resp.team) applyUpdatedTeam(resp.team);
+      setStatusInfo('Flagged for Athletic Administrator review.');
+    } catch (err) {
+      setStatusError(
+        err instanceof TeamLifecycleApiError
+          ? err.message
+          : 'Offline — message flag not saved. Reconnect and try again.'
+      );
     }
   };
 
   const handleToggleAthleteReplies = async () => {
+    setStatusError(null);
     const nextVal = !policy.athleteRepliesEnabled;
     const localUpdate = () => {
       applyUpdatedTeam({ ...activeTeam, messagingPolicy: { ...policy, athleteRepliesEnabled: nextVal } });
     };
+    if (isSampleDemo) {
+      localUpdate();
+      return;
+    }
     try {
       const resp = await updateTeamMessagingPolicyApi({
         teamId: activeTeam.brand.teamId,
         athleteRepliesEnabled: nextVal,
       });
-      if (resp.team) applyUpdatedTeam(resp.team);
-      else localUpdate();
-    } catch {
-      localUpdate();
+      if (resp.teams && resp.teams.length > 0) onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
+      else if (resp.team) applyUpdatedTeam(resp.team);
+    } catch (err) {
+      setStatusError(
+        err instanceof TeamLifecycleApiError
+          ? err.message
+          : 'Offline — messaging policy update failed. Reconnect and try again.'
+      );
     }
   };
 
@@ -609,7 +739,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
 
         {/* Messages Feed */}
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-          {visibleMessages.length === 0 ? (
+          {visibleMessages.length === 0 && visibleQueuedMessages.length === 0 ? (
             <div className="rounded-xl ap-card-inset p-4 text-xs text-ap-muted dark:text-ap-muted-dark">
               No messages in this channel yet. Post a meet reminder or practice note below.
             </div>
@@ -681,6 +811,31 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
               );
             })
           )}
+          {visibleQueuedMessages.map((q) => (
+              <div
+                key={q.localId}
+                data-testid={`team-msg-queued-${q.localId}`}
+                className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 space-y-1.5 text-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono">
+                  <span className="inline-flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
+                    <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                    <span>Queued offline — not delivered yet</span>
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="team-msg-retry-btn"
+                    disabled={retryingId === q.localId}
+                    onClick={() => void handleRetryQueuedMessage(q)}
+                    className="min-h-[34px] px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>{retryingId === q.localId ? 'Retrying…' : 'Retry'}</span>
+                  </button>
+                </div>
+                <p className="text-ap-ink dark:text-ap-chalk leading-snug">{q.body}</p>
+              </div>
+            ))}
         </div>
 
         {/* Composer */}

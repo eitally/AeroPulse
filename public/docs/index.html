@@ -59,7 +59,7 @@
       --text-muted: #57544D;
       --border-hairline: rgba(18, 20, 19, 0.14);
       --accent-cobalt: #B83A24;
-      --accent-teal: #1E4D36;
+      --accent-teal: #B83A24;
       --accent-amber: #9E2E1A;
       --accent-vermilion: #B83A24;
       --code-bg: #121413;
@@ -76,7 +76,7 @@
       --text-muted: #A39E93;
       --border-hairline: rgba(246, 243, 236, 0.14);
       --accent-cobalt: #D8FF2A;
-      --accent-teal: #86EFAC;
+      --accent-teal: #D8FF2A;
       --accent-amber: #FBBF24;
       --accent-vermilion: #D8FF2A;
       --code-bg: #0D0E0D;
@@ -182,20 +182,18 @@
       font-weight: 700;
       letter-spacing: 0.04em;
       text-transform: uppercase;
-      border: 1px solid #84cc16;
-      background: #e8f8c8;
-      color: #164e27;
+      border: 1px solid rgba(18, 20, 19, 0.18);
+      background: #EDE9DF;
+      color: #B83A24;
       width: fit-content;
-      transform: skewX(-14deg);
     }
     html.dark .lane-pill {
-      background: rgba(200, 255, 0, 0.15);
-      border-color: rgba(200, 255, 0, 0.45);
-      color: #c8ff00;
+      background: #242826;
+      border-color: rgba(216, 255, 42, 0.45);
+      color: #D8FF2A;
     }
     .lane-pill > span {
       display: inline-block;
-      transform: skewX(14deg);
     }
     .pill {
       display: inline-flex;
@@ -523,7 +521,7 @@
       <img src="/brand/meetready-lockup-light.svg" alt="MeetReady" class="doc-logo-light" />
       <img src="/brand/meetready-lockup-dark.svg" alt="MeetReady" class="doc-logo-dark" />
       <div class="brand-meta">
-        <span class="brand-subtitle">Endurance Physiology, Adaptive Load &amp; Scholastic Team Operations</span>
+        <span class="brand-subtitle">Track, Field &amp; Cross Country Physiology, Adaptive Load &amp; Meet Operations</span>
       </div>
     </a>
     <div class="header-controls">
@@ -545,12 +543,12 @@
     <aside id="sidebarNav" aria-label="Documentation chapters">
       <div class="nav-group-title">Platform Overview</div>
       <a href="#sec-overview" class="nav-link active">1. Architecture &amp; Why MeetReady</a>
-      <a href="#sec-onboarding" class="nav-link">2. Strava Sign-In &amp; Sync Consent</a>
+      <a href="#sec-onboarding" class="nav-link">2. Track Onboarding &amp; Sync Consent</a>
       <a href="#sec-today" class="nav-link">3. Circadian Readiness &amp; Plan Ledger</a>
       <a href="#sec-inspector" class="nav-link">4. 1Hz Inspector &amp; No-Lap Detector</a>
 
       <div class="nav-group-title">Physiology &amp; Race Lab</div>
-      <a href="#sec-durability" class="nav-link">5. CP/W' &amp; Fatigue Durability</a>
+      <a href="#sec-durability" class="nav-link">5. Critical Speed, Spikes &amp; Durability</a>
       <a href="#sec-racesim" class="nav-link">6. Course &amp; Fueling Simulator</a>
       <a href="#sec-passports" class="nav-link">7. FAT Rubber-Banding &amp; Passports</a>
 
@@ -561,7 +559,7 @@
       <a href="#sec-safesport" class="nav-link">10. Safe-Sport, BSI &amp; 20h CARA Audit</a>
 
       <div class="nav-group-title">Engineering &amp; Reference</div>
-      <a href="#sec-formulas" class="nav-link">11. Mathematical Equations</a>
+      <a href="#sec-formulas" class="nav-link">11. Track &amp; Endurance Equations</a>
       <a href="#sec-api" class="nav-link">12. REST API, Webhooks &amp; Vault Security</a>
       <a href="/brand" class="nav-link">Brand Studio, Logos &amp; Colors →</a>
     </aside>
@@ -574,16 +572,16 @@
         </summary>
         <nav class="mobile-toc-links" aria-label="Mobile chapter jump menu">
           <a href="#sec-overview" class="nav-link">1. Architecture &amp; Why MeetReady</a>
-          <a href="#sec-onboarding" class="nav-link">2. Strava Sign-In &amp; Sync Consent</a>
+          <a href="#sec-onboarding" class="nav-link">2. Track Onboarding &amp; Sync Consent</a>
           <a href="#sec-today" class="nav-link">3. Circadian Readiness &amp; Plan Ledger</a>
           <a href="#sec-inspector" class="nav-link">4. 1Hz Inspector &amp; No-Lap Detector</a>
-          <a href="#sec-durability" class="nav-link">5. CP/W' &amp; Fatigue Durability</a>
+          <a href="#sec-durability" class="nav-link">5. Critical Speed, Spikes &amp; Durability</a>
           <a href="#sec-racesim" class="nav-link">6. Course &amp; Fueling Simulator</a>
           <a href="#sec-passports" class="nav-link">7. FAT Rubber-Banding &amp; Passports</a>
           <a href="#sec-pods" class="nav-link">8. VDOT Pods &amp; Watchless Split Pad</a>
           <a href="#sec-ncaa" class="nav-link">9. NCAA Track Indexing &amp; Standards</a>
           <a href="#sec-safesport" class="nav-link">10. Safe-Sport, BSI &amp; 20h CARA Audit</a>
-          <a href="#sec-formulas" class="nav-link">11. Mathematical Equations</a>
+          <a href="#sec-formulas" class="nav-link">11. Track &amp; Endurance Equations</a>
           <a href="#sec-api" class="nav-link">12. REST API, Webhooks &amp; Vault Security</a>
           <a href="/brand" class="nav-link">Brand Studio, Logos &amp; Colors →</a>
         </nav>
@@ -591,9 +589,9 @@
 
       <!-- SECTION 1 -->
       <section id="sec-overview" class="doc-section">
-        <h1>MeetReady — Precision Endurance Physiology &amp; Team Operations</h1>
+        <h1>MeetReady — Track, Field &amp; Cross Country Operations &amp; Physiology</h1>
         <p>
-          <strong>MeetReady</strong> is an installable Progressive Web App (PWA) unifying laboratory-grade running and cycling physiology, closed-loop daily workout adaptivity, and high school or collegiate team operations in one 4-pillar workspace (<strong>Today</strong>, <strong>Calendar</strong>, <strong>Log</strong>, <strong>Progress</strong>). Sign in with <strong>Google OAuth</strong>, <strong>WebAuthn Passkeys</strong>, <strong>Magic Link</strong>, <strong>Email OTP</strong>, or optional <strong>Strava OAuth</strong>—with <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong> (including COROS &amp; WHOOP relays), <strong>Wahoo</strong>, and <strong>Polar</strong> supported anytime. <em>Informational coaching telemetry only — not medical advice.</em>
+          <strong>MeetReady</strong> is an installable Progressive Web App (PWA) purpose-built for <strong>Track, Field &amp; Cross Country</strong> teams and athletes—unifying <code>0.01s</code> trackside splits, VDOT pace pods, Critical Speed (<code>CS/D'</code>), spikes &amp; shoe durability, meet operations, and SafeSport/FERPA youth safeguards in one 4-pillar workspace (<strong>Today</strong>, <strong>Calendar</strong>, <strong>Log</strong>, <strong>Progress</strong>), with full secondary support for cycling and pool cross-training. Sign in with <strong>Google OAuth</strong>, <strong>WebAuthn Passkeys</strong>, <strong>Magic Link</strong>, <strong>Email OTP</strong>, or optional <strong>Strava OAuth</strong>—with <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong> (including COROS &amp; WHOOP relays), <strong>Polar</strong>, and <strong>Wahoo</strong> supported anytime. <em>Informational coaching telemetry only — not medical advice.</em>
         </p>
 
         <div class="table-wrap">
@@ -609,25 +607,25 @@
             </thead>
             <tbody>
               <tr>
-                <td><strong>1Hz Stream Inspector (<code>W</code>, <code>HR</code>, <code>Pace</code>, <code>W' Bal</code>, <code>Pa:Hr</code>)</strong></td>
+                <td><strong>1Hz Stream Inspector (<code>Pace</code>, <code>Splits</code>, <code>GAP</code>, <code>CS/D'</code>, <code>HR</code>, <code>Pa:Hr</code> + Cross-Train <code>W</code>/<code>W' Bal</code>)</strong></td>
                 <td>Yes</td>
                 <td>Partial</td>
                 <td>No</td>
-                <td><strong>Yes + 1Hz No-Lap Unstructured Rep Detector</strong></td>
+                <td><strong>Yes + 1Hz No-Lap Unstructured Track Rep Detector</strong></td>
               </tr>
               <tr>
-                <td><strong>3-Channel Orthopedic Interference &amp; 1-Tap Bike/Pool Swap</strong></td>
+                <td><strong>3-Channel Orthopedic Interference &amp; 1-Tap Cross-Train Swap</strong></td>
                 <td>No</td>
                 <td>No</td>
                 <td>No</td>
-                <td><strong>Yes (Central / Run Impact / Bike Torque ACWR)</strong></td>
+                <td><strong>Yes (Central / Run &amp; Spike Impact / Bike Torque ACWR)</strong></td>
               </tr>
               <tr>
-                <td><strong>Fatigue-Sliced Durability (<code>0–40 kJ/kg</code> &amp; <code>0–2,000 kcal</code>)</strong></td>
+                <td><strong>Spikes, Shoe &amp; Fatigue-Sliced Durability (<code>0–2,000 kcal</code> &amp; <code>0–40 kJ/kg</code>)</strong></td>
                 <td>Manual Custom</td>
                 <td>No</td>
                 <td>No</td>
-                <td><strong>Yes (Built-in Retention &amp; Fueling Prescription)</strong></td>
+                <td><strong>Yes (Spike/Shoe Wear + Retention &amp; Fueling Prescription)</strong></td>
               </tr>
               <tr>
                 <td><strong>Plan vs. Actual Weekly Ledger (<code>- Scheduled / + Modulated</code>)</strong></td>
@@ -665,7 +663,7 @@
                 <td><strong>Yes (HS State, Nationals, NCAA D1/D2/D3)</strong></td>
               </tr>
               <tr>
-                <td><strong>Safe-Sport Weight Shield, Shin BSI Alert &amp; 20h CARA Audit</strong></td>
+                <td><strong>SafeSport / FERPA Weight Shield, Shin BSI Alert &amp; 20h CARA Audit</strong></td>
                 <td>No</td>
                 <td>No</td>
                 <td>No</td>
@@ -678,40 +676,38 @@
 
       <!-- SECTION 2 -->
       <section id="sec-onboarding" class="doc-section">
-        <h2>2. Multi-Auth Onboarding, Sync Windows &amp; Team Join Flow</h2>
+        <h2>2. Track &amp; Field Onboarding, Sync Windows &amp; Team Join Flow</h2>
         <p>
-          Individual athletes, coaches, parents, and student-athletes enter MeetReady cleanly with zero mandatory Strava accounts for school squads and zero unconsented background imports:
+          Track, field, and cross-country athletes, coaches, and parents enter MeetReady cleanly with zero mandatory GPS watches or Strava accounts for school squads, built-in SafeSport/FERPA youth controls, and zero unconsented background imports:
         </p>
         <div class="grid-2">
           <div class="card">
-            <h3>Step 1 · Multi-Provider Identity</h3>
+            <h3>Step 1 · Multi-Provider &amp; Scholastic Identity</h3>
             <ul>
               <li><strong>School &amp; Athlete Choice:</strong> Sign in with <strong>Google OAuth</strong>, <strong>WebAuthn Passkeys</strong> (cryptographic hardware verification), fail-closed <strong>Magic Link</strong>, <strong>6-Digit Email OTP</strong>, or optional <strong>Strava OAuth</strong>.</li>
-              <li><strong>Inline Team Join:</strong> Athletes arriving via <code>/join/&lt;slug&gt;</code>, QR poster scan, or a 6-character Team Code see their team preview before signing in.</li>
-              <li><strong>Read-Only Strava Pledge:</strong> MeetReady never posts to your Strava feed, never modifies activities, and lets you disconnect &amp; deauthorize anytime.</li>
+              <li><strong>Inline Team Join &amp; Event Groups:</strong> Athletes arriving via <code>/join/&lt;slug&gt;</code>, QR locker-room poster, or a 6-character Team Code preview their squad (Sprints, Hurdles, Jumps, Throws, Mid-Distance, XC) before signing in.</li>
+              <li><strong>SafeSport &amp; Read-Only Pledge:</strong> Minors 13–17 route through parent/guardian consent; MeetReady never posts to social feeds or modifies connected activities.</li>
             </ul>
           </div>
           <div class="card">
-            <h3>Step 2 · Choose What Syncs From Strava</h3>
+            <h3>Step 2 · Track Calibration, Spikes &amp; Optional Strava Window</h3>
             <ul>
-              <li><strong>Last 90 Days (Recommended):</strong> Instant 42-day <code>CTL</code>, 7-day <code>ATL</code>, and Form (<code>TSB</code>) calibration.</li>
-              <li><strong>Last 6 Months / Full Archive:</strong> Deep seasonal <code>CP/W'</code> and durability curves.</li>
-              <li><strong>Identity Only (No Workouts):</strong> Uses Strava strictly for sign-in; syncs zero workouts.</li>
-              <li><strong>Sport, Units &amp; Optional Seed Mark:</strong> Pre-fills <code>mi / lbs</code> or <code>km / kg</code> from Strava and optionally calibrates LT Pace / VDOT or Cycling FTP from a recent race mark (e.g., <code>18:45 5K</code>, <code>10:15 3200m</code>, <code>280W 20m</code>).</li>
+              <li><strong>Seed Race Mark (VDOT &amp; Critical Speed):</strong> Calibrates VDOT pace pods and Critical Speed immediately from a recent track or XC mark (e.g., <code>4:32 1600m</code>, <code>10:15 3200m</code>, <code>18:45 5K</code>)—plus optional cycling cross-training FTP (e.g., <code>280W 20m</code>).</li>
+              <li><strong>Spikes &amp; Footwear Durability:</strong> Pre-configures Daily Trainers, Racing Flats, and Track Spikes mileage tracking alongside <code>mi / lbs</code> or <code>km / kg</code> display units.</li>
+              <li><strong>Last 90 Days / 6 Months / Full Archive / Identity Only:</strong> When connecting Strava, pick instant 42-day <code>CTL</code>/<code>ATL</code>/<code>TSB</code> calibration, deep seasonal durability, or Identity Only with zero workout import.</li>
             </ul>
           </div>
         </div>
         <div class="card" style="margin-top:1rem;">
-          <h3>Step 3 · Optional Hardware Connectors (Garmin, Intervals.icu, Wahoo &amp; Polar AccessLink)</h3>
+          <h3>Step 3 · Optional Watch &amp; Cross-Training Connectors (Garmin, Polar, Intervals.icu &amp; Wahoo)</h3>
           <p>
-            Connecting <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong>, <strong>Wahoo Cloud</strong>, or <strong>Polar AccessLink</strong> unlocks overnight <code>HRV rMSSD</code>, <code>Sleep Score</code>, ELEMNT bike computer sync, Grit X / Vantage / Pacer exercise telemetry, and direct file downloads—but is <strong>100% optional</strong>. Athletes training with Strava alone get full Banister <code>CTL/ATL/TSB</code>, two-pass calibrated running <code>rTSS</code> and Grade-Adjusted Efficiency Factor (<code>EF</code>), GPS segment PRs, VDOT pods, and structured workout planning on Day 1.
+            Coaches can run full watchless <code>0.01s</code> trackside timing and field mark logging on Day 1 without wearables. Optionally connecting <strong>Garmin Connect</strong>, <strong>Polar AccessLink</strong>, <strong>Intervals.icu</strong>, or <strong>Wahoo Cloud</strong> unlocks overnight <code>HRV rMSSD</code>, <code>Sleep Score</code>, Grit X / Vantage / Pacer track telemetry, COROS/WHOOP relays, and secondary cycling/smart-trainer cross-training sync.
           </p>
           <ul>
             <li><strong>Intervals.icu 1-Click OAuth 2.0:</strong> Standard OAuth authorization code grant requesting scopes <code>ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ</code> with encrypted AES-256-GCM token storage.</li>
-            <li><strong>Wahoo Cloud API (OAuth 2.0 / PKCE):</strong> Direct integration with <code>api.wahooligan.com</code> using RFC 7636 PKCE. Ingests ELEMNT GPS bike computer rides, KICKR smart trainer sessions, and binary .FIT files with smart ±5-minute multi-source deduplication against Strava and Garmin.</li>
             <li><strong>Polar AccessLink (OAuth 2.0):</strong> Self-service developer integration requesting scope <code>accesslink.read_all</code> with basic-auth token exchange at <code>polarremote.com</code>. Ingests Grit X, Vantage, and Pacer watches, H10/Verity HR monitors, heart-rate zone distributions, and automatic <code>rTSS</code>.</li>
-            <li><strong>Power-User Fallback:</strong> Athletes with self-managed developer setups can optionally connect Intervals.icu directly via personal API key.</li>
-            <li><strong>Self-Hoster Credentials:</strong> Set <code>INTERVALS_CLIENT_ID</code>/<code>INTERVALS_CLIENT_SECRET</code>, <code>WAHOO_CLIENT_ID</code>/<code>WAHOO_CLIENT_SECRET</code>, and <code>POLAR_CLIENT_ID</code>/<code>POLAR_CLIENT_SECRET</code> in your environment variables.</li>
+            <li><strong>Wahoo Cloud API (OAuth 2.0 / PKCE):</strong> Direct integration with <code>api.wahooligan.com</code> using RFC 7636 PKCE. Ingests running GPS workouts plus secondary ELEMNT bike computer rides, KICKR smart-trainer cross-training sessions, and binary .FIT files with smart ±5-minute multi-source deduplication.</li>
+            <li><strong>Power-User &amp; Self-Hoster Setup:</strong> Connect Intervals.icu via personal API key if preferred, or set <code>INTERVALS_CLIENT_ID</code>/<code>INTERVALS_CLIENT_SECRET</code>, <code>POLAR_CLIENT_ID</code>/<code>POLAR_CLIENT_SECRET</code>, and <code>WAHOO_CLIENT_ID</code>/<code>WAHOO_CLIENT_SECRET</code> in environment variables.</li>
           </ul>
         </div>
       </section>
@@ -760,22 +756,22 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
 
       <!-- SECTION 5 -->
       <section id="sec-durability" class="doc-section">
-        <h2>5. Empirical 1Hz <code>CP/W'</code> &amp; Fatigue-Sliced <code>kJ/kg</code> / <code>kcal</code> Durability</h2>
+        <h2>5. Critical Speed (<code>CS/D'</code>), Spikes Durability &amp; <code>0–2,000 kcal</code> Retention</h2>
         <p>
-          Two athletes can share the exact same fresh 20-minute FTP (<code>300W</code>) or 5K PR (<code>15:30</code>), yet diverge dramatically after 2 hours of racing. In <strong>Progress → Power &amp; Pace Curves</strong>, MeetReady slices your historical 1Hz streams by accumulated mechanical work performed <em>prior</em> to each effort:
+          Two runners can share the exact same fresh 5K PR (<code>15:30</code>) or 3200m mark—or secondary cycling FTP (<code>300W</code>)—yet diverge dramatically in the closing laps of a championship race. In <strong>Progress → Power &amp; Pace Curves</strong>, MeetReady models Critical Speed (<code>CS/D'</code>), tracks spikes &amp; running shoe wear, and slices your 1Hz streams by metabolic expenditure performed <em>prior</em> to each effort:
         </p>
         <div class="grid-2">
           <div class="card">
-            <h3>Cycling Work Buckets (<code>0–40 kJ/kg</code>)</h3>
-            <p style="margin-bottom:0;">Evaluates Peak 5m and 20m power at <code>0</code> (Fresh), <code>10</code>, <code>20</code>, <code>30</code>, and <code>40 kJ/kg</code> of prior mechanical work.</p>
+            <h3>Running &amp; Spikes Metabolic Buckets (<code>0–2,000 kcal</code>)</h3>
+            <p style="margin-bottom:0;">Evaluates Peak 5m and 20m Grade-Adjusted Pace (<code>GAP</code>) and Critical Speed retention at <code>0</code> (Fresh), <code>500</code>, <code>1,000</code>, <code>1,500</code>, and <code>2,000 kcal</code> alongside spike &amp; trainer mileage alerts.</p>
           </div>
           <div class="card">
-            <h3>Running Metabolic Buckets (<code>0–2,000 kcal</code>)</h3>
-            <p style="margin-bottom:0;">Evaluates Peak 5m and 20m Grade-Adjusted Pace (<code>GAP</code>) at <code>0</code> (Fresh), <code>500</code>, <code>1,000</code>, <code>1,500</code>, and <code>2,000 kcal</code> of prior expenditure.</p>
+            <h3>Secondary Cross-Training: Cycling Work Buckets (<code>0–40 kJ/kg</code>)</h3>
+            <p style="margin-bottom:0;">For bike and dual-sport cross-training blocks, evaluates Peak 5m and 20m <code>CP/W'</code> power at <code>0</code> (Fresh), <code>10</code>, <code>20</code>, <code>30</code>, and <code>40 kJ/kg</code> of prior mechanical work.</p>
           </div>
         </div>
         <p>
-          Classifies your phenotype into <code>PRO_TOUR_RESILIENT</code> (<code>&ge; 95%</code> retention at deep fatigue), <code>WELL_CONDITIONED</code>, <code>MODERATE_FADE</code>, or <code>GLYCOGEN_FRAGILE</code>, and prescribes exact intra-session carbohydrate oxidation targets (<code>60–110 g/hr</code>).
+          Classifies your durability phenotype into <code>PRO_TOUR_RESILIENT</code> (<code>&ge; 95%</code> retention at deep fatigue), <code>WELL_CONDITIONED</code>, <code>MODERATE_FADE</code>, or <code>GLYCOGEN_FRAGILE</code>, and prescribes exact intra-session carbohydrate oxidation targets (<code>60–110 g/hr</code>).
         </p>
       </section>
 
@@ -861,28 +857,30 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
 
       <!-- SECTION 11 -->
       <section id="sec-formulas" class="doc-section">
-        <h2>11. Core Physiological Equations &amp; Algorithms</h2>
-        <div class="formula-box mono">1. Banister EWMA Load Model:
+        <h2>11. Track, Field &amp; Endurance Physiological Equations</h2>
+        <div class="formula-box mono">1. Jack Daniels VDOT Oxygen Cost &amp; Fractional Utilization (Track &amp; XC Pace Pods):
+   VO2(v) = -4.60 + 0.182258*v + 0.000104*v^2   (v in m/min)
+   %VO2max(t) = 0.8 + 0.1894393*e^(-0.012778*t) + 0.2989558*e^(-0.1932605*t)
+   VDOT = VO2(v) / %VO2max(t)
+
+2. Critical Speed (CS / D') &amp; Secondary Cycling Critical Power (CP / W'):
+   D(t) = CS * t + D'   |   v(t) = CS + D' / t
+   D'_bal(t) = D' - ∫ max(0, v(u) - CS) * exp(-(t - u) / τ_D') du
+   Cycling Cross-Train:  P(t) = CP + W' / t   |   W'_bal(t) = W' - ∫ max(0, P(u) - CP) * exp(-(t - u) / τ_W') du
+
+3. Minetti Grade-Adjusted Pace (GAP) &amp; Cross-Country Terrain Cost:
+   Cr(i) = 155.4*i^5 - 30.4*i^4 - 43.3*i^3 + 46.3*i^2 + 19.5*i + 3.6  (J/kg/m)
+
+4. Banister EWMA Load Model &amp; Running rTSS:
    CTL_t = CTL_{t-1} + (TSS_t - CTL_{t-1}) / 42
    ATL_t = ATL_{t-1} + (TSS_t - ATL_{t-1}) / 7
    TSB_t = CTL_t - ATL_t
+   rTSS = (Duration_secs * NGP * IF) / (Threshold_Speed * 3600) * 100
 
-2. Coggan Normalized Power &amp; TSS:
+5. Secondary Cross-Training — Coggan Normalized Power &amp; Cycling TSS:
    NP = [ (1/N) * Σ (Rolling_30s_Watts_i)^4 ]^(1/4)
    IF = NP / FTP
-   TSS = (Duration_secs * NP * IF) / (FTP * 3600) * 100
-
-3. Monod-Scherrer Critical Power (CP) &amp; Skiba W' Balance:
-   P(t) = CP + W' / t
-   W'_bal(t) = W' - ∫ max(0, P(u) - CP) * exp(-(t - u) / τ_W') du
-
-4. Minetti Grade-Adjusted Pace (GAP) Energy Cost:
-   Cr(i) = 155.4*i^5 - 30.4*i^4 - 43.3*i^3 + 46.3*i^2 + 19.5*i + 3.6  (J/kg/m)
-
-5. Jack Daniels VDOT Oxygen Cost &amp; Fractional Utilization:
-   VO2(v) = -4.60 + 0.182258*v + 0.000104*v^2   (v in m/min)
-   %VO2max(t) = 0.8 + 0.1894393*e^(-0.012778*t) + 0.2989558*e^(-0.1932605*t)
-   VDOT = VO2(v) / %VO2max(t)</div>
+   TSS = (Duration_secs * NP * IF) / (FTP * 3600) * 100</div>
       </section>
 
       <!-- SECTION 12 -->
