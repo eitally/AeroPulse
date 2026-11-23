@@ -6,7 +6,19 @@ import {
   buildS2SymbolInnerSvg,
   buildWAWordmarkInnerSvg,
 } from './brandVectors.ts';
-import { generateQrCodeSvgMarkup } from './qrCodeSvg.ts';
+import {
+  BANNER_HEADLINE_OUTLINE_PATH,
+  BANNER_PILL_TEXT_OUTLINE_PATH,
+  BANNER_QR_CAPTION_OUTLINE_PATH,
+  CREST_BOTTOM_SUBTITLE_OUTLINE_PATH,
+  CREST_DOMAIN_LABEL_OUTLINE_PATH,
+  CREST_TOP_MEETREADY_OUTLINE_PATH,
+  DIECUT_DOMAIN_LABEL_OUTLINE_PATH,
+  TEE_FOOTER_OUTLINE_PATH,
+  TEE_HEADLINE_OUTLINE_PATH,
+  TEE_SUBHEAD_OUTLINE_PATH,
+} from './brandPrintOutlines.ts';
+import { generateQrCodeSvgMarkup, generateQrMatrix } from './qrCodeSvg.ts';
 
 export type BrandAssetCategory = 'LOCKUPS' | 'STENCILS' | 'ICONS' | 'WORDMARK_AND_SOCIAL';
 
@@ -154,19 +166,29 @@ export function buildWatermarkTurnSvg(): string {
   ].join('');
 }
 
+export function buildDiecutStickerSvg(): string {
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 472 124" fill="none">`,
+    `<rect x="0" y="0" width="472" height="124" rx="24" fill="#121413"/>`,
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(6, 5) scale(0.94)'),
+    buildMeetReadyWordmarkInnerSvg('#F6F3EC', '#D8FF2A', 'translate(135, 29) scale(0.88)'),
+    `<path d="${DIECUT_DOMAIN_LABEL_OUTLINE_PATH}" fill="#D8FF2A" fill-rule="nonzero"/>`,
+    `</svg>`,
+  ].join('');
+}
+
 export function buildCircularCrestStickerSvg(): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 360" fill="none">`,
-    `<defs>`,
-    `<path id="meetready-grad-crest-top" d="M 52 182 A 128 128 0 1 1 308 182"/>`,
-    `<path id="meetready-grad-crest-bot" d="M 46 184 A 134 134 0 0 0 314 184"/>`,
-    `</defs>`,
     `<circle cx="180" cy="180" r="168" fill="#121413" stroke="#B83A24" stroke-width="8"/>`,
     `<circle cx="180" cy="180" r="154" stroke="#F6F3EC" stroke-opacity="0.22" stroke-width="2"/>`,
     `<circle cx="180" cy="180" r="94" stroke="#D8FF2A" stroke-width="2.5"/>`,
-    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(180 180) scale(0.92) translate(-64 -64)'),
-    `<text fill="#F6F3EC" font-family="'Archivo', -apple-system, sans-serif" font-size="24" font-weight="800" letter-spacing="3.5"><textPath href="#meetready-grad-crest-top" startOffset="50%" text-anchor="middle">MeetReady</textPath></text>`,
-    `<text fill="#D8FF2A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="16" font-weight="700" letter-spacing="2.6"><textPath href="#meetready-grad-crest-bot" startOffset="50%" text-anchor="middle">TRACK · FIELD · XC</textPath></text>`,
+    `<circle cx="56" cy="180" r="4" fill="#B83A24"/>`,
+    `<circle cx="304" cy="180" r="4" fill="#B83A24"/>`,
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(180 164) scale(0.84) translate(-64 -64)'),
+    `<path d="${CREST_DOMAIN_LABEL_OUTLINE_PATH}" fill="#F6F3EC" fill-rule="nonzero"/>`,
+    `<path d="${CREST_TOP_MEETREADY_OUTLINE_PATH}" fill="#F6F3EC" fill-rule="nonzero"/>`,
+    `<path d="${CREST_BOTTOM_SUBTITLE_OUTLINE_PATH}" fill="#D8FF2A" fill-rule="nonzero"/>`,
     `</svg>`,
   ].join('');
 }
@@ -185,22 +207,23 @@ export function buildMerchTeeBackSvg(): string {
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 440" fill="none">`,
     `<rect width="600" height="440" rx="20" fill="#121413"/>`,
-    `<g opacity="0.28">`,
-    `<path d="M 600 370 H 390 A 105 105 0 0 1 390 160 H 600" stroke="#D8FF2A" stroke-width="7"/>`,
-    `<path d="M 600 392 H 390 A 127 127 0 0 1 390 138 H 600" stroke="#B83A24" stroke-width="7"/>`,
-    `<path d="M 600 414 H 390 A 149 149 0 0 1 390 116 H 600" stroke="#F6F3EC" stroke-width="5"/>`,
-    `</g>`,
-    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(54, 48) scale(0.72)'),
-    `<text x="56" y="220" fill="#F6F3EC" font-family="'Barlow Condensed', 'Archivo', sans-serif" font-size="56" font-weight="800" letter-spacing="-0.5">BUILT FOR MEET DAY.</text>`,
-    `<text x="56" y="276" fill="#D8FF2A" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="22" font-weight="700" letter-spacing="1.6">RUN. JUMP. THROW. MEET READY.</text>`,
-    `<line x1="56" y1="316" x2="360" y2="316" stroke="#B83A24" stroke-width="4"/>`,
-    `<text x="56" y="362" fill="#A39E93" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" font-weight="600" letter-spacing="2">TRACK · FIELD · XC · meetready.app</text>`,
+    `<path d="M 600 148 H 470 A 56 56 0 0 1 470 36 H 600" stroke="#D8FF2A" stroke-width="6"/>`,
+    `<path d="M 600 132 H 470 A 40 40 0 0 1 470 52 H 600" stroke="#F6F3EC" stroke-width="5"/>`,
+    `<path d="M 600 116 H 470 A 24 24 0 0 1 470 68 H 600" stroke="#F6F3EC" stroke-width="4"/>`,
+    buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(54, 42) scale(0.72)'),
+    `<path d="${TEE_HEADLINE_OUTLINE_PATH}" fill="#F6F3EC" fill-rule="nonzero"/>`,
+    `<path d="${TEE_SUBHEAD_OUTLINE_PATH}" fill="#D8FF2A" fill-rule="nonzero"/>`,
+    `<line x1="56" y1="312" x2="360" y2="312" stroke="#D8FF2A" stroke-width="4"/>`,
+    `<path d="${TEE_FOOTER_OUTLINE_PATH}" fill="#F6F3EC" fill-rule="nonzero"/>`,
     `</svg>`,
   ].join('');
 }
 
 export function buildBanner10x3QrSvg(): string {
-  const bannerQrInner = generateQrCodeSvgMarkup('https://meetready.app/meet', '#121413', 228).replace(
+  const bannerQrUrl = 'https://meetready.app/meet';
+  const qrMatrix = generateQrMatrix(bannerQrUrl);
+  const qrTotal = qrMatrix.length + 8;
+  const bannerQrInner = generateQrCodeSvgMarkup(bannerQrUrl, '#121413', 228).replace(
     /^<svg[^>]*>|<\/svg>$/g,
     ''
   );
@@ -212,12 +235,12 @@ export function buildBanner10x3QrSvg(): string {
     buildBreakLaneMSymbolInnerSvg('#F6F3EC', '#D8FF2A', 'translate(6, 5) scale(0.94)'),
     buildMeetReadyWordmarkInnerSvg('#F6F3EC', '#F6F3EC', 'translate(135, 54)'),
     `</g>`,
-    `<text x="56" y="242" fill="#F6F3EC" font-family="'Barlow Condensed', 'Archivo', sans-serif" font-size="54" font-weight="800" letter-spacing="-0.6">BUILT FOR MEET DAY.</text>`,
+    `<path d="${BANNER_HEADLINE_OUTLINE_PATH}" fill="#F6F3EC" fill-rule="nonzero"/>`,
     `<rect x="56" y="268" width="446" height="44" rx="22" fill="#D8FF2A"/>`,
-    `<text x="279" y="297" text-anchor="middle" fill="#121413" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="18" font-weight="700" letter-spacing="1.4">TRACK · FIELD · XC · meetready.app</text>`,
+    `<path d="${BANNER_PILL_TEXT_OUTLINE_PATH}" fill="#121413" fill-rule="nonzero"/>`,
     `<rect x="886" y="34" width="268" height="292" rx="20" fill="#F6F3EC"/>`,
-    `<g transform="translate(906, 46)"><svg viewBox="0 0 33 33" width="228" height="228">${bannerQrInner}</svg></g>`,
-    `<text x="1020" y="304" text-anchor="middle" fill="#121413" font-family="'JetBrains Mono', ui-monospace, monospace" font-size="15" font-weight="700" letter-spacing="0.8">SCAN → TRY LIVE DEMO</text>`,
+    `<g transform="translate(906, 46)"><svg viewBox="0 0 ${qrTotal} ${qrTotal}" width="228" height="228">${bannerQrInner}</svg></g>`,
+    `<path d="${BANNER_QR_CAPTION_OUTLINE_PATH}" fill="#121413" fill-rule="nonzero"/>`,
     `</svg>`,
   ].join('');
 }
@@ -380,7 +403,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'meetready-sticker-diecut',
     title: 'Clipboard & Bumper Sticker Pill',
-    subtitle: 'Balanced #121413 container guaranteeing >15:1 contrast over any backdrop',
+    subtitle: 'Balanced #121413 container with outlined MeetReady + meetready.app (>15:1 contrast)',
     category: 'LOCKUPS',
     width: 472,
     height: 124,
@@ -394,12 +417,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
     ],
     recommendedFor: 'Coach clipboards, sunlit race photos, laptop lids, scoreboard bugs',
     minPhysicalSpec: '4.0" × 1.05" print cutout · add 0.125" bleed for plotter CutContour',
-    svgMarkup: buildMultiToneLockupSvg({
-      pineColor: '#F6F3EC',
-      accentColor: '#D8FF2A',
-      inkColor: '#F6F3EC',
-      backgroundRect: { fill: '#121413', rx: 24 },
-    }),
+    svgMarkup: buildDiecutStickerSvg(),
   },
   {
     id: 'meetready-sticker-crest',
@@ -463,7 +481,7 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
   {
     id: 'meetready-1ink-stencil-volt',
     title: '1-Ink Starter Volt Stencil (Knockout)',
-    subtitle: 'High-vis #D8FF2A single-ink outlined cutout for dark Asphalt or Pine textiles',
+    subtitle: 'High-vis #D8FF2A single-ink outlined cutout for dark Track Asphalt textiles',
     category: 'STENCILS',
     width: 472,
     height: 124,
@@ -714,8 +732,8 @@ export const BRAND_ASSET_CATALOG: BrandAssetDefinition[] = [
       { key: '2x', label: '2x (1200×880)', width: 1200, height: 880 },
       { key: '4x', label: '4x Print (2400×1760)', width: 2400, height: 1760 },
     ],
-    recommendedFor: 'Bella+Canvas 3001 / Next Level 6210 Forest Pine or Obsidian coach & team tees',
-    minPhysicalSpec: 'Soft-hand White + PMS 809 C over underbase · pair with 1.65" left-chest M',
+    recommendedFor: 'Bella+Canvas 3001 / Next Level 6210 Track Asphalt black coach & team tees',
+    minPhysicalSpec: '2-ink Stadium Chalk + PMS 809 C Starter Volt over underbase · pair with 1.65" left-chest M',
     svgMarkup: buildMerchTeeBackSvg(),
   },
   {
@@ -814,7 +832,7 @@ export const BRAND_SURFACES: Array<{
     id: 'photo-night',
     label: 'Floodlit Night Photo',
     shortLabel: 'Night Photo',
-    swatchHex: '#13241B',
+    swatchHex: '#121413',
     description: 'Stadium floodlights under dusk/night photography',
   },
   {
@@ -895,14 +913,14 @@ export function evaluateAssetOnBackdrop(
       return {
         status: 'RECOMMENDED',
         badgeLabel: 'Recommended',
-        rationale: 'Self-cased Pine border keeps sharp definition over Obsidian.',
+        rationale: 'Self-cased Mondo Clay & Asphalt framing keeps sharp definition over dark backdrops.',
       };
     }
     if (surface === 'bw-copier' && id !== 'meetready-icon-tile-light') {
       return {
         status: 'CAUTION',
         badgeLabel: 'B&W Toner',
-        rationale: 'Dark self-cased fill prints solid black; prefer 1-Ink Obsidian for toner efficiency.',
+        rationale: 'Dark self-cased fill prints solid black; prefer 1-Ink Asphalt for toner efficiency.',
       };
     }
     if (surface === 'photo-sunlit' || surface === 'photo-night') {
@@ -924,7 +942,7 @@ export function evaluateAssetOnBackdrop(
       return {
         status: 'CAUTION',
         badgeLabel: 'Monochrome',
-        rationale: 'Convert lime lane to 40% black halftone on monochrome laser printers.',
+        rationale: 'Convert Mondo Clay lane to 40% black halftone on monochrome laser printers.',
       };
     }
     return {
@@ -942,14 +960,14 @@ export function evaluateAssetOnBackdrop(
         rationale:
           id === 'meetready-1ink-stencil-white' || id === 'meetready-gauge-symbol-1ink-white'
             ? 'Crisp reversed white silhouette pops cleanly on dark textiles & floodlit stills.'
-            : 'Tuned for Obsidian & dark floodlit tracks with zero halation.',
+            : 'Tuned for Track Asphalt & dark floodlit tracks with zero halation.',
       };
     }
     if (surface === 'chalk' || surface === 'paper' || surface === 'volt') {
       return {
         status: 'AVOID',
         badgeLabel: 'Avoid Here',
-        rationale: 'White/Volt strokes vanish on bright grounds — switch to Light Stage or 1-Ink Obsidian.',
+        rationale: 'White/Volt strokes vanish on bright grounds — switch to Light Stage or 1-Ink Asphalt.',
       };
     }
     if (surface === 'bw-copier') {
@@ -976,7 +994,7 @@ export function evaluateAssetOnBackdrop(
         return {
           status: 'CAUTION',
           badgeLabel: 'Use 1-Ink Black',
-          rationale: 'Green accents lose separation on Track Volt; 1-Ink Obsidian hits >15:1 contrast.',
+          rationale: 'Mondo Clay accents lose separation on Starter Volt; 1-Ink Asphalt hits >15:1 contrast.',
         };
       }
       return {
@@ -985,7 +1003,7 @@ export function evaluateAssetOnBackdrop(
         rationale:
           asset.isOneInkKnockout
             ? 'True boolean-knockout black stays razor-sharp at 600 DPI and on bright fabrics.'
-            : 'High-contrast Pine & Turf Lime pass WCAG AA on chalk and paper.',
+            : 'High-contrast Track Asphalt & Mondo Clay pass WCAG AA on chalk and paper.',
       };
     }
     if (surface === 'bw-copier') {
@@ -999,14 +1017,14 @@ export function evaluateAssetOnBackdrop(
       return {
         status: 'CAUTION',
         badgeLabel: 'Toner Check',
-        rationale: 'Turf Lime dithers lightly in grayscale; 1-Ink Obsidian yields sharpest copy.',
+        rationale: 'Mondo Clay dithers lightly in grayscale; 1-Ink Asphalt yields sharpest copy.',
       };
     }
     if (surface === 'obsidian' || surface === 'photo-night') {
       return {
         status: 'AVOID',
         badgeLabel: 'Avoid Here',
-        rationale: 'Dark Pine/Obsidian inks sink into dark backgrounds — switch to Dark Stage or White.',
+        rationale: 'Dark Track Asphalt inks sink into dark backgrounds — switch to Dark Stage or White.',
       };
     }
     return {

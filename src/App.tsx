@@ -189,6 +189,27 @@ const PublicTeamHubPage = lazyWithRetry(() => import('./components/PublicTeamHub
 const DEV_APP_URL = 'https://ais-dev-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 const SHARED_APP_URL = 'https://ais-pre-6ghnkmxunr54ug7sumz3hy-377968603671.us-west1.run.app';
 
+function parseSampleDemoSearch(search: string): {
+  isSampleQuery: boolean;
+  sampleRole?: 'coach' | 'athlete';
+} {
+  try {
+    const params = new URLSearchParams(search);
+    const demoParam = params.get('demo')?.trim().toLowerCase();
+    const sampleParam = params.get('sample')?.trim().toLowerCase();
+    const isCoach = sampleParam === 'coach';
+    const isAthlete = sampleParam === 'athlete';
+    const isSampleTrue = sampleParam === 'true' || sampleParam === '1';
+    const isDemo = demoParam === '1' || demoParam === 'true';
+    return {
+      isSampleQuery: Boolean(isDemo || isCoach || isAthlete || isSampleTrue),
+      ...(isCoach ? { sampleRole: 'coach' } : isAthlete ? { sampleRole: 'athlete' } : {}),
+    };
+  } catch {
+    return { isSampleQuery: false };
+  }
+}
+
 export default function App() {
   const { isBrandRoute, openBrand, closeBrand } = useBrandStudioRoute();
   const { isShareRoute, sharedWorkout, closeShareWorkout } = useShareWorkoutRoute();
@@ -199,7 +220,14 @@ export default function App() {
     try {
       if (typeof window !== 'undefined') {
         const parsed = parseWorkspaceHash(window.location.hash);
+        const { isSampleQuery, sampleRole } = parseSampleDemoSearch(window.location.search);
+        if (sampleRole === 'coach') {
+          return 'coach';
+        }
         if (parsed.tab) return parsed.tab;
+        if (sampleRole === 'athlete' && isSampleQuery) {
+          return 'fitness';
+        }
       }
     } catch {
       // ignore
@@ -414,8 +442,8 @@ export default function App() {
   const [isSampleDemoMode, setIsSampleDemoMode] = useState<boolean>(() => {
     try {
       if (typeof window !== 'undefined') {
-        const search = window.location.search;
-        if (search.includes('demo=1') || search.includes('sample=true')) {
+        const { isSampleQuery } = parseSampleDemoSearch(window.location.search);
+        if (isSampleQuery) {
           backupRealStopwatchForDemo();
           return true;
         }

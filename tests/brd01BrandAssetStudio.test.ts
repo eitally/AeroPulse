@@ -39,12 +39,7 @@ describe('BRD-01 Brand Studio, True Compound Stencils & Asset Exporter', () => {
     expect(BRAND_ASSET_CATALOG).toHaveLength(23);
 
     const seenIds = new Set<string>();
-    const editorialTextAssets = new Set([
-      'meetready-og-1200x630',
-      'meetready-sticker-crest',
-      'meetready-merch-tee-back',
-      'meetready-banner-10x3-qr',
-    ]);
+    const editorialTextAssets = new Set(['meetready-og-1200x630']);
 
     for (const asset of BRAND_ASSET_CATALOG) {
       expect(seenIds.has(asset.id)).toBe(false);

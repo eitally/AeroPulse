@@ -48,7 +48,14 @@
           return;
         }
         // Skip service worker caching and reload triggers in test / demo mode
-        if (typeof window !== 'undefined' && (window.location.search.includes('demo=1') || window.location.hash.includes('demo=1'))) {
+        if (
+          typeof window !== 'undefined' &&
+          (window.location.search.includes('demo=1') ||
+            window.location.search.includes('sample=coach') ||
+            window.location.search.includes('sample=athlete') ||
+            window.location.search.includes('sample=true') ||
+            window.location.hash.includes('demo=1'))
+        ) {
           return;
         }
         // Purge legacy Service Worker caches so no stale or unauthenticated API responses persist
@@ -83,6 +90,7 @@
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://meetready.app/" />
+    <link rel="canonical" href="https://meetready.app/" />
     <meta property="og:image" content="https://meetready.app/brand/meetready-og-1200x630.png" />
     <meta property="og:image:alt" content="MeetReady — Every mark. Every mile. Meet ready." />
     <meta property="og:image:width" content="1200" />
@@ -94,6 +102,45 @@
       content="Offline 0.01s splits, jumps/throws/vaults field sheets, auto-scaled pace pods, and built-in SafeSport &amp; FERPA guardrails."
     />
     <meta name="twitter:image" content="https://meetready.app/brand/meetready-og-1200x630.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "name": "MeetReady",
+            "url": "https://meetready.app/",
+            "logo": "https://meetready.app/brand/meetready-icon-square-512.png",
+            "email": "procurement@meetready.app"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "name": "MeetReady",
+            "applicationCategory": "SportsApplication",
+            "operatingSystem": "Web, iOS, Android",
+            "url": "https://meetready.app/",
+            "image": "https://meetready.app/brand/meetready-og-1200x630.png",
+            "description": "Every mark. Every mile. Meet ready. Track, Field & Cross Country team platform uniting watchless 0.01s offline splits, field event sheets, auto-scaled pace pods, and U18 SafeSport & FERPA guardrails.",
+            "offers": [
+              {
+                "@type": "Offer",
+                "name": "Founding Season Pilot & Student-Athlete Access",
+                "price": "0",
+                "priceCurrency": "USD",
+                "description": "$0 Founding Season Pilot for coaching programs and $0 forever for students and parents."
+              },
+              {
+                "@type": "Offer",
+                "name": "High School Program Institutional PO",
+                "price": "250",
+                "priceCurrency": "USD",
+                "description": "$250/yr flat High School PO with unlimited athletes, watchless Stopwatch, FERPA/CA NDPA packet & SafeSport guardrails."
+              }
+            ]
+          }
+        ]
+      }
+    </script>
     <meta name="theme-color" content="#F6F3EC" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#121413" media="(prefers-color-scheme: dark)" />
     <meta name="mobile-web-app-capable" content="yes" />

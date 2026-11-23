@@ -4,6 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MeetReady — Documentation &amp; Physiology Reference</title>
+  <meta
+    name="description"
+    content="MeetReady technical documentation &amp; endurance physiology reference: VDOT pace pods, watchless 0.01s splits, CP/W' durability, SafeSport &amp; FERPA architecture, and REST API."
+  />
+  <link rel="canonical" href="https://meetready.app/docs/" />
+  <meta property="og:title" content="MeetReady — Documentation &amp; Physiology Reference" />
+  <meta
+    property="og:description"
+    content="VDOT pace pods, watchless 0.01s splits, CP/W' durability, NCAA track indexing, SafeSport &amp; FERPA architecture, and REST API reference."
+  />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://meetready.app/docs/" />
+  <meta property="og:image" content="https://meetready.app/brand/meetready-og-1200x630.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="MeetReady — Documentation &amp; Physiology Reference" />
+  <meta
+    name="twitter:description"
+    content="VDOT pace pods, watchless 0.01s splits, CP/W' durability, SafeSport &amp; FERPA guardrails, and REST API reference."
+  />
+  <meta name="twitter:image" content="https://meetready.app/brand/meetready-og-1200x630.png" />
   <link rel="icon" type="image/svg+xml" href="/icon.svg?v=7" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -1075,6 +1095,68 @@ Net Delta: ΔTSS -18 | ΔCTL -0.4 | ΔTSB +2.1</div>
         }
       });
     });
+  </script>
+  <script>
+    (function () {
+      try {
+        var KEY = 'meetready_first_party_attr_v1';
+        var BASE_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'src'];
+        var qs = new URLSearchParams(window.location.search);
+        var stored = {};
+        try {
+          var prev = sessionStorage.getItem(KEY);
+          if (prev) stored = JSON.parse(prev) || {};
+        } catch (e) {}
+        var capturedKeys = [];
+        qs.forEach(function (_v, k) {
+          if (BASE_KEYS.indexOf(k) !== -1 || k.indexOf('utm_') === 0) {
+            if (capturedKeys.indexOf(k) === -1) capturedKeys.push(k);
+          }
+        });
+        var hasNew = false;
+        var next = {};
+        capturedKeys.forEach(function (k) {
+          var v = qs.get(k);
+          if (v && v.trim()) {
+            next[k] = v.trim().slice(0, 80);
+            hasNew = true;
+          }
+        });
+        var ref = (document.referrer || '').trim().slice(0, 200);
+        if (hasNew) {
+          next.landing_path = (window.location.pathname + (window.location.hash || '').slice(0, 48)).slice(0, 120);
+          next.capturedAt = new Date().toISOString();
+          if (ref) next.referrer = ref;
+          else if (stored.referrer) next.referrer = stored.referrer;
+          sessionStorage.setItem(KEY, JSON.stringify(next));
+          stored = next;
+        } else if (!stored.capturedAt) {
+          stored.landing_path = (window.location.pathname || '/').slice(0, 120);
+          stored.capturedAt = new Date().toISOString();
+          if (ref) stored.referrer = ref;
+          sessionStorage.setItem(KEY, JSON.stringify(stored));
+        } else if (ref && !stored.referrer) {
+          stored.referrer = ref;
+          sessionStorage.setItem(KEY, JSON.stringify(stored));
+        }
+        var attrKeys = Object.keys(stored).filter(function (k) {
+          return (BASE_KEYS.indexOf(k) !== -1 || k.indexOf('utm_') === 0) && Boolean(stored[k]);
+        });
+        if (!attrKeys.length) return;
+        document.querySelectorAll('a[href]').forEach(function (a) {
+          var rawHref = a.getAttribute('href') || '';
+          if (!rawHref || rawHref.charAt(0) !== '/' || rawHref.indexOf('//') === 0) return;
+          var u = new URL(rawHref, window.location.origin);
+          if (u.pathname !== '/') return;
+          attrKeys.forEach(function (k) {
+            if (!u.searchParams.has(k)) {
+              u.searchParams.set(k, stored[k]);
+            }
+          });
+          a.setAttribute('href', u.pathname + u.search + u.hash);
+        });
+      } catch (e) {}
+    })();
   </script>
 </body>
 </html>
