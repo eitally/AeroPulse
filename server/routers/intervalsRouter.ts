@@ -1259,7 +1259,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
     const store = getScopedRuntimeStore(req);
     store.intervalsAccessToken = accessToken;
     store.intervalsScope =
-      tokenData.scope || 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ';
+      tokenData.scope || 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE';
     store.intervalsAthleteId = athleteId;
     store.intervalsAthleteName = athleteName;
 
@@ -1268,7 +1268,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
       await connectServiceToUser(callerClaims.sub, 'intervals', athleteId, athleteName);
     }
 
-    const sessionToken = setSessionCookie(req, res, athleteName, sid, 'verified');
+    setSessionCookie(req, res, athleteName, sid, 'verified');
     await saveSessionCacheAsync(req, res, sid);
 
     const oauthPayloadJson = safeJsonForScript({
@@ -1276,8 +1276,7 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
       provider: 'intervals',
       athleteId,
       athleteName,
-      sessionToken,
-      scope: tokenData.scope,
+      scope: store.intervalsScope,
       returnUrl: '/#fitness?openDataSources=1',
     });
 
@@ -1286,15 +1285,13 @@ export const intervalsCallbackHandler = async (req: Request, res: Response): Pro
         title: 'Intervals.icu Connected · MeetReady',
         heading: `Intervals.icu Connected${athleteName && !isGenericName(athleteName) ? ` · ${escapeHtml(athleteName)}` : ''}`,
         accentColor: '#10B981',
-        body: 'Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and training data are ready to sync.',
+        body: 'Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and cross-watch calendar push are ready.',
         ctaLabel: 'Continue to MeetReady',
         ctaHref: '/#fitness?openDataSources=1',
         scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
           try {
-            if (payload.sessionToken) {
-              localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-            }
+            localStorage.setItem('thresh_session_active_hint', '1');
             if (payload.athleteId) {
               localStorage.setItem('aeropulse_intervals_athlete_id', String(payload.athleteId));
             }
@@ -1614,7 +1611,7 @@ intervalsRouter.get(['/api/intervals/auth/url', '/api/auth/intervals/url'], (req
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ',
+    scope: 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE',
     state: stateToken,
   });
 
@@ -1641,7 +1638,7 @@ intervalsRouter.get(['/api/intervals/auth/login', '/api/auth/intervals/login'], 
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ',
+    scope: 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE',
     state: stateToken,
   });
   res.redirect(302, `https://intervals.icu/oauth/authorize?${params.toString()}`);
@@ -1733,6 +1730,153 @@ intervalsRouter.post('/api/intervals/disconnect', async (req: Request, res: Resp
 
   await saveSessionCacheAsync(req, res);
   res.json({ connected: false });
+});
+
+// Cross-Watch Bridge Workout Push to Intervals.icu Calendar (relays automatically to Garmin, COROS, Suunto & Wahoo)
+intervalsRouter.post('/api/intervals/workout/push', async (req: Request, res: Response) => {
+  try {
+    const config = getEffectiveIntervalsConfig(req);
+    const authHeader = getIntervalsAuthHeader(config);
+    if (!authHeader) {
+      res.status(401).json({
+        ok: false,
+        pushed: false,
+        connectRequired: true,
+        error:
+          'Intervals.icu is not connected yet. Connect Intervals.icu via OAuth 2.0 or Personal API Key in Data Sources.',
+      });
+      return;
+    }
+
+    const activeScope = String(
+      config.scope || runtimeStore.intervalsScope || req.headers['x-intervals-scope'] || ''
+    ).trim();
+    if (
+      config.accessToken &&
+      !config.apiKey &&
+      activeScope &&
+      !activeScope.toUpperCase().includes('CALENDAR:WRITE')
+    ) {
+      res.status(403).json({
+        ok: false,
+        pushed: false,
+        needsScopeUpgrade: true,
+        error:
+          'Your Intervals.icu OAuth connection only has read-only calendar permissions. Click "Upgrade Scope to Watch Push" in Data Sources to enable CALENDAR:WRITE.',
+      });
+      return;
+    }
+
+    const body = req.body || {};
+    const date = String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const scheduledTime =
+      typeof body.scheduledTime === 'string' &&
+      /^([01]?\d|2[0-3]):[0-5]\d$/.test(body.scheduledTime.trim())
+        ? body.scheduledTime.trim().padStart(5, '0')
+        : '08:00';
+    const name = String(body.name || 'MeetReady Prescribed Session').trim();
+    const sportCategory = String(body.sportCategory || 'Running');
+    const envPref = String(body.environmentPreference || 'FLEXIBLE');
+    const plannedDurationSecs = Math.max(60, Number(body.plannedDurationSecs || 1800));
+    const plannedLoad = Math.max(1, Number(body.plannedLoad || 50));
+
+    let workoutMarkdown = typeof body.workoutSyntax === 'string' ? body.workoutSyntax.trim() : '';
+    if (!workoutMarkdown && Array.isArray(body.steps) && body.steps.length > 0) {
+      const cue = sportCategory === 'Running' ? 'Pace' : 'FTP';
+      workoutMarkdown = (
+        body.steps as Array<{
+          label?: string;
+          durationSecs?: number;
+          distanceMeters?: number;
+          targetPctFtp?: number;
+        }>
+      )
+        .map((st) => {
+          const durOrDist = st.distanceMeters
+            ? `${Math.round(st.distanceMeters)}m`
+            : `${Math.max(15, Math.round(Number(st.durationSecs || 300)))}s`;
+          const pct = Math.max(45, Math.min(180, Math.round(Number(st.targetPctFtp || 75))));
+          return `- ${durOrDist} ${Math.max(45, pct - 2)}%-${Math.min(180, pct + 2)}% ${cue} (${String(
+            st.label || 'Interval'
+          )})`;
+        })
+        .join('\n');
+    }
+    if (!workoutMarkdown) {
+      workoutMarkdown =
+        typeof body.description === 'string' && body.description.trim()
+          ? body.description.trim()
+          : '- 30m 75% Pace';
+    }
+
+    const icuType =
+      sportCategory === 'Running'
+        ? 'Run'
+        : sportCategory === 'Swimming'
+          ? 'Swim'
+          : sportCategory === 'Strength'
+            ? 'WeightTraining'
+            : envPref === 'INDOOR'
+              ? 'VirtualRide'
+              : 'Ride';
+
+    const athleteId = config.athleteId || '0';
+    const icuResp = await fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/events`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          category: 'WORKOUT',
+          start_date_local: `${date}T${scheduledTime}:00`,
+          name,
+          type: icuType,
+          description: workoutMarkdown,
+          moving_time: plannedDurationSecs,
+          icu_training_load: plannedLoad,
+        }),
+      }
+    );
+
+    if (icuResp.status === 403) {
+      res.status(403).json({
+        ok: false,
+        pushed: false,
+        needsScopeUpgrade: true,
+        error:
+          'Intervals.icu returned 403 Forbidden (missing CALENDAR:WRITE permission). Click "Upgrade Scope to Watch Push" in Data Sources to push workouts to Garmin, COROS, Suunto & Wahoo.',
+      });
+      return;
+    }
+
+    if (!icuResp.ok) {
+      const errText = await icuResp.text().catch(() => '');
+      res.status(icuResp.status).json({
+        ok: false,
+        pushed: false,
+        error: `Intervals.icu workout push failed (${icuResp.status}): ${errText.slice(0, 160)}`,
+      });
+      return;
+    }
+
+    const created = (await icuResp.json().catch(() => ({}))) as { id?: string | number };
+    res.json({
+      ok: true,
+      pushed: true,
+      eventId: created?.id,
+      message: `Pushed "${name}" to Intervals.icu Calendar (${date}) — synced to linked Garmin, COROS, Suunto & Wahoo watches.`,
+    });
+  } catch (error: unknown) {
+    res.status(500).json({
+      ok: false,
+      pushed: false,
+      error: error instanceof Error ? error.message : 'Failed to push workout to Intervals.icu',
+    });
+  }
 });
 
 intervalsRouter.get('/api/intervals/sync', async (req: Request, res: Response) => {
@@ -2050,15 +2194,25 @@ intervalsRouter.post('/api/calendar/events', async (req: Request, res: Response)
           durationSecs: Number(st.durationSecs || 600),
           targetPctFtp: Number(st.targetPctFtp || 75),
         }));
-        const garminRes = await pushWorkoutToGarminConnect(garminSession, {
-          date,
-          name,
-          sportCategory,
-          description: newEvent.description,
-          ftpWatts: Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250),
-          lthrBpm: Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165),
-          steps: garminSteps,
-        });
+        const garminRes = await pushWorkoutToGarminConnect(
+          garminSession,
+          {
+            date,
+            name,
+            sportCategory,
+            description: newEvent.description,
+            workoutSyntax,
+            ftpWatts: Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250),
+            lthrBpm: Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165),
+            thresholdPaceSecsPerKm: Number(
+              body.thresholdPaceSecsPerKm ||
+                runtimeStore.athleteProfile?.thresholdPaceSecsPerKm ||
+                245
+            ),
+            steps: garminSteps,
+          },
+          req
+        );
         pushedToGarmin = garminRes.pushed;
         garminWorkoutId = garminRes.workoutId;
         saveGarminSession(GARMIN_SESSION_DIR, getGarminScopeKey(req), garminSession);

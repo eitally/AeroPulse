@@ -40,6 +40,8 @@ import {
   exportWorkoutAsFit,
   exportWorkoutAsZwo,
   pushWorkoutDirectToGarmin,
+  pushWorkoutToCoros,
+  pushWorkoutToIntervalsBridge,
 } from '../utils/workoutExportActions';
 import { BracketedIntervalTape } from './charts/MicroGraphics';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
@@ -739,6 +741,34 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
 
   const handlePushGarminClick = async () => {
     const res = await pushWorkoutDirectToGarmin({
+      name: builderName,
+      sport: builderSport,
+      workoutSyntax: effectiveSyntax,
+      description: notes,
+      ftpWatts: safeFtp,
+      lthrBpm: safeLthr,
+      thresholdPaceSecsPerKm: safeThresholdPace,
+      dateIso: builderDate,
+    });
+    setStatusMessage(res.message);
+  };
+
+  const handlePushCorosClick = async () => {
+    const res = await pushWorkoutToCoros({
+      name: builderName,
+      sport: builderSport,
+      workoutSyntax: effectiveSyntax,
+      description: notes,
+      ftpWatts: safeFtp,
+      lthrBpm: safeLthr,
+      thresholdPaceSecsPerKm: safeThresholdPace,
+      dateIso: builderDate,
+    });
+    setStatusMessage(res.message);
+  };
+
+  const handlePushIntervalsBridgeClick = async () => {
+    const res = await pushWorkoutToIntervalsBridge({
       name: builderName,
       sport: builderSport,
       workoutSyntax: effectiveSyntax,
@@ -1527,7 +1557,35 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
               <Download className="w-3.5 h-3.5" />
               <span>Export / Push ▾</span>
             </summary>
-            <div className="absolute left-0 bottom-full mb-1.5 z-30 w-44 rounded-xl liquid-glass p-1.5 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
+            <div className="absolute left-0 bottom-full mb-1.5 z-30 w-56 rounded-xl liquid-glass p-1.5 space-y-1 shadow-xl border border-emerald-900/15 dark:border-white/15">
+              <button
+                type="button"
+                data-testid="visual-builder-garmin-push"
+                onClick={handlePushGarminClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Garmin Partner Push</span>
+              </button>
+              <button
+                type="button"
+                data-testid="visual-builder-coros-push"
+                onClick={handlePushCorosClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>COROS Watch Push</span>
+              </button>
+              <button
+                type="button"
+                data-testid="visual-builder-intervals-push"
+                onClick={handlePushIntervalsBridgeClick}
+                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Intervals.icu Bridge</span>
+              </button>
+              <div className="border-t border-stone-200/70 dark:border-white/10 my-0.5" />
               <button
                 type="button"
                 data-testid="visual-builder-export-fit"
@@ -1557,15 +1615,6 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   <span>Download .ERG</span>
                 </button>
               )}
-              <button
-                type="button"
-                data-testid="visual-builder-garmin-push"
-                onClick={handlePushGarminClick}
-                className="w-full min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg text-left text-2xs font-mono font-semibold text-ap-ink dark:text-ap-chalk hover:bg-black/5 dark:hover:bg-white/10 inline-flex items-center gap-1.5 cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Garmin Push</span>
-              </button>
               <button
                 type="button"
                 data-testid="visual-builder-share-btn"

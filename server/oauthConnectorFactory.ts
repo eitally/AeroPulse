@@ -36,22 +36,29 @@ export interface OAuthCodeExchangeResult {
   athleteId: string;
   athleteName: string;
   scope?: string;
-  applyToStore: (store: OAuthConnectorRuntimeStore) => void;
+  applyToStore: (
+    store: OAuthConnectorRuntimeStore,
+    ctx: { req: Request; sid: string }
+  ) => void | Promise<void>;
 }
 
 export interface OAuthConnectorConfig {
-  provider: 'polar' | 'wahoo';
+  provider: 'polar' | 'wahoo' | 'coros' | 'garmin';
   displayName: string;
   accentColor: string;
   authorizeUrl: string;
-  scope: string;
+  scope?: string;
   envVarNames: [string, string];
   usePkce?: boolean;
+  unconfiguredStatusCode?: 400 | 503;
+  unconfiguredMessage?: string;
+  extraAuthorizeParams?: Record<string, string>;
   successBody: string;
   getClientConfig: (req?: Request) => { clientId: string; clientSecret: string };
   resolveCallbackUrl: (req: Request) => string;
   exchangeCode: (ctx: OAuthCodeExchangeContext) => Promise<OAuthCodeExchangeResult>;
   clearStoreTokens: (store: OAuthConnectorRuntimeStore) => void;
+  onDisconnect?: (req: Request, res: Response) => void | Promise<void>;
 }
 
 function buildPopupRelayScript(payloadJson: string): string {
@@ -88,11 +95,15 @@ export function registerOAuthConnectorRoutes(
     scope,
     envVarNames,
     usePkce = false,
+    unconfiguredStatusCode = 400,
+    unconfiguredMessage,
+    extraAuthorizeParams,
     successBody,
     getClientConfig,
     resolveCallbackUrl,
     exchangeCode,
     clearStoreTokens,
+    onDisconnect,
   } = config;
 
   const returnHref = '/#fitness?openDataSources=1';
@@ -121,7 +132,7 @@ export function registerOAuthConnectorRoutes(
       response_type: 'code',
       client_id: clientId,
       redirect_uri: redirectUri,
-      scope,
+      ...(scope && scope.trim() ? { scope: scope.trim() } : {}),
       state: stateToken,
       ...(pkce
         ? {
@@ -129,6 +140,7 @@ export function registerOAuthConnectorRoutes(
             code_challenge_method: 'S256',
           }
         : {}),
+      ...(extraAuthorizeParams || {}),
     });
 
     return {
@@ -141,9 +153,19 @@ export function registerOAuthConnectorRoutes(
   router.get([`/api/${provider}/auth/url`, `/api/auth/${provider}/url`], (req: Request, res: Response) => {
     const { clientId, clientSecret } = getClientConfig(req);
     if (!clientId || !clientSecret) {
-      res.status(400).json({
-        error: `${displayName} OAuth is not configured on this server yet. Please set ${envVarNames[0]} and ${envVarNames[1]} in your environment variables.`,
-      });
+      const message =
+        unconfiguredMessage ||
+        `${displayName} OAuth is not configured on this server yet. Please set ${envVarNames[0]} and ${envVarNames[1]} in your environment variables.`;
+      if (unconfiguredStatusCode === 503) {
+        res.status(503).json({
+          ok: false,
+          configured: false,
+          setupRequired: true,
+          error: message,
+        });
+      } else {
+        res.status(unconfiguredStatusCode).json({ error: message });
+      }
       return;
     }
 
@@ -155,9 +177,20 @@ export function registerOAuthConnectorRoutes(
   router.get([`/api/${provider}/auth/login`, `/api/auth/${provider}/login`], (req: Request, res: Response) => {
     const { clientId, clientSecret } = getClientConfig(req);
     if (!clientId || !clientSecret) {
-      const msg = encodeURIComponent(
-        `${displayName} OAuth is not configured on this server yet (missing ${envVarNames[0]} or ${envVarNames[1]}).`
-      );
+      const message =
+        unconfiguredMessage ||
+        `${displayName} OAuth is not configured on this server yet (missing ${envVarNames[0]} or ${envVarNames[1]}).`;
+      const acceptsHtml = String(req.headers.accept || '').includes('text/html');
+      if (unconfiguredStatusCode === 503 && !acceptsHtml) {
+        res.status(503).json({
+          ok: false,
+          configured: false,
+          setupRequired: true,
+          error: message,
+        });
+        return;
+      }
+      const msg = encodeURIComponent(message);
       res.redirect(302, `/?auth_error=${msg}`);
       return;
     }
@@ -248,10 +281,10 @@ export function registerOAuthConnectorRoutes(
       const sid = verifiedState.sid || ensureRequestSessionSid(req, res);
       bindRequestScopeKey(req, sid);
       const store = getScopedRuntimeStore(req);
-      exchanged.applyToStore(store);
+      await exchanged.applyToStore(store, { req, sid });
 
       const callerClaims = getVerifiedSessionClaims(req);
-      if (callerClaims && callerClaims.sub?.startsWith('usr_')) {
+      if (callerClaims && callerClaims.sub?.startsWith('usr_') && provider !== 'coros') {
         await connectServiceToUser(
           callerClaims.sub,
           provider,
@@ -260,7 +293,7 @@ export function registerOAuthConnectorRoutes(
         );
       }
 
-      const sessionToken = setSessionCookie(req, res, exchanged.athleteName, sid, 'verified');
+      setSessionCookie(req, res, exchanged.athleteName, sid, 'verified');
       await saveSessionCacheAsync(req, res, sid);
 
       const oauthPayloadJson = safeJsonForScript({
@@ -268,7 +301,6 @@ export function registerOAuthConnectorRoutes(
         provider,
         athleteId: exchanged.athleteId,
         athleteName: exchanged.athleteName,
-        sessionToken,
         ...(exchanged.scope !== undefined ? { scope: exchanged.scope } : {}),
         returnUrl: returnHref,
       });
@@ -284,9 +316,7 @@ export function registerOAuthConnectorRoutes(
           scriptBody: `(function() {
           var payload = ${oauthPayloadJson};
           try {
-            if (payload.sessionToken) {
-              localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-            }
+            localStorage.setItem('thresh_session_active_hint', '1');
             if (payload.athleteId) {
               localStorage.setItem('aeropulse_${provider}_athlete_id', String(payload.athleteId));
             }
@@ -355,9 +385,12 @@ export function registerOAuthConnectorRoutes(
   router.post(`/api/${provider}/disconnect`, async (req: Request, res: Response) => {
     const store = getScopedRuntimeStore(req);
     clearStoreTokens(store);
+    if (onDisconnect) {
+      await onDisconnect(req, res);
+    }
 
     const callerClaims = getVerifiedSessionClaims(req);
-    if (callerClaims && callerClaims.sub?.startsWith('usr_')) {
+    if (callerClaims && callerClaims.sub?.startsWith('usr_') && provider !== 'coros') {
       await disconnectServiceFromUser(callerClaims.sub, provider);
     }
 

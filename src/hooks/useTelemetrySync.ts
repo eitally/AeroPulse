@@ -65,6 +65,18 @@ export type CompleteStravaAuthFn = (opts: {
   hasExistingSyncPolicy?: boolean;
 }) => Promise<void>;
 
+interface WearablesServerConfigStatusResponse extends ServerConfigStatusResponse {
+  garminConfigured?: boolean;
+  garminAuthMethod?: 'OAUTH' | 'PERSONAL_KEY' | 'NONE';
+  garminCanPushWorkouts?: boolean;
+  intervalsScope?: string;
+  intervalsCanWriteCalendar?: boolean;
+  corosConfigured?: boolean;
+  corosConnected?: boolean;
+  corosAthleteId?: string;
+  corosAthleteName?: string;
+}
+
 interface StravaSyncActivityDto {
   stravaId: string | number;
   startDateLocal: string;
@@ -363,7 +375,7 @@ export function useTelemetrySync({
         headers: getSavedIntervalsHeaders(),
       });
       if (!resp.ok) return null;
-      const data = await safeParseResponseJson<ServerConfigStatusResponse>(resp);
+      const data = await safeParseResponseJson<WearablesServerConfigStatusResponse>(resp);
       if (data?.error && !data?.callbackUrl) return null;
 
       let notLoggedOut = isNotLoggedOut();
@@ -532,11 +544,11 @@ export function useTelemetrySync({
       const isClientGarminConnected = Boolean(
         notLoggedOut &&
           (data.garminConnected ||
-            localStorage.getItem('aeropulse_garmin_personal_api_key') ||
-            localStorage.getItem('aeropulse_garmin_bearer_token'))
+            localStorage.getItem('aeropulse_garmin_personal_api_key'))
       );
       const isClientWahooConnected = Boolean(notLoggedOut && data.wahooConnected);
       const isClientPolarConnected = Boolean(notLoggedOut && data.polarConnected);
+      const isClientCorosConnected = Boolean(notLoggedOut && data.corosConnected);
       const resolvedStravaName =
         data.stravaAthleteName && !isGenericAthleteName(data.stravaAthleteName)
           ? String(data.stravaAthleteName).trim()
@@ -607,19 +619,37 @@ export function useTelemetrySync({
           isClientStravaConnected ||
           isClientGarminConnected ||
           isClientWahooConnected ||
-          isClientPolarConnected
+          isClientPolarConnected ||
+          isClientCorosConnected
             ? 'LIVE'
             : 'SANDBOX_CALIBRATION',
+        garminConfigured:
+          typeof data.garminConfigured === 'boolean'
+            ? data.garminConfigured
+            : prev.garminConfigured,
         garminConnected: isClientGarminConnected,
+        garminAuthMethod: isClientGarminConnected
+          ? data.garminAuthMethod ||
+            (localStorage.getItem('aeropulse_garmin_personal_api_key') ? 'PERSONAL_KEY' : 'NONE')
+          : 'NONE',
+        garminCanPushWorkouts: Boolean(isClientGarminConnected && data.garminCanPushWorkouts),
         garminAthleteName: isClientGarminConnected
           ? resolvedGarminName ||
             localStorage.getItem('aeropulse_garmin_athlete_name') ||
             prev.garminAthleteName
           : undefined,
+        intervalsConfigured:
+          typeof data.intervalsConfigured === 'boolean'
+            ? data.intervalsConfigured
+            : prev.intervalsConfigured,
         intervalsConnected: isClientIntervalsConnected,
         intervalsAuthMethod: isClientIntervalsConnected
           ? data.intervalsAuthMethod || 'API_KEY'
           : 'NONE',
+        intervalsScope: isClientIntervalsConnected ? data.intervalsScope || prev.intervalsScope : undefined,
+        intervalsCanWriteCalendar: Boolean(
+          isClientIntervalsConnected && data.intervalsCanWriteCalendar
+        ),
         intervalsAthleteId: isClientIntervalsConnected ? data.intervalsAthleteId || '0' : '0',
         intervalsAthleteName: isClientIntervalsConnected
           ? resolvedIntervalsName || prev.intervalsAthleteName
@@ -638,6 +668,13 @@ export function useTelemetrySync({
         polarAthleteId: isClientPolarConnected ? data.polarAthleteId || prev.polarAthleteId : undefined,
         polarAthleteName: isClientPolarConnected
           ? data.polarAthleteName || prev.polarAthleteName
+          : undefined,
+        corosConfigured:
+          typeof data.corosConfigured === 'boolean' ? data.corosConfigured : prev.corosConfigured,
+        corosConnected: isClientCorosConnected,
+        corosAthleteId: isClientCorosConnected ? data.corosAthleteId || prev.corosAthleteId : undefined,
+        corosAthleteName: isClientCorosConnected
+          ? data.corosAthleteName || prev.corosAthleteName
           : undefined,
         stravaConfigured:
           typeof data.stravaConfigured === 'boolean'
@@ -896,6 +933,26 @@ export function useTelemetrySync({
               mergedActivities = mergedActivities
                 ? mergeActivitiesNonDestructive(mergedActivities, polarActs)
                 : polarActs;
+            }
+          }
+        }
+
+        if (statusData.corosConnected) {
+          const corosResp = await fetch('/api/coros/sync', {
+            credentials: 'include',
+            headers: tzSyncHeaders,
+          });
+          if (isBrowserSessionLoggedOut()) return;
+          if (corosResp.ok) {
+            const corosData = await corosResp.json();
+            if (isBrowserSessionLoggedOut()) return;
+            if (Array.isArray(corosData.activities) && corosData.activities.length > 0) {
+              const corosActs = corosData.activities.map((a: UnifiedActivity) =>
+                reclassifyActivityEnvironment(a)
+              );
+              mergedActivities = mergedActivities
+                ? mergeActivitiesNonDestructive(mergedActivities, corosActs)
+                : corosActs;
             }
           }
         }
@@ -1678,7 +1735,8 @@ export function useTelemetrySync({
           statusData?.garminConnected ||
           statusData?.intervalsConnected ||
           statusData?.wahooConnected ||
-          statusData?.polarConnected)
+          statusData?.polarConnected ||
+          statusData?.corosConnected)
       ) {
         void syncLiveTelemetry(false);
       }

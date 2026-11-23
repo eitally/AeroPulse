@@ -55,6 +55,7 @@ import {
   exportWorkoutAsFit,
   exportWorkoutAsZwo,
 } from '../utils/workoutExportActions';
+import { CalendarWatchPushItems } from './calendar/CalendarWatchPushItems';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { VisualWorkoutBuilder } from './VisualWorkoutBuilder';
 import {
@@ -239,6 +240,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
   const [copyWeekIndex, setCopyWeekIndex] = useState<number | null>(null);
   const [movingEventId, setMovingEventId] = useState<string | null>(null);
   const [moveTargetDate, setMoveTargetDate] = useState<string>('');
+  const [watchPushBanner, setWatchPushBanner] = useState<string | null>(null);
   const builderDialogRef = useRef<HTMLDivElement>(null);
 
   const activePlanBlock = useMemo(() => {
@@ -1125,6 +1127,15 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
         </div>
       </section>
 
+      {watchPushBanner && (
+        <div role="status" className="rounded-xl ap-status-prime px-4 py-2 text-xs font-medium flex items-center justify-between gap-2">
+          <span>{watchPushBanner}</span>
+          <button type="button" onClick={() => setWatchPushBanner(null)} className="font-mono text-2xs underline cursor-pointer">
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Mobile & Tablet Week & Day Agenda View (< xl when mobileLayout === 'agenda') */}
       {mobileLayout === 'agenda' && (
         <CalendarMobileAgenda
@@ -1991,7 +2002,20 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                                   <Download className="w-3 h-3" weight="bold" />
                                                   <span>Export ▾</span>
                                                 </summary>
-                                                <div className="absolute right-0 bottom-full mb-1 z-30 w-32 rounded-xl liquid-glass p-1 space-y-0.5 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                                <div className="absolute right-0 bottom-full mb-1 z-30 w-44 rounded-xl liquid-glass p-1 space-y-0.5 shadow-xl border border-emerald-900/15 dark:border-white/15">
+                                                  <CalendarWatchPushItems
+                                                    options={{
+                                                      name: ev.name,
+                                                      sport: ev.sportCategory,
+                                                      workoutSyntax: ev.workoutSyntax,
+                                                      description: ev.description,
+                                                      ftpWatts: athleteProfile?.ftp || athleteFtp || 280,
+                                                      lthrBpm: athleteProfile?.lthr || 170,
+                                                      thresholdPaceSecsPerKm: athleteProfile?.thresholdPaceSecsPerKm || 250,
+                                                      dateIso: ev.date.slice(0, 10),
+                                                    }}
+                                                    onPushResult={(msg) => setWatchPushBanner(msg)}
+                                                  />
                                                   <button
                                                     type="button"
                                                     data-testid="calendar-export-fit"

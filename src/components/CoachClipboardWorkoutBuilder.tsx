@@ -39,6 +39,7 @@ import {
   exportWorkoutAsFit,
   exportWorkoutAsZwo,
 } from '../utils/workoutExportActions';
+import { CalendarWatchPushItems } from './calendar/CalendarWatchPushItems';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { stageWorkoutInTracksideStopwatch } from '../hooks/useTracksideStopwatch';
 import { openPrintablePodClipboardWindow } from '../utils/teamQrHelper';
@@ -1372,6 +1373,22 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
                 <ShareNetwork className="w-3.5 h-3.5" />
                 <span>Share Link / PNG</span>
               </button>
+              <CalendarWatchPushItems
+                options={{
+                  name: workoutTitle.trim() || builtWorkout.setsSummary || 'Coach Workout',
+                  sport: clipboardSport,
+                  workoutSyntax: builtWorkout.workoutSyntax,
+                  description: builtWorkout.setsSummary,
+                  ftpWatts: selfProfile.ftp || 250,
+                  lthrBpm: selfProfile.runLthr || selfProfile.lthr || 172,
+                  thresholdPaceSecsPerKm: selfProfile.thresholdPaceSecsPerKm || 245,
+                  dateIso: workoutDate,
+                }}
+                testIdPrefix="clipboard-push"
+                itemClassName="w-full min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg hover:bg-[#E9EFE9] dark:hover:bg-ap-turf text-left font-semibold text-ap-ink dark:text-ap-chalk inline-flex items-center gap-2 cursor-pointer"
+                onAfterClick={() => setShowExportMenu(false)}
+                onPushResult={(msg) => setAssignFeedback(msg)}
+              />
               {(() => {
                 const watchExportItems = [
                   { id: 'fit', label: 'Download .FIT', onClick: handleExportFit, show: true },

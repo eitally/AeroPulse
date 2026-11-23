@@ -272,11 +272,38 @@ export function useTelemetryConnectors({
           if (payload.athleteName) {
             localStorage.setItem('aeropulse_intervals_athlete_name', payload.athleteName);
           }
-          if (payload.sessionToken) {
-            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-          }
+          localStorage.setItem('thresh_session_active_hint', '1');
           localStorage.removeItem('aeropulse_logged_out');
           localStorage.removeItem('aeropulse_intervals_api_key');
+          void fetchServerConfigStatus()
+            .then(() => syncLiveTelemetry(false))
+            .catch(() => {});
+          return;
+        }
+        if (payload.provider === 'garmin') {
+          if (payload.athleteName) {
+            localStorage.setItem('aeropulse_garmin_athlete_name', payload.athleteName);
+          }
+          localStorage.setItem('thresh_session_active_hint', '1');
+          localStorage.removeItem('aeropulse_logged_out');
+          localStorage.removeItem('aeropulse_garmin_bearer_token');
+          localStorage.removeItem('aeropulse_garmin_oauth1_token');
+          localStorage.removeItem('aeropulse_garmin_oauth1_secret');
+          void fetchServerConfigStatus()
+            .then(() => syncLiveTelemetry(false))
+            .catch(() => {});
+          return;
+        }
+        if (payload.provider === 'coros') {
+          if (payload.athleteId) {
+            localStorage.setItem('aeropulse_coros_athlete_id', String(payload.athleteId));
+          }
+          if (payload.athleteName) {
+            localStorage.setItem('aeropulse_coros_athlete_name', payload.athleteName);
+          }
+          localStorage.setItem('thresh_session_active_hint', '1');
+          localStorage.removeItem('aeropulse_logged_out');
+          localStorage.setItem('aeropulse_coros_connected', '1');
           void fetchServerConfigStatus()
             .then(() => syncLiveTelemetry(false))
             .catch(() => {});
@@ -289,9 +316,7 @@ export function useTelemetryConnectors({
           if (payload.athleteName) {
             localStorage.setItem('aeropulse_wahoo_athlete_name', payload.athleteName);
           }
-          if (payload.sessionToken) {
-            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-          }
+          localStorage.setItem('thresh_session_active_hint', '1');
           localStorage.removeItem('aeropulse_logged_out');
           localStorage.setItem('aeropulse_wahoo_connected', '1');
           void fetchServerConfigStatus()
@@ -306,9 +331,7 @@ export function useTelemetryConnectors({
           if (payload.athleteName) {
             localStorage.setItem('aeropulse_polar_athlete_name', payload.athleteName);
           }
-          if (payload.sessionToken) {
-            localStorage.setItem('aeropulse_session_token', payload.sessionToken);
-          }
+          localStorage.setItem('thresh_session_active_hint', '1');
           localStorage.removeItem('aeropulse_logged_out');
           localStorage.setItem('aeropulse_polar_connected', '1');
           void fetchServerConfigStatus()
@@ -488,6 +511,9 @@ export function useTelemetryConnectors({
     await fetchServerConfigStatus();
   };
 
+  const handleLaunchGarminOAuth = (flow = 'popup') =>
+    launchProviderOAuth('/api/garmin/auth/url', 'Garmin Connect', flow);
+
   const handleDisconnectGarmin = async () => {
     try {
       localStorage.removeItem('aeropulse_garmin_personal_api_key');
@@ -499,6 +525,25 @@ export function useTelemetryConnectors({
       // ignore
     }
     await fetch('/api/garmin/disconnect', {
+      method: 'POST',
+      credentials: 'include',
+      headers: getSavedIntervalsHeaders(),
+    }).catch(() => null);
+    await fetchServerConfigStatus();
+  };
+
+  const handleLaunchCorosOAuth = (flow = 'popup') =>
+    launchProviderOAuth('/api/coros/auth/url', 'COROS', flow);
+
+  const handleDisconnectCoros = async () => {
+    try {
+      localStorage.removeItem('aeropulse_coros_connected');
+      localStorage.removeItem('aeropulse_coros_athlete_id');
+      localStorage.removeItem('aeropulse_coros_athlete_name');
+    } catch {
+      // ignore
+    }
+    await fetch('/api/coros/disconnect', {
       method: 'POST',
       credentials: 'include',
       headers: getSavedIntervalsHeaders(),
@@ -1018,7 +1063,10 @@ export function useTelemetryConnectors({
     handleLaunchIntervalsOAuth,
     handleConnectIntervals,
     handleDisconnectIntervals,
+    handleLaunchGarminOAuth,
     handleDisconnectGarmin,
+    handleLaunchCorosOAuth,
+    handleDisconnectCoros,
     handleLaunchWahooOAuth,
     handleDisconnectWahoo,
     handleLaunchPolarOAuth,

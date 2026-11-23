@@ -26,6 +26,10 @@ import { ChartInfoTooltip } from './ChartInfoTooltip';
 import { GhostDiffSkyline } from './charts/MicroGraphics';
 import { downloadGarminFitWorkoutFile } from '../utils/fitWorkoutEncoder';
 import {
+  type WearablePushTarget,
+  pushWorkoutToWearable,
+} from '../utils/workoutExportActions';
+import {
   EffortZoneCode,
   ZONE_META,
   classifyZoneFromPct,
@@ -928,59 +932,24 @@ ${dataLines.join('\n')}
     );
   };
 
-  const handlePushDirectGarmin = async () => {
+  const handlePushToWatch = async (target: WearablePushTarget) => {
     setIsSyncingCalendar(true);
     setSyncedBanner(null);
     try {
-      const garminBearer = localStorage.getItem('aeropulse_garmin_bearer_token') || '';
-      const garminOauth1 = localStorage.getItem('aeropulse_garmin_oauth1_token') || '';
-      const garminSecret = localStorage.getItem('aeropulse_garmin_oauth1_secret') || '';
-      const resp = await fetch('/api/garmin/workout/push', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(garminBearer ? { 'x-garmin-bearer-token': garminBearer } : {}),
-          ...(garminOauth1 ? { 'x-garmin-oauth1-token': garminOauth1 } : {}),
-          ...(garminSecret ? { 'x-garmin-oauth1-secret': garminSecret } : {}),
-        },
-        body: JSON.stringify({
-          date: todayIso,
-          name: morphedWorkout.title,
-          sportCategory: sportMode,
-          ftpWatts: sportMode === 'Cycling' ? activeFtp : undefined,
-          lthrBpm: sportMode === 'Running' ? athleteProfile.runLthr || athleteProfile.lthr : athleteProfile.lthr,
-          description: `${morphedWorkout.rationale} [Calibrated to ${sportCalibrationLabel}]`,
-          steps: morphedWorkout.steps.map((s, idx) => ({
-            label: s.label,
-            durationSecs: s.durationMins * 60,
-            targetPctFtp: s.pctFtp,
-            targetWatts: s.targetWatts,
-            targetMinWatts: Math.max(40, s.targetWatts - 10),
-            targetMaxWatts: s.targetWatts + 10,
-            hrCeilingBpm: s.hrCeilingBpm,
-            stepType:
-              idx === 0
-                ? 'warmup'
-                : idx === morphedWorkout.steps.length - 1 && morphedWorkout.steps.length > 1
-                  ? 'cooldown'
-                  : s.pctFtp <= 60
-                    ? 'recovery'
-                    : 'interval',
-          })),
-        }),
+      const res = await pushWorkoutToWearable(target, {
+        name: morphedWorkout.title,
+        sport: sportMode,
+        workoutSyntax: morphedWorkout.syntax,
+        description: `${morphedWorkout.rationale} [Calibrated to ${sportCalibrationLabel}]`,
+        ftpWatts: sportMode === 'Cycling' ? activeFtp : undefined,
+        lthrBpm:
+          sportMode === 'Running'
+            ? athleteProfile.runLthr || athleteProfile.lthr
+            : athleteProfile.lthr,
+        thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
+        dateIso: todayIso,
       });
-      const data = await resp.json().catch(() => ({}));
-      if (resp.ok && data.pushed) {
-        setSyncedBanner(
-          data.message ||
-            `Pushed "${morphedWorkout.title}" directly to Garmin Connect Calendar (${todayIso})!`
-        );
-      } else {
-        setSyncedBanner(
-          data.error ||
-            'Connect your Garmin account in Data Sources to push directly, or click "Export Garmin .FIT" below.'
-        );
-      }
+      setSyncedBanner(res.message);
       window.setTimeout(() => setSyncedBanner(null), 7000);
     } finally {
       setIsSyncingCalendar(false);
@@ -1498,13 +1467,41 @@ ${dataLines.join('\n')}
                       role="menuitem"
                       onClick={() => {
                         setIsExportMenuOpen(false);
-                        handlePushDirectGarmin();
+                        void handlePushToWatch('garmin');
                       }}
                       className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
                     >
                       <span className="inline-flex items-center gap-2">
                         <Zap className="w-3.5 h-3.5 ap-text-brand" />
-                        Push Direct to Garmin Connect
+                        Push to Garmin (Partner OAuth)
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        void handlePushToWatch('coros');
+                      }}
+                      className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Zap className="w-3.5 h-3.5 text-orange-600 dark:text-orange-300" />
+                        Push to COROS Watch
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setIsExportMenuOpen(false);
+                        void handlePushToWatch('intervals');
+                      }}
+                      className="w-full min-h-[44px] sm:min-h-[40px] px-3 py-2 rounded-lg text-left text-xs font-semibold text-slate-800 dark:text-slate-100 hover:bg-stone-100 dark:hover:bg-white/10 flex items-center justify-between gap-2"
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Zap className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300" />
+                        Push via Intervals.icu Bridge
                       </span>
                     </button>
                     <button

@@ -58,6 +58,11 @@ import {
   getEffectivePolarClientConfig,
   getEffectivePolarTokens,
 } from './polarRouter.ts';
+import { getEffectiveGarminClientConfig } from './garminRouter.ts';
+import {
+  getEffectiveCorosClientConfig,
+  getEffectiveCorosTokens,
+} from './corosRouter.ts';
 import { getEffectiveGeminiApiKey } from './coachRouter.ts';
 
 export const configRouter = Router();
@@ -83,6 +88,7 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
     apiKey: intervalsKey,
     accessToken: intervalsAccessToken,
     athleteId,
+    scope: intervalsScope,
   } = getEffectiveIntervalsConfig(req);
   const {
     clientId: stravaClientId,
@@ -175,12 +181,22 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
       ? runtimeStore.intervalsAthleteName
       : undefined);
 
+  const { clientId: garminClientId, clientSecret: garminClientSecret } =
+    getEffectiveGarminClientConfig(req);
+  const garminConfigured = Boolean(garminClientId && garminClientSecret);
   const activeGarminSession = getActiveGarminSession(req);
   const isGarminConnected = Boolean(
-    activeGarminSession?.personalApiKey ||
-      activeGarminSession?.oauth2AccessToken ||
-      activeGarminSession?.oauth1Token
+    activeGarminSession?.garminOAuthAccessToken ||
+      activeGarminSession?.personalApiKey ||
+      activeGarminSession?.oauth2AccessToken
   );
+  const garminAuthMethod: 'OAUTH' | 'PERSONAL_KEY' | 'NONE' =
+    activeGarminSession?.garminOAuthAccessToken
+      ? 'OAUTH'
+      : activeGarminSession?.personalApiKey
+        ? 'PERSONAL_KEY'
+        : 'NONE';
+  const garminCanPushWorkouts = Boolean(activeGarminSession?.garminOAuthAccessToken);
   const resolvedGarminName =
     activeGarminSession?.fullName || activeGarminSession?.displayName || undefined;
 
@@ -192,10 +208,27 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
   const { accessToken: polarAccessToken, athleteId: polarAthleteId, athleteName: polarAthleteName } = getEffectivePolarTokens(req);
   const isPolarConnected = Boolean(polarAccessToken);
 
+  const { clientId: corosClientId, clientSecret: corosClientSecret } = getEffectiveCorosClientConfig(req);
+  const { accessToken: corosAccessToken, athleteId: corosAthleteId, athleteName: corosAthleteName } = getEffectiveCorosTokens(req);
+  const isCorosConnected = Boolean(corosAccessToken);
+
+  const resolvedIntervalsScope = isIntervalsConnected
+    ? (intervalsScope || runtimeStore.intervalsScope || '').trim()
+    : '';
+  const intervalsCanWriteCalendar = Boolean(
+    isIntervalsConnected &&
+      (intervalsKey || resolvedIntervalsScope.toUpperCase().includes('CALENDAR:WRITE'))
+  );
+
   let sessionToken: string | undefined;
   if (
     (isVerifiedSession || Boolean(resolvedStravaAthleteId)) &&
-    (isStravaConnected || isGarminConnected || isIntervalsConnected || isWahooConnected || isPolarConnected)
+    (isStravaConnected ||
+      isGarminConnected ||
+      isIntervalsConnected ||
+      isWahooConnected ||
+      isPolarConnected ||
+      isCorosConnected)
   ) {
     const existingClaims = verifiedClaims;
     const keepUserSub = Boolean(existingClaims?.sub?.startsWith('usr_'));
@@ -209,7 +242,13 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
       res,
       keepUserSub
         ? existingClaims!.sub
-        : resolvedStravaName || resolvedGarminName || resolvedIntervalsName || wahooAthleteName || polarAthleteName || 'athlete',
+        : resolvedStravaName ||
+            resolvedGarminName ||
+            resolvedIntervalsName ||
+            wahooAthleteName ||
+            polarAthleteName ||
+            corosAthleteName ||
+            'athlete',
       canonicalSid,
       'verified'
     );
@@ -218,11 +257,16 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
 
   res.json({
     vaultStorageBackend: getVaultStorageBackend(),
+    garminConfigured,
     garminConnected: isGarminConnected,
+    garminAuthMethod,
+    garminCanPushWorkouts,
     garminAthleteName: resolvedGarminName,
     intervalsConfigured: Boolean(intervalsClientId && intervalsClientSecret),
     intervalsConnected: isIntervalsConnected,
     intervalsAuthMethod: intervalsAccessToken ? 'OAUTH' : intervalsKey ? 'API_KEY' : 'NONE',
+    intervalsScope: resolvedIntervalsScope || undefined,
+    intervalsCanWriteCalendar,
     intervalsAthleteId: isIntervalsConnected
       ? intervalsIdentity?.athleteId || athleteId || '0'
       : '0',
@@ -236,6 +280,10 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
     polarConnected: isPolarConnected,
     polarAthleteId: isPolarConnected ? polarAthleteId : undefined,
     polarAthleteName: isPolarConnected ? polarAthleteName : undefined,
+    corosConfigured: Boolean(corosClientId && corosClientSecret),
+    corosConnected: isCorosConnected,
+    corosAthleteId: isCorosConnected ? corosAthleteId : undefined,
+    corosAthleteName: isCorosConnected ? corosAthleteName : undefined,
     stravaConfigured: Boolean(stravaClientId && stravaClientSecret),
     stravaClientId: stravaClientId || undefined,
     stravaConnected: isStravaConnected,
@@ -498,8 +546,26 @@ configRouter.post('/api/auth/logout', async (req: Request, res: Response) => {
       runtimeStore.stravaGrantedScope = undefined;
       runtimeStore.stravaSyncPolicy = undefined;
       runtimeStore.intervalsApiKey = '';
+      runtimeStore.intervalsAccessToken = '';
+      runtimeStore.intervalsScope = '';
       runtimeStore.intervalsAthleteId = '0';
       runtimeStore.intervalsAthleteName = '';
+      runtimeStore.corosAccessToken = '';
+      runtimeStore.corosRefreshToken = '';
+      runtimeStore.corosExpiresAt = 0;
+      runtimeStore.corosAthleteId = '';
+      runtimeStore.corosAthleteName = '';
+      runtimeStore.wahooAccessToken = '';
+      runtimeStore.wahooRefreshToken = '';
+      runtimeStore.wahooExpiresAt = 0;
+      runtimeStore.wahooScope = '';
+      runtimeStore.wahooUserId = '';
+      runtimeStore.wahooAthleteName = '';
+      runtimeStore.polarAccessToken = '';
+      runtimeStore.polarUserId = '';
+      runtimeStore.polarAthleteName = '';
+      runtimeStore.polarExpiresAt = 0;
+      runtimeStore.polarScope = '';
       if (scopeKey) {
         scopedStoresInMemory.delete(scopeKey);
         hydratedReqScopeMap.delete(req);

@@ -309,4 +309,12 @@ export function resolvePolarCallbackUrl(req: Request): string {
   return resolveStandardOAuthCallbackUrl(req, 'POLAR_REDIRECT_URI', '/auth/polar/callback');
 }
 
+export function resolveGarminCallbackUrl(req: Request): string {
+  return resolveStandardOAuthCallbackUrl(req, 'GARMIN_REDIRECT_URI', '/auth/garmin/callback');
+}
+
+export function resolveCorosCallbackUrl(req: Request): string {
+  return resolveStandardOAuthCallbackUrl(req, 'COROS_REDIRECT_URI', '/auth/coros/callback');
+}
+
 export const resolveCallbackUrl = resolveStravaCallbackUrl;

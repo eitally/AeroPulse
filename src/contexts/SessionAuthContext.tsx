@@ -34,7 +34,10 @@ export interface SessionAuthContextValue {
   onDisconnectWahoo?: () => Promise<void>;
   onLaunchPolarOAuth?: () => Promise<void>;
   onDisconnectPolar?: () => Promise<void>;
+  onLaunchGarminOAuth?: () => Promise<void>;
   onDisconnectGarmin: () => Promise<void>;
+  onLaunchCorosOAuth?: () => Promise<void>;
+  onDisconnectCoros?: () => Promise<void>;
   onDisconnectStrava: () => void;
   onUpdateStravaSyncPolicy?: (
     windowChoice: StravaSyncWindow,

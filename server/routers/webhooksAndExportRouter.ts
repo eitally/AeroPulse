@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
+import { buildCorosWorkoutPayload } from '../corosConnectService.ts';
 import { computeFatigueSlicedDurability } from '../../src/physiology/durabilityEngine.ts';
 import { simulateCoursePacingAndFueling } from '../../src/physiology/raceSimulator.ts';
 import { generateVerifiedRacePassport } from '../../src/physiology/raceRubberBander.ts';
@@ -496,6 +497,30 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
     '[END COURSE DATA]',
   ].join('\n');
 
+  const corosWorkoutJson = buildCorosWorkoutPayload({
+    date: String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10),
+    name: title,
+    sportCategory: sport,
+    description: typeof body.description === 'string' ? body.description : intervalsIcuText,
+    workoutSyntax,
+    ftpWatts: ftp,
+    thresholdPaceSecsPerKm,
+    steps: normalizedSteps.map((st) => ({
+      label: st.label,
+      durationSecs: st.durationSecs,
+      distanceMeters: st.distanceMeters,
+      targetPctFtp: st.targetPctFtp,
+      targetWatts: st.targetWatts,
+      targetPaceSecsPerKm: st.targetPaceSecsPerKm,
+      stepType:
+        st.stepKind === 'rest'
+          ? 'recovery'
+          : st.stepKind === 'work'
+            ? 'interval'
+            : st.stepKind,
+    })),
+  });
+
   res.status(200).json({
     ok: true,
     title,
@@ -504,6 +529,7 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
     intervalsIcuText,
     appleWorkoutKitJson,
     garminTrainingApiJson,
+    corosWorkoutJson,
     zwoXml: zwoLines.join('\n'),
     ergText,
   });

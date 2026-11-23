@@ -108,7 +108,10 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
     onDisconnectWahoo,
     onLaunchPolarOAuth,
     onDisconnectPolar,
+    onLaunchGarminOAuth,
     onDisconnectGarmin,
+    onLaunchCorosOAuth,
+    onDisconnectCoros,
     onDisconnectStrava,
     onUpdateStravaSyncPolicy,
     onSaveStravaCredentials,
@@ -240,7 +243,10 @@ export const CockpitModals: React.FC<CockpitModalsProps> = ({
             onDisconnectWahoo={onDisconnectWahoo}
             onLaunchPolarOAuth={onLaunchPolarOAuth}
             onDisconnectPolar={onDisconnectPolar}
+            onLaunchGarminOAuth={onLaunchGarminOAuth}
             onDisconnectGarmin={onDisconnectGarmin}
+            onLaunchCorosOAuth={onLaunchCorosOAuth}
+            onDisconnectCoros={onDisconnectCoros}
             onDisconnectStrava={onDisconnectStrava}
             hasStandaloneAccount={hasStandaloneAccount}
             onUpdateStravaSyncPolicy={onUpdateStravaSyncPolicy}

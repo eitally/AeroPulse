@@ -47,6 +47,8 @@ export interface AuthOptionalAddonsStepProps {
   setStep: React.Dispatch<React.SetStateAction<1 | 2 | 3>>;
   onOpenArchiveWizard: () => void;
   onLaunchIntervalsOAuth?: () => Promise<void>;
+  onLaunchGarminOAuth?: () => Promise<void>;
+  onLaunchCorosOAuth?: () => Promise<void>;
   onLaunchWahooOAuth?: () => Promise<void>;
   onLaunchPolarOAuth?: () => Promise<void>;
   handleConnectGarminInline: (e: React.FormEvent) => Promise<void>;
@@ -82,12 +84,42 @@ export const AuthOptionalAddonsStep: React.FC<AuthOptionalAddonsStepProps> = ({
   setStep,
   onOpenArchiveWizard,
   onLaunchIntervalsOAuth,
+  onLaunchGarminOAuth,
+  onLaunchCorosOAuth,
   onLaunchWahooOAuth,
   onLaunchPolarOAuth,
   handleConnectGarminInline,
   handleConnectIntervalsInline,
   handleFinalizeOnboarding,
 }) => {
+  const [addonNotice, setAddonNotice] = React.useState<string | null>(null);
+
+  const launchFallbackOAuth = async (urlPath: string, label: string) => {
+    setAddonNotice(null);
+    const popup = window.open(
+      'about:blank',
+      'aeropulse_oauth_popup',
+      'width=600,height=720,scrollbars=yes,resizable=yes'
+    );
+    try {
+      const resp = await fetch(`${urlPath}?flow=popup`, { credentials: 'include' });
+      const data = (await resp.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!resp.ok || !data.url) {
+        if (popup && !popup.closed) popup.close();
+        setAddonNotice(data.error || `${label} OAuth is not configured on this server yet.`);
+        return;
+      }
+      if (popup && !popup.closed) {
+        popup.location.href = data.url;
+      } else {
+        window.location.href = data.url;
+      }
+    } catch {
+      if (popup && !popup.closed) popup.close();
+      setAddonNotice(`Unable to start ${label} OAuth.`);
+    }
+  };
+
   return (
             <div className="space-y-5 relative z-10">
               <div className="space-y-1.5">
@@ -109,10 +141,15 @@ export const AuthOptionalAddonsStep: React.FC<AuthOptionalAddonsStepProps> = ({
                     </>
                   ) : (
                     <>
-                      Your MeetReady account is active. Optionally link <strong>Garmin Connect</strong>, <strong>Intervals.icu</strong>, <strong>Wahoo</strong>, or <strong>Polar</strong> for automatic workout &amp; overnight HRV sync—or enter MeetReady right now.
+                      Your MeetReady account is active. Optionally link <strong>Garmin Connect</strong>, <strong>COROS</strong>, <strong>Intervals.icu</strong>, <strong>Wahoo</strong>, or <strong>Polar</strong> for automatic workout &amp; overnight HRV sync—or enter MeetReady right now.
                     </>
                   )}
                 </p>
+                {addonNotice && (
+                  <p role="status" className="text-xs rounded-lg ap-status-caution px-3 py-2">
+                    {addonNotice}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-3">
@@ -149,43 +186,59 @@ export const AuthOptionalAddonsStep: React.FC<AuthOptionalAddonsStepProps> = ({
                   </div>
 
                   {expandGarmin && (
-                    <form
-                      onSubmit={handleConnectGarminInline}
-                      className="pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-2.5"
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-600 dark:text-slate-300">
-                          Paste your Garmin Personal API Key (<code className="font-mono">GCDC_...</code>):
-                        </span>
-                        <a
-                          href="https://connect.garmin.com/app/settings/personalApiToken"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-semibold ap-text-brand hover:underline inline-flex items-center gap-1"
-                        >
-                          <span>Get Key from Garmin</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <input
-                          type="password"
-                          required
-                          aria-label="Garmin Personal API Key"
-                          value={garminPersonalKey}
-                          onChange={(e) => setGarminPersonalKey(e.target.value)}
-                          placeholder="GCDC_00000000-0000-..."
-                          className="flex-1 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                        />
-                        <button
-                          type="submit"
-                          disabled={busy || !garminPersonalKey.trim()}
-                          className="ap-btn-primary !min-h-[44px] sm:!min-h-[42px] text-xs shrink-0 cursor-pointer"
-                        >
-                          {isConnectingGarmin ? 'Linking…' : 'Link Garmin'}
-                        </button>
-                      </div>
-                    </form>
+                    <div className="pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onLaunchGarminOAuth
+                            ? void onLaunchGarminOAuth()
+                            : void launchFallbackOAuth('/api/garmin/auth/url', 'Garmin Connect')
+                        }
+                        disabled={busy}
+                        className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
+                      >
+                        <Lightning className="w-4 h-4 shrink-0" />
+                        <span>1-Click Connect with Garmin Partner (OAuth 2.0 PKCE)</span>
+                      </button>
+
+                      <form
+                        onSubmit={handleConnectGarminInline}
+                        className="space-y-2.5"
+                      >
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-600 dark:text-slate-300">
+                            Or paste a read-only Garmin Personal API Key (<code className="font-mono">GCDC_...</code>):
+                          </span>
+                          <a
+                            href="https://connect.garmin.com/app/settings/personalApiToken"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold ap-text-brand hover:underline inline-flex items-center gap-1"
+                          >
+                            <span>Get Key from Garmin</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="password"
+                            required
+                            aria-label="Garmin Personal API Key"
+                            value={garminPersonalKey}
+                            onChange={(e) => setGarminPersonalKey(e.target.value)}
+                            placeholder="GCDC_00000000-0000-..."
+                            className="flex-1 min-h-[44px] sm:min-h-[42px] rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0D1210] px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                          />
+                          <button
+                            type="submit"
+                            disabled={busy || !garminPersonalKey.trim()}
+                            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[42px] text-xs shrink-0 cursor-pointer"
+                          >
+                            {isConnectingGarmin ? 'Linking…' : 'Link Garmin Key'}
+                          </button>
+                        </div>
+                      </form>
+                    </div>
                   )}
                 </div>
 
@@ -369,9 +422,53 @@ export const AuthOptionalAddonsStep: React.FC<AuthOptionalAddonsStepProps> = ({
                 )}
               </div>
 
+              {/* COROS Option */}
+              <div className="rounded-xl ap-card-inset p-3 sm:p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-7 h-7 rounded-lg bg-orange-500/10 text-orange-700 dark:text-orange-300 font-bold text-xs flex items-center justify-center">
+                      C
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
+                        <span>COROS Open API</span>
+                        {status.corosConnected ? (
+                          <span className="text-2xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 font-medium">
+                            Connected ({status.corosAthleteName || 'COROS'})
+                          </span>
+                        ) : (
+                          <span className="text-2xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            Optional
+                          </span>
+                        )}
+                      </h4>
+                      <p className="text-2xs text-slate-600 dark:text-slate-300">
+                        PACE, APEX, VERTIX, DURA 2-way workout sync &amp; track push.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {!status.corosConnected && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onLaunchCorosOAuth
+                        ? void onLaunchCorosOAuth()
+                        : void launchFallbackOAuth('/api/coros/auth/url', 'COROS')
+                    }
+                    disabled={busy}
+                    className="w-full ap-btn-primary min-h-[44px] sm:min-h-[42px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
+                  >
+                    <Lightning className="w-4 h-4 shrink-0" />
+                    <span>1-Click Connect with COROS (OAuth 2.0)</span>
+                  </button>
+                )}
+              </div>
+
               <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 text-2xs text-slate-600 dark:text-slate-300 flex items-center justify-between flex-wrap gap-2">
                 <span>
-                  <strong>Smart Deduplication:</strong> Connecting Garmin, Intervals.icu, Wahoo, or Polar alongside Strava merges matching workouts automatically—never duplicates.
+                  <strong>Smart Deduplication:</strong> Connecting Garmin, COROS, Intervals.icu, Wahoo, or Polar alongside Strava merges matching workouts automatically—never duplicates.
                 </span>
                 {!claimedTeamsState && (
                   <button

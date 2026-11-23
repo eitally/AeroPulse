@@ -40,7 +40,10 @@ interface DataSourcesModalProps {
   onDisconnectWahoo?: () => Promise<void>;
   onLaunchPolarOAuth?: () => Promise<void>;
   onDisconnectPolar?: () => Promise<void>;
+  onLaunchGarminOAuth?: () => Promise<void>;
   onDisconnectGarmin?: () => Promise<void>;
+  onLaunchCorosOAuth?: () => Promise<void>;
+  onDisconnectCoros?: () => Promise<void>;
   onDisconnectStrava?: () => void;
   hasStandaloneAccount?: boolean;
   onUpdateStravaSyncPolicy?: (
@@ -82,7 +85,10 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   onDisconnectWahoo,
   onLaunchPolarOAuth,
   onDisconnectPolar,
+  onLaunchGarminOAuth,
   onDisconnectGarmin,
+  onLaunchCorosOAuth,
+  onDisconnectCoros,
   onDisconnectStrava,
   hasStandaloneAccount = false,
   onUpdateStravaSyncPolicy,
@@ -123,12 +129,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
   const [stravaClientSecret, setStravaClientSecret] = useState('');
   const [stravaFallbackInput, setStravaFallbackInput] = useState('');
 
-  // Garmin Connect (Credentials + Advanced Personal API Token)
-  const [garminMode, setGarminMode] = useState<'CREDENTIALS' | 'PERSONAL_KEY'>('PERSONAL_KEY');
-  const [garminEmail, setGarminEmail] = useState('');
-  const [garminPassword, setGarminPassword] = useState('');
-  const [garminMfaCode, setGarminMfaCode] = useState('');
-  const [garminNeedsMfa, setGarminNeedsMfa] = useState(false);
+  // Garmin Connect (Official Partner OAuth 2.0 PKCE + Read-Only Personal API Key)
   const [garminPersonalApiKey, setGarminPersonalApiKey] = useState<string>(() => {
     try {
       return localStorage.getItem('aeropulse_garmin_personal_api_key') || '';
@@ -194,9 +195,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     .split('/')[0];
 
   const isGarminConnected = Boolean(
-    status.garminConnected ||
-      localStorage.getItem('aeropulse_garmin_personal_api_key') ||
-      localStorage.getItem('aeropulse_garmin_bearer_token')
+    status.garminConnected || localStorage.getItem('aeropulse_garmin_personal_api_key')
   );
 
   const stravaServerUnconfigured = status.stravaConfigured === false;
@@ -206,16 +205,9 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
 
   const totalWorkouts = persistedWorkoutCount || status.totalActivitiesCount || 0;
 
-  const buildAuthHeaders = (): Record<string, string> => {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    try {
-      const sessionTok = localStorage.getItem('aeropulse_session_token') || '';
-      if (sessionTok) headers['x-session-token'] = sessionTok;
-    } catch {
-      // ignore
-    }
-    return headers;
-  };
+  const buildAuthHeaders = (): Record<string, string> => ({
+    'Content-Type': 'application/json',
+  });
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text).catch(() => {});
@@ -295,60 +287,6 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
     setLocalStatusMsg('Strava connected!');
   };
 
-  const handleGarminCredentialsSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!garminEmail.trim() || !garminPassword.trim()) return;
-    setIsConnectingGarmin(true);
-    setLocalStatusMsg(null);
-    try {
-      const resp = await fetch('/api/config/garmin', {
-        method: 'POST',
-        credentials: 'include',
-        headers: buildAuthHeaders(),
-        body: JSON.stringify({
-          email: garminEmail.trim(),
-          password: garminPassword,
-          mfaCode: garminMfaCode.trim() || undefined,
-        }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (data?.requiresMfa) {
-        setGarminNeedsMfa(true);
-        setLocalStatusMsg('Enter the 6-digit Garmin security code sent to your email or phone.');
-      } else if (!resp.ok) {
-        setLocalStatusMsg(data.error || 'Could not sign in to Garmin Connect.');
-      } else {
-        if (data.garminTokens?.oauth2AccessToken) {
-          localStorage.setItem('aeropulse_garmin_bearer_token', data.garminTokens.oauth2AccessToken);
-        }
-        if (data.garminTokens?.oauth1Token) {
-          localStorage.setItem('aeropulse_garmin_oauth1_token', data.garminTokens.oauth1Token);
-        }
-        if (data.garminTokens?.oauth1TokenSecret) {
-          localStorage.setItem(
-            'aeropulse_garmin_oauth1_secret',
-            data.garminTokens.oauth1TokenSecret
-          );
-        }
-        if (data.garminAthleteName || data.athleteName) {
-          localStorage.setItem(
-            'aeropulse_garmin_athlete_name',
-            data.garminAthleteName || data.athleteName
-          );
-        }
-        setGarminPassword('');
-        setGarminMfaCode('');
-        setGarminNeedsMfa(false);
-        setLocalStatusMsg(
-          `Garmin Connect linked (${data.garminAthleteName || data.athleteName || 'Active'})! Syncing sleep & HRV...`
-        );
-        await onSyncNow(false);
-      }
-    } finally {
-      setIsConnectingGarmin(false);
-    }
-  };
-
   const handleGarminTokenSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!garminPersonalApiKey.trim()) return;
@@ -367,18 +305,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
       if (!resp.ok) {
         setLocalStatusMsg(data.error || 'Could not verify Garmin token.');
       } else {
-        if (data.garminTokens?.personalApiKey || garminPersonalApiKey.trim()) {
-          localStorage.setItem(
-            'aeropulse_garmin_personal_api_key',
-            data.garminTokens?.personalApiKey || garminPersonalApiKey.trim()
-          );
-        }
-        if (data.garminTokens?.oauth2AccessToken) {
-          localStorage.setItem(
-            'aeropulse_garmin_bearer_token',
-            data.garminTokens.oauth2AccessToken
-          );
-        }
+        localStorage.setItem('aeropulse_garmin_personal_api_key', garminPersonalApiKey.trim());
         if (data.garminAthleteName) {
           localStorage.setItem('aeropulse_garmin_athlete_name', data.garminAthleteName);
         }
@@ -720,14 +647,14 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             )}
           </section>
 
-          {/* 2. GARMIN CONNECT (OPTIONAL SECONDARY BIOMETRICS) */}
+          {/* 2. GARMIN CONNECT (OFFICIAL PARTNER OAUTH 2.0 PKCE + READ-ONLY PERSONAL API KEY) */}
           <details
             open={isGarminConnected}
             className="liquid-glass rounded-2xl p-4 sm:p-5 group"
           >
             <summary className="cursor-pointer list-none flex flex-wrap items-center justify-between gap-3 select-none">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                     Garmin Connect
                   </h3>
@@ -735,6 +662,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                     <span className="ap-status-prime px-2 py-0.5 rounded-md text-2xs font-mono font-semibold">
                       Connected
                       {status.garminAthleteName ? ` · ${status.garminAthleteName}` : ''}
+                      {status.garminCanPushWorkouts ? ' · 2-Way Watch Push' : ' · Read-Only Sync'}
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded-md text-2xs font-mono bg-slate-200/70 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
@@ -743,7 +671,7 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                   )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Adds overnight Sleep Score, HRV (rMSSD), Resting HR, and watch readiness. Never required.
+                  Adds overnight Sleep Score, HRV (rMSSD), Resting HR, and Official Partner OAuth 2.0 PKCE watch workout push.
                 </p>
               </div>
               <span className="text-xs font-semibold ap-text-brand">
@@ -752,124 +680,85 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </summary>
 
             <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <div className="inline-flex rounded-lg liquid-capsule-track p-0.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                {onLaunchGarminOAuth && (
                   <button
                     type="button"
-                    onClick={() => setGarminMode('CREDENTIALS')}
-                    className={`px-2.5 py-1 rounded-md text-2xs font-semibold cursor-pointer ${
-                      garminMode === 'CREDENTIALS'
-                        ? 'liquid-capsule-active text-slate-900 dark:text-white'
-                        : 'text-slate-500 dark:text-slate-400'
-                    }`}
+                    data-testid="garmin-partner-oauth-btn"
+                    onClick={() => onLaunchGarminOAuth?.()}
+                    className="flex-1 min-w-[220px] ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
                   >
-                    Garmin Sign-In
+                    <Lightning className="w-4 h-4 text-current" />
+                    <span>
+                      {status.garminAuthMethod === 'OAUTH'
+                        ? 'Re-Authorize Garmin Partner (OAuth 2.0 PKCE)'
+                        : '1-Click Connect with Garmin Partner (OAuth 2.0 PKCE)'}
+                    </span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setGarminMode('PERSONAL_KEY')}
-                    className={`px-2.5 py-1 rounded-md text-2xs font-semibold cursor-pointer ${
-                      garminMode === 'PERSONAL_KEY'
-                        ? 'liquid-capsule-active text-slate-900 dark:text-white'
-                        : 'text-slate-500 dark:text-slate-400'
-                    }`}
-                  >
-                    Personal API Token
-                  </button>
-                </div>
+                )}
 
                 {isGarminConnected && (
                   <button
                     type="button"
                     onClick={handleDisconnectGarminClick}
-                    className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] text-xs cursor-pointer"
+                    className="ap-btn-secondary !min-h-[44px] text-xs cursor-pointer"
                   >
                     Disconnect Garmin
                   </button>
                 )}
               </div>
 
-              {garminMode === 'CREDENTIALS' ? (
-                <form
-                  onSubmit={handleGarminCredentialsSubmit}
-                  className="grid grid-cols-1 sm:grid-cols-12 gap-2"
-                >
-                  <input
-                    type="email"
-                    aria-label="Garmin Connect email"
-                    autoComplete="username"
-                    value={garminEmail}
-                    onChange={(e) => setGarminEmail(e.target.value)}
-                    placeholder="Garmin Connect Email"
-                    className="sm:col-span-5 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                  />
-                  <input
-                    type="password"
-                    aria-label="Garmin Connect password"
-                    autoComplete="current-password"
-                    value={garminPassword}
-                    onChange={(e) => setGarminPassword(e.target.value)}
-                    placeholder="Garmin Password"
-                    className="sm:col-span-4 min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100"
-                  />
-                  {garminNeedsMfa && (
-                    <input
-                      type="text"
-                      aria-label="Garmin 6-digit two-factor code"
-                      inputMode="numeric"
-                      value={garminMfaCode}
-                      onChange={(e) => setGarminMfaCode(e.target.value)}
-                      placeholder="6-digit 2FA Code"
-                      className="sm:col-span-12 min-h-[44px] rounded-xl border border-amber-500 bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                    />
-                  )}
-                  <button
-                    type="submit"
-                    disabled={
-                      isConnectingGarmin || !garminEmail.trim() || !garminPassword.trim()
-                    }
-                    className="sm:col-span-3 ap-btn-primary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
-                  >
-                    {isConnectingGarmin ? 'Linking...' : 'Link Garmin'}
-                  </button>
-                  <p className="sm:col-span-12 text-2xs text-slate-600 dark:text-slate-300">
-                    Your password is exchanged once for an OAuth token and never stored by MeetReady.
-                  </p>
-                </form>
-              ) : (
-                <form
-                  onSubmit={handleGarminTokenSubmit}
-                  className="flex flex-wrap sm:flex-nowrap gap-2"
-                >
-                  <input
-                    type="password"
-                    aria-label="Garmin personal API token"
-                    autoComplete="off"
-                    value={garminPersonalApiKey}
-                    onChange={(e) => setGarminPersonalApiKey(e.target.value)}
-                    placeholder="Paste Garmin Personal API Token (GCDC_...)"
-                    className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isConnectingGarmin || !garminPersonalApiKey.trim()}
-                    className="ap-btn-primary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
-                  >
-                    {isConnectingGarmin ? 'Verifying...' : 'Verify Token'}
-                  </button>
-                </form>
+              {status.garminConfigured === false && (
+                <p className="text-2xs rounded-lg ap-status-caution px-3 py-2">
+                  Official Garmin Health &amp; Training Partner OAuth keys are pending configuration on this server. Connect a read-only Personal API Key (<code className="font-mono">GCDC_...</code>), use <strong>Intervals.icu Cross-Watch Bridge</strong>, or download <code className="font-mono">.FIT</code> workout files.
+                </p>
               )}
+
+              <details
+                open={status.garminAuthMethod === 'PERSONAL_KEY'}
+                className="text-2xs text-slate-600 dark:text-slate-300"
+              >
+                <summary className="cursor-pointer font-semibold hover:text-slate-900 dark:hover:text-white select-none py-1">
+                  Read-Only Biometrics Option: Garmin Personal API Token (GCDC_...)
+                </summary>
+                <div className="pt-2 space-y-2">
+                  <form
+                    onSubmit={handleGarminTokenSubmit}
+                    className="flex flex-wrap sm:flex-nowrap gap-2"
+                  >
+                    <input
+                      type="password"
+                      aria-label="Garmin personal API token"
+                      autoComplete="off"
+                      value={garminPersonalApiKey}
+                      onChange={(e) => setGarminPersonalApiKey(e.target.value)}
+                      placeholder="Paste Garmin Personal API Token (GCDC_...)"
+                      className="flex-1 min-w-[200px] min-h-[44px] rounded-xl border border-slate-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isConnectingGarmin || !garminPersonalApiKey.trim()}
+                      className="ap-btn-secondary !min-h-[44px] text-xs cursor-pointer disabled:opacity-50"
+                    >
+                      {isConnectingGarmin ? 'Verifying...' : 'Verify Token'}
+                    </button>
+                  </form>
+                  <p className="text-2xs text-slate-500 dark:text-slate-400">
+                    Personal API Keys (<code className="font-mono">GCDC_...</code>) are strictly read-only per Garmin policy. Use Official Garmin Partner OAuth, Intervals.icu Bridge, or <code className="font-mono">.FIT</code> export to send workouts to your watch.
+                  </p>
+                </div>
+              </details>
             </div>
           </details>
 
-          {/* 3. INTERVALS.ICU (OPTIONAL SECONDARY STRUCTURED WORKOUTS & WELLNESS) */}
+          {/* 3. INTERVALS.ICU (OPTIONAL SECONDARY STRUCTURED WORKOUTS & CROSS-WATCH BRIDGE) */}
           <details
             open={status.intervalsConnected}
             className="liquid-glass rounded-2xl p-4 sm:p-5 group"
           >
             <summary className="cursor-pointer list-none flex flex-wrap items-center justify-between gap-3 select-none">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                     Intervals.icu
                   </h3>
@@ -883,9 +772,17 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
                       Optional Add-On
                     </span>
                   )}
+                  {status.intervalsConnected && status.intervalsCanWriteCalendar && (
+                    <span
+                      data-testid="intervals-cross-watch-bridge-badge"
+                      className="px-2 py-0.5 rounded-md text-2xs font-mono font-semibold bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25"
+                    >
+                      Cross-Watch Bridge · Garmin / COROS / Suunto / Wahoo (CALENDAR:WRITE)
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                  Syncs structured workout calendars, Intervals.icu-relayed devices (COROS / Suunto / Apple Watch / Oura / WHOOP), and eFTP curves.
+                  Syncs structured workout calendars, Intervals.icu-relayed devices (COROS / Suunto / Apple Watch / Oura / WHOOP), and pushes workouts to linked watches via <code className="font-mono">CALENDAR:WRITE</code>.
                 </p>
               </div>
               <span className="text-xs font-semibold ap-text-brand">
@@ -895,30 +792,52 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
 
             <div className="mt-4 pt-3 border-t border-slate-200/80 dark:border-white/10 space-y-3">
               {status.intervalsConnected ? (
-                <div className="flex items-center justify-between p-3.5 rounded-xl ap-card-inset text-xs">
-                  <div>
-                    <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span>
-                        Connected via{' '}
-                        {status.intervalsAuthMethod === 'OAUTH'
-                          ? 'OAuth 2.0'
-                          : 'Personal API Key'}
-                      </span>
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-3.5 rounded-xl ap-card-inset text-xs">
+                    <div>
+                      <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                        <span>
+                          Connected via{' '}
+                          {status.intervalsAuthMethod === 'OAUTH'
+                            ? 'OAuth 2.0'
+                            : 'Personal API Key'}
+                        </span>
+                      </div>
+                      <p className="text-2xs text-slate-600 dark:text-slate-300 mt-0.5">
+                        Athlete ID: {status.intervalsAthleteId}
+                        {status.intervalsAthleteName
+                          ? ` · ${status.intervalsAthleteName}`
+                          : ''}
+                        {status.intervalsScope ? ` · Scope: ${status.intervalsScope}` : ''}
+                      </p>
                     </div>
-                    <p className="text-2xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      Athlete ID: {status.intervalsAthleteId}
-                      {status.intervalsAthleteName
-                        ? ` · ${status.intervalsAthleteName}`
-                        : ''}
-                    </p>
+                    <button
+                      type="button"
+                      onClick={onDisconnectIntervals}
+                      className="ap-btn-secondary !min-h-[38px] !px-3 text-xs cursor-pointer text-rose-600 dark:text-rose-300"
+                    >
+                      Disconnect
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={onDisconnectIntervals}
-                    className="ap-btn-secondary !min-h-[38px] !px-3 text-xs cursor-pointer text-rose-500 hover:text-rose-600"
-                  >
-                    Disconnect
-                  </button>
+
+                  {status.intervalsAuthMethod === 'OAUTH' &&
+                    !status.intervalsCanWriteCalendar &&
+                    onLaunchIntervalsOAuth && (
+                      <div className="rounded-xl ap-status-caution p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                        <span>
+                          Connected with read-only calendar scope. Upgrade to{' '}
+                          <code className="font-mono">CALENDAR:WRITE</code> to relay workouts to Garmin, COROS, Suunto &amp; Wahoo watches.
+                        </span>
+                        <button
+                          type="button"
+                          data-testid="intervals-upgrade-scope-btn"
+                          onClick={() => onLaunchIntervalsOAuth?.()}
+                          className="ap-btn-primary !min-h-[38px] px-3 py-1.5 rounded-lg font-semibold text-xs cursor-pointer"
+                        >
+                          Upgrade Scope to Watch Push
+                        </button>
+                      </div>
+                    )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1136,11 +1055,91 @@ export const DataSourcesModal: React.FC<DataSourcesModalProps> = ({
             </div>
           </details>
 
+          {/* 3d. COROS OPEN API (PACE, APEX, VERTIX & DURA) */}
+          <details
+            open={status.corosConnected}
+            className="group rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 p-4 transition-all"
+          >
+            <summary className="flex items-center justify-between cursor-pointer list-none">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-orange-500/10 text-orange-700 dark:text-orange-300 flex items-center justify-center font-bold text-xs">
+                  C
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
+                      COROS Open API
+                    </h4>
+                    {status.corosConnected ? (
+                      <span className="inline-flex items-center gap-1 text-2xs px-2 py-0.5 rounded-full ap-status-prime font-medium">
+                        <CheckCircle2 className="w-3 h-3" /> Connected
+                      </span>
+                    ) : (
+                      <span className="text-2xs px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                        Optional
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-2xs text-slate-600 dark:text-slate-300">
+                    2-way workout sync &amp; structured track/run push for PACE, APEX, VERTIX &amp; DURA
+                  </p>
+                </div>
+              </div>
+              <CaretDown className="w-4 h-4 text-slate-600 dark:text-slate-400 group-open:rotate-180 transition-transform" />
+            </summary>
+
+            <div className="mt-4 pt-4 border-t border-slate-200/60 dark:border-slate-800/60 space-y-3">
+              {status.corosConnected ? (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-orange-500/5 border border-orange-500/20 text-xs">
+                  <div>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {status.corosAthleteName || 'COROS Athlete'}
+                    </span>
+                    {status.corosAthleteId && (
+                      <span className="text-2xs text-slate-600 dark:text-slate-300 ml-2 font-mono">
+                        ID: {status.corosAthleteId}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onDisconnectCoros?.()}
+                    className="text-xs text-rose-600 dark:text-rose-300 hover:underline font-medium cursor-pointer"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {onLaunchCorosOAuth && (
+                    <button
+                      type="button"
+                      data-testid="coros-oauth-btn"
+                      onClick={() => onLaunchCorosOAuth?.()}
+                      className="w-full ap-btn-primary min-h-[44px] flex items-center justify-center gap-2 font-semibold text-xs cursor-pointer shadow-sm"
+                    >
+                      <Lightning className="w-4 h-4 text-current" />
+                      <span>1-Click Connect with COROS (OAuth 2.0)</span>
+                    </button>
+                  )}
+                  {status.corosConfigured === false && (
+                    <p className="text-2xs rounded-lg ap-status-caution px-3 py-2">
+                      COROS Open API partner credentials are pending on this server. Connect <strong>Intervals.icu</strong> (<code className="font-mono">CALENDAR:WRITE</code>) to relay structured workouts to your COROS watch automatically.
+                    </p>
+                  )}
+                  <p className="text-2xs text-slate-600 dark:text-slate-300">
+                    Direct integration with COROS Open API via OAuth 2.0. Automatically syncs runs, tracks structured repeats, and pushes scheduled workouts to your COROS Training Calendar.
+                  </p>
+                </div>
+              )}
+            </div>
+          </details>
+
           {/* SMART DEDUPLICATION ASSURANCE */}
           <div className="rounded-xl liquid-glass-subtle px-3.5 py-2.5 flex items-center gap-2.5 text-2xs text-slate-600 dark:text-slate-300">
             <Shield className="w-4 h-4 ap-text-brand shrink-0" />
             <span>
-              <strong>Smart Multi-Source Deduplication:</strong> Connecting Garmin, Intervals.icu, Wahoo, or Polar alongside Strava never double-counts workouts—matching activities are automatically merged into a single record with all badges.
+              <strong>Smart Multi-Source Deduplication:</strong> Connecting Garmin, COROS, Intervals.icu, Wahoo, or Polar alongside Strava never double-counts workouts—matching activities are automatically merged into a single record with all badges.
             </span>
           </div>
 

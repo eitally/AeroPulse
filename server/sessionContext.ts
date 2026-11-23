@@ -60,6 +60,13 @@ export interface RuntimeSessionStore {
   polarAthleteName?: string;
   polarExpiresAt?: number;
   polarScope?: string;
+  corosClientId?: string;
+  corosClientSecret?: string;
+  corosAccessToken?: string;
+  corosRefreshToken?: string;
+  corosExpiresAt?: number;
+  corosAthleteId?: string;
+  corosAthleteName?: string;
   stravaClientId: string;
   stravaClientSecret: string;
   stravaAccessToken: string;
@@ -105,9 +112,9 @@ export function hasExplicitCredentialHeader(req?: Request): boolean {
       String(req.headers['x-intervals-access-token'] || '').trim() ||
       String(req.headers['x-wahoo-access-token'] || '').trim() ||
       String(req.headers['x-polar-access-token'] || '').trim() ||
+      String(req.headers['x-coros-access-token'] || '').trim() ||
       String(req.headers['x-garmin-personal-api-key'] || '').trim() ||
-      String(req.headers['x-garmin-bearer-token'] || '').trim() ||
-      String(req.headers['x-garmin-oauth1-token'] || '').trim()
+      String(req.headers['x-garmin-bearer-token'] || '').trim()
   );
 }
 
@@ -152,6 +159,7 @@ export function resolveSessionScopeKey(req?: Request): string | null {
   }
   const rawCredential = (
     String(activeReq.headers['x-garmin-personal-api-key'] || '').trim() ||
+    String(activeReq.headers['x-coros-access-token'] || '').trim() ||
     String(activeReq.headers['x-strava-refresh-token'] || '').trim() ||
     String(activeReq.headers['x-strava-access-token'] || '').trim() ||
     String(activeReq.headers['x-intervals-api-key'] || '').trim()
@@ -172,38 +180,53 @@ export function getActiveGarminSession(req?: Request): GarminSessionStore | null
   const scopeKey = resolveSessionScopeKey(activeReq);
   const stored = scopeKey ? loadGarminSession(GARMIN_SESSION_DIR, scopeKey) : null;
   const cookieVault = readCompactVaultFromCookie(activeReq);
-  const cookiePersonalKey =
+  const cookieMatchesScope = Boolean(
     cookieVault && (!scopeKey || cookieVault.sid?.slice(0, 24) === scopeKey)
-      ? String(cookieVault.garminPersonalApiKey || '').trim()
-      : '';
+  );
+  const cookiePersonalKey = cookieMatchesScope
+    ? String(cookieVault?.garminPersonalApiKey || '').trim()
+    : '';
+  const cookieOAuthAccessToken = cookieMatchesScope
+    ? String(cookieVault?.garminOAuthAccessToken || '').trim()
+    : '';
+  const cookieOAuthRefreshToken = cookieMatchesScope
+    ? String(cookieVault?.garminOAuthRefreshToken || '').trim()
+    : '';
+  const cookieOAuthExpiresAt = cookieMatchesScope
+    ? Number(cookieVault?.garminOAuthExpiresAt || 0) || undefined
+    : undefined;
   const headerPersonalKey = activeReq
     ? String(activeReq.headers['x-garmin-personal-api-key'] || '').trim()
     : '';
   const headerBearer = activeReq
     ? String(activeReq.headers['x-garmin-bearer-token'] || '').trim()
     : '';
-  const headerOauth1 = activeReq
-    ? String(activeReq.headers['x-garmin-oauth1-token'] || '').trim()
-    : '';
-  const headerOauth1Secret = activeReq
-    ? String(activeReq.headers['x-garmin-oauth1-secret'] || '').trim()
-    : '';
 
   if (
     stored &&
-    (stored.personalApiKey || stored.oauth2AccessToken || stored.oauth1Token)
+    (stored.personalApiKey || stored.garminOAuthAccessToken || stored.oauth2AccessToken)
   ) {
     if (headerPersonalKey && !stored.personalApiKey) {
       stored.personalApiKey = headerPersonalKey;
     }
+    if (cookieOAuthAccessToken && !stored.garminOAuthAccessToken) {
+      stored.garminOAuthAccessToken = cookieOAuthAccessToken;
+    }
+    if (cookieOAuthRefreshToken && !stored.garminOAuthRefreshToken) {
+      stored.garminOAuthRefreshToken = cookieOAuthRefreshToken;
+    }
+    if (cookieOAuthExpiresAt && !stored.garminOAuthExpiresAt) {
+      stored.garminOAuthExpiresAt = cookieOAuthExpiresAt;
+    }
     return stored;
   }
-  if (cookiePersonalKey || headerPersonalKey || headerBearer || (headerOauth1 && headerOauth1Secret)) {
+  if (cookiePersonalKey || cookieOAuthAccessToken || headerPersonalKey || headerBearer) {
     return {
       personalApiKey: cookiePersonalKey || headerPersonalKey || undefined,
+      garminOAuthAccessToken: cookieOAuthAccessToken || undefined,
+      garminOAuthRefreshToken: cookieOAuthRefreshToken || undefined,
+      garminOAuthExpiresAt: cookieOAuthExpiresAt,
       oauth2AccessToken: headerBearer || undefined,
-      oauth1Token: headerOauth1 || undefined,
-      oauth1TokenSecret: headerOauth1Secret || undefined,
     };
   }
   if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
@@ -288,6 +311,13 @@ export function createDefaultRuntimeSessionStore(seed: Partial<RuntimeSessionSto
     polarAthleteName: seed.polarAthleteName || '',
     polarExpiresAt: seed.polarExpiresAt || 0,
     polarScope: seed.polarScope || '',
+    corosClientId: seed.corosClientId || process.env.COROS_CLIENT_ID || '',
+    corosClientSecret: seed.corosClientSecret || process.env.COROS_CLIENT_SECRET || '',
+    corosAccessToken: seed.corosAccessToken || '',
+    corosRefreshToken: seed.corosRefreshToken || '',
+    corosExpiresAt: seed.corosExpiresAt || 0,
+    corosAthleteId: seed.corosAthleteId || '',
+    corosAthleteName: seed.corosAthleteName || '',
     stravaClientId: seed.stravaClientId || process.env.STRAVA_CLIENT_ID || '',
     stravaClientSecret: seed.stravaClientSecret || process.env.STRAVA_CLIENT_SECRET || '',
     stravaAccessToken: seed.stravaAccessToken || '',
@@ -396,6 +426,11 @@ export function getScopedRuntimeStore(req?: Request): RuntimeSessionStore {
         polarAthleteName: loaded.polarAthleteName || cookieVault.polarAthleteName || '',
         polarExpiresAt: loaded.polarExpiresAt || cookieVault.polarExpiresAt || 0,
         polarScope: loaded.polarScope || cookieVault.polarScope || '',
+        corosAccessToken: loaded.corosAccessToken || cookieVault.corosAccessToken || '',
+        corosRefreshToken: loaded.corosRefreshToken || cookieVault.corosRefreshToken || '',
+        corosExpiresAt: loaded.corosExpiresAt || cookieVault.corosExpiresAt || 0,
+        corosAthleteId: loaded.corosAthleteId || cookieVault.corosAthleteId || '',
+        corosAthleteName: loaded.corosAthleteName || cookieVault.corosAthleteName || '',
       };
     }
 
@@ -476,10 +511,16 @@ function mergeRuntimeStoreCredentials(
   if (!target.stravaSyncPolicy && source.stravaSyncPolicy) target.stravaSyncPolicy = source.stravaSyncPolicy;
   if (!target.intervalsApiKey && source.intervalsApiKey) target.intervalsApiKey = source.intervalsApiKey;
   if (!target.intervalsAccessToken && source.intervalsAccessToken) target.intervalsAccessToken = source.intervalsAccessToken;
+  if (!target.intervalsScope && source.intervalsScope) target.intervalsScope = source.intervalsScope;
   if (!target.intervalsAthleteName && source.intervalsAthleteName) target.intervalsAthleteName = source.intervalsAthleteName;
   if (!target.wahooAccessToken && source.wahooAccessToken) target.wahooAccessToken = source.wahooAccessToken;
   if (!target.wahooRefreshToken && source.wahooRefreshToken) target.wahooRefreshToken = source.wahooRefreshToken;
   if (!target.polarAccessToken && source.polarAccessToken) target.polarAccessToken = source.polarAccessToken;
+  if (!target.corosAccessToken && source.corosAccessToken) target.corosAccessToken = source.corosAccessToken;
+  if (!target.corosRefreshToken && source.corosRefreshToken) target.corosRefreshToken = source.corosRefreshToken;
+  if (!target.corosExpiresAt && source.corosExpiresAt) target.corosExpiresAt = source.corosExpiresAt;
+  if (!target.corosAthleteId && source.corosAthleteId) target.corosAthleteId = source.corosAthleteId;
+  if (!target.corosAthleteName && source.corosAthleteName) target.corosAthleteName = source.corosAthleteName;
   if ((!target.gearItems || target.gearItems.length === 0) && source.gearItems?.length) target.gearItems = source.gearItems;
   if (!target.athleteProfile && source.athleteProfile) target.athleteProfile = source.athleteProfile;
   if (!target.geminiApiKey && source.geminiApiKey) target.geminiApiKey = source.geminiApiKey;
@@ -532,6 +573,14 @@ export function emitEncryptedVaultCookieIfPossible(
     polarExpiresAt: store.polarExpiresAt || undefined,
     polarScope: store.polarScope || undefined,
     garminPersonalApiKey: garminSess?.personalApiKey || undefined,
+    garminOAuthAccessToken: garminSess?.garminOAuthAccessToken || undefined,
+    garminOAuthRefreshToken: garminSess?.garminOAuthRefreshToken || undefined,
+    garminOAuthExpiresAt: garminSess?.garminOAuthExpiresAt || undefined,
+    corosAccessToken: store.corosAccessToken || undefined,
+    corosRefreshToken: store.corosRefreshToken || undefined,
+    corosExpiresAt: store.corosExpiresAt || undefined,
+    corosAthleteId: store.corosAthleteId || undefined,
+    corosAthleteName: store.corosAthleteName || undefined,
   };
   let header = buildEncryptedVaultCookieHeader(compact, isSecure);
   if (!header) {
@@ -549,12 +598,20 @@ export function emitEncryptedVaultCookieIfPossible(
         stravaSyncPolicy: compact.stravaSyncPolicy,
         intervalsApiKey: compact.intervalsApiKey,
         intervalsAccessToken: compact.intervalsAccessToken,
+        intervalsScope: compact.intervalsScope,
         intervalsAthleteId: compact.intervalsAthleteId,
         wahooAccessToken: compact.wahooAccessToken,
         wahooRefreshToken: compact.wahooRefreshToken,
         wahooExpiresAt: compact.wahooExpiresAt,
         polarAccessToken: compact.polarAccessToken,
         garminPersonalApiKey: compact.garminPersonalApiKey,
+        garminOAuthAccessToken: compact.garminOAuthAccessToken,
+        garminOAuthRefreshToken: compact.garminOAuthRefreshToken,
+        garminOAuthExpiresAt: compact.garminOAuthExpiresAt,
+        corosAccessToken: compact.corosAccessToken,
+        corosRefreshToken: compact.corosRefreshToken,
+        corosExpiresAt: compact.corosExpiresAt,
+        corosAthleteId: compact.corosAthleteId,
       },
       isSecure
     );

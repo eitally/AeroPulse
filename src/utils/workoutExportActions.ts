@@ -187,10 +187,18 @@ export function exportWorkoutAsErg(opts: WorkoutExportOptions): void {
   triggerTextFileDownload(erg, filename, 'text/plain;charset=utf-8');
 }
 
-export async function pushWorkoutDirectToGarmin(
-  opts: WorkoutExportOptions
-): Promise<{ pushed: boolean; message: string }> {
-  const dateIso = opts.dateIso || getLocalDateIso();
+export interface WearablePushResult {
+  pushed: boolean;
+  message: string;
+  requiresPartnerOAuth?: boolean;
+  setupRequired?: boolean;
+  needsScopeUpgrade?: boolean;
+  connectRequired?: boolean;
+}
+
+export type WearablePushTarget = 'garmin' | 'coros' | 'intervals';
+
+function buildNormalizedStepsPayload(opts: WorkoutExportOptions) {
   const safeFtp = Math.max(80, Math.round(opts.ftpWatts || 250));
   const safeLthr = Math.max(110, Math.round(opts.lthrBpm || 170));
   const thresholdPace = Math.max(95, opts.thresholdPaceSecsPerKm || 250);
@@ -209,42 +217,68 @@ export async function pushWorkoutDirectToGarmin(
           },
         ]
   ).map((s) => {
-    const targetWatts = Math.max(50, Math.round((safeFtp * (s.intensityPct || 75)) / 100));
-    const hrCeilingBpm = Math.min(205, Math.max(105, Math.round((safeLthr * (s.intensityPct || 75)) / 100)));
+    const pct = s.intensityPct || 75;
+    const targetWatts = Math.max(50, Math.round((safeFtp * pct) / 100));
+    const hrCeilingBpm = Math.min(205, Math.max(105, Math.round((safeLthr * pct) / 100)));
+    const durationSecs = Math.max(15, Math.round(s.durationSecs || s.durationMins * 60 || 60));
     return {
       label: s.label,
-      durationSecs: Math.max(15, Math.round(s.durationSecs || s.durationMins * 60 || 60)),
-      targetPctFtp: s.intensityPct || 75,
+      durationSecs,
+      ...('distanceMeters' in s && typeof s.distanceMeters === 'number'
+        ? { distanceMeters: s.distanceMeters }
+        : {}),
+      ...('targetPaceSecsPerKm' in s && typeof s.targetPaceSecsPerKm === 'number'
+        ? { targetPaceSecsPerKm: s.targetPaceSecsPerKm }
+        : {}),
+      targetPctFtp: pct,
       targetWatts,
       targetMinWatts: Math.max(40, targetWatts - 10),
       targetMaxWatts: targetWatts + 10,
       hrCeilingBpm,
       stepType:
         s.stepKind === 'warmup'
-          ? 'warmup'
+          ? ('warmup' as const)
           : s.stepKind === 'cooldown'
-            ? 'cooldown'
+            ? ('cooldown' as const)
             : s.stepKind === 'rest'
-              ? 'recovery'
-              : 'interval',
+              ? ('recovery' as const)
+              : ('interval' as const),
     };
   });
 
-  try {
-    const garminBearer =
-      typeof localStorage !== 'undefined' ? localStorage.getItem('aeropulse_garmin_bearer_token') || '' : '';
-    const garminOauth1 =
-      typeof localStorage !== 'undefined' ? localStorage.getItem('aeropulse_garmin_oauth1_token') || '' : '';
-    const garminSecret =
-      typeof localStorage !== 'undefined' ? localStorage.getItem('aeropulse_garmin_oauth1_secret') || '' : '';
+  const plannedDurationSecs = stepsPayload.reduce((acc, st) => acc + st.durationSecs, 0);
+  return { safeFtp, safeLthr, thresholdPace, stepsPayload, plannedDurationSecs };
+}
 
+function getNonSessionIntervalsHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
+  try {
+    if (typeof localStorage === 'undefined') return headers;
+    if (localStorage.getItem('aeropulse_logged_out') === '1') return headers;
+    const apiKey = (localStorage.getItem('aeropulse_intervals_api_key') || '').trim();
+    const athleteId = (localStorage.getItem('aeropulse_intervals_athlete_id') || '0').trim();
+    if (apiKey) {
+      headers['x-intervals-api-key'] = apiKey.replace(/[\r\n]/g, '');
+      headers['x-intervals-athlete-id'] = (athleteId || '0').replace(/[\r\n]/g, '');
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return headers;
+}
+
+export async function pushWorkoutDirectToGarmin(
+  opts: WorkoutExportOptions
+): Promise<WearablePushResult> {
+  const dateIso = opts.dateIso || getLocalDateIso();
+  const { safeFtp, safeLthr, thresholdPace, stepsPayload } = buildNormalizedStepsPayload(opts);
+
+  try {
     const resp = await fetch('/api/garmin/workout/push', {
       method: 'POST',
+      credentials: 'include',
       headers: {
         'Content-Type': 'application/json',
-        ...(garminBearer ? { 'x-garmin-bearer-token': garminBearer } : {}),
-        ...(garminOauth1 ? { 'x-garmin-oauth1-token': garminOauth1 } : {}),
-        ...(garminSecret ? { 'x-garmin-oauth1-secret': garminSecret } : {}),
       },
       body: JSON.stringify({
         date: dateIso,
@@ -252,11 +286,15 @@ export async function pushWorkoutDirectToGarmin(
         sportCategory: opts.sport,
         ftpWatts: opts.sport === 'Cycling' ? safeFtp : undefined,
         lthrBpm: safeLthr,
+        thresholdPaceSecsPerKm: thresholdPace,
+        workoutSyntax: opts.workoutSyntax,
         description: opts.description || opts.workoutSyntax,
         steps: stepsPayload,
       }),
     });
-    const data = await resp.json().catch(() => ({}));
+    const data = (await resp.json().catch(() => ({}))) as Partial<WearablePushResult> & {
+      error?: string;
+    };
     if (resp.ok && data.pushed) {
       return {
         pushed: true,
@@ -265,9 +303,11 @@ export async function pushWorkoutDirectToGarmin(
     }
     return {
       pushed: false,
+      requiresPartnerOAuth: Boolean(data.requiresPartnerOAuth),
+      setupRequired: Boolean(data.setupRequired),
       message:
         data.error ||
-        'Connect your Garmin account in Data Sources to push directly, or download .FIT instead.',
+        'Connect Official Garmin Partner OAuth in Data Sources to push directly, or download .FIT instead.',
     };
   } catch {
     return {
@@ -275,4 +315,118 @@ export async function pushWorkoutDirectToGarmin(
       message: 'Network unavailable for Garmin push. Use .FIT download to transfer manually.',
     };
   }
+}
+
+export async function pushWorkoutToCoros(
+  opts: WorkoutExportOptions
+): Promise<WearablePushResult> {
+  const dateIso = opts.dateIso || getLocalDateIso();
+  const { safeFtp, safeLthr, thresholdPace, stepsPayload } = buildNormalizedStepsPayload(opts);
+
+  try {
+    const resp = await fetch('/api/coros/workout/push', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        date: dateIso,
+        name: opts.name,
+        sportCategory: opts.sport,
+        ftpWatts: opts.sport === 'Cycling' ? safeFtp : undefined,
+        lthrBpm: safeLthr,
+        thresholdPaceSecsPerKm: thresholdPace,
+        workoutSyntax: opts.workoutSyntax,
+        description: opts.description || opts.workoutSyntax,
+        steps: stepsPayload,
+      }),
+    });
+    const data = (await resp.json().catch(() => ({}))) as Partial<WearablePushResult> & {
+      error?: string;
+    };
+    if (resp.ok && data.pushed) {
+      return {
+        pushed: true,
+        message: data.message || `Pushed "${opts.name}" directly to COROS Calendar (${dateIso}).`,
+      };
+    }
+    return {
+      pushed: false,
+      setupRequired: Boolean(data.setupRequired),
+      connectRequired: Boolean(data.connectRequired),
+      message:
+        data.error ||
+        'Connect COROS in Data Sources (or use Intervals.icu Cross-Watch Bridge / .FIT download).',
+    };
+  } catch {
+    return {
+      pushed: false,
+      message: 'Network unavailable for COROS push. Use .FIT download to transfer manually.',
+    };
+  }
+}
+
+export async function pushWorkoutToIntervalsBridge(
+  opts: WorkoutExportOptions
+): Promise<WearablePushResult> {
+  const dateIso = opts.dateIso || getLocalDateIso();
+  const { safeFtp, safeLthr, thresholdPace, stepsPayload, plannedDurationSecs } =
+    buildNormalizedStepsPayload(opts);
+
+  try {
+    const resp = await fetch('/api/intervals/workout/push', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getNonSessionIntervalsHeaders(),
+      },
+      body: JSON.stringify({
+        date: dateIso,
+        name: opts.name,
+        sportCategory: opts.sport,
+        ftpWatts: opts.sport === 'Cycling' ? safeFtp : undefined,
+        lthrBpm: safeLthr,
+        thresholdPaceSecsPerKm: thresholdPace,
+        plannedDurationSecs,
+        workoutSyntax: opts.workoutSyntax,
+        description: opts.description || opts.workoutSyntax,
+        steps: stepsPayload,
+      }),
+    });
+    const data = (await resp.json().catch(() => ({}))) as Partial<WearablePushResult> & {
+      error?: string;
+    };
+    if (resp.ok && data.pushed) {
+      return {
+        pushed: true,
+        message:
+          data.message ||
+          `Pushed "${opts.name}" to Intervals.icu Calendar (${dateIso}) for Garmin / COROS / Suunto / Wahoo sync.`,
+      };
+    }
+    return {
+      pushed: false,
+      needsScopeUpgrade: Boolean(data.needsScopeUpgrade),
+      connectRequired: Boolean(data.connectRequired),
+      message:
+        data.error ||
+        'Connect Intervals.icu with CALENDAR:WRITE in Data Sources to push workouts to your watch.',
+    };
+  } catch {
+    return {
+      pushed: false,
+      message: 'Network unavailable for Intervals.icu bridge push. Use .FIT download instead.',
+    };
+  }
+}
+
+export async function pushWorkoutToWearable(
+  target: WearablePushTarget,
+  opts: WorkoutExportOptions
+): Promise<WearablePushResult> {
+  if (target === 'garmin') return pushWorkoutDirectToGarmin(opts);
+  if (target === 'coros') return pushWorkoutToCoros(opts);
+  return pushWorkoutToIntervalsBridge(opts);
 }

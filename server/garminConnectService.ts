@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import type { Request } from 'express';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -11,12 +11,12 @@ import {
   STRAVA_LOAD_MODEL_VERSION,
   classifyMultiSportActivity,
   computeStravaActivityLoadV2,
-  isEBikeActivityText,
 } from '../src/physiology/stravaLoadCalibration.ts';
 import {
   normalizeActivityTimestamps,
   stripTimezoneSuffix,
 } from '../src/utils/activityTimestamp.ts';
+import { parseStructuredTrackWorkout } from '../src/utils/workoutParser.ts';
 import type {
   ServerLatestWellnessInput,
   ServerRawProfileInput,
@@ -229,11 +229,13 @@ export interface GarminSessionStore {
   personalApiKey?: string; // Official Garmin Connect Personal API Key (GCDC_...)
   personalBearerToken?: string;
   personalBearerExpiresAt?: number; // unix seconds
-  email?: string;
   displayName?: string;
   fullName?: string;
-  oauth1Token?: string;
-  oauth1TokenSecret?: string;
+  garminUserId?: string;
+  garminAuthMethod?: 'OAUTH' | 'PERSONAL_KEY';
+  garminOAuthAccessToken?: string;
+  garminOAuthRefreshToken?: string;
+  garminOAuthExpiresAt?: number; // unix seconds
   oauth2AccessToken?: string;
   oauth2RefreshToken?: string;
   oauth2ExpiresAt?: number; // unix seconds
@@ -244,12 +246,14 @@ export interface GarminSessionStore {
 export interface GarminWorkoutStepSpec {
   label: string;
   durationSecs: number;
+  distanceMeters?: number;
   targetPctFtp?: number;
   targetWatts?: number;
   targetMinWatts?: number;
   targetMaxWatts?: number;
+  targetPaceSecsPerKm?: number;
   hrCeilingBpm?: number;
-  stepType?: 'warmup' | 'interval' | 'recovery' | 'cooldown';
+  stepType?: 'warmup' | 'interval' | 'recovery' | 'rest' | 'cooldown';
 }
 
 export interface GarminWorkoutPushInput {
@@ -257,8 +261,10 @@ export interface GarminWorkoutPushInput {
   name: string;
   sportCategory: 'Cycling' | 'Running' | string;
   description?: string;
+  workoutSyntax?: string;
   ftpWatts?: number;
   lthrBpm?: number;
+  thresholdPaceSecsPerKm?: number;
   steps: GarminWorkoutStepSpec[];
 }
 
@@ -269,12 +275,95 @@ export interface GarminWorkoutPushResult {
   message: string;
 }
 
-const DEFAULT_GARMIN_OAUTH_KEY = process.env.GARMIN_CONSUMER_KEY || '';
-const DEFAULT_GARMIN_OAUTH_SECRET = process.env.GARMIN_CONSUMER_SECRET || '';
+export interface GarminExecutableStepDto {
+  type: 'ExecutableStepDTO';
+  stepId: null;
+  stepOrder: number;
+  stepType: {
+    stepTypeId: number;
+    stepTypeKey: 'warmup' | 'cooldown' | 'interval' | 'rest';
+    displayOrder: number;
+  };
+  childStepId: null;
+  description: string;
+  endCondition: {
+    conditionTypeId: number;
+    conditionTypeKey: 'time' | 'distance';
+    displayOrder: number;
+    displayable: boolean;
+  };
+  endConditionValue: number;
+  preferredEndConditionUnit: null;
+  endConditionCompare: null;
+  targetType: {
+    workoutTargetTypeId: number;
+    workoutTargetTypeKey: 'power.zone' | 'pace.zone' | 'no.target';
+    displayOrder: number;
+  };
+  targetValueOne: number | null;
+  targetValueTwo: number | null;
+  zoneNumber: null;
+}
 
-const GARMIN_API_BASE = 'https://connectapi.garmin.com';
+export interface GarminRepeatGroupDto {
+  type: 'RepeatGroupDTO';
+  stepOrder: number;
+  numberOfIterations: number;
+  smartRepeat: boolean;
+  workoutSteps: GarminExecutableStepDto[];
+}
+
+export type GarminTrainingApiWorkoutStep = GarminExecutableStepDto | GarminRepeatGroupDto;
+
+export interface GarminTrainingApiV2Payload {
+  workoutName: string;
+  description: string;
+  sportType: {
+    sportTypeId: number;
+    sportTypeKey: 'running' | 'cycling';
+    displayOrder: number;
+  };
+  subSportType: null;
+  estimatedDurationInSecs: number;
+  workoutSegments: [
+    {
+      segmentOrder: 1;
+      sportType: {
+        sportTypeId: number;
+        sportTypeKey: 'running' | 'cycling';
+        displayOrder: number;
+      };
+      workoutSteps: GarminTrainingApiWorkoutStep[];
+    },
+  ];
+}
+
+export class GarminPartnerOAuthError extends Error {
+  public readonly requiresPartnerOAuth: boolean;
+  public readonly setupRequired: boolean;
+
+  constructor(message: string, opts: { requiresPartnerOAuth?: boolean; setupRequired?: boolean } = {}) {
+    super(message);
+    this.name = 'GarminPartnerOAuthError';
+    this.requiresPartnerOAuth = opts.requiresPartnerOAuth ?? true;
+    this.setupRequired = opts.setupRequired ?? false;
+  }
+}
+
+export function getEffectiveGarminClientConfig(req?: Request): {
+  clientId: string;
+  clientSecret: string;
+} {
+  const headerClientId = String(req?.headers['x-garmin-client-id'] || '').trim();
+  const headerClientSecret = String(req?.headers['x-garmin-client-secret'] || '').trim();
+  const clientId = (headerClientId || process.env.GARMIN_CLIENT_ID || '').trim();
+  const clientSecret = (headerClientSecret || process.env.GARMIN_CLIENT_SECRET || '').trim();
+  return { clientId, clientSecret };
+}
+
 const GARMIN_PERSONAL_API_BASE = 'https://personal.connectapi.garmin.com';
-const GARMIN_USER_AGENT = 'com.garmin.android.apps.connectmobile';
+const GARMIN_PARTNER_OAUTH_TOKEN_URL = 'https://diauth.garmin.com/di-oauth2-service/oauth/token';
+const GARMIN_PARTNER_API_BASE = 'https://apis.garmin.com';
 const GARMIN_5_ZONE_HR_NAMES = [
   'Z1 Warm Up',
   'Z2 Easy',
@@ -282,13 +371,6 @@ const GARMIN_5_ZONE_HR_NAMES = [
   'Z4 Threshold',
   'Z5 Maximum',
 ];
-
-function percentEncode(str: string): string {
-  return encodeURIComponent(str).replace(
-    /[!'()*]/g,
-    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`
-  );
-}
 
 function parseJwtExp(jwtToken: string): number | undefined {
   try {
@@ -430,67 +512,6 @@ export async function fetchGarminPersonalApiJson<T = Record<string, unknown>>(
   return text ? (JSON.parse(text) as T) : null;
 }
 
-/**
- * Generates an OAuth 1.0a Authorization header for Garmin Connect OAuth service calls
- */
-function buildOAuth1Header(
-  method: string,
-  url: string,
-  consumerKey: string,
-  consumerSecret: string,
-  token?: string,
-  tokenSecret?: string,
-  extraParams: Record<string, string> = {}
-): string {
-  const parsedUrl = new URL(url);
-  const baseUrl = `${parsedUrl.origin}${parsedUrl.pathname}`;
-
-  const oauthParams: Record<string, string> = {
-    oauth_consumer_key: consumerKey,
-    oauth_nonce: crypto.randomBytes(16).toString('hex'),
-    oauth_signature_method: 'HMAC-SHA1',
-    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
-    oauth_version: '1.0',
-    ...extraParams,
-  };
-  if (token) {
-    oauthParams.oauth_token = token;
-  }
-
-  const allParams: Record<string, string> = { ...oauthParams };
-  parsedUrl.searchParams.forEach((v, k) => {
-    allParams[k] = v;
-  });
-
-  const sortedParamStr = Object.keys(allParams)
-    .sort()
-    .map((k) => `${percentEncode(k)}=${percentEncode(allParams[k])}`)
-    .join('&');
-
-  const baseString = [
-    method.toUpperCase(),
-    percentEncode(baseUrl),
-    percentEncode(sortedParamStr),
-  ].join('&');
-
-  const signingKey = `${percentEncode(consumerSecret)}&${
-    tokenSecret ? percentEncode(tokenSecret) : ''
-  }`;
-  const signature = crypto
-    .createHmac('sha1', signingKey)
-    .update(baseString)
-    .digest('base64');
-
-  oauthParams.oauth_signature = signature;
-
-  const headerParts = Object.keys(oauthParams)
-    .sort()
-    .map((k) => `${percentEncode(k)}="${percentEncode(oauthParams[k])}"`)
-    .join(', ');
-
-  return `OAuth ${headerParts}`;
-}
-
 export function getGarminSessionFilePath(dataDir: string, scopeKey: string): string {
   const safeScope = scopeKey.replace(/[^a-zA-Z0-9_-]/g, '_');
   return path.join(dataDir, `garmin_session_${safeScope}.json`);
@@ -558,36 +579,37 @@ export async function clearGarminSessionAsync(dataDir: string, scopeKey: string)
 }
 
 /**
- * Exchanges a Garmin OAuth1 token pair for a fresh OAuth2 Bearer token
+ * Refreshes an Official Garmin Health/Training Partner OAuth 2.0 Bearer token.
  */
-export async function refreshGarminOAuth2Token(
-  session: GarminSessionStore
+export async function refreshGarminPartnerOAuthToken(
+  session: GarminSessionStore,
+  req?: Request
 ): Promise<GarminSessionStore> {
-  if (!session.oauth1Token || !session.oauth1TokenSecret) {
+  if (!session.garminOAuthRefreshToken) {
+    return session;
+  }
+  const { clientId, clientSecret } = getEffectiveGarminClientConfig(req);
+  if (!clientId || !clientSecret) {
     return session;
   }
 
-  const exchangeUrl = `${GARMIN_API_BASE}/oauth-service/oauth/exchange/user/2.0`;
-  const authHeader = buildOAuth1Header(
-    'POST',
-    exchangeUrl,
-    DEFAULT_GARMIN_OAUTH_KEY,
-    DEFAULT_GARMIN_OAUTH_SECRET,
-    session.oauth1Token,
-    session.oauth1TokenSecret
-  );
-
-  const resp = await fetch(exchangeUrl, {
+  const resp = await fetch(GARMIN_PARTNER_OAUTH_TOKEN_URL, {
     method: 'POST',
     headers: {
-      Authorization: authHeader,
-      'User-Agent': GARMIN_USER_AGENT,
       'Content-Type': 'application/x-www-form-urlencoded',
+      Accept: 'application/json',
     },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: session.garminOAuthRefreshToken,
+    }).toString(),
   });
 
   if (!resp.ok) {
-    throw new Error(`Garmin OAuth2 token refresh failed (${resp.status})`);
+    const errText = await resp.text().catch(() => '');
+    throw new Error(`Garmin Partner OAuth token refresh failed (${resp.status}): ${errText.slice(0, 160)}`);
   }
 
   const data = (await resp.json()) as {
@@ -596,10 +618,10 @@ export async function refreshGarminOAuth2Token(
     expires_in?: number;
   };
   if (data?.access_token) {
-    session.oauth2AccessToken = data.access_token;
-    session.oauth2RefreshToken = data.refresh_token || session.oauth2RefreshToken;
-    session.oauth2ExpiresAt =
-      Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600);
+    session.garminOAuthAccessToken = data.access_token;
+    session.garminOAuthRefreshToken = data.refresh_token || session.garminOAuthRefreshToken;
+    session.garminOAuthExpiresAt =
+      Math.floor(Date.now() / 1000) + Number(data.expires_in || 86400);
   }
   return session;
 }
@@ -607,17 +629,21 @@ export async function refreshGarminOAuth2Token(
 /**
  * Authenticates with Garmin Connect via:
  * 1. Official Garmin Personal API Key (GCDC_...)
- * 2. Direct OAuth2 Bearer Token / OAuth1 Token Pair
- * 3. Garmin SSO Email + Password
+ * 2. Official Garmin Partner OAuth 2.0 PKCE Bearer Token
+ * Note: Legacy non-MFA SSO email/password scraping has been permanently removed.
  */
 export async function authenticateGarminConnect(params: {
   personalApiKey?: string;
   email?: string;
   password?: string;
   directBearerToken?: string;
-  oauth1Token?: string;
-  oauth1TokenSecret?: string;
 }): Promise<GarminSessionStore> {
+  if (params.email?.trim() || params.password) {
+    throw new Error(
+      'Garmin password login has been removed. Connect via Official Garmin Partner OAuth, a read-only GCDC Personal API Key, or .FIT workout import.'
+    );
+  }
+
   // Path 0: Official Garmin Connect Personal API Key (GCDC_...)
   const rawPersonalKey = (
     params.personalApiKey ||
@@ -630,6 +656,7 @@ export async function authenticateGarminConnect(params: {
   if (rawPersonalKey) {
     const session: GarminSessionStore = {
       personalApiKey: rawPersonalKey,
+      garminAuthMethod: 'PERSONAL_KEY',
       connectedAt: new Date().toISOString(),
     };
     await obtainGarminPersonalApiBearerToken(session, true);
@@ -649,241 +676,73 @@ export async function authenticateGarminConnect(params: {
     return session;
   }
 
-  // Path 1: Direct Bearer Token or OAuth1 Token Pair provided
+  // Path 1: Official Garmin Partner OAuth 2.0 Bearer Token
   if (params.directBearerToken?.trim()) {
     const cleanToken = params.directBearerToken
       .trim()
       .replace(/^Bearer\s+/i, '');
-    const session: GarminSessionStore = {
-      email: params.email?.trim() || undefined,
-      oauth2AccessToken: cleanToken,
-      oauth1Token: params.oauth1Token?.trim() || undefined,
-      oauth1TokenSecret: params.oauth1TokenSecret?.trim() || undefined,
-      oauth2ExpiresAt: Math.floor(Date.now() / 1000) + 86400,
+    return {
+      garminOAuthAccessToken: cleanToken,
+      garminAuthMethod: 'OAUTH',
+      garminOAuthExpiresAt: Math.floor(Date.now() / 1000) + 86400,
       connectedAt: new Date().toISOString(),
     };
-
-    const profile = await fetchGarminJson<GarminSocialProfileResponse>(
-      '/userprofile-service/socialProfile',
-      session
-    ).catch(() => null);
-    if (profile) {
-      session.displayName = profile.displayName || profile.userName;
-      session.fullName = profile.fullName || profile.displayName;
-    }
-    return session;
   }
 
-  if (params.oauth1Token?.trim() && params.oauth1TokenSecret?.trim()) {
-    const session: GarminSessionStore = {
-      email: params.email?.trim() || undefined,
-      oauth1Token: params.oauth1Token.trim(),
-      oauth1TokenSecret: params.oauth1TokenSecret.trim(),
-      connectedAt: new Date().toISOString(),
-    };
-    await refreshGarminOAuth2Token(session);
-    const profile = await fetchGarminJson<GarminSocialProfileResponse>(
-      '/userprofile-service/socialProfile',
-      session
-    ).catch(() => null);
-    if (profile) {
-      session.displayName = profile.displayName || profile.userName;
-      session.fullName = profile.fullName || profile.displayName;
-    }
-    return session;
-  }
-
-  // Path 2: Garmin SSO Email + Password Ticket Flow
-  const email = (params.email || '').trim();
-  const password = params.password || '';
-  if (!email || !password) {
-    throw new Error(
-      'Please provide your Garmin Personal API Key (GCDC_...), or your Garmin email & password.'
-    );
-  }
-
-  const ssoEmbedParams = new URLSearchParams({
-    id: 'gauth-widget',
-    embedWidget: 'true',
-    gauthHost: 'https://sso.garmin.com/sso',
-  });
-  const ssoSignInParams = new URLSearchParams({
-    id: 'gauth-widget',
-    embedWidget: 'true',
-    gauthHost: 'https://sso.garmin.com/sso/embed',
-    service: 'https://sso.garmin.com/sso/embed',
-    source: 'https://sso.garmin.com/sso/embed',
-    redirectAfterAccountLoginUrl: 'https://sso.garmin.com/sso/embed',
-    redirectAfterAccountCreationUrl: 'https://sso.garmin.com/sso/embed',
-  });
-
-  const embedResp = await fetch(
-    `https://sso.garmin.com/sso/embed?${ssoEmbedParams.toString()}`,
-    {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-      },
-    }
+  throw new Error(
+    'Please connect via Official Garmin Partner OAuth or provide a valid Garmin Personal API Key (GCDC_...).'
   );
-  const embedCookies = embedResp.headers.get('set-cookie') || '';
-
-  const signinPageResp = await fetch(
-    `https://sso.garmin.com/sso/signin?${ssoSignInParams.toString()}`,
-    {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-        Cookie: embedCookies,
-        Referer: `https://sso.garmin.com/sso/embed?${ssoEmbedParams.toString()}`,
-      },
-    }
-  );
-  const signinHtml = await signinPageResp.text();
-  const signinCookies = [
-    embedCookies,
-    signinPageResp.headers.get('set-cookie') || '',
-  ]
-    .filter(Boolean)
-    .join('; ');
-
-  const csrfMatch = signinHtml.match(/name="_csrf"\s+value="([^"]+)"/);
-  const csrfToken = csrfMatch ? csrfMatch[1] : '';
-
-  const formBody = new URLSearchParams({
-    username: email,
-    password,
-    embed: 'true',
-    _csrf: csrfToken,
-  });
-
-  const loginResp = await fetch(
-    `https://sso.garmin.com/sso/signin?${ssoSignInParams.toString()}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent':
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
-        Cookie: signinCookies,
-        Origin: 'https://sso.garmin.com',
-        Referer: `https://sso.garmin.com/sso/signin?${ssoSignInParams.toString()}`,
-      },
-      body: formBody.toString(),
-    }
-  );
-
-  const loginHtml = await loginResp.text();
-  const ticketMatch = loginHtml.match(/ticket=([A-Za-z0-9-]+-[A-Za-z0-9.-]+)/);
-  if (!ticketMatch) {
-    throw new Error(
-      'Garmin SSO requires MFA on this account. Please paste your Garmin Personal API Key (GCDC_...) instead.'
-    );
-  }
-
-  const ticket = ticketMatch[1];
-  const preauthUrl = `${GARMIN_API_BASE}/oauth-service/oauth/preauthorized?ticket=${encodeURIComponent(
-    ticket
-  )}&login-url=https://sso.garmin.com/sso/embed&accepts-mfa-tokens=true`;
-  const oauth1Header = buildOAuth1Header(
-    'GET',
-    preauthUrl,
-    DEFAULT_GARMIN_OAUTH_KEY,
-    DEFAULT_GARMIN_OAUTH_SECRET
-  );
-
-  const preauthResp = await fetch(preauthUrl, {
-    headers: {
-      Authorization: oauth1Header,
-      'User-Agent': GARMIN_USER_AGENT,
-    },
-  });
-
-  if (!preauthResp.ok) {
-    throw new Error(`Garmin OAuth1 exchange failed (${preauthResp.status})`);
-  }
-
-  const preauthQuery = new URLSearchParams(await preauthResp.text());
-  const oauth1Token = preauthQuery.get('oauth_token') || '';
-  const oauth1TokenSecret = preauthQuery.get('oauth_token_secret') || '';
-
-  if (!oauth1Token || !oauth1TokenSecret) {
-    throw new Error('Garmin OAuth1 response missing token pair.');
-  }
-
-  const session: GarminSessionStore = {
-    email,
-    oauth1Token,
-    oauth1TokenSecret,
-    connectedAt: new Date().toISOString(),
-  };
-
-  await refreshGarminOAuth2Token(session);
-
-  const profile = await fetchGarminJson<GarminSocialProfileResponse>(
-    '/userprofile-service/socialProfile',
-    session
-  ).catch(() => null);
-  if (profile) {
-    session.displayName = profile.displayName || profile.userName;
-    session.fullName = profile.fullName || profile.displayName;
-  }
-
-  return session;
 }
 
 /**
- * Helper to perform authenticated GET/POST requests against connectapi.garmin.com
+ * Performs an authenticated GET/POST request against https://apis.garmin.com using Official Partner OAuth 2.0.
  */
-export async function fetchGarminJson<T = Record<string, unknown>>(
+export async function fetchGarminPartnerApiJson<T = Record<string, unknown>>(
   endpointPath: string,
   session: GarminSessionStore,
-  options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown } = {}
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; req?: Request } = {}
 ): Promise<T> {
   const nowSec = Math.floor(Date.now() / 1000);
   if (
-    (!session.oauth2AccessToken ||
-      (session.oauth2ExpiresAt && session.oauth2ExpiresAt - 120 < nowSec)) &&
-    session.oauth1Token &&
-    session.oauth1TokenSecret
+    (!session.garminOAuthAccessToken ||
+      (session.garminOAuthExpiresAt && session.garminOAuthExpiresAt - 120 < nowSec)) &&
+    session.garminOAuthRefreshToken
   ) {
-    await refreshGarminOAuth2Token(session);
+    await refreshGarminPartnerOAuthToken(session, options.req);
   }
 
-  if (!session.oauth2AccessToken) {
-    throw new Error('No active Garmin Connect OAuth2 token available.');
+  if (!session.garminOAuthAccessToken) {
+    throw new GarminPartnerOAuthError('No active Garmin Partner OAuth2 access token available.');
   }
 
   const url = endpointPath.startsWith('http')
     ? endpointPath
-    : `${GARMIN_API_BASE}${endpointPath}`;
+    : `${GARMIN_PARTNER_API_BASE}${endpointPath}`;
 
   const doRequest = async (token: string) =>
     fetch(url, {
       method: options.method || 'GET',
       headers: {
         Authorization: `Bearer ${token}`,
-        'DI-Backend': 'connectapi.garmin.com',
-        'User-Agent': GARMIN_USER_AGENT,
         Accept: 'application/json',
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
 
-  let resp = await doRequest(session.oauth2AccessToken);
+  let resp = await doRequest(session.garminOAuthAccessToken);
 
-  if (resp.status === 401 && session.oauth1Token && session.oauth1TokenSecret) {
-    await refreshGarminOAuth2Token(session);
-    if (session.oauth2AccessToken) {
-      resp = await doRequest(session.oauth2AccessToken);
+  if (resp.status === 401 && session.garminOAuthRefreshToken) {
+    await refreshGarminPartnerOAuthToken(session, options.req);
+    if (session.garminOAuthAccessToken) {
+      resp = await doRequest(session.garminOAuthAccessToken);
     }
   }
 
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
     throw new Error(
-      `Garmin Connect API ${options.method || 'GET'} ${endpointPath} failed (${resp.status}): ${errText.slice(0, 180)}`
+      `Garmin Partner API ${options.method || 'GET'} ${endpointPath} failed (${resp.status}): ${errText.slice(0, 180)}`
     );
   }
 
@@ -891,145 +750,308 @@ export async function fetchGarminJson<T = Record<string, unknown>>(
   return (text ? JSON.parse(text) : {}) as T;
 }
 
-/**
- * Pushes a structured workout to Garmin Connect (requires OAuth2/Web Bearer session since
- * Garmin's Personal API GCDC_ key is strictly read-only per Garmin's specification).
- */
-export async function pushWorkoutToGarminConnect(
-  session: GarminSessionStore,
-  input: GarminWorkoutPushInput
-): Promise<GarminWorkoutPushResult> {
-  if (!session.oauth2AccessToken && !session.oauth1Token) {
-    throw new Error(
-      'Garmin Personal API keys (GCDC_...) are read-only per Garmin policy. To send this workout to your Garmin watch or Edge head unit, click "Export Garmin .FIT" (or keep Intervals.icu Garmin workout upload enabled).'
-    );
+const STEP_TYPE_ID_MAP: Record<'warmup' | 'cooldown' | 'interval' | 'rest', number> = {
+  warmup: 1,
+  cooldown: 2,
+  interval: 3,
+  rest: 4,
+};
+
+function toGarminExecutableStepDto(opts: {
+  stepOrder: number;
+  label: string;
+  durationSecs: number;
+  distanceMeters?: number;
+  isRunning: boolean;
+  stepKind: 'warmup' | 'cooldown' | 'interval' | 'rest';
+  targetPctFtp?: number;
+  targetWatts?: number;
+  targetMinWatts?: number;
+  targetMaxWatts?: number;
+  targetPaceSecsPerKm?: number;
+  ftpWatts: number;
+  thresholdPaceSecsPerKm: number;
+  hrCeilingBpm?: number;
+}): GarminExecutableStepDto {
+  const {
+    stepOrder,
+    label,
+    durationSecs,
+    distanceMeters,
+    isRunning,
+    stepKind,
+    targetPctFtp = 75,
+    targetWatts,
+    targetMinWatts,
+    targetMaxWatts,
+    targetPaceSecsPerKm,
+    ftpWatts,
+    thresholdPaceSecsPerKm,
+    hrCeilingBpm,
+  } = opts;
+  const stepTypeId = STEP_TYPE_ID_MAP[stepKind] || 3;
+  const hasDistance = typeof distanceMeters === 'number' && distanceMeters > 0;
+  const safeDurationSecs = Math.max(5, Math.round(durationSecs || 60));
+
+  let targetType: GarminExecutableStepDto['targetType'];
+  let targetValueOne: number | null = null;
+  let targetValueTwo: number | null = null;
+
+  if (stepKind === 'rest') {
+    targetType = {
+      workoutTargetTypeId: 1,
+      workoutTargetTypeKey: 'no.target',
+      displayOrder: 1,
+    };
+  } else if (isRunning) {
+    const resolvedPace =
+      targetPaceSecsPerKm && targetPaceSecsPerKm > 60
+        ? targetPaceSecsPerKm
+        : Math.round(thresholdPaceSecsPerKm / Math.max(0.4, targetPctFtp / 100));
+    targetType = {
+      workoutTargetTypeId: 6,
+      workoutTargetTypeKey: 'pace.zone',
+      displayOrder: 6,
+    };
+    targetValueOne = Number((1000 / (resolvedPace * 1.02)).toFixed(2));
+    targetValueTwo = Number((1000 / (resolvedPace * 0.98)).toFixed(2));
+  } else {
+    const centerWatts =
+      Number(targetWatts) > 0
+        ? Math.round(Number(targetWatts))
+        : Math.round((targetPctFtp / 100) * ftpWatts);
+    targetType = {
+      workoutTargetTypeId: 2,
+      workoutTargetTypeKey: 'power.zone',
+      displayOrder: 2,
+    };
+    targetValueOne =
+      Number(targetMinWatts) > 0
+        ? Math.round(Number(targetMinWatts))
+        : Math.max(40, Math.round(centerWatts * 0.96));
+    targetValueTwo =
+      Number(targetMaxWatts) > 0
+        ? Math.round(Number(targetMaxWatts))
+        : Math.round(centerWatts * 1.04);
   }
 
+  return {
+    type: 'ExecutableStepDTO',
+    stepId: null,
+    stepOrder,
+    stepType: {
+      stepTypeId,
+      stepTypeKey: stepKind,
+      displayOrder: stepTypeId,
+    },
+    childStepId: null,
+    description: `${label}${hrCeilingBpm ? ` (HR <= ${hrCeilingBpm} bpm)` : ''}`,
+    endCondition: {
+      conditionTypeId: hasDistance ? 3 : 2,
+      conditionTypeKey: hasDistance ? 'distance' : 'time',
+      displayOrder: hasDistance ? 3 : 2,
+      displayable: true,
+    },
+    endConditionValue: hasDistance ? Math.round(distanceMeters) : safeDurationSecs,
+    preferredEndConditionUnit: null,
+    endConditionCompare: null,
+    targetType,
+    targetValueOne,
+    targetValueTwo,
+    zoneNumber: null,
+  };
+}
+
+/**
+ * Builds an Official Garmin Training API v2 Workout Payload, reusing `parseStructuredTrackWorkout`
+ * to preserve `RepeatGroupDTO` blocks, track distances, warmups, cooldowns, and pace/power targets.
+ */
+export function buildGarminTrainingApiV2Payload(
+  input: GarminWorkoutPushInput
+): GarminTrainingApiV2Payload {
   const isRunning = String(input.sportCategory).toLowerCase().includes('run');
-  const sportType = isRunning
+  const sportType: GarminTrainingApiV2Payload['sportType'] = isRunning
     ? { sportTypeId: 1, sportTypeKey: 'running', displayOrder: 1 }
     : { sportTypeId: 2, sportTypeKey: 'cycling', displayOrder: 2 };
 
   const activeFtp = Math.max(100, Number(input.ftpWatts || 250));
-  const totalSteps = input.steps.length;
+  const thresholdPace = Math.max(95, Number(input.thresholdPaceSecsPerKm || 245));
+  const syntax = String(input.workoutSyntax || '').trim();
+  const astNodes = syntax ? parseStructuredTrackWorkout(syntax, thresholdPace) : [];
 
-  const executableSteps = input.steps.map((s, idx) => {
-    const isFirst = idx === 0;
-    const isLast = idx === totalSteps - 1 && totalSteps > 1;
-    const pct = Number(s.targetPctFtp || 70);
+  let estimatedDurationInSecs = 0;
+  let workoutSteps: GarminTrainingApiWorkoutStep[] = [];
 
-    let stepTypeKey: 'warmup' | 'interval' | 'recovery' | 'cooldown' =
-      s.stepType || 'interval';
-    if (!s.stepType) {
-      if (isFirst) stepTypeKey = 'warmup';
-      else if (isLast) stepTypeKey = 'cooldown';
-      else if (pct <= 60 || /recov|easy|rest/i.test(s.label))
-        stepTypeKey = 'recovery';
-      else stepTypeKey = 'interval';
-    }
-
-    const stepTypeIdMap: Record<string, number> = {
-      warmup: 1,
-      cooldown: 2,
-      interval: 3,
-      recovery: 4,
+  if (astNodes.length > 0) {
+    const mapAstKind = (kind?: string): 'warmup' | 'cooldown' | 'interval' | 'rest' => {
+      if (kind === 'warmup') return 'warmup';
+      if (kind === 'cooldown') return 'cooldown';
+      if (kind === 'rest') return 'rest';
+      return 'interval';
     };
 
-    const centerWatts =
-      Number(s.targetWatts) > 0
-        ? Math.round(Number(s.targetWatts))
-        : Math.round((pct / 100) * activeFtp);
-    const lowWatts =
-      Number(s.targetMinWatts) > 0
-        ? Math.round(Number(s.targetMinWatts))
-        : Math.max(40, centerWatts - 10);
-    const highWatts =
-      Number(s.targetMaxWatts) > 0
-        ? Math.round(Number(s.targetMaxWatts))
-        : centerWatts + 10;
+    workoutSteps = astNodes.map((node, idx) => {
+      if (node.type === 'step') {
+        const s = node.step;
+        const pct = Math.max(40, Math.min(180, s.intensityPct || 75));
+        const durSecs = Math.max(5, Math.round(s.durationSecs || s.durationMins * 60 || 60));
+        estimatedDurationInSecs += durSecs;
+        return toGarminExecutableStepDto({
+          stepOrder: idx + 1,
+          label: s.label,
+          durationSecs: durSecs,
+          distanceMeters: s.distanceMeters,
+          isRunning,
+          stepKind: mapAstKind(s.stepKind),
+          targetPctFtp: pct,
+          targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+          ftpWatts: activeFtp,
+          thresholdPaceSecsPerKm: thresholdPace,
+        });
+      }
 
-    return {
-      type: 'ExecutableStepDTO',
-      stepId: null,
-      stepOrder: idx + 1,
-      stepType: {
-        stepTypeId: stepTypeIdMap[stepTypeKey] || 3,
-        stepTypeKey,
-        displayOrder: stepTypeIdMap[stepTypeKey] || 3,
-      },
-      childStepId: null,
-      description: `${s.label}${s.hrCeilingBpm ? ` (HR <= ${s.hrCeilingBpm} bpm)` : ''}`,
-      endCondition: {
-        conditionTypeId: 2,
-        conditionTypeKey: 'time',
-        displayOrder: 2,
-        displayable: true,
-      },
-      endConditionValue: Math.max(30, Math.round(s.durationSecs)),
-      preferredEndConditionUnit: null,
-      endConditionCompare: null,
-      targetType: {
-        workoutTargetTypeId: 2,
-        workoutTargetTypeKey: 'power.zone',
-        displayOrder: 2,
-      },
-      targetValueOne: lowWatts,
-      targetValueTwo: highWatts,
-      zoneNumber: null,
-    };
-  });
+      const innerSteps = node.steps.map((inner, innerIdx) => {
+        const pct = Math.max(40, Math.min(180, inner.intensityPct || 75));
+        const durSecs = Math.max(5, Math.round(inner.durationSecs || inner.durationMins * 60 || 60));
+        estimatedDurationInSecs += durSecs * node.repeatCount;
+        return toGarminExecutableStepDto({
+          stepOrder: innerIdx + 1,
+          label: inner.label,
+          durationSecs: durSecs,
+          distanceMeters: inner.distanceMeters,
+          isRunning,
+          stepKind: mapAstKind(inner.stepKind),
+          targetPctFtp: pct,
+          targetPaceSecsPerKm: inner.targetPaceSecsPerKm,
+          ftpWatts: activeFtp,
+          thresholdPaceSecsPerKm: thresholdPace,
+        });
+      });
 
-  const estimatedDurationInSecs = executableSteps.reduce(
-    (acc, s) => acc + s.endConditionValue,
-    0
-  );
+      return {
+        type: 'RepeatGroupDTO',
+        stepOrder: idx + 1,
+        numberOfIterations: node.repeatCount,
+        smartRepeat: false,
+        workoutSteps: innerSteps,
+      };
+    });
+  } else {
+    const rawSteps = Array.isArray(input.steps) && input.steps.length > 0
+      ? input.steps
+      : [{ label: input.name || 'Main Set', durationSecs: 1800, targetPctFtp: 75, stepType: 'interval' as const }];
+    const totalSteps = rawSteps.length;
 
-  const workoutPayload = {
+    workoutSteps = rawSteps.map((s, idx) => {
+      const pct = Number(s.targetPctFtp || 70);
+      let stepKind: 'warmup' | 'cooldown' | 'interval' | 'rest' = 'interval';
+      if (s.stepType === 'warmup') stepKind = 'warmup';
+      else if (s.stepType === 'cooldown') stepKind = 'cooldown';
+      else if (s.stepType === 'recovery' || s.stepType === 'rest') stepKind = 'rest';
+      else if (!s.stepType) {
+        if (idx === 0 && totalSteps > 1) stepKind = 'warmup';
+        else if (idx === totalSteps - 1 && totalSteps > 1) stepKind = 'cooldown';
+        else if (pct <= 60 || /recov|easy|rest/i.test(s.label)) stepKind = 'rest';
+      }
+      const durSecs = Math.max(5, Math.round(s.durationSecs || 60));
+      estimatedDurationInSecs += durSecs;
+      return toGarminExecutableStepDto({
+        stepOrder: idx + 1,
+        label: s.label,
+        durationSecs: durSecs,
+        distanceMeters: s.distanceMeters,
+        isRunning,
+        stepKind,
+        targetPctFtp: pct,
+        targetWatts: s.targetWatts,
+        targetMinWatts: s.targetMinWatts,
+        targetMaxWatts: s.targetMaxWatts,
+        targetPaceSecsPerKm: s.targetPaceSecsPerKm,
+        ftpWatts: activeFtp,
+        thresholdPaceSecsPerKm: thresholdPace,
+        hrCeilingBpm: s.hrCeilingBpm,
+      });
+    });
+  }
+
+  return {
+    workoutName: input.name.slice(0, 64),
+    description: (input.description || 'Prescribed by MeetReady Readiness Engine').slice(0, 512),
     sportType,
     subSportType: null,
-    workoutName: input.name.slice(0, 64),
-    description: (input.description || 'Prescribed by MeetReady Readiness Engine').slice(
-      0,
-      512
-    ),
     estimatedDurationInSecs,
     workoutSegments: [
       {
         segmentOrder: 1,
         sportType,
-        workoutSteps: executableSteps,
+        workoutSteps,
       },
     ],
   };
+}
 
-  const createdWorkout = await fetchGarminJson<{ workoutId?: string | number }>(
-    '/workout-service/workout',
-    session,
-    {
-      method: 'POST',
-      body: workoutPayload,
+/**
+ * Pushes a structured workout to Garmin Connect Calendar via Official Garmin Training API v2
+ * (requires Official Partner OAuth 2.0 PKCE `garminOAuthAccessToken`; GCDC_ personal keys are read-only).
+ */
+export async function pushWorkoutToGarminConnect(
+  session: GarminSessionStore,
+  input: GarminWorkoutPushInput,
+  req?: Request
+): Promise<GarminWorkoutPushResult> {
+  const { clientId, clientSecret } = getEffectiveGarminClientConfig(req);
+  const partnerKeysConfigured = Boolean(clientId && clientSecret);
+
+  if (!session.garminOAuthAccessToken && !session.garminOAuthRefreshToken) {
+    if (session.personalApiKey) {
+      throw new GarminPartnerOAuthError(
+        partnerKeysConfigured
+          ? 'Garmin Personal API keys (GCDC_...) are read-only per Garmin policy. Connect Official Garmin Partner OAuth in Data Sources (or click "Download .FIT" / Intervals.icu Cross-Watch Bridge) to push workouts to your watch.'
+          : 'Garmin Personal API keys (GCDC_...) are read-only and Official Garmin Partner OAuth credentials (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET) are pending. Use Download .FIT or Intervals.icu Cross-Watch Bridge in the meantime.',
+        { requiresPartnerOAuth: true, setupRequired: !partnerKeysConfigured }
+      );
     }
-  );
-
-  const workoutId = createdWorkout?.workoutId;
-  if (!workoutId) {
-    throw new Error('Garmin Connect did not return a workoutId.');
+    throw new GarminPartnerOAuthError(
+      partnerKeysConfigured
+        ? 'Connect Official Garmin Partner OAuth in Data Sources to push workouts directly to your Garmin watch.'
+        : 'Garmin Partner OAuth credentials (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET) are pending. Use Download .FIT or Intervals.icu Cross-Watch Bridge to transfer this workout.',
+      { requiresPartnerOAuth: true, setupRequired: !partnerKeysConfigured }
+    );
   }
 
-  const scheduled = await fetchGarminJson<{ workoutScheduleId?: string | number }>(
-    `/workout-service/schedule/${encodeURIComponent(String(workoutId))}`,
-    session,
-    {
-      method: 'POST',
-      body: { date: input.date.slice(0, 10) },
-    }
-  );
+  const workoutPayload = buildGarminTrainingApiV2Payload(input);
+
+  const createdWorkout = await fetchGarminPartnerApiJson<{
+    workoutId?: string | number;
+    id?: string | number;
+  }>('/training-api/workout/v2', session, {
+    method: 'POST',
+    body: workoutPayload,
+    req,
+  });
+
+  const workoutId = createdWorkout?.workoutId ?? createdWorkout?.id;
+  if (!workoutId) {
+    throw new Error('Garmin Training API v2 did not return a workoutId.');
+  }
+
+  const scheduled = await fetchGarminPartnerApiJson<{
+    workoutScheduleId?: string | number;
+    scheduleId?: string | number;
+  }>('/training-api/schedule/', session, {
+    method: 'POST',
+    body: {
+      workoutId,
+      date: input.date.slice(0, 10),
+    },
+    req,
+  });
 
   return {
     pushed: true,
     workoutId,
-    scheduleId: scheduled?.workoutScheduleId || workoutId,
-    message: `Pushed "${input.name}" directly to Garmin Connect Calendar (${input.date.slice(0, 10)}) — ready to sync to your Garmin watch & Edge head unit.`,
+    scheduleId: scheduled?.workoutScheduleId ?? scheduled?.scheduleId ?? workoutId,
+    message: `Pushed "${input.name}" directly to Garmin Connect Calendar (${input.date.slice(0, 10)}) via Official Training API v2.`,
   };
 }
 
@@ -1530,153 +1552,85 @@ export async function fetchDirectGarminProfileAndWellness(
   }
 
   // ---------------------------------------------------------------------------
-  // Path B: Legacy OAuth2 / Web Bearer Session
+  // Path B: Official Garmin Partner OAuth 2.0 Session (Health API REST Pull)
   // ---------------------------------------------------------------------------
-  const [socialProfile, personalInfo, userSettings, latestFtp, latestLthr] =
-    await Promise.all([
-      fetchGarminJson<GarminSocialProfileResponse>(
-        '/userprofile-service/socialProfile',
-        session
-      ).catch(() => null),
-      fetchGarminJson<GarminPersonalInfoResponse>(
-        '/userprofile-service/userprofile/personal-information',
-        session
-      ).catch(() => null),
-      fetchGarminJson<GarminProfileSettingsResponse>(
-        '/userprofile-service/userprofile/user-settings',
-        session
-      ).catch(() => null),
-      fetchGarminJson<{ functionalThresholdPower?: number }>(
-        '/biometric-service/biometric/powerToWeight/latest',
-        session
-      ).catch(() => null),
-      fetchGarminJson<{ heartRate?: number; lactateThresholdHeartRate?: number }>(
-        '/biometric-service/biometric/lactateThreshold/latest',
-        session
-      ).catch(() => null),
-    ]);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const startEpochSec = nowSec - Math.min(daysToFetch, 30) * 86400;
+  const [userIdInfo, dailiesData, sleepsData, hrvData, actsData] = await Promise.all([
+    fetchGarminPartnerApiJson<{ userId?: string }>('/wellness-api/rest/user/id', session).catch(
+      () => null
+    ),
+    fetchGarminPartnerApiJson<GarminDailySummaryItem[]>(
+      `/wellness-api/rest/dailies?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
+      session
+    ).catch(() => null),
+    fetchGarminPartnerApiJson<GarminSleepDto[]>(
+      `/wellness-api/rest/sleeps?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
+      session
+    ).catch(() => null),
+    fetchGarminPartnerApiJson<GarminHrvDto[]>(
+      `/wellness-api/rest/hrv?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
+      session
+    ).catch(() => null),
+    fetchGarminPartnerApiJson<GarminRawActivity[]>(
+      `/wellness-api/rest/activities?uploadStartTimeInSeconds=${startEpochSec}&uploadEndTimeInSeconds=${nowSec}`,
+      session
+    ).catch(() => null),
+  ]);
 
-  const userData = userSettings?.userData || {};
-  const bioInfo = personalInfo?.biometricProfile || {};
-
-  const rawWeightGrams = Number(
-    userData.weight ?? bioInfo.weight ?? personalInfo?.weight ?? 0
-  );
-  const weightKg =
-    rawWeightGrams > 1000
-      ? Number((rawWeightGrams / 1000).toFixed(1))
-      : rawWeightGrams >= 35 && rawWeightGrams <= 180
-        ? Number(rawWeightGrams.toFixed(1))
-        : undefined;
-
-  const ftp = Number(
-    latestFtp?.functionalThresholdPower ??
-      userData.ftp ??
-      bioInfo.functionalThresholdPower ??
-      0
-  );
-  const lthrBpm = Number(
-    latestLthr?.heartRate ??
-      latestLthr?.lactateThresholdHeartRate ??
-      userData.lactateThresholdHeartRate ??
-      0
-  );
-  const maxHr = Number(userData.maxHeartRate ?? bioInfo.maxHeartRate ?? 0);
-  const restingHr = Number(
-    userData.restingHeartRate ?? bioInfo.restingHeartRate ?? 0
-  );
-  const vo2MaxCycling = Number(
-    userData.vo2MaxCycling ?? userData.vo2Max ?? 0
-  );
-  const vo2MaxRunning = Number(
-    userData.vo2MaxRunning ?? userData.vo2Max ?? 0
-  );
-
-  const name =
-    socialProfile?.fullName ||
-    personalInfo?.userInfo?.fullName ||
-    socialProfile?.displayName ||
-    session.fullName ||
-    session.displayName;
-
-  if (name) {
-    session.fullName = name;
-    session.displayName = socialProfile?.displayName || name;
+  if (userIdInfo?.userId) {
+    session.garminUserId = String(userIdInfo.userId);
+  }
+  const wellnessMap = new Map<string, GarminWellnessRow>();
+  const ensurePartnerDay = (d?: string): GarminWellnessRow | null => {
+    const dateStr = String(d || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return null;
+    if (!wellnessMap.has(dateStr)) wellnessMap.set(dateStr, { id: dateStr });
+    return wellnessMap.get(dateStr)!;
+  };
+  for (const d of Array.isArray(dailiesData) ? dailiesData : []) {
+    const row = ensurePartnerDay(d?.calendarDate || d?.date || d?.startTimeLocal);
+    if (!row) continue;
+    const rhr = Number(d?.restingHeartRate ?? d?.minHeartRate ?? 0);
+    if (rhr >= 30 && rhr <= 110) row.restingHR = rhr;
+    if (Number(d?.totalSteps) > 0) row.steps = Number(d.totalSteps);
+  }
+  for (const s of Array.isArray(sleepsData) ? sleepsData : []) {
+    const row = ensurePartnerDay(s?.calendarDate || s?.date);
+    if (!row) continue;
+    const dur = Number(s?.durationInSeconds ?? s?.sleepTimeSeconds ?? 0);
+    if (dur > 0) row.sleepSecs = dur;
+    const score = Number(s?.overallSleepScore?.value ?? s?.sleepScores?.overall?.value ?? s?.sleepScore ?? 0);
+    if (score > 0) row.sleepScore = score;
+  }
+  for (const h of Array.isArray(hrvData) ? hrvData : []) {
+    const row = ensurePartnerDay(h?.calendarDate || h?.date);
+    if (!row) continue;
+    const hrvVal = Number(h?.lastNightAvg ?? h?.weeklyAvg ?? h?.hrvValue ?? 0);
+    if (hrvVal > 0) row.hrv = hrvVal;
+    if (Number(h?.weeklyAvg) > 0) row.hrvBaseline7d = Number(h.weeklyAvg);
+    if (h?.status) row.garminHrvStatus = String(h.status);
   }
 
-  const today = new Date();
-  const dateStrings: string[] = [];
-  for (let i = Math.min(daysToFetch, 14) - 1; i >= 0; i--) {
-    const d = new Date(today.getTime() - i * 86400 * 1000);
-    dateStrings.push(d.toISOString().slice(0, 10));
-  }
-
-  const wellnessRows: GarminWellnessRow[] = [];
-  for (const dateStr of dateStrings) {
-    const [sleepData, hrvData] = await Promise.all([
-      fetchGarminJson<GarminSleepSummariesResponse>(
-        `/wellness-service/wellness/dailySleepData?date=${dateStr}&nonSleepBufferMinutes=60`,
-        session
-      ).catch(() => null),
-      fetchGarminJson<GarminHrvSummariesResponse>(
-        `/hrv-service/hrv/${dateStr}`,
-        session
-      ).catch(() => null),
-    ]);
-
-    const sleepDto = sleepData?.dailySleepDTO;
-    const hrvSummary = hrvData?.hrvSummary;
-
-    if (sleepDto || hrvSummary) {
-      wellnessRows.push({
-        id: dateStr,
-        weight: weightKg,
-        restingHR:
-          sleepData?.restingHeartRate ??
-          sleepDto?.restingHeartRate ??
-          (restingHr > 30 ? restingHr : undefined),
-        hrv:
-          hrvSummary?.lastNightAvg ??
-          sleepData?.avgOvernightHrv ??
-          undefined,
-        sleepSecs: sleepDto?.sleepTimeSeconds ?? undefined,
-        sleepScore:
-          sleepDto?.sleepScores?.overall?.value ??
-          sleepDto?.overallSleepScore?.value ??
-          undefined,
-        vo2max:
-          vo2MaxCycling > 20
-            ? vo2MaxCycling
-            : vo2MaxRunning > 20
-              ? vo2MaxRunning
-              : undefined,
-      });
-    }
-  }
-
+  const wellnessRows = Array.from(wellnessMap.values()).sort((a, b) =>
+    String(a.id).localeCompare(String(b.id))
+  );
   const rawProfile: ServerRawProfileInput = {
-    id: socialProfile?.profileId || session.email || 'garmin-direct',
-    name,
-    weight: weightKg,
-    icu_resting_hr: restingHr > 30 ? restingHr : undefined,
-    vo2max: vo2MaxCycling > 20 ? vo2MaxCycling : undefined,
+    id: session.garminUserId || 'garmin-partner-oauth',
+    name: session.fullName || session.displayName || 'Garmin Athlete',
+    icu_resting_hr: wellnessRows[wellnessRows.length - 1]?.restingHR,
     sportSettings: [
-      {
-        types: ['Ride', 'VirtualRide'],
-        ftp: ftp > 60 ? ftp : undefined,
-        lthr: lthrBpm > 110 ? lthrBpm : undefined,
-        max_hr: maxHr > 130 ? maxHr : undefined,
-      },
-      {
-        types: ['Run', 'VirtualRun'],
-        lthr: lthrBpm > 110 ? lthrBpm : undefined,
-        max_hr: maxHr > 130 ? maxHr : undefined,
-      },
+      { types: ['Ride', 'VirtualRide'] },
+      { types: ['Run', 'VirtualRun'] },
     ],
   };
 
   session.lastSyncedAt = new Date().toISOString();
-  return { rawProfile, wellnessRows, activities: [] };
+  return {
+    rawProfile,
+    wellnessRows,
+    activities: Array.isArray(actsData) ? actsData : [],
+  };
 }
 
 export function getEnvGarminPersonalApiKey(): string {

@@ -105,7 +105,7 @@ describe('CON-03 · Intervals.icu OAuth 2.0 Connector & Power-User Fallback', ()
     expect(data.clientId).toBe('test_intervals_client_id_123');
     expect(data.url).toContain('https://intervals.icu/oauth/authorize?');
     expect(data.url).toContain('client_id=test_intervals_client_id_123');
-    expect(data.url).toContain('scope=ACTIVITY%3AREAD%2CWELLNESS%3AREAD%2CCALENDAR%3AREAD');
+    expect(data.url).toContain('scope=ACTIVITY%3AREAD%2CWELLNESS%3AREAD%2CCALENDAR%3AWRITE');
     expect(data.url).toContain('response_type=code');
     expect(data.state).toBeTruthy();
   });
@@ -144,7 +144,7 @@ describe('CON-03 · Intervals.icu OAuth 2.0 Connector & Power-User Fallback', ()
     const mockTokenPayload = {
       token_type: 'Bearer',
       access_token: 'icu_bearer_token_xyz987',
-      scope: 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:READ',
+      scope: 'ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE',
       id: 'i88421',
       name: 'Coros Runner',
     };

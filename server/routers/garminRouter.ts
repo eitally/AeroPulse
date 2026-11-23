@@ -1,8 +1,11 @@
 import { Router, type Request, type Response } from 'express';
 import {
+  GarminPartnerOAuthError,
   authenticateGarminConnect,
   clearGarminSessionAsync,
   fetchDirectGarminProfileAndWellness,
+  getEffectiveGarminClientConfig,
+  loadGarminSession,
   normalizeGarminPersonalApiActivities,
   pushWorkoutToGarminConnect,
   saveGarminSession,
@@ -21,6 +24,8 @@ import {
   runtimeStore,
   saveSessionCacheAsync,
 } from '../sessionContext.ts';
+import { resolveGarminCallbackUrl } from '../oauthHelpers.ts';
+import { registerOAuthConnectorRoutes } from '../oauthConnectorFactory.ts';
 import {
   buildServerAthleteProfile,
   parseWorkoutSyntaxToSteps,
@@ -39,18 +44,140 @@ import {
 } from '../../src/utils/activityTimestamp.ts';
 
 export const garminRouter = Router();
+export { getEffectiveGarminClientConfig };
 
-// Connect Direct Garmin Connect Account (Personal API Key GCDC_... or OAuth2/Web Bearer)
+const { callbackHandler: garminCallbackHandler } = registerOAuthConnectorRoutes(garminRouter, {
+  provider: 'garmin',
+  displayName: 'Garmin Connect',
+  accentColor: '#0EA5E9',
+  authorizeUrl: 'https://connect.garmin.com/oauth2Confirm',
+  scope: '',
+  envVarNames: ['GARMIN_CLIENT_ID', 'GARMIN_CLIENT_SECRET'],
+  usePkce: true,
+  unconfiguredStatusCode: 503,
+  unconfiguredMessage:
+    'Official Garmin Health & Training Partner OAuth is not configured yet (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET pending). Connect a read-only Personal API Key (GCDC_...), Download .FIT, or use the Intervals.icu Cross-Watch Bridge in the meantime.',
+  successBody:
+    'Your Garmin Connect account is now linked via Official Partner OAuth 2.0 PKCE. Workouts can now push directly to your Garmin watch and Edge head unit.',
+  getClientConfig: getEffectiveGarminClientConfig,
+  resolveCallbackUrl: resolveGarminCallbackUrl,
+  exchangeCode: async ({ code, redirectUri, clientId, clientSecret, codeVerifier }) => {
+    const bodyParams = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: clientId,
+      client_secret: clientSecret,
+      code,
+      redirect_uri: redirectUri,
+    });
+    if (codeVerifier) {
+      bodyParams.set('code_verifier', codeVerifier);
+    }
+
+    const tokenResp = await fetch('https://diauth.garmin.com/di-oauth2-service/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+      body: bodyParams.toString(),
+    });
+
+    if (!tokenResp.ok) {
+      const errText = await tokenResp.text().catch(() => '');
+      throw new Error(
+        `Garmin Partner OAuth token exchange failed (${tokenResp.status}): ${errText.slice(0, 160)}`
+      );
+    }
+
+    const tokenData = (await tokenResp.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      scope?: string;
+    };
+
+    const accessToken = String(tokenData.access_token || '').trim();
+    if (!accessToken) {
+      throw new Error('Garmin Partner OAuth did not return a valid access token.');
+    }
+
+    let garminUserId = '';
+    try {
+      const userIdResp = await fetch('https://apis.garmin.com/wellness-api/rest/user/id', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: 'application/json',
+        },
+      });
+      if (userIdResp.ok) {
+        const userJson = (await userIdResp.json()) as { userId?: string | number };
+        if (userJson?.userId) {
+          garminUserId = String(userJson.userId).trim();
+        }
+      }
+    } catch {
+      // non-fatal if wellness user/id scope isn't enabled
+    }
+
+    const athleteId = garminUserId || 'garmin-partner';
+    const athleteName = garminUserId ? `Garmin Athlete ${garminUserId.slice(0, 8)}` : 'Garmin Athlete';
+    const expiresAt =
+      Math.floor(Date.now() / 1000) + Number(tokenData.expires_in || 86400);
+
+    return {
+      athleteId,
+      athleteName,
+      scope: tokenData.scope,
+      applyToStore: async (_store, { sid }) => {
+        const scopeKey = sid.slice(0, 24);
+        const existing = loadGarminSession(GARMIN_SESSION_DIR, scopeKey) || {};
+        await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, {
+          ...existing,
+          garminOAuthAccessToken: accessToken,
+          garminOAuthRefreshToken: tokenData.refresh_token || existing.garminOAuthRefreshToken,
+          garminOAuthExpiresAt: expiresAt,
+          garminUserId: garminUserId || existing.garminUserId,
+          garminAuthMethod: 'OAUTH',
+          displayName: existing.displayName || athleteName,
+          fullName: existing.fullName || existing.displayName || athleteName,
+          connectedAt: existing.connectedAt || new Date().toISOString(),
+        });
+      },
+    };
+  },
+  clearStoreTokens: () => {
+    // Garmin credentials live in GARMIN_SESSION_DIR tenant vault cleared by onDisconnect
+  },
+  onDisconnect: async (req) => {
+    const scopeKey = getGarminScopeKey(req);
+    if (scopeKey && scopeKey !== 'unauthenticated') {
+      await clearGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey);
+    }
+  },
+});
+
+export { garminCallbackHandler };
+
+// Connect Direct Garmin Connect Account (Read-Only Personal API Key GCDC_...; legacy password login removed)
 garminRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
   try {
     const body = req.body || {};
+    const hasEmailOrPassword =
+      (typeof body.email === 'string' && body.email.trim().length > 0) ||
+      (typeof body.password === 'string' && body.password.length > 0);
+    if (hasEmailOrPassword) {
+      res.status(410).json({
+        ok: false,
+        deprecated: true,
+        error:
+          'Garmin password login has been removed. Connect via Official Garmin Partner OAuth, a read-only GCDC Personal API Key, or .FIT workout import.',
+      });
+      return;
+    }
+
     const session = await authenticateGarminConnect({
       personalApiKey: body.personalApiKey,
-      email: body.email,
-      password: body.password,
       directBearerToken: body.directBearerToken,
-      oauth1Token: body.oauth1Token,
-      oauth1TokenSecret: body.oauth1TokenSecret,
     });
 
     const sessionToken = setSessionCookie(
@@ -60,13 +187,18 @@ garminRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
     );
     const createdClaims = decodeSessionTokenSafely(sessionToken);
     const scopeKey = createdClaims?.sid?.slice(0, 24) || getGarminScopeKey(req);
-    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, session);
+    const existing = loadGarminSession(GARMIN_SESSION_DIR, scopeKey);
+    const mergedSession = {
+      ...(existing || {}),
+      ...session,
+    };
+    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, mergedSession);
 
     // Fetch direct Garmin profile, recent sleep/HRV biometrics, and activities
-    const garminData = await fetchDirectGarminProfileAndWellness(session, 28).catch(
+    const garminData = await fetchDirectGarminProfileAndWellness(mergedSession, 28).catch(
       () => null
     );
-    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, session);
+    await saveGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey, mergedSession);
     await saveSessionCacheAsync(req, res, createdClaims?.sid);
 
     const stravaIdentity = await resolveStravaAthleteIdentity(req).catch(() => null);
@@ -96,8 +228,8 @@ garminRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
         ...(garminData?.rawProfile || {}),
         name:
           garminData?.rawProfile?.name ||
-          session.fullName ||
-          session.displayName ||
+          mergedSession.fullName ||
+          mergedSession.displayName ||
           stravaIdentity?.athleteName,
         source: 'INTERVALS_GARMIN',
       },
@@ -108,22 +240,18 @@ garminRouter.post('/api/config/garmin', async (req: Request, res: Response) => {
     res.json({
       ok: true,
       garminConnected: true,
+      garminAuthMethod: mergedSession.garminOAuthAccessToken ? 'OAUTH' : 'PERSONAL_KEY',
+      garminCanPushWorkouts: Boolean(mergedSession.garminOAuthAccessToken),
       garminAthleteName:
         garminData?.rawProfile?.name ||
-        session.fullName ||
-        session.displayName ||
+        mergedSession.fullName ||
+        mergedSession.displayName ||
         syncedProfile.name,
       athleteProfile: syncedProfile,
-      sessionToken,
-      garminTokens: {
-        personalApiKey: session.personalApiKey,
-        oauth2AccessToken: session.oauth2AccessToken,
-        oauth1Token: session.oauth1Token,
-        oauth1TokenSecret: session.oauth1TokenSecret,
-      },
     });
   } catch (err: unknown) {
     res.status(400).json({
+      ok: false,
       error:
         err instanceof Error
           ? err.message
@@ -166,8 +294,8 @@ garminRouter.get('/api/garmin/sync', async (req: Request, res: Response) => {
             restingHR: garminData.rawProfile?.icu_resting_hr,
           }
         : {
-            weightKg: garminData.rawProfile?.weight,
-            restingHR: garminData.rawProfile?.icu_resting_hr,
+            weightKg: garminData?.rawProfile?.weight,
+            restingHR: garminData?.rawProfile?.icu_resting_hr,
           };
 
     const syncedProfile = buildServerAthleteProfile(
@@ -375,14 +503,21 @@ garminRouter.delete('/api/config/garmin', async (req: Request, res: Response) =>
   res.json({ ok: true, garminConnected: false });
 });
 
-// Direct Workout Push to Garmin Connect Calendar (Watches & Edge Head Units)
+// Direct Workout Push to Garmin Connect Calendar via Official Training API v2
 garminRouter.post('/api/garmin/workout/push', async (req: Request, res: Response) => {
+  const { clientId, clientSecret } = getEffectiveGarminClientConfig(req);
+  const partnerKeysConfigured = Boolean(clientId && clientSecret);
   try {
     const session = getActiveGarminSession(req);
     if (!session) {
-      res.status(400).json({
-        error:
-          'Garmin Connect is not connected yet. Connect your Garmin account in Data Sources first.',
+      res.status(partnerKeysConfigured ? 401 : 503).json({
+        ok: false,
+        pushed: false,
+        requiresPartnerOAuth: true,
+        setupRequired: !partnerKeysConfigured,
+        error: partnerKeysConfigured
+          ? 'Garmin Connect is not connected yet. Connect Official Garmin Partner OAuth in Data Sources first.'
+          : 'Garmin Health & Training Partner OAuth credentials (GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET) are pending. Use Download .FIT or the Intervals.icu Cross-Watch Bridge in the meantime.',
       });
       return;
     }
@@ -390,9 +525,12 @@ garminRouter.post('/api/garmin/workout/push', async (req: Request, res: Response
     const body = req.body || {};
     const date = String(body.date || new Date().toISOString().slice(0, 10)).slice(0, 10);
     const name = String(body.name || 'MeetReady Daily Prescription');
-    const sportCategory = body.sportCategory || 'Cycling';
+    const sportCategory = String(body.sportCategory || 'Cycling');
     const ftpWatts = Number(body.ftpWatts || runtimeStore.athleteProfile?.ftp || 250);
     const lthrBpm = Number(body.lthrBpm || runtimeStore.athleteProfile?.lthr || 165);
+    const thresholdPaceSecsPerKm = Number(
+      body.thresholdPaceSecsPerKm || runtimeStore.athleteProfile?.thresholdPaceSecsPerKm || 245
+    );
     const workoutSyntax = String(body.workoutSyntax || '');
     const plannedDurationSecs = Number(body.plannedDurationSecs || 3600);
 
@@ -405,33 +543,45 @@ garminRouter.post('/api/garmin/workout/push', async (req: Request, res: Response
             targetPctFtp: st.targetPctFtp || 75,
           }));
 
-    const pushRes = await pushWorkoutToGarminConnect(session, {
-      date,
-      name,
-      sportCategory,
-      description: body.description || workoutSyntax,
-      ftpWatts,
-      lthrBpm,
-      steps: parsedSteps,
-    });
+    const pushRes = await pushWorkoutToGarminConnect(
+      session,
+      {
+        date,
+        name,
+        sportCategory,
+        description: body.description || workoutSyntax,
+        workoutSyntax,
+        ftpWatts,
+        lthrBpm,
+        thresholdPaceSecsPerKm,
+        steps: parsedSteps,
+      },
+      req
+    );
 
-    saveGarminSession(GARMIN_SESSION_DIR, getGarminScopeKey(req), session);
-    res.json(pushRes);
+    const scopeKey = getGarminScopeKey(req);
+    if (scopeKey && scopeKey !== 'unauthenticated') {
+      saveGarminSession(GARMIN_SESSION_DIR, scopeKey, session);
+    }
+    res.json({ ok: true, ...pushRes });
   } catch (err: unknown) {
+    if (err instanceof GarminPartnerOAuthError) {
+      res.status(err.setupRequired ? 503 : 403).json({
+        ok: false,
+        pushed: false,
+        requiresPartnerOAuth: err.requiresPartnerOAuth,
+        setupRequired: err.setupRequired,
+        error: err.message,
+      });
+      return;
+    }
     res.status(500).json({
+      ok: false,
+      pushed: false,
       error:
         err instanceof Error
           ? err.message
           : 'Failed to push workout to Garmin Connect',
     });
   }
-});
-
-garminRouter.post('/api/garmin/disconnect', async (req: Request, res: Response) => {
-  const scopeKey = getGarminScopeKey(req);
-  if (scopeKey && scopeKey !== 'unauthenticated') {
-    await clearGarminSessionAsync(GARMIN_SESSION_DIR, scopeKey);
-  }
-  await saveSessionCacheAsync(req, res);
-  res.json({ connected: false });
 });
