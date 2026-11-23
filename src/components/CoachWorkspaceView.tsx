@@ -884,7 +884,10 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               nextMeetRsvpsByMemberId={teamEventsState.nextMeetRsvpsByMemberId}
               isSavingTeamEvent={teamEventsState.loading}
               onSaveTeamEvent={async (input) => {
-                await teamEventsState.saveEvent(input);
+                const res = await teamEventsState.saveEvent(input);
+                return res.photoReleaseOptOutNames?.length
+                  ? { photoReleaseOptOutNames: res.photoReleaseOptOutNames }
+                  : undefined;
               }}
               onDeleteScheduleEvent={async (eventId) => {
                 await teamEventsState.deleteEvent(eventId);

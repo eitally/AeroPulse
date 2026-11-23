@@ -69,6 +69,7 @@ export const STORAGE_KEYS = {
   STOPWATCH_OUTBOX: 'thresh_stopwatch_outbox_v1',
   STOPWATCH_OUTBOX_DEAD_LETTER: 'thresh_stopwatch_outbox_dead_letter_v1',
   FIELD_EVENTS_OUTBOX: 'thresh_field_events_outbox_v1',
+  CHAT_OUTBOX: 'thresh_chat_outbox_v1',
   MEET_DAY_PACKETS_LOCAL: 'thresh_meet_day_packets_v1',
   WALKON_STOPWATCH_LOGS: 'thresh_walkon_stopwatch_logs_v1',
   CLOUD_STATE_DIRTY: 'aeropulse_cloud_state_dirty_v1',
@@ -167,6 +168,7 @@ const EXPLICIT_USER_STORAGE_KEYS: readonly string[] = [
   STORAGE_KEYS.STOPWATCH_OUTBOX,
   STORAGE_KEYS.STOPWATCH_OUTBOX_DEAD_LETTER,
   STORAGE_KEYS.FIELD_EVENTS_OUTBOX,
+  STORAGE_KEYS.CHAT_OUTBOX,
   STORAGE_KEYS.MEET_DAY_PACKETS_LOCAL,
   STORAGE_KEYS.WALKON_STOPWATCH_LOGS,
   STORAGE_KEYS.CLOUD_STATE_DIRTY,
@@ -245,10 +247,19 @@ export function clearAllUserBrowserStorage(options?: {
     }
   }
 
+  if (typeof indexedDB !== 'undefined' && typeof indexedDB.deleteDatabase === 'function') {
+    try {
+      indexedDB.deleteDatabase('MeetReadyChatOutboxDB');
+    } catch {
+      // ignore IndexedDB cleanup errors
+    }
+  }
+
   if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     try {
       window.dispatchEvent(new CustomEvent('thresh:trackside-stopwatch-sync'));
       window.dispatchEvent(new CustomEvent('thresh:stopwatch-outbox-updated'));
+      window.dispatchEvent(new CustomEvent('thresh:chat-outbox-updated'));
     } catch {
       // ignore
     }

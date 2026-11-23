@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type {
   CoachEventGroup,
+  TeamCustomSubgroup,
   TeamMessageChannelScope,
   TeamMessageRecord,
   TeamMessagingPolicy,
@@ -16,6 +17,7 @@ import {
 import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
 import {
   canManageTeamGovernanceRole,
+  canProgramWorkoutsRole,
   canViewSafeguardingMedicalRole,
   loadTeamDocRaw,
   projectTeamSummaryForCaller,
@@ -38,6 +40,8 @@ function defaultPolicyForDoc(doc: {
 }): TeamMessagingPolicy {
   return {
     athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    parentRepliesEnabled: doc.messagingPolicy?.parentRepliesEnabled ?? true,
+    enablePushEmailFallback: doc.messagingPolicy?.enablePushEmailFallback ?? true,
     quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
     quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
     requireGuardianCcForMinors: Boolean(
@@ -60,6 +64,8 @@ function isWithinQuietHours(hour: number | undefined, startHour: number, endHour
 const ALLOWED_CHANNEL_SCOPES = new Set<TeamMessageChannelScope>([
   'ALL_TEAM',
   'EVENT_GROUP',
+  'PARENTS_ONLY',
+  'CUSTOM_SUBGROUP',
   'DIRECT_TRANSPARENT',
   'COACHES_STAFF',
 ]);
@@ -69,6 +75,7 @@ export async function postTeamMessage(params: {
   teamId: string;
   channelScope: TeamMessageChannelScope;
   eventGroup?: CoachEventGroup | string;
+  customSubgroupId?: string;
   targetMembershipId?: string;
   body: string;
   privateDirectToMinor?: boolean;
@@ -81,6 +88,7 @@ export async function postTeamMessage(params: {
   status?: number;
   message?: TeamMessageRecord;
   team?: TeamSummaryWithRole | null;
+  emailFallbackCount?: number;
   error?: string;
 }> {
   if (!ALLOWED_CHANNEL_SCOPES.has(params.channelScope)) {
@@ -120,6 +128,22 @@ export async function postTeamMessage(params: {
       };
     }
 
+    if (params.channelScope === 'PARENTS_ONLY' && callerMem.role === 'ATHLETE') {
+      return {
+        ok: false as const,
+        status: 403,
+        error: 'Athletes cannot post to or view the Parents Only channel.',
+      };
+    }
+
+    if (params.channelScope === 'PARENTS_ONLY' && isParentFollower && policy.parentRepliesEnabled === false) {
+      return {
+        ok: false as const,
+        status: 403,
+        error: 'Parent replies in Parents Only are currently set to coach-announcements-only.',
+      };
+    }
+
     if (
       isParentFollower &&
       (params.channelScope === 'ALL_TEAM' ||
@@ -129,7 +153,7 @@ export async function postTeamMessage(params: {
       return {
         ok: false as const,
         status: 403,
-        error: 'Parents may view announcements or message coaching staff transparently regarding their linked athlete.',
+        error: 'Parents may use Parents Only, linked sub-groups, or transparent Direct threads with coaching staff.',
       };
     }
 
@@ -148,6 +172,8 @@ export async function postTeamMessage(params: {
 
     let channelId = 'team:all';
     let resolvedEventGroup: CoachEventGroup | undefined;
+    let customSubgroupId: string | undefined;
+    let customSubgroupName: string | undefined;
     let targetMembershipId: string | undefined;
     let targetAthleteName: string | undefined;
     let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
@@ -155,6 +181,61 @@ export async function postTeamMessage(params: {
     if (params.channelScope === 'COACHES_STAFF') {
       channelId = 'staff:only';
       guardianCcApplied = false;
+    } else if (params.channelScope === 'PARENTS_ONLY') {
+      channelId = 'parents';
+      guardianCcApplied = true;
+    } else if (params.channelScope === 'CUSTOM_SUBGROUP') {
+      const requestedId = String(params.customSubgroupId || '').trim();
+      const subgroup = (doc.customSubgroups || []).find((sg) => sg.id === requestedId);
+      if (!subgroup) {
+        return {
+          ok: false as const,
+          status: 404,
+          error: 'Select a valid team sub-group.',
+        };
+      }
+      const isDirectMember = subgroup.memberIds.includes(callerMem.membershipId);
+      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
+      const isLinkedParentMember =
+        isParentFollower &&
+        subgroup.includeLinkedParents !== false &&
+        Boolean(callerParentEmail) &&
+        doc.memberships.some(
+          (child) =>
+            subgroup.memberIds.includes(child.membershipId) &&
+            child.parentGuardianEmail?.trim().toLowerCase() === callerParentEmail
+        );
+      if (!isStaff && !isDirectMember && !isLinkedParentMember) {
+        return {
+          ok: false as const,
+          status: 403,
+          error: 'You are not assigned to this team sub-group.',
+        };
+      }
+      if (callerMem.role === 'ATHLETE' && !policy.athleteRepliesEnabled) {
+        return {
+          ok: false as const,
+          status: 403,
+          error:
+            'Athlete replies are currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach.',
+        };
+      }
+      if (isParentFollower && policy.parentRepliesEnabled === false) {
+        return {
+          ok: false as const,
+          status: 403,
+          error: 'Parent replies are currently set to coach announcements only.',
+        };
+      }
+      const hasMinorInSubgroup = doc.memberships.some(
+        (m) =>
+          subgroup.memberIds.includes(m.membershipId) &&
+          (m.isMinorU18 || doc.brand.orgType === 'HIGH_SCHOOL')
+      );
+      channelId = `subgroup:${subgroup.id}`;
+      customSubgroupId = subgroup.id;
+      customSubgroupName = subgroup.name;
+      guardianCcApplied = Boolean(hasMinorInSubgroup || subgroup.includeLinkedParents !== false);
     } else if (params.channelScope === 'EVENT_GROUP') {
       resolvedEventGroup =
         (normalizeCoachEventGroup(String(params.eventGroup || '')) ||
@@ -254,6 +335,8 @@ export async function postTeamMessage(params: {
       channelId,
       channelScope: params.channelScope,
       ...(resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {}),
+      ...(customSubgroupId ? { customSubgroupId } : {}),
+      ...(customSubgroupName ? { customSubgroupName } : {}),
       ...(targetMembershipId ? { targetMembershipId } : {}),
       ...(targetAthleteName ? { targetAthleteName } : {}),
       senderSid: params.callerSid,
@@ -281,10 +364,13 @@ export async function postTeamMessage(params: {
       kind: 'TEAM_MESSAGE',
       channelScope: params.channelScope,
       eventGroup: resolvedEventGroup,
+      customSubgroupId,
       targetMembershipId,
       bodyText: cleanBody,
       clientLocalHour: params.clientLocalHour,
       isEmergency: effectiveEmergencyOverride,
+      originUrl: params.originUrl,
+      ...(pendingGuardianEmail ? { excludeFallbackEmails: [pendingGuardianEmail.to] } : {}),
     };
 
     await appendAuditLogAsync({
@@ -294,6 +380,7 @@ export async function postTeamMessage(params: {
       targetId: targetMembershipId || channelId,
       metadata: {
         channelScope: params.channelScope,
+        ...(customSubgroupId ? { customSubgroupId } : {}),
         guardianCcApplied,
         secondAdultVisible: true,
         sentDuringQuietHours: Boolean(record.sentDuringQuietHours),
@@ -320,7 +407,7 @@ export async function postTeamMessage(params: {
   } | null;
   const pushToSend = pendingPushPayload as Parameters<typeof dispatchTeamPushNotifications>[0] | null;
 
-  const [emailOutcome] = await Promise.allSettled([
+  const [emailOutcome, pushOutcome] = await Promise.allSettled([
     emailToSend
       ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8000, 'guardian-dm-email')
       : Promise.resolve(null),
@@ -335,25 +422,37 @@ export async function postTeamMessage(params: {
     emailOutcome.value !== null &&
     emailOutcome.value.delivered === true;
 
-  if (emailDelivered) {
+  const pushEmailFallbackCount =
+    pushOutcome.status === 'fulfilled' && pushOutcome.value !== null
+      ? pushOutcome.value.emailFallbackCount || 0
+      : 0;
+
+  if (emailDelivered || pushEmailFallbackCount > 0) {
     const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
       const freshDoc = await loadTeamDocRaw(params.teamId);
       if (!freshDoc) return null;
       const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
       if (targetMsg) {
-        targetMsg.guardianEmailNotified = true;
+        if (emailDelivered) targetMsg.guardianEmailNotified = true;
+        if (pushEmailFallbackCount > 0) targetMsg.emailFallbackCount = pushEmailFallbackCount;
         freshDoc.updatedAt = new Date().toISOString();
         await saveTeamDocRaw(params.teamId, freshDoc);
       }
       return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
     });
-    lockedResult.message.guardianEmailNotified = true;
+    if (emailDelivered) lockedResult.message.guardianEmailNotified = true;
+    if (pushEmailFallbackCount > 0) {
+      lockedResult.message.emailFallbackCount = pushEmailFallbackCount;
+    }
     if (refreshedTeam) {
       lockedResult.team = refreshedTeam;
     }
   }
 
-  return lockedResult;
+  return {
+    ...lockedResult,
+    ...(pushEmailFallbackCount > 0 ? { emailFallbackCount: pushEmailFallbackCount } : {}),
+  };
 }
 
 export async function acknowledgeTeamMessage(params: {
@@ -436,6 +535,8 @@ export async function updateTeamMessagingPolicy(params: {
   callerSid: string;
   teamId: string;
   athleteRepliesEnabled?: boolean;
+  parentRepliesEnabled?: boolean;
+  enablePushEmailFallback?: boolean;
   quietHoursStartHour?: number;
   quietHoursEndHour?: number;
   originUrl: string;
@@ -461,6 +562,14 @@ export async function updateTeamMessagingPolicy(params: {
         typeof params.athleteRepliesEnabled === 'boolean'
           ? params.athleteRepliesEnabled
           : current.athleteRepliesEnabled,
+      parentRepliesEnabled:
+        typeof params.parentRepliesEnabled === 'boolean'
+          ? params.parentRepliesEnabled
+          : current.parentRepliesEnabled ?? true,
+      enablePushEmailFallback:
+        typeof params.enablePushEmailFallback === 'boolean'
+          ? params.enablePushEmailFallback
+          : current.enablePushEmailFallback ?? true,
       quietHoursStartHour:
         typeof params.quietHoursStartHour === 'number' &&
         params.quietHoursStartHour >= 0 &&
@@ -488,6 +597,157 @@ export async function updateTeamMessagingPolicy(params: {
       action: 'TEAM_MESSAGING_POLICY_UPDATED',
       targetId: params.teamId,
       metadata: doc.messagingPolicy as unknown as Record<string, unknown>,
+    });
+
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    };
+  });
+}
+
+export async function upsertTeamCustomSubgroup(params: {
+  callerSid: string;
+  teamId: string;
+  subgroupId?: string;
+  name: string;
+  description?: string;
+  memberIds: string[];
+  includeLinkedParents?: boolean;
+  originUrl: string;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  subgroup?: TeamCustomSubgroup;
+  team?: TeamSummaryWithRole | null;
+  error?: string;
+}> {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: 'Team not found.' };
+
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
+    );
+    if (!callerMem || (!canProgramWorkoutsRole(callerMem.role) && callerMem.role !== 'ORG_ADMIN')) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Coaching or Athletic Admin permissions are required to manage team sub-groups.',
+      };
+    }
+
+    const cleanName = String(params.name || '').trim().slice(0, 48);
+    if (cleanName.length < 2) {
+      return { ok: false, status: 400, error: 'Sub-group name must be at least 2 characters.' };
+    }
+
+    const activeMemberSet = new Set(
+      doc.memberships
+        .filter((m) => m.status !== 'REVOKED' && m.status !== 'ALUMNI')
+        .map((m) => m.membershipId)
+    );
+    const validMemberIds = Array.from(
+      new Set(
+        (Array.isArray(params.memberIds) ? params.memberIds : [])
+          .map((id) => String(id || '').trim())
+          .filter((id) => activeMemberSet.has(id))
+      )
+    );
+
+    const existingList = doc.customSubgroups || [];
+    const targetId = params.subgroupId ? String(params.subgroupId).trim() : '';
+    const existingIdx = targetId ? existingList.findIndex((g) => g.id === targetId) : -1;
+
+    if (existingIdx < 0 && existingList.length >= 20) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'Maximum of 20 custom sub-groups per team reached.',
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const cleanDesc = params.description ? String(params.description).trim().slice(0, 140) : undefined;
+    const saved: TeamCustomSubgroup = {
+      id: existingIdx >= 0 ? existingList[existingIdx].id : `sgrp_${crypto.randomBytes(5).toString('hex')}`,
+      name: cleanName,
+      ...(cleanDesc ? { description: cleanDesc } : {}),
+      memberIds: validMemberIds,
+      includeLinkedParents: params.includeLinkedParents !== false,
+      createdByMembershipId:
+        existingIdx >= 0 ? existingList[existingIdx].createdByMembershipId : callerMem.membershipId,
+      createdByName:
+        existingIdx >= 0
+          ? existingList[existingIdx].createdByName
+          : callerMem.invitedName || doc.brand.coachDisplayName || 'Coach',
+      createdAt: existingIdx >= 0 ? existingList[existingIdx].createdAt : nowIso,
+    };
+
+    const nextList =
+      existingIdx >= 0
+        ? existingList.map((g, i) => (i === existingIdx ? saved : g))
+        : [saved, ...existingList];
+
+    doc.customSubgroups = nextList;
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'CUSTOM_SUBGROUP_SAVED',
+      targetId: saved.id,
+      metadata: {
+        name: saved.name,
+        memberCount: saved.memberIds.length,
+        includeLinkedParents: saved.includeLinkedParents,
+      },
+    });
+
+    return {
+      ok: true,
+      subgroup: saved,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    };
+  });
+}
+
+export async function deleteTeamCustomSubgroup(params: {
+  callerSid: string;
+  teamId: string;
+  subgroupId: string;
+  originUrl: string;
+}): Promise<{ ok: boolean; status?: number; team?: TeamSummaryWithRole | null; error?: string }> {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: 'Team not found.' };
+
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (!callerMem || (!canProgramWorkoutsRole(callerMem.role) && callerMem.role !== 'ORG_ADMIN')) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Coaching or Athletic Admin permissions are required to delete sub-groups.',
+      };
+    }
+
+    const beforeCount = (doc.customSubgroups || []).length;
+    doc.customSubgroups = (doc.customSubgroups || []).filter((g) => g.id !== params.subgroupId);
+    if (doc.customSubgroups.length === beforeCount) {
+      return { ok: false, status: 404, error: 'Sub-group not found.' };
+    }
+    doc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'CUSTOM_SUBGROUP_DELETED',
+      targetId: params.subgroupId,
+      metadata: {},
     });
 
     return {

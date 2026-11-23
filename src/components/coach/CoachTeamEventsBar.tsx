@@ -1,5 +1,6 @@
 import React, { Suspense, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
   Calendar,
   ExternalLink,
   Plus,
@@ -30,8 +31,9 @@ export interface CoachTeamEventsBarProps {
   isDemoMode?: boolean;
   events: TeamEventRecord[];
   rsvpCountsByEventId: Record<string, TeamEventRsvpCounts>;
+  photoOptOutAthleteNames?: string[];
   isSaving?: boolean;
-  onSaveEvent: (input: SaveTeamEventInput) => Promise<void>;
+  onSaveEvent: (input: SaveTeamEventInput) => Promise<{ photoReleaseOptOutNames?: string[] } | void>;
   onDeleteEvent: (eventId: string) => Promise<void>;
 }
 
@@ -40,6 +42,7 @@ export const CoachTeamEventsBar: React.FC<CoachTeamEventsBarProps> = ({
   isDemoMode = false,
   events,
   rsvpCountsByEventId,
+  photoOptOutAthleteNames = [],
   isSaving = false,
   onSaveEvent,
   onDeleteEvent,
@@ -64,6 +67,7 @@ export const CoachTeamEventsBar: React.FC<CoachTeamEventsBarProps> = ({
     'TEAM_AND_FAMILIES_ONLY' | 'PUBLIC_HUB'
   >('TEAM_AND_FAMILIES_ONLY');
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [savedFerpaOptOutNames, setSavedFerpaOptOutNames] = useState<string[]>([]);
 
   const visibleEvents = useMemo(
     () => [...events].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6),
@@ -132,7 +136,7 @@ export const CoachTeamEventsBar: React.FC<CoachTeamEventsBarProps> = ({
 
     try {
       setErrorText(null);
-      await onSaveEvent({
+      const saveResult = await onSaveEvent({
         ...(editingId ? { eventId: editingId } : {}),
         title: title.trim(),
         eventType,
@@ -147,6 +151,13 @@ export const CoachTeamEventsBar: React.FC<CoachTeamEventsBarProps> = ({
         visibilityScope,
         ...(curatedAlbumLinks ? { curatedAlbumLinks } : {}),
       });
+      const resultNames =
+        saveResult && Array.isArray(saveResult.photoReleaseOptOutNames)
+          ? saveResult.photoReleaseOptOutNames
+          : albumVisibility === 'PUBLIC_HUB' && curatedAlbumLinks?.length
+            ? photoOptOutAthleteNames
+            : [];
+      setSavedFerpaOptOutNames(resultNames);
       setComposerOpen(false);
     } catch (err) {
       setErrorText(err instanceof Error ? err.message : 'Unable to save event.');
@@ -218,9 +229,11 @@ export const CoachTeamEventsBar: React.FC<CoachTeamEventsBarProps> = ({
                     </div>
                     <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark truncate">
                       {ev.date}
-                      {ev.startTime ? ` · ${formatPracticeTime12h(ev.startTime)}` : ''}
+                      {ev.startTime
+                        ? ` · ${formatPracticeTime12h(ev.startTime) || ev.startTime}`
+                        : ''}
                       {ev.busDepartureTime
-                        ? ` · Bus ${formatPracticeTime12h(ev.busDepartureTime)}`
+                        ? ` · Bus ${formatPracticeTime12h(ev.busDepartureTime) || ev.busDepartureTime}`
                         : ''}
                     </div>
                   </button>
@@ -257,9 +270,53 @@ export const CoachTeamEventsBar: React.FC<CoachTeamEventsBarProps> = ({
                     </span>
                   )}
                 </div>
+
+                {Array.isArray(ev.curatedAlbumLinks) &&
+                  ev.curatedAlbumLinks.some((a) => /^https:\/\//i.test(a.url.trim())) && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      {ev.curatedAlbumLinks
+                        .filter((a) => /^https:\/\//i.test(a.url.trim()))
+                        .map((album) => (
+                          <a
+                            key={album.id}
+                            data-testid={`coach-event-album-link-${ev.eventId}`}
+                            href={album.url.trim()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-ap-cobalt/10 dark:bg-ap-volt/15 text-ap-cobalt dark:text-ap-volt font-mono text-2xs font-bold hover:underline"
+                          >
+                            <span>{album.label || 'Meet Photos'}</span>
+                            <span className="opacity-70">
+                              ({album.visibility === 'PUBLIC_HUB' ? 'Public' : 'Team'})
+                            </span>
+                            <ExternalLink className="w-3 h-3 shrink-0" />
+                          </a>
+                        ))}
+                    </div>
+                  )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {savedFerpaOptOutNames.length > 0 && (
+        <div
+          role="status"
+          data-testid="saved-event-photo-optout-warning"
+          className="rounded-xl px-3 py-2 text-2xs font-semibold ap-status-caution flex items-center justify-between gap-2"
+        >
+          <span>
+            FERPA Reminder: Ensure {savedFerpaOptOutNames.join(', ')} are excluded from any public
+            photo album link.
+          </span>
+          <button
+            type="button"
+            onClick={() => setSavedFerpaOptOutNames([])}
+            className="min-h-[28px] px-2 rounded-lg bg-white/60 dark:bg-ap-carbon cursor-pointer"
+          >
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -420,6 +477,21 @@ export const CoachTeamEventsBar: React.FC<CoachTeamEventsBarProps> = ({
               <option value="PUBLIC_HUB">Album: Public Hub</option>
             </select>
           </div>
+
+          {albumVisibility === 'PUBLIC_HUB' && photoOptOutAthleteNames.length > 0 && (
+            <div
+              role="alert"
+              data-testid="event-photo-optout-warning"
+              className="rounded-lg px-3 py-2 text-2xs font-semibold ap-status-caution flex items-start gap-2"
+            >
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span>
+                FERPA Photo Opt-Out Active for {photoOptOutAthleteNames.join(', ')}. Switch album
+                visibility to Team &amp; Families or ensure those athletes do not appear in this
+                public album.
+              </span>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2">
             <button

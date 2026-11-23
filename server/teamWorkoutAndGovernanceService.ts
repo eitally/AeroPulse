@@ -93,6 +93,78 @@ export async function updateTeamMemberEventGroup(params: {
   });
 }
 
+export async function updateTeamMemberPhotoRelease(params: {
+  callerSid: string;
+  teamId: string;
+  originUrl: string;
+  membershipId: string;
+  photoReleaseOptOut: boolean;
+}): Promise<{
+  ok: boolean;
+  status?: number;
+  team?: TeamSummaryWithRole | null;
+  error?: string;
+}> {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return { ok: false, status: 404, error: 'Team not found.' };
+
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: 'Team membership required.' };
+    }
+
+    const targetMem = doc.memberships.find(
+      (m) => m.membershipId === params.membershipId && m.status !== 'REVOKED'
+    );
+    if (!targetMem) {
+      return { ok: false, status: 404, error: 'Roster member not found.' };
+    }
+
+    const isStaff =
+      canProgramWorkoutsRole(callerMem.role) || callerMem.role === 'ORG_ADMIN';
+    const isSelf = callerMem.membershipId === targetMem.membershipId;
+    const isLinkedGuardian =
+      callerMem.role === 'PARENT_FOLLOWER' &&
+      Boolean(callerMem.invitedEmail && targetMem.parentGuardianEmail) &&
+      callerMem.invitedEmail!.trim().toLowerCase() ===
+        targetMem.parentGuardianEmail!.trim().toLowerCase();
+
+    if (!isStaff && !isSelf && !isLinkedGuardian) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Only coaching staff, the athlete, or a linked guardian may update FERPA photo release status.',
+      };
+    }
+
+    targetMem.photoReleaseOptOut = Boolean(params.photoReleaseOptOut);
+    doc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: 'MEMBER_PHOTO_RELEASE_UPDATED',
+      targetId: targetMem.membershipId,
+      metadata: {
+        athleteName: targetMem.invitedName,
+        photoReleaseOptOut: targetMem.photoReleaseOptOut,
+      },
+    });
+
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    };
+  });
+}
+
 export async function broadcastWorkoutToTeamSquad(params: {
   callerSid: string;
   teamId: string;

@@ -143,7 +143,7 @@ export interface CoachMeetsAndPlanViewProps {
   teamEventRsvpCounts?: Record<string, TeamEventRsvpCounts>;
   nextMeetRsvpsByMemberId?: Record<string, TeamEventRsvpRecord>;
   isSavingTeamEvent?: boolean;
-  onSaveTeamEvent?: (input: SaveTeamEventInput) => Promise<void>;
+  onSaveTeamEvent?: (input: SaveTeamEventInput) => Promise<{ photoReleaseOptOutNames?: string[] } | void>;
   onDeleteScheduleEvent?: (eventId: string) => Promise<void>;
 }
 
@@ -234,6 +234,11 @@ export const CoachMeetsAndPlanView: React.FC<CoachMeetsAndPlanViewProps> = ({
             isDemoMode={isDemoTeam}
             events={teamEvents}
             rsvpCountsByEventId={teamEventRsvpCounts}
+            photoOptOutAthleteNames={(activeTeam.memberships || [])
+              .filter(
+                (m) => m.role === 'ATHLETE' && m.status !== 'REVOKED' && m.photoReleaseOptOut
+              )
+              .map((m) => m.invitedName)}
             isSaving={isSavingTeamEvent}
             onSaveEvent={onSaveTeamEvent}
             onDeleteEvent={onDeleteScheduleEvent}

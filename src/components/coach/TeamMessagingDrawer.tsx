@@ -5,24 +5,41 @@ import {
   Bell,
   BellRinging,
   Check,
+  Copy,
   Download,
   Flag,
   Lock,
   MessageSquare,
+  Plus,
   RefreshCw,
   Send,
   ShieldCheck,
+  Trash2,
+  Users,
   WifiOff,
   X,
 } from '../icons/PhosphorIcons';
 import { COACH_EVENT_GROUP_OPTIONS } from '../../physiology/teamOnboardingEngine';
 import {
   acknowledgeTeamMessageApi,
+  deleteTeamCustomSubgroupApi,
   flagTeamMessageApi,
   postTeamMessageApi,
   TeamLifecycleApiError,
   updateTeamMessagingPolicyApi,
 } from '../../utils/teamLifecycleApi';
+import {
+  enqueueChatOutboxMessage,
+  flushChatOutbox,
+  hydrateChatOutboxFromDexie,
+  loadChatOutbox,
+  removeChatOutboxMessage,
+  type QueuedChatOutboxMessage,
+} from '../../utils/chatOutbox';
+import {
+  copyTextToClipboardSafe,
+  formatMessageForRemindOrParentSquare,
+} from '../../utils/remindFormatter';
 import {
   fetchPushStatus,
   isIosStandaloneHintNeeded,
@@ -30,6 +47,12 @@ import {
   subscribeToThreshWebPush,
   unsubscribeFromThreshWebPush,
 } from '../../utils/pushNotificationsClient';
+import {
+  CommsAnnouncementsTab,
+  CommsReadReceiptPopover,
+  CommsSubgroupManager,
+  CommsWorkoutNotesTab,
+} from './CommsHubSecondaryTabs';
 import type {
   CoachEventGroup,
   TeamMessageChannelScope,
@@ -71,18 +94,6 @@ function sanitizeCsvCell(raw: unknown): string {
   return `"${safe}"`;
 }
 
-interface QueuedOfflineTeamMessage {
-  localId: string;
-  teamId: string;
-  channelScope: TeamMessageChannelScope;
-  eventGroup?: CoachEventGroup;
-  targetMembershipId?: string;
-  body: string;
-  clientLocalHour: number;
-  isEmergencyOverride: boolean;
-  createdAt: string;
-}
-
 export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   isOpen,
   onClose,
@@ -92,16 +103,24 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   viewerMode = 'ATHLETE',
   initialScope = 'ALL_TEAM',
 }) => {
+  const [commsTab, setCommsTab] = useState<'CHAT' | 'ANNOUNCEMENTS' | 'WORKOUT_NOTES'>('CHAT');
   const [activeScope, setActiveScope] = useState<TeamMessageChannelScope>(initialScope);
   const [selectedGroup, setSelectedGroup] = useState<CoachEventGroup>('SPRINTS');
+  const [selectedSubgroupId, setSelectedSubgroupId] = useState<string>('');
+  const [subgroupComposerOpen, setSubgroupComposerOpen] = useState<boolean>(false);
+  const [openReceiptMsgId, setOpenReceiptMsgId] = useState<string | null>(null);
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [selectedAthleteMembershipId, setSelectedAthleteMembershipId] = useState<string>('');
   const [draftBody, setDraftBody] = useState<string>('');
   const [emergencyOverride, setEmergencyOverride] = useState<boolean>(false);
   const [sending, setSending] = useState<boolean>(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [statusInfo, setStatusInfo] = useState<string | null>(null);
-  const [queuedOfflineMessages, setQueuedOfflineMessages] = useState<QueuedOfflineTeamMessage[]>([]);
+  const [queuedOfflineMessages, setQueuedOfflineMessages] = useState<QueuedChatOutboxMessage[]>(() =>
+    loadChatOutbox(activeTeam?.brand.teamId)
+  );
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  const [flushingOutbox, setFlushingOutbox] = useState<boolean>(false);
   const [pushEnabled, setPushEnabled] = useState<boolean>(false);
   const [pushCount, setPushCount] = useState<number>(0);
   const [pushLoading, setPushLoading] = useState<boolean>(false);
@@ -123,9 +142,61 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      setCommsTab('CHAT');
       setActiveScope(initialScope);
+      setOpenReceiptMsgId(null);
+      setStatusError(null);
+      setStatusInfo(null);
     }
   }, [isOpen, initialScope]);
+
+  const activeTeamId = activeTeam?.brand.teamId;
+
+  useEffect(() => {
+    if (!isOpen || !activeTeamId) return;
+    setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
+    void hydrateChatOutboxFromDexie(activeTeamId).then((items) => {
+      setQueuedOfflineMessages(items);
+    });
+    const onOutboxEvent = () => {
+      setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
+    };
+    const onOnlineEvent = () => {
+      if (isSampleDemo) return;
+      void flushChatOutbox(async (q) => {
+        const resp = await postTeamMessageApi({
+          teamId: q.teamId,
+          channelScope: q.channelScope,
+          eventGroup: q.eventGroup,
+          customSubgroupId: q.customSubgroupId,
+          targetMembershipId: q.targetMembershipId,
+          body: q.body,
+          guardianCc: q.guardianCc ?? true,
+          clientLocalHour: q.clientLocalHour,
+          isEmergencyOverride: q.isEmergencyOverride,
+        });
+        if (resp.teams && resp.teams.length > 0) {
+          onTeamsUpdated(resp.teams, q.teamId);
+        } else if (resp.team) {
+          onTeamsUpdated(
+            myTeams.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
+            resp.team.brand.teamId
+          );
+        }
+      }, activeTeamId).then((res) => {
+        setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
+        if (res.sentCount > 0) {
+          setStatusInfo(`Delivered ${res.sentCount} queued offline message(s) ✓`);
+        }
+      });
+    };
+    window.addEventListener('thresh:chat-outbox-updated', onOutboxEvent);
+    window.addEventListener('online', onOnlineEvent);
+    return () => {
+      window.removeEventListener('thresh:chat-outbox-updated', onOutboxEvent);
+      window.removeEventListener('online', onOnlineEvent);
+    };
+  }, [activeTeamId, isOpen, isSampleDemo, myTeams, onTeamsUpdated]);
 
   useEffect(() => {
     if (!isOpen || isSampleDemo) return;
@@ -233,13 +304,25 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         localHour >= policy.quietHoursStartHour &&
         localHour < policy.quietHoursEndHour;
 
+  const resolvedSubgroupId = useMemo(() => {
+    const groups = activeTeam?.customSubgroups || [];
+    if (selectedSubgroupId && groups.some((g) => g.id === selectedSubgroupId)) {
+      return selectedSubgroupId;
+    }
+    return groups[0]?.id || '';
+  }, [activeTeam?.customSubgroups, selectedSubgroupId]);
+
   const visibleMessages = useMemo(() => {
     const all = activeTeam?.teamMessages || [];
     return all
       .filter((m) => {
         if (!isStaff && m.channelScope === 'COACHES_STAFF') return false;
+        if (activeTeam?.myRole === 'ATHLETE' && m.channelScope === 'PARENTS_ONLY') return false;
         if (m.channelScope !== activeScope) return false;
         if (activeScope === 'EVENT_GROUP') return !m.eventGroup || m.eventGroup === selectedGroup;
+        if (activeScope === 'CUSTOM_SUBGROUP') {
+          return !resolvedSubgroupId || m.customSubgroupId === resolvedSubgroupId;
+        }
         if (activeScope === 'DIRECT_TRANSPARENT') {
           return !resolvedDirectAthlete || m.targetMembershipId === resolvedDirectAthlete.membershipId;
         }
@@ -247,7 +330,15 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       })
       .slice()
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [activeScope, activeTeam?.teamMessages, isStaff, resolvedDirectAthlete, selectedGroup]);
+  }, [
+    activeScope,
+    activeTeam?.myRole,
+    activeTeam?.teamMessages,
+    isStaff,
+    resolvedDirectAthlete,
+    resolvedSubgroupId,
+    selectedGroup,
+  ]);
 
   const visibleQueuedMessages = useMemo(
     () =>
@@ -257,11 +348,21 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
           q.teamId === activeTeam.brand.teamId &&
           q.channelScope === activeScope &&
           (activeScope !== 'EVENT_GROUP' || q.eventGroup === selectedGroup) &&
+          (activeScope !== 'CUSTOM_SUBGROUP' ||
+            !resolvedSubgroupId ||
+            q.customSubgroupId === resolvedSubgroupId) &&
           (activeScope !== 'DIRECT_TRANSPARENT' ||
             !resolvedDirectAthlete ||
             q.targetMembershipId === resolvedDirectAthlete.membershipId)
       ),
-    [activeScope, activeTeam, queuedOfflineMessages, resolvedDirectAthlete, selectedGroup]
+    [
+      activeScope,
+      activeTeam,
+      queuedOfflineMessages,
+      resolvedDirectAthlete,
+      resolvedSubgroupId,
+      selectedGroup,
+    ]
   );
 
   if (!isOpen || !activeTeam) return null;
@@ -280,10 +381,30 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
     setStatusError(null);
     setStatusInfo(null);
 
-    if (!isStaff && (activeScope === 'ALL_TEAM' || activeScope === 'EVENT_GROUP') && !policy.athleteRepliesEnabled) {
+    if (
+      !isStaff &&
+      (activeScope === 'ALL_TEAM' ||
+        activeScope === 'EVENT_GROUP' ||
+        activeScope === 'CUSTOM_SUBGROUP') &&
+      !policy.athleteRepliesEnabled
+    ) {
       setStatusError(
         'Team channels are set to Coach Announcements Only. Use Direct (SafeSport CC) to message coaching staff.'
       );
+      return;
+    }
+
+    if (activeScope === 'PARENTS_ONLY' && !isStaff && policy.parentRepliesEnabled === false) {
+      setStatusError('Parents Only channel is set to coach announcements only.');
+      return;
+    }
+
+    const activeSubgroup =
+      activeScope === 'CUSTOM_SUBGROUP'
+        ? (activeTeam.customSubgroups || []).find((g) => g.id === resolvedSubgroupId)
+        : undefined;
+    if (activeScope === 'CUSTOM_SUBGROUP' && !activeSubgroup) {
+      setStatusError('Select or create a custom sub-group before posting.');
       return;
     }
 
@@ -295,13 +416,20 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         channelId:
           activeScope === 'ALL_TEAM'
             ? 'team:all'
-            : activeScope === 'COACHES_STAFF'
-              ? 'staff:only'
-              : activeScope === 'EVENT_GROUP'
-                ? `group:${selectedGroup}`
-                : `dm:${targetMem?.membershipId || 'self'}`,
+            : activeScope === 'PARENTS_ONLY'
+              ? 'parents'
+              : activeScope === 'CUSTOM_SUBGROUP'
+                ? `subgroup:${activeSubgroup?.id || 'custom'}`
+                : activeScope === 'COACHES_STAFF'
+                  ? 'staff:only'
+                  : activeScope === 'EVENT_GROUP'
+                    ? `group:${selectedGroup}`
+                    : `dm:${targetMem?.membershipId || 'self'}`,
         channelScope: activeScope,
         ...(activeScope === 'EVENT_GROUP' ? { eventGroup: selectedGroup } : {}),
+        ...(activeSubgroup
+          ? { customSubgroupId: activeSubgroup.id, customSubgroupName: activeSubgroup.name }
+          : {}),
         ...(targetMem ? { targetMembershipId: targetMem.membershipId, targetAthleteName: targetMem.invitedName } : {}),
         senderSid: 'local-user',
         senderMembershipId: activeTeam.myMembershipId,
@@ -333,22 +461,25 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
     }
 
     const queueOffline = () => {
-      const queuedItem: QueuedOfflineTeamMessage = {
-        localId: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      const queued = enqueueChatOutboxMessage({
         teamId: activeTeam.brand.teamId,
         channelScope: activeScope,
         eventGroup: activeScope === 'EVENT_GROUP' ? selectedGroup : undefined,
+        customSubgroupId: activeSubgroup?.id,
         targetMembershipId:
           activeScope === 'DIRECT_TRANSPARENT'
             ? resolvedDirectAthlete?.membershipId
             : undefined,
         body: clean,
+        guardianCc: true,
         clientLocalHour: localHour,
         isEmergencyOverride: emergencyOverride,
-        createdAt: new Date().toISOString(),
-      };
-      setQueuedOfflineMessages((prev) => [...prev, queuedItem]);
+      });
+      if (queued) {
+        setQueuedOfflineMessages(loadChatOutbox(activeTeam.brand.teamId));
+      }
       setDraftBody('');
+      setStatusInfo('Saved offline — will auto-send when back online.');
     };
 
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -362,6 +493,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         teamId: activeTeam.brand.teamId,
         channelScope: activeScope,
         eventGroup: activeScope === 'EVENT_GROUP' ? selectedGroup : undefined,
+        customSubgroupId: activeSubgroup?.id,
         targetMembershipId: activeScope === 'DIRECT_TRANSPARENT' ? resolvedDirectAthlete?.membershipId : undefined,
         body: clean,
         guardianCc: true,
@@ -374,7 +506,11 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         applyUpdatedTeam(resp.team);
       }
       setDraftBody('');
-      setStatusInfo('Message delivered ✓');
+      setStatusInfo(
+        (resp.emailFallbackCount || 0) > 0
+          ? `Message delivered + ${resp.emailFallbackCount} email fallback(s) ✓`
+          : 'Message delivered ✓'
+      );
     } catch (err) {
       if (err instanceof TeamLifecycleApiError) {
         setStatusError(err.message);
@@ -386,7 +522,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
     }
   };
 
-  const handleRetryQueuedMessage = async (item: QueuedOfflineTeamMessage) => {
+  const handleRetryQueuedMessage = async (item: QueuedChatOutboxMessage) => {
     setStatusError(null);
     setStatusInfo(null);
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -399,9 +535,10 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         teamId: item.teamId,
         channelScope: item.channelScope,
         eventGroup: item.eventGroup,
+        customSubgroupId: item.customSubgroupId,
         targetMembershipId: item.targetMembershipId,
         body: item.body,
-        guardianCc: true,
+        guardianCc: item.guardianCc ?? true,
         clientLocalHour: item.clientLocalHour,
         isEmergencyOverride: item.isEmergencyOverride,
       });
@@ -410,7 +547,8 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       } else if (resp.team) {
         applyUpdatedTeam(resp.team);
       }
-      setQueuedOfflineMessages((prev) => prev.filter((q) => q.localId !== item.localId));
+      removeChatOutboxMessage(item.localId);
+      setQueuedOfflineMessages(loadChatOutbox(activeTeam.brand.teamId));
       setStatusInfo('Message delivered ✓');
     } catch (err) {
       if (err instanceof TeamLifecycleApiError) {
@@ -420,6 +558,88 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       }
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const handleFlushAllOutbox = async () => {
+    setStatusError(null);
+    setFlushingOutbox(true);
+    try {
+      const res = await flushChatOutbox(async (q) => {
+        const resp = await postTeamMessageApi({
+          teamId: q.teamId,
+          channelScope: q.channelScope,
+          eventGroup: q.eventGroup,
+          customSubgroupId: q.customSubgroupId,
+          targetMembershipId: q.targetMembershipId,
+          body: q.body,
+          guardianCc: q.guardianCc ?? true,
+          clientLocalHour: q.clientLocalHour,
+          isEmergencyOverride: q.isEmergencyOverride,
+        });
+        if (resp.teams && resp.teams.length > 0) {
+          onTeamsUpdated(resp.teams, q.teamId);
+        } else if (resp.team) {
+          applyUpdatedTeam(resp.team);
+        }
+      }, activeTeam.brand.teamId);
+      setQueuedOfflineMessages(loadChatOutbox(activeTeam.brand.teamId));
+      if (res.sentCount > 0) {
+        setStatusInfo(`Delivered ${res.sentCount} queued offline message(s) ✓`);
+      } else if (res.lastError) {
+        setStatusError(res.lastError);
+      }
+    } finally {
+      setFlushingOutbox(false);
+    }
+  };
+
+  const handleCopyRemindMessage = async (msg: TeamMessageRecord) => {
+    const scopeLabel =
+      msg.channelScope === 'PARENTS_ONLY'
+        ? 'Parents & Guardians Notice'
+        : msg.channelScope === 'CUSTOM_SUBGROUP' && msg.customSubgroupName
+          ? msg.customSubgroupName
+          : undefined;
+    const formatted = formatMessageForRemindOrParentSquare({
+      teamShortName: activeTeam.brand.shortName || activeTeam.brand.name,
+      teamSlug: activeTeam.brand.slug,
+      senderName: msg.senderName,
+      categoryLabel: scopeLabel,
+      body: msg.body,
+    });
+    const ok = await copyTextToClipboardSafe(formatted);
+    setCopiedMsgId(msg.id);
+    setStatusInfo(ok ? 'Copied for Remind / ParentSquare ✓' : formatted);
+    window.setTimeout(() => {
+      setCopiedMsgId((prev) => (prev === msg.id ? null : prev));
+    }, 2400);
+  };
+
+  const handleDeleteSubgroup = async (subgroupId: string) => {
+    if (isSampleDemo) {
+      applyUpdatedTeam({
+        ...activeTeam,
+        customSubgroups: (activeTeam.customSubgroups || []).filter((g) => g.id !== subgroupId),
+      });
+      setSelectedSubgroupId('');
+      return;
+    }
+    try {
+      const resp = await deleteTeamCustomSubgroupApi({
+        teamId: activeTeam.brand.teamId,
+        subgroupId,
+      });
+      if (resp.teams && resp.teams.length > 0) {
+        onTeamsUpdated(resp.teams, activeTeam.brand.teamId);
+      } else if (resp.team) {
+        applyUpdatedTeam(resp.team);
+      }
+      setSelectedSubgroupId('');
+    } catch (err) {
+      setStatusError(
+        err instanceof TeamLifecycleApiError ? err.message : 'Unable to delete sub-group.'
+      );
     }
   };
 
@@ -607,7 +827,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
             <div className="flex items-center gap-2">
               <MessageSquare className="w-4 h-4 ap-text-brand shrink-0" />
               <h2 id={headingId} className="text-sm sm:text-base font-extrabold truncate">
-                {activeTeam.brand.shortName || activeTeam.brand.name} · Team Messaging
+                {activeTeam.brand.shortName || activeTeam.brand.name} · Comms Hub
               </h2>
             </div>
             <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-2xs font-mono">
@@ -646,6 +866,58 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
           </button>
         </div>
 
+        {/* Top Unified Comms Hub Section Tabs */}
+        <div
+          role="tablist"
+          aria-label="Comms Hub Sections"
+          className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex items-center gap-1.5"
+        >
+          {(
+            [
+              {
+                id: 'CHAT' as const,
+                label: 'Chat',
+                count: (activeTeam.teamMessages || []).length,
+                testId: 'comms-tab-chat',
+              },
+              {
+                id: 'ANNOUNCEMENTS' as const,
+                label: 'Announcements',
+                count: (activeTeam.announcements || []).length,
+                testId: 'comms-tab-announcements',
+              },
+              {
+                id: 'WORKOUT_NOTES' as const,
+                label: 'Workout Notes',
+                count: (activeTeam.workoutComments || []).length,
+                testId: 'comms-tab-workout-notes',
+              },
+            ] as const
+          ).map((tab) => {
+            const active = commsTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                data-testid={tab.testId}
+                aria-selected={active}
+                onClick={() => {
+                  setCommsTab(tab.id);
+                  setStatusError(null);
+                  setStatusInfo(null);
+                }}
+                className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5 ${
+                  active ? 'ap-nav-volt-active' : 'liquid-capsule-track text-ap-ink dark:text-ap-chalk'
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className="text-2xs font-mono opacity-80">({tab.count})</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Device Push Alerts Bar (expanded until enabled, then compact pill to maximize chat height) */}
         {(!pushEnabled || pushPanelExpanded) ? (
           <div className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset flex flex-wrap items-center justify-between gap-2">
@@ -666,8 +938,8 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
               <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-snug">
                 {pushNotice ||
                   (iosStandaloneNeeded
-                    ? 'iPhone/iPad: tap Share → Add to Home Screen first to enable lock-screen alerts.'
-                    : 'Get instant alerts for coach messages, workout notes & lightning weather.')}
+                    ? 'iPhone/iPad: Add to Home Screen for push, or rely on automatic MeetReady Email Fallback when push is off.'
+                    : 'No push on this device? MeetReady automatically sends SafeSport-safe email fallbacks for urgent team updates.')}
               </p>
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -729,286 +1001,490 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
           </div>
         )}
 
-        {/* Channel Rail */}
-        <div className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center gap-1.5" role="tablist">
-          {(
-            [
-              { id: 'ALL_TEAM', label: 'Whole Team', testId: 'msg-channel-all', show: true },
-              { id: 'EVENT_GROUP', label: 'Event Group', testId: 'msg-channel-group', show: true },
-              { id: 'COACHES_STAFF', label: 'Coaches & Staff', testId: 'msg-channel-staff', show: isStaff },
-              { id: 'DIRECT_TRANSPARENT', label: 'Direct (SafeSport CC)', testId: 'msg-channel-direct', show: true },
-            ] as const
-          )
-            .filter((c) => c.show)
-            .map((ch) => {
-              const active = activeScope === ch.id;
-              return (
-                <button
-                  key={ch.id}
-                  type="button"
-                  role="tab"
-                  data-testid={ch.testId}
-                  aria-selected={active}
-                  onClick={() => {
-                    setActiveScope(ch.id);
-                    setStatusError(null);
-                  }}
-                  className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-bold cursor-pointer ${
-                    active ? 'ap-nav-volt-active' : 'liquid-capsule-track text-ap-ink dark:text-ap-chalk'
-                  }`}
-                >
-                  {ch.label}
-                </button>
-              );
-            })}
-        </div>
-
-        {/* Sub-selector bar for Event Group or Transparent Direct Thread */}
-        {activeScope === 'EVENT_GROUP' && (
-          <div className="px-4 py-2 bg-ap-card-inset/50 flex items-center gap-2 text-xs border-b border-ap-frame/10 dark:border-ap-edge-dark">
-            <span className="font-mono text-2xs uppercase text-ap-muted dark:text-ap-muted-dark">Group:</span>
-            <select
-              aria-label="Select Event Group Channel"
-              value={selectedGroup}
-              onChange={(e) => setSelectedGroup(e.target.value as CoachEventGroup)}
-              className="min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold"
-            >
-              {COACH_EVENT_GROUP_OPTIONS.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.shortLabel}
-                </option>
-              ))}
-            </select>
-          </div>
+        {commsTab === 'ANNOUNCEMENTS' && (
+          <CommsAnnouncementsTab
+            activeTeam={activeTeam}
+            isStaff={isStaff}
+            isSampleDemo={isSampleDemo}
+            onApplyTeam={applyUpdatedTeam}
+            onTeamsUpdated={onTeamsUpdated}
+            onNotify={(msg) => {
+              setStatusError(null);
+              setStatusInfo(msg);
+            }}
+            onError={(msg) => setStatusError(msg)}
+          />
         )}
 
-        {activeScope === 'DIRECT_TRANSPARENT' && (
-          <div
-            data-testid="msg-safesport-cc-banner"
-            className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/25 space-y-2 text-xs"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="font-bold text-emerald-800 dark:text-emerald-300 inline-flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5" />
-                Zero-Secret-DM Rule Active: Head Coach &amp; Parent/Guardian CC&apos;d
-              </span>
-              {isStaff && athleteMembers.length > 0 && (
-                <select
-                  aria-label="Select Athlete for SafeSport Thread"
-                  value={resolvedDirectAthlete?.membershipId || ''}
-                  onChange={(e) => setSelectedAthleteMembershipId(e.target.value)}
-                  className="min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs font-semibold"
-                >
-                  {athleteMembers.map((m) => (
-                    <option key={m.membershipId} value={m.membershipId}>
-                      {m.invitedName}
-                      {m.parentGuardianEmail ? ' (Guardian Email CC)' : ''}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </div>
-            {isStaff && directThreads.length > 0 && (
-              <div
-                data-testid="msg-active-threads-inbox"
-                className="flex flex-wrap items-center gap-1.5"
-              >
-                <span className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark mr-1">
-                  Active Threads:
-                </span>
-                {directThreads.slice(0, 6).map((thr) => {
-                  const isSel = resolvedDirectAthlete?.membershipId === thr.membershipId;
+        {commsTab === 'WORKOUT_NOTES' && (
+          <CommsWorkoutNotesTab
+            activeTeam={activeTeam}
+            isStaff={isStaff}
+            isSampleDemo={isSampleDemo}
+            onApplyTeam={applyUpdatedTeam}
+            onTeamsUpdated={onTeamsUpdated}
+            onNotify={(msg) => {
+              setStatusError(null);
+              setStatusInfo(msg);
+            }}
+            onError={(msg) => setStatusError(msg)}
+          />
+        )}
+
+        {commsTab === 'CHAT' && (
+          <>
+            {/* Channel Rail */}
+            <div className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center gap-1.5" role="tablist">
+              {(
+                [
+                  { id: 'ALL_TEAM', label: 'Whole Team', testId: 'msg-channel-all', show: true },
+                  { id: 'EVENT_GROUP', label: 'Event Group', testId: 'msg-channel-group', show: true },
+                  {
+                    id: 'PARENTS_ONLY',
+                    label: 'Parents Only',
+                    testId: 'messaging-scope-parents_only',
+                    show: isStaff || activeTeam.myRole === 'PARENT_FOLLOWER',
+                  },
+                  {
+                    id: 'CUSTOM_SUBGROUP',
+                    label: 'Sub-Groups',
+                    testId: 'messaging-scope-custom_subgroup',
+                    show: isStaff || (activeTeam.customSubgroups?.length || 0) > 0,
+                  },
+                  { id: 'COACHES_STAFF', label: 'Coaches & Staff', testId: 'msg-channel-staff', show: isStaff },
+                  { id: 'DIRECT_TRANSPARENT', label: 'Direct (SafeSport CC)', testId: 'msg-channel-direct', show: true },
+                ] as const
+              )
+                .filter((c) => c.show)
+                .map((ch) => {
+                  const active = activeScope === ch.id;
                   return (
                     <button
-                      key={thr.membershipId}
+                      key={ch.id}
                       type="button"
-                      onClick={() => setSelectedAthleteMembershipId(thr.membershipId)}
-                      className={`min-h-[32px] px-2.5 py-0.5 rounded-full text-2xs font-semibold cursor-pointer truncate max-w-[200px] ${
-                        isSel
-                          ? 'ap-nav-volt-active'
-                          : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk'
+                      role="tab"
+                      data-testid={ch.testId}
+                      aria-selected={active}
+                      onClick={() => {
+                        setActiveScope(ch.id);
+                        setStatusError(null);
+                        setOpenReceiptMsgId(null);
+                      }}
+                      className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-bold cursor-pointer ${
+                        active ? 'ap-nav-volt-active' : 'liquid-capsule-track text-ap-ink dark:text-ap-chalk'
                       }`}
                     >
-                      {thr.athleteName} ({thr.count})
+                      {ch.label}
                     </button>
                   );
                 })}
+            </div>
+
+            {activeScope === 'PARENTS_ONLY' && (
+              <div
+                data-testid="msg-parents-only-banner"
+                className="px-4 py-2 bg-ap-cobalt/10 dark:bg-ap-volt/10 border-b border-ap-frame/15 dark:border-ap-edge-dark text-2xs font-mono text-ap-ink dark:text-ap-chalk flex items-center gap-1.5"
+              >
+                <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" />
+                <span>
+                  Parents &amp; Coaching Staff Only — athletes never see messages posted here.
+                </span>
+              </div>
+            )}
+
+            {activeScope === 'CUSTOM_SUBGROUP' && (
+              <div className="px-4 py-2 bg-ap-card-inset/50 border-b border-ap-frame/10 dark:border-ap-edge-dark space-y-2 text-xs">
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {(activeTeam.customSubgroups || []).map((sg) => {
+                      const activeSg = resolvedSubgroupId === sg.id;
+                      return (
+                        <div key={sg.id} className="inline-flex items-center gap-1">
+                          <button
+                            type="button"
+                            data-testid={`comms-subgroup-pill-${sg.id}`}
+                            onClick={() => setSelectedSubgroupId(sg.id)}
+                            className={`min-h-[34px] px-2.5 py-1 rounded-lg font-bold text-2xs cursor-pointer ${
+                              activeSg
+                                ? 'ap-nav-volt-active'
+                                : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark'
+                            }`}
+                          >
+                            {sg.name} ({sg.memberIds.length})
+                          </button>
+                          {isStaff && activeSg && (
+                            <button
+                              type="button"
+                              aria-label={`Delete sub-group ${sg.name}`}
+                              onClick={() => void handleDeleteSubgroup(sg.id)}
+                              className="min-h-[30px] min-w-[30px] rounded-lg text-rose-500 inline-flex items-center justify-center cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {(activeTeam.customSubgroups || []).length === 0 && !subgroupComposerOpen && (
+                      <span className="text-2xs text-ap-muted dark:text-ap-muted-dark">
+                        No custom sub-groups yet (e.g. Travel Bus #1, Meet Volunteers).
+                      </span>
+                    )}
+                  </div>
+                  {isStaff && !subgroupComposerOpen && (
+                    <button
+                      type="button"
+                      data-testid="comms-subgroup-create-btn"
+                      onClick={() => setSubgroupComposerOpen(true)}
+                      className="min-h-[34px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>New Sub-Group</span>
+                    </button>
+                  )}
+                </div>
+
+                {subgroupComposerOpen && (
+                  <CommsSubgroupManager
+                    activeTeam={activeTeam}
+                    isSampleDemo={isSampleDemo}
+                    onApplyTeam={applyUpdatedTeam}
+                    onTeamsUpdated={onTeamsUpdated}
+                    onCreated={(sgId) => {
+                      setSelectedSubgroupId(sgId);
+                      setSubgroupComposerOpen(false);
+                      setStatusInfo('Custom sub-group created ✓');
+                    }}
+                    onCancel={() => setSubgroupComposerOpen(false)}
+                    onError={(msg) => setStatusError(msg)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Sub-selector bar for Event Group or Transparent Direct Thread */}
+            {activeScope === 'EVENT_GROUP' && (
+              <div className="px-4 py-2 bg-ap-card-inset/50 flex items-center gap-2 text-xs border-b border-ap-frame/10 dark:border-ap-edge-dark">
+                <span className="font-mono text-2xs uppercase text-ap-muted dark:text-ap-muted-dark">Group:</span>
+                <select
+                  aria-label="Select Event Group Channel"
+                  value={selectedGroup}
+                  onChange={(e) => setSelectedGroup(e.target.value as CoachEventGroup)}
+                  className="min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold"
+                >
+                  {COACH_EVENT_GROUP_OPTIONS.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.shortLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {activeScope === 'DIRECT_TRANSPARENT' && (
+              <div
+                data-testid="msg-safesport-cc-banner"
+                className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/25 space-y-2 text-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold text-emerald-800 dark:text-emerald-300 inline-flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5" />
+                    Zero-Secret-DM Rule Active: Head Coach &amp; Parent/Guardian CC&apos;d
+                  </span>
+                  {isStaff && athleteMembers.length > 0 && (
+                    <select
+                      aria-label="Select Athlete for SafeSport Thread"
+                      value={resolvedDirectAthlete?.membershipId || ''}
+                      onChange={(e) => setSelectedAthleteMembershipId(e.target.value)}
+                      className="min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs font-semibold"
+                    >
+                      {athleteMembers.map((m) => (
+                        <option key={m.membershipId} value={m.membershipId}>
+                          {m.invitedName}
+                          {m.parentGuardianEmail ? ' (Guardian Email CC)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+                {isStaff && directThreads.length > 0 && (
+                  <div
+                    data-testid="msg-active-threads-inbox"
+                    className="flex flex-wrap items-center gap-1.5"
+                  >
+                    <span className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark mr-1">
+                      Active Threads:
+                    </span>
+                    {directThreads.slice(0, 6).map((thr) => {
+                      const isSel = resolvedDirectAthlete?.membershipId === thr.membershipId;
+                      return (
+                        <button
+                          key={thr.membershipId}
+                          type="button"
+                          onClick={() => setSelectedAthleteMembershipId(thr.membershipId)}
+                          className={`min-h-[32px] px-2.5 py-0.5 rounded-full text-2xs font-semibold cursor-pointer truncate max-w-[200px] ${
+                            isSel
+                              ? 'ap-nav-volt-active'
+                              : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk'
+                          }`}
+                        >
+                          {thr.athleteName} ({thr.count})
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Quiet Hours Banner */}
+            {isQuietHours && (
+              <div className="px-4 py-1.5 bg-amber-500/15 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-amber-900 dark:text-amber-200">
+                <span className="inline-flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Quiet Hours ({policy.quietHoursStartHour}:00–{policy.quietHoursEndHour}:00): avoid non-urgent texts.
+                </span>
+                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    data-testid="msg-emergency-override"
+                    checked={emergencyOverride}
+                    onChange={(e) => setEmergencyOverride(e.target.checked)}
+                  />
+                  <span>Emergency / Weather Override</span>
+                </label>
+              </div>
+            )}
+
+            {queuedOfflineMessages.length > 0 && (
+              <div
+                data-testid="comms-outbox-queued-banner"
+                className="px-4 py-1.5 bg-amber-500/20 border-b border-amber-500/35 flex items-center justify-between gap-2 text-2xs font-mono text-amber-950 dark:text-amber-100"
+              >
+                <span className="inline-flex items-center gap-1.5 font-bold">
+                  <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                  {queuedOfflineMessages.length} queued offline (saved locally, survives reload)
+                </span>
+                <button
+                  type="button"
+                  data-testid="comms-outbox-retry-btn"
+                  disabled={flushingOutbox}
+                  onClick={() => void handleFlushAllOutbox()}
+                  className="min-h-[30px] px-2.5 py-0.5 rounded-lg bg-amber-600 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>{flushingOutbox ? 'Syncing…' : 'Sync All'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Messages Feed */}
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+              {visibleMessages.length === 0 && visibleQueuedMessages.length === 0 ? (
+                <div className="rounded-xl ap-card-inset p-4 text-xs text-ap-muted dark:text-ap-muted-dark">
+                  No messages in this channel yet. Post a meet reminder or practice note below.
+                </div>
+              ) : (
+                visibleMessages.map((msg) => {
+                  const ackCount = msg.acknowledgedByMembershipIds?.length || 0;
+                  const alreadyAcked = msg.acknowledgedByMembershipIds?.includes(activeTeam.myMembershipId);
+                  const receiptOpen = openReceiptMsgId === msg.id;
+                  return (
+                    <div
+                      key={msg.id}
+                      data-testid={`team-msg-item-${msg.id}`}
+                      className={`rounded-xl border px-3 py-2.5 space-y-1.5 text-xs ${
+                        msg.flaggedForAdminReview
+                          ? 'border-rose-500/40 bg-rose-500/10'
+                          : 'border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono">
+                        <span className="font-bold text-ap-ink dark:text-ap-chalk">
+                          {msg.senderName}{' '}
+                          <span className="text-ap-muted dark:text-ap-muted-dark font-normal">
+                            ({activeTeam.memberships.find((m) => m.membershipId === msg.senderMembershipId)?.coachSpecialtyTitle || msg.senderRole})
+                          </span>
+                          {msg.targetAthleteName ? ` → ${msg.targetAthleteName}` : ''}
+                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {msg.guardianCcApplied && (
+                            <span className="px-1.5 py-0.5 rounded ap-status-info">Guardian CC ✓</span>
+                          )}
+                          {(msg.emailFallbackCount || 0) > 0 && (
+                            <span className="px-1.5 py-0.5 rounded ap-status-info">
+                              Push + Email ({msg.emailFallbackCount})
+                            </span>
+                          )}
+                          {msg.isEmergencyOverride && (
+                            <span className="px-1.5 py-0.5 rounded ap-status-caution">Emergency</span>
+                          )}
+                          {msg.flaggedForAdminReview && (
+                            <span className="px-1.5 py-0.5 rounded ap-status-strained">Flagged</span>
+                          )}
+                          <span className="text-ap-muted dark:text-ap-muted-dark">
+                            {formatMsgTimestamp(msg.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <p className="text-ap-ink dark:text-ap-chalk leading-snug">{msg.body}</p>
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            data-testid={`msg-ack-btn-${msg.id}`}
+                            onClick={() => void handleAck(msg.id)}
+                            className={`min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer ${
+                              alreadyAcked
+                                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
+                                : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark'
+                            }`}
+                          >
+                            <Check className="w-3 h-3" />
+                            <span>Got It ({ackCount})</span>
+                          </button>
+                          {isStaff && (
+                            <button
+                              type="button"
+                              data-testid={`msg-read-receipts-btn-${msg.id}`}
+                              aria-expanded={receiptOpen}
+                              onClick={() => setOpenReceiptMsgId(receiptOpen ? null : msg.id)}
+                              className="min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <Users className="w-3 h-3" />
+                              <span>Receipts</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            data-testid={`msg-copy-remind-btn-${msg.id}`}
+                            onClick={() => void handleCopyRemindMessage(msg)}
+                            className="min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Copy className="w-3 h-3" />
+                            <span>{copiedMsgId === msg.id ? 'Copied ✓' : 'Copy Remind'}</span>
+                          </button>
+                        </div>
+                        {!msg.flaggedForAdminReview && (
+                          <button
+                            type="button"
+                            data-testid={`msg-flag-btn-${msg.id}`}
+                            onClick={() => void handleFlag(msg.id)}
+                            className="min-h-[34px] px-2 py-0.5 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark hover:text-rose-500 inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <Flag className="w-3 h-3" />
+                            <span>Flag</span>
+                          </button>
+                        )}
+                      </div>
+                      {isStaff && receiptOpen && (
+                        <CommsReadReceiptPopover
+                          message={msg}
+                          activeTeam={activeTeam}
+                          onClose={() => setOpenReceiptMsgId(null)}
+                        />
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              {visibleQueuedMessages.map((q) => (
+                <div
+                  key={q.localId}
+                  data-testid={`team-msg-queued-${q.localId}`}
+                  className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 space-y-1.5 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono">
+                    <span className="inline-flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
+                      <WifiOff className="w-3.5 h-3.5 shrink-0" />
+                      <span>Queued offline — not delivered yet (saved locally)</span>
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="team-msg-retry-btn"
+                      disabled={retryingId === q.localId}
+                      onClick={() => void handleRetryQueuedMessage(q)}
+                      className="min-h-[34px] px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{retryingId === q.localId ? 'Retrying…' : 'Retry'}</span>
+                    </button>
+                  </div>
+                  <p className="text-ap-ink dark:text-ap-chalk leading-snug">{q.body}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Composer */}
+            <form onSubmit={(e) => void handleSend(e)} className="px-4 py-3 border-t border-ap-frame/15 dark:border-ap-edge-dark space-y-2">
+              {isStaff && (
+                <div className="flex flex-wrap gap-1">
+                  {COACH_QUICK_TEMPLATES.map((tpl) => (
+                    <button
+                      key={tpl}
+                      type="button"
+                      onClick={() => setDraftBody(tpl)}
+                      className="px-2 py-0.5 rounded-md ap-card-inset text-2xs text-ap-ink dark:text-ap-chalk hover:underline cursor-pointer truncate max-w-[200px]"
+                    >
+                      {tpl}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {statusError && (
+                <div role="alert" className="text-2xs font-mono text-rose-600 dark:text-rose-400">
+                  {statusError}
+                </div>
+              )}
+              {statusInfo && (
+                <div className="text-2xs font-mono text-emerald-600 dark:text-emerald-400">{statusInfo}</div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  data-testid="team-msg-input"
+                  aria-label="Message text"
+                  value={draftBody}
+                  onChange={(e) => setDraftBody(e.target.value)}
+                  placeholder={
+                    activeScope === 'DIRECT_TRANSPARENT'
+                      ? 'Write a SafeSport transparent note (Guardian & Coach CC)...'
+                      : activeScope === 'PARENTS_ONLY'
+                        ? 'Message Parents & Guardians only...'
+                        : 'Write an immutable, audited team message...'
+                  }
+                  className="flex-1 min-h-[44px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 text-xs text-ap-ink dark:text-ap-chalk"
+                />
+                <button
+                  type="submit"
+                  data-testid="team-msg-send-btn"
+                  disabled={sending || !draftBody.trim()}
+                  className="ap-btn-primary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Send</span>
+                </button>
+              </div>
+            </form>
+          </>
+        )}
+
+        {commsTab !== 'CHAT' && (statusError || statusInfo) && (
+          <div className="px-4 py-2 border-t border-ap-frame/15 dark:border-ap-edge-dark">
+            {statusError && (
+              <div role="alert" className="text-2xs font-mono text-rose-600 dark:text-rose-400">
+                {statusError}
+              </div>
+            )}
+            {statusInfo && (
+              <div className="text-2xs font-mono text-emerald-600 dark:text-emerald-400">
+                {statusInfo}
               </div>
             )}
           </div>
         )}
-
-        {/* Quiet Hours Banner */}
-        {isQuietHours && (
-          <div className="px-4 py-1.5 bg-amber-500/15 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-amber-900 dark:text-amber-200">
-            <span className="inline-flex items-center gap-1">
-              <AlertTriangle className="w-3.5 h-3.5" />
-              Quiet Hours ({policy.quietHoursStartHour}:00–{policy.quietHoursEndHour}:00): avoid non-urgent texts.
-            </span>
-            <label className="inline-flex items-center gap-1.5 cursor-pointer">
-              <input
-                type="checkbox"
-                data-testid="msg-emergency-override"
-                checked={emergencyOverride}
-                onChange={(e) => setEmergencyOverride(e.target.checked)}
-              />
-              <span>Emergency / Weather Override</span>
-            </label>
-          </div>
-        )}
-
-        {/* Messages Feed */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-          {visibleMessages.length === 0 && visibleQueuedMessages.length === 0 ? (
-            <div className="rounded-xl ap-card-inset p-4 text-xs text-ap-muted dark:text-ap-muted-dark">
-              No messages in this channel yet. Post a meet reminder or practice note below.
-            </div>
-          ) : (
-            visibleMessages.map((msg) => {
-              const ackCount = msg.acknowledgedByMembershipIds?.length || 0;
-              const alreadyAcked = msg.acknowledgedByMembershipIds?.includes(activeTeam.myMembershipId);
-              return (
-                <div
-                  key={msg.id}
-                  data-testid={`team-msg-item-${msg.id}`}
-                  className={`rounded-xl border px-3 py-2.5 space-y-1.5 text-xs ${
-                    msg.flaggedForAdminReview
-                      ? 'border-rose-500/40 bg-rose-500/10'
-                      : 'border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset'
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono">
-                    <span className="font-bold text-ap-ink dark:text-ap-chalk">
-                      {msg.senderName}{' '}
-                      <span className="text-ap-muted dark:text-ap-muted-dark font-normal">
-                        ({activeTeam.memberships.find((m) => m.membershipId === msg.senderMembershipId)?.coachSpecialtyTitle || msg.senderRole})
-                      </span>
-                      {msg.targetAthleteName ? ` → ${msg.targetAthleteName}` : ''}
-                    </span>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {msg.guardianCcApplied && (
-                        <span className="px-1.5 py-0.5 rounded ap-status-info">Guardian CC ✓</span>
-                      )}
-                      {msg.isEmergencyOverride && (
-                        <span className="px-1.5 py-0.5 rounded ap-status-caution">Emergency</span>
-                      )}
-                      {msg.flaggedForAdminReview && (
-                        <span className="px-1.5 py-0.5 rounded ap-status-strained">Flagged</span>
-                      )}
-                      <span className="text-ap-muted dark:text-ap-muted-dark">
-                        {formatMsgTimestamp(msg.createdAt)}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="text-ap-ink dark:text-ap-chalk leading-snug">{msg.body}</p>
-                  <div className="flex items-center justify-between gap-2 pt-0.5">
-                    <button
-                      type="button"
-                      data-testid={`msg-ack-btn-${msg.id}`}
-                      onClick={() => void handleAck(msg.id)}
-                      className={`min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer ${
-                        alreadyAcked
-                          ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                          : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark'
-                      }`}
-                    >
-                      <Check className="w-3 h-3" />
-                      <span>Got It ({ackCount})</span>
-                    </button>
-                    {!msg.flaggedForAdminReview && (
-                      <button
-                        type="button"
-                        data-testid={`msg-flag-btn-${msg.id}`}
-                        onClick={() => void handleFlag(msg.id)}
-                        className="min-h-[34px] px-2 py-0.5 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark hover:text-rose-500 inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <Flag className="w-3 h-3" />
-                        <span>Flag</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-          {visibleQueuedMessages.map((q) => (
-              <div
-                key={q.localId}
-                data-testid={`team-msg-queued-${q.localId}`}
-                className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 space-y-1.5 text-xs"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono">
-                  <span className="inline-flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
-                    <WifiOff className="w-3.5 h-3.5 shrink-0" />
-                    <span>Queued offline — not delivered yet</span>
-                  </span>
-                  <button
-                    type="button"
-                    data-testid="team-msg-retry-btn"
-                    disabled={retryingId === q.localId}
-                    onClick={() => void handleRetryQueuedMessage(q)}
-                    className="min-h-[34px] px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                    <span>{retryingId === q.localId ? 'Retrying…' : 'Retry'}</span>
-                  </button>
-                </div>
-                <p className="text-ap-ink dark:text-ap-chalk leading-snug">{q.body}</p>
-              </div>
-            ))}
-        </div>
-
-        {/* Composer */}
-        <form onSubmit={(e) => void handleSend(e)} className="px-4 py-3 border-t border-ap-frame/15 dark:border-ap-edge-dark space-y-2">
-          {isStaff && (
-            <div className="flex flex-wrap gap-1">
-              {COACH_QUICK_TEMPLATES.map((tpl) => (
-                <button
-                  key={tpl}
-                  type="button"
-                  onClick={() => setDraftBody(tpl)}
-                  className="px-2 py-0.5 rounded-md ap-card-inset text-2xs text-ap-ink dark:text-ap-chalk hover:underline cursor-pointer truncate max-w-[200px]"
-                >
-                  {tpl}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {statusError && (
-            <div role="alert" className="text-2xs font-mono text-rose-600 dark:text-rose-400">
-              {statusError}
-            </div>
-          )}
-          {statusInfo && (
-            <div className="text-2xs font-mono text-emerald-600 dark:text-emerald-400">{statusInfo}</div>
-          )}
-
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              data-testid="team-msg-input"
-              aria-label="Message text"
-              value={draftBody}
-              onChange={(e) => setDraftBody(e.target.value)}
-              placeholder={
-                activeScope === 'DIRECT_TRANSPARENT'
-                  ? 'Write a SafeSport transparent note (Guardian & Coach CC)...'
-                  : 'Write an immutable, audited team message...'
-              }
-              className="flex-1 min-h-[44px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 text-xs text-ap-ink dark:text-ap-chalk"
-            />
-            <button
-              type="submit"
-              data-testid="team-msg-send-btn"
-              disabled={sending || !draftBody.trim()}
-              className="ap-btn-primary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            >
-              <Send className="w-3.5 h-3.5" />
-              <span>Send</span>
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

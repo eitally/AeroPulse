@@ -10,6 +10,12 @@ import type {
 } from '../src/types.ts';
 import { doesCoachOwnAthlete } from '../src/physiology/teamOnboardingEngine.ts';
 import {
+  isResendConfigured,
+  sendEmailViaResend,
+  withBoundedTimeout,
+} from './teamEmailAndOtpService.ts';
+import { escapeHtml } from './securityUtils.ts';
+import {
   canManageTeamGovernanceRole,
   canViewSafeguardingMedicalRole,
   loadTeamDocRaw,
@@ -35,12 +41,24 @@ export type PushSenderFn = (
   payloadJson: string
 ) => Promise<{ statusCode: number }>;
 
+export type EmailFallbackSenderFn = (params: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+}) => Promise<{ delivered: boolean }>;
+
 const VAPID_VAULT_KEY = 'thresh_vapid_keys_v1';
 let cachedVapidKeys: StoredVapidKeys | null = null;
 let testSenderOverride: PushSenderFn | null = null;
+let testEmailFallbackSenderOverride: EmailFallbackSenderFn | null = null;
 
 export function setPushNotificationSenderForTest(fn: PushSenderFn | null): void {
   testSenderOverride = fn;
+}
+
+export function setTestEmailFallbackSenderForTests(fn: EmailFallbackSenderFn | null): void {
+  testEmailFallbackSenderOverride = fn;
 }
 
 export function resetVapidKeyCacheForTest(): void {
@@ -189,6 +207,7 @@ export function resolvePushRecipientSidsForTeamEvent(params: {
   kind: 'TEAM_MESSAGE' | 'WORKOUT_COMMENT' | 'ANNOUNCEMENT';
   channelScope?: TeamMessageChannelScope;
   eventGroup?: CoachEventGroup;
+  customSubgroupId?: string;
   targetMembershipId?: string;
 }): string[] {
   const activeMembers = params.doc.memberships.filter(
@@ -216,6 +235,41 @@ export function resolvePushRecipientSidsForTeamEvent(params: {
     if (params.channelScope === 'COACHES_STAFF') {
       for (const m of activeMembers) {
         if (canViewSafeguardingMedicalRole(m.role)) sids.add(m.userSid!);
+      }
+      return Array.from(sids);
+    }
+
+    if (params.channelScope === 'PARENTS_ONLY') {
+      for (const m of activeMembers) {
+        if (canViewSafeguardingMedicalRole(m.role) || m.role === 'PARENT_FOLLOWER') {
+          sids.add(m.userSid!);
+        }
+      }
+      return Array.from(sids);
+    }
+
+    if (params.channelScope === 'CUSTOM_SUBGROUP') {
+      const sg = (params.doc.customSubgroups || []).find(
+        (g) => g.id === params.customSubgroupId
+      );
+      if (!sg) return [];
+      const memberSet = new Set(sg.memberIds || []);
+      for (const m of activeMembers) {
+        if (canViewSafeguardingMedicalRole(m.role) || memberSet.has(m.membershipId)) {
+          sids.add(m.userSid!);
+        } else if (
+          m.role === 'PARENT_FOLLOWER' &&
+          sg.includeLinkedParents !== false &&
+          m.invitedEmail
+        ) {
+          const parentEmail = m.invitedEmail.trim().toLowerCase();
+          const hasChild = params.doc.memberships.some(
+            (child) =>
+              memberSet.has(child.membershipId) &&
+              child.parentGuardianEmail?.trim().toLowerCase() === parentEmail
+          );
+          if (hasChild) sids.add(m.userSid!);
+        }
       }
       return Array.from(sids);
     }
@@ -328,8 +382,15 @@ export async function dispatchPushPayloadToUsers(params: {
   recipientSids: string[];
   payload: PushDispatchPayload;
   isQuietHours?: boolean;
-}): Promise<{ deliveredCount: number; prunedCount: number }> {
-  if (params.recipientSids.length === 0) return { deliveredCount: 0, prunedCount: 0 };
+}): Promise<{
+  deliveredCount: number;
+  prunedCount: number;
+  deliveredSids: string[];
+  undeliveredSids: string[];
+}> {
+  if (params.recipientSids.length === 0) {
+    return { deliveredCount: 0, prunedCount: 0, deliveredSids: [], undeliveredSids: [] };
+  }
 
   const keys = await getOrInitVapidKeys();
   const sender: PushSenderFn =
@@ -349,16 +410,26 @@ export async function dispatchPushPayloadToUsers(params: {
   const payloadJson = JSON.stringify(params.payload);
   let deliveredCount = 0;
   let prunedCount = 0;
+  const deliveredSids: string[] = [];
+  const undeliveredSids: string[] = [];
 
   for (const sid of params.recipientSids) {
     const subs = await listUserPushSubscriptions(sid);
+    if (subs.length === 0) {
+      undeliveredSids.push(sid);
+      continue;
+    }
+    let sidDelivered = false;
+    let skippedDueToQuietHours = false;
     for (const sub of subs) {
       if (params.isQuietHours && !params.payload.isEmergency && sub.muteQuietHours !== false) {
+        skippedDueToQuietHours = true;
         continue;
       }
       try {
         await sender({ endpoint: sub.endpoint, keys: sub.keys }, payloadJson);
         deliveredCount += 1;
+        sidDelivered = true;
       } catch (err: unknown) {
         const statusCode =
           typeof err === 'object' && err !== null && 'statusCode' in err
@@ -370,9 +441,14 @@ export async function dispatchPushPayloadToUsers(params: {
         }
       }
     }
+    if (sidDelivered) {
+      deliveredSids.push(sid);
+    } else if (!skippedDueToQuietHours) {
+      undeliveredSids.push(sid);
+    }
   }
 
-  return { deliveredCount, prunedCount };
+  return { deliveredCount, prunedCount, deliveredSids, undeliveredSids };
 }
 
 export async function dispatchTeamPushNotifications(params: {
@@ -382,14 +458,18 @@ export async function dispatchTeamPushNotifications(params: {
   kind: 'TEAM_MESSAGE' | 'WORKOUT_COMMENT' | 'ANNOUNCEMENT';
   channelScope?: TeamMessageChannelScope;
   eventGroup?: CoachEventGroup;
+  customSubgroupId?: string;
   targetMembershipId?: string;
   announcementCategory?: TeamAnnouncementCategory;
   bodyText: string;
   clientLocalHour?: number;
   isEmergency?: boolean;
-}): Promise<{ deliveredCount: number; prunedCount: number }> {
+  excludeFallbackEmails?: string[];
+  enableEmailFallback?: boolean;
+  originUrl?: string;
+}): Promise<{ deliveredCount: number; prunedCount: number; emailFallbackCount: number }> {
   const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { deliveredCount: 0, prunedCount: 0 };
+  if (!doc) return { deliveredCount: 0, prunedCount: 0, emailFallbackCount: 0 };
 
   const targetMem = params.targetMembershipId
     ? doc.memberships.find((m) => m.membershipId === params.targetMembershipId)
@@ -411,6 +491,7 @@ export async function dispatchTeamPushNotifications(params: {
     kind: params.kind,
     channelScope: params.channelScope,
     eventGroup: params.eventGroup,
+    customSubgroupId: params.customSubgroupId,
     targetMembershipId: params.targetMembershipId,
   });
 
@@ -426,9 +507,138 @@ export async function dispatchTeamPushNotifications(params: {
     isEmergency: params.isEmergency,
   });
 
-  return dispatchPushPayloadToUsers({
+  const pushRes = await dispatchPushPayloadToUsers({
     recipientSids,
     payload,
     isQuietHours: quietHours,
   });
+
+  let emailFallbackCount = 0;
+  const emailFallbackEnabled =
+    policy?.enablePushEmailFallback !== false &&
+    params.enableEmailFallback !== false &&
+    (!quietHours || Boolean(params.isEmergency)) &&
+    Boolean(testEmailFallbackSenderOverride || isResendConfigured());
+
+  if (emailFallbackEnabled) {
+    const undeliveredSet = new Set(pushRes.undeliveredSids);
+    const deliveredSet = new Set(pushRes.deliveredSids);
+    const senderMem = doc.memberships.find((m) => m.userSid === params.senderSid);
+    const excludedEmails = new Set<string>(
+      [
+        senderMem?.invitedEmail,
+        ...(params.excludeFallbackEmails || []),
+      ]
+        .filter((e): e is string => typeof e === 'string' && e.includes('@'))
+        .map((e) => e.trim().toLowerCase())
+    );
+
+    const candidateEmails = new Set<string>();
+    const subgroup =
+      params.channelScope === 'CUSTOM_SUBGROUP' && params.customSubgroupId
+        ? (doc.customSubgroups || []).find((g) => g.id === params.customSubgroupId)
+        : undefined;
+    const subgroupMembers = new Set(subgroup?.memberIds || []);
+
+    for (const m of doc.memberships) {
+      if (m.status === 'REVOKED' || m.status === 'ALUMNI') continue;
+      if (m.userSid && m.userSid === params.senderSid) continue;
+
+      const hadUndeliveredSid = Boolean(m.userSid && undeliveredSet.has(m.userSid));
+      const hadDeliveredSid = Boolean(m.userSid && deliveredSet.has(m.userSid));
+      if (hadDeliveredSid) continue;
+
+      const parentEmailLower = m.invitedEmail?.trim().toLowerCase();
+      const hasLinkedChildInSubgroup =
+        Boolean(parentEmailLower) &&
+        doc.memberships.some(
+          (child) =>
+            subgroupMembers.has(child.membershipId) &&
+            child.parentGuardianEmail?.trim().toLowerCase() === parentEmailLower
+        );
+
+      const unlinkedParentInParentsScope =
+        !m.userSid &&
+        m.role === 'PARENT_FOLLOWER' &&
+        (params.channelScope === 'PARENTS_ONLY' ||
+          params.kind === 'ANNOUNCEMENT' ||
+          (params.channelScope === 'CUSTOM_SUBGROUP' &&
+            Boolean(subgroup) &&
+            (subgroupMembers.has(m.membershipId) ||
+              (subgroup!.includeLinkedParents !== false && hasLinkedChildInSubgroup))));
+
+      const guardianAlreadyDeliveredByPush =
+        Boolean(m.parentGuardianEmail) &&
+        doc.memberships.some(
+          (p) =>
+            p.role === 'PARENT_FOLLOWER' &&
+            Boolean(p.userSid && deliveredSet.has(p.userSid)) &&
+            p.invitedEmail?.trim().toLowerCase() ===
+              m.parentGuardianEmail?.trim().toLowerCase()
+        );
+
+      const includeGuardianForChild =
+        !guardianAlreadyDeliveredByPush &&
+        Boolean(m.parentGuardianEmail) &&
+        (params.channelScope === 'PARENTS_ONLY' ||
+          params.kind === 'ANNOUNCEMENT' ||
+          (params.channelScope === 'CUSTOM_SUBGROUP' &&
+            subgroup?.includeLinkedParents !== false &&
+            subgroupMembers.has(m.membershipId)));
+
+      if (hadUndeliveredSid || unlinkedParentInParentsScope) {
+        const email = m.invitedEmail?.trim().toLowerCase();
+        if (email && email.includes('@') && !excludedEmails.has(email)) {
+          candidateEmails.add(email);
+        }
+      }
+
+      if (includeGuardianForChild && m.parentGuardianEmail) {
+        const guardianEmail = m.parentGuardianEmail.trim().toLowerCase();
+        if (guardianEmail.includes('@') && !excludedEmails.has(guardianEmail)) {
+          candidateEmails.add(guardianEmail);
+        }
+      }
+    }
+
+    const emailSender: EmailFallbackSenderFn =
+      testEmailFallbackSenderOverride ||
+      (async (emailReq) => {
+        const res = await withBoundedTimeout(sendEmailViaResend(emailReq), 8000, 'push-email-fallback');
+        return { delivered: res.delivered };
+      });
+
+    const cleanOrigin = (params.originUrl || 'https://meetready.app').replace(/\/+$/, '');
+    const deepLink = `${cleanOrigin}${payload.url.startsWith('/') ? payload.url : `/${payload.url}`}`;
+    const safeTitle = escapeHtml(payload.title);
+    const safeBody = escapeHtml(payload.body);
+    const safeLink = escapeHtml(deepLink);
+    const html = `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:520px;line-height:1.5;color:#141413"><h2 style="margin:0 0 8px">${safeTitle}</h2><p style="margin:0 0 16px">${safeBody}</p><p><a href="${safeLink}" style="display:inline-block;padding:10px 16px;background:#0F172A;color:#D6FF2A;text-decoration:none;border-radius:8px;font-weight:700">Open in MeetReady</a></p><p style="font-size:12px;color:#555">Automatic email fallback delivered because push notifications are not active on your device.</p></div>`;
+    const text = `${payload.title}\n\n${payload.body}\n\nOpen in MeetReady: ${deepLink}`;
+
+    const cappedRecipients = Array.from(candidateEmails).slice(0, 50);
+    if (cappedRecipients.length > 0) {
+      const results = await Promise.allSettled(
+        cappedRecipients.map((to) =>
+          emailSender({
+            to,
+            subject: payload.title,
+            html,
+            text,
+          })
+        )
+      );
+      for (const item of results) {
+        if (item.status === 'fulfilled' && item.value.delivered) {
+          emailFallbackCount += 1;
+        }
+      }
+    }
+  }
+
+  return {
+    deliveredCount: pushRes.deliveredCount,
+    prunedCount: pushRes.prunedCount,
+    emailFallbackCount,
+  };
 }

@@ -416,7 +416,14 @@ export function useTeamEvents(
           ...(input.locationName ? { locationName: input.locationName } : {}),
           ...(input.busDepartureTime ? { busDepartureTime: input.busDepartureTime } : {}),
           ...(input.busReturnTime ? { busReturnTime: input.busReturnTime } : {}),
+          ...(typeof input.meetDelayMinutes === 'number'
+            ? { meetDelayMinutes: input.meetDelayMinutes }
+            : {}),
           ...(input.liveResultsUrl ? { liveResultsUrl: input.liveResultsUrl } : {}),
+          ...(input.liveResultsLabel ? { liveResultsLabel: input.liveResultsLabel } : {}),
+          ...(input.curatedAlbumLinks?.length
+            ? { curatedAlbumLinks: input.curatedAlbumLinks }
+            : {}),
           visibilityScope: input.visibilityScope || 'TEAM_AND_FAMILIES_ONLY',
           createdAt: nowIso,
           updatedAt: nowIso,

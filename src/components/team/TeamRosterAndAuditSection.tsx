@@ -29,6 +29,7 @@ import {
   updateAssistantCoachEventGroupsApi,
   updateMemberRoleApi,
   updateMemberStatusApi,
+  updateTeamMemberPhotoReleaseApi,
 } from '../../utils/teamLifecycleApi';
 
 function sanitizeCsvCell(raw: unknown): string {
@@ -789,6 +790,53 @@ export const TeamRosterAndAuditSection: React.FC<TeamRosterAndAuditSectionProps>
                           </option>
                         ))}
                       </select>
+                    )}
+                    {m.role === 'ATHLETE' && (isActiveTeamCoach || isSelfRow) && (
+                      <button
+                        type="button"
+                        disabled={isRowBusy}
+                        data-testid={`roster-photo-optout-toggle-${m.membershipId}`}
+                        aria-pressed={Boolean(m.photoReleaseOptOut)}
+                        onClick={() => {
+                          const nextOptOut = !m.photoReleaseOptOut;
+                          if (isDemoTeam) {
+                            applyUpdatedTeamSummary({
+                              ...activeTeam,
+                              memberships: activeTeam.memberships.map((mem) =>
+                                mem.membershipId === m.membershipId
+                                  ? { ...mem, photoReleaseOptOut: nextOptOut }
+                                  : mem
+                              ),
+                            });
+                            onBannerMessage({
+                              tone: nextOptOut ? 'info' : 'success',
+                              text: nextOptOut
+                                ? `FERPA No Public Photos enabled for ${m.invitedName}.`
+                                : `Photo release enabled for ${m.invitedName}.`,
+                            });
+                            return;
+                          }
+                          void runMemberMutation(
+                            m.membershipId,
+                            () =>
+                              updateTeamMemberPhotoReleaseApi({
+                                teamId: activeTeam.brand.teamId,
+                                membershipId: m.membershipId,
+                                photoReleaseOptOut: nextOptOut,
+                              }),
+                            nextOptOut
+                              ? `FERPA No Public Photos enabled for ${m.invitedName}.`
+                              : `Photo release enabled for ${m.invitedName}.`
+                          );
+                        }}
+                        className={`mt-1 block min-h-[34px] px-2 py-0.5 rounded-lg text-2xs font-mono font-semibold cursor-pointer ${
+                          m.photoReleaseOptOut
+                            ? 'ap-status-caution border border-amber-500/40'
+                            : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
+                        }`}
+                      >
+                        {m.photoReleaseOptOut ? 'No Public Photos (FERPA)' : 'Photo Release OK'}
+                      </button>
                     )}
                   </td>
 

@@ -54,6 +54,8 @@ export interface CoachPracticeHomeProps {
 
 function formatMessageScopeLabel(scope: TeamMessageChannelScope): string {
   if (scope === 'COACHES_STAFF') return 'Staff';
+  if (scope === 'PARENTS_ONLY') return 'Parents';
+  if (scope === 'CUSTOM_SUBGROUP') return 'Sub-Group';
   if (scope === 'EVENT_GROUP') return 'Group';
   if (scope === 'DIRECT_TRANSPARENT') return 'Direct';
   return 'Team';
@@ -437,6 +439,7 @@ export const CoachPracticeHome: React.FC<CoachPracticeHomeProps> = ({
             {(
               [
                 { scope: 'ALL_TEAM', label: 'Whole Team' },
+                { scope: 'PARENTS_ONLY', label: 'Parents Only' },
                 { scope: 'EVENT_GROUP', label: 'Event Groups' },
                 { scope: 'COACHES_STAFF', label: 'Coaches & Staff' },
                 { scope: 'DIRECT_TRANSPARENT', label: 'Direct (SafeSport CC)' },

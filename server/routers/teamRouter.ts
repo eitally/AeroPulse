@@ -19,9 +19,11 @@ import {
 } from '../pushNotificationService.ts';
 import {
   acknowledgeTeamMessage,
+  deleteTeamCustomSubgroup,
   flagTeamMessageForReview,
   postTeamMessage,
   updateTeamMessagingPolicy,
+  upsertTeamCustomSubgroup,
 } from '../teamMessagingService.ts';
 import {
   escapeHtml,
@@ -78,6 +80,7 @@ import {
   updateBroadcastWorkoutOnTeam,
   updateTeamBranding,
   updateTeamMemberEventGroup,
+  updateTeamMemberPhotoRelease,
   verifyEmailOtpCode,
 } from '../teamService.ts';
 import {
@@ -830,6 +833,39 @@ teamRouter.patch('/api/teams/:teamId/members/:membershipId/event-group', async (
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed to update athlete event group.',
+    });
+  }
+});
+
+// 11d. Update Roster Member FERPA Photo Release Opt-Out
+teamRouter.patch('/api/teams/:teamId/members/:membershipId/photo-release', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await updateTeamMemberPhotoRelease({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      membershipId: String(req.params.membershipId || ''),
+      photoReleaseOptOut: req.body?.photoReleaseOptOut === true,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to update photo release setting.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed to update photo release setting.',
     });
   }
 });
@@ -2216,6 +2252,7 @@ teamRouter.post('/api/teams/:teamId/messages', async (req: Request, res: Respons
     const body = (req.body || {}) as {
       channelScope?: unknown;
       eventGroup?: unknown;
+      customSubgroupId?: unknown;
       targetMembershipId?: unknown;
       body?: unknown;
       privateDirectToMinor?: unknown;
@@ -2229,6 +2266,7 @@ teamRouter.post('/api/teams/:teamId/messages', async (req: Request, res: Respons
       teamId: String(req.params.teamId || ''),
       channelScope: scope,
       eventGroup: typeof body.eventGroup === 'string' ? body.eventGroup : undefined,
+      customSubgroupId: typeof body.customSubgroupId === 'string' ? body.customSubgroupId : undefined,
       targetMembershipId: typeof body.targetMembershipId === 'string' ? body.targetMembershipId : undefined,
       body: String(body.body || ''),
       privateDirectToMinor: body.privateDirectToMinor === true,
@@ -2245,7 +2283,15 @@ teamRouter.post('/api/teams/:teamId/messages', async (req: Request, res: Respons
       return;
     }
     const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, message: result.message, team: result.team, teams });
+    res.json({
+      ok: true,
+      message: result.message,
+      team: result.team,
+      teams,
+      ...(typeof result.emailFallbackCount === 'number'
+        ? { emailFallbackCount: result.emailFallbackCount }
+        : {}),
+    });
   } catch (err) {
     res.status(400).json({
       ok: false,
@@ -2328,6 +2374,8 @@ teamRouter.patch('/api/teams/:teamId/messaging-policy', async (req: Request, res
     const originUrl = resolveRequestOrigin(req);
     const body = (req.body || {}) as {
       athleteRepliesEnabled?: unknown;
+      parentRepliesEnabled?: unknown;
+      enablePushEmailFallback?: unknown;
       quietHoursStartHour?: unknown;
       quietHoursEndHour?: unknown;
     };
@@ -2336,6 +2384,10 @@ teamRouter.patch('/api/teams/:teamId/messaging-policy', async (req: Request, res
       teamId: String(req.params.teamId || ''),
       athleteRepliesEnabled:
         typeof body.athleteRepliesEnabled === 'boolean' ? body.athleteRepliesEnabled : undefined,
+      parentRepliesEnabled:
+        typeof body.parentRepliesEnabled === 'boolean' ? body.parentRepliesEnabled : undefined,
+      enablePushEmailFallback:
+        typeof body.enablePushEmailFallback === 'boolean' ? body.enablePushEmailFallback : undefined,
       quietHoursStartHour:
         typeof body.quietHoursStartHour === 'number' ? body.quietHoursStartHour : undefined,
       quietHoursEndHour:
@@ -2355,6 +2407,80 @@ teamRouter.patch('/api/teams/:teamId/messaging-policy', async (req: Request, res
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : 'Failed updating messaging policy.',
+    });
+  }
+});
+
+teamRouter.post('/api/teams/:teamId/subgroups', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = (req.body || {}) as {
+      subgroupId?: unknown;
+      name?: unknown;
+      description?: unknown;
+      memberIds?: unknown;
+      includeLinkedParents?: unknown;
+    };
+    const result = await upsertTeamCustomSubgroup({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      subgroupId: typeof body.subgroupId === 'string' ? body.subgroupId : undefined,
+      name: String(body.name || ''),
+      description: typeof body.description === 'string' ? body.description : undefined,
+      memberIds: Array.isArray(body.memberIds) ? body.memberIds.map((v) => String(v)) : [],
+      includeLinkedParents:
+        typeof body.includeLinkedParents === 'boolean' ? body.includeLinkedParents : true,
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to save sub-group.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, subgroup: result.subgroup, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed saving sub-group.',
+    });
+  }
+});
+
+teamRouter.delete('/api/teams/:teamId/subgroups/:subgroupId', async (req: Request, res: Response) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: 'Authentication required.' });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await deleteTeamCustomSubgroup({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ''),
+      subgroupId: String(req.params.subgroupId || ''),
+      originUrl,
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || 'Unable to delete sub-group.',
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : 'Failed deleting sub-group.',
     });
   }
 });

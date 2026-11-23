@@ -244,12 +244,14 @@ export const FamilyMeetHubCard: React.FC<FamilyMeetHubCardProps> = ({
                       <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark flex flex-wrap items-center gap-2 mt-0.5">
                         <span>
                           {ev.date}
-                          {ev.startTime ? ` · ${formatPracticeTime12h(ev.startTime)}` : ''}
+                          {ev.startTime
+                            ? ` · ${formatPracticeTime12h(ev.startTime) || ev.startTime}`
+                            : ''}
                         </span>
                         {ev.busDepartureTime && (
                           <span className="inline-flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            Bus {formatPracticeTime12h(ev.busDepartureTime)}
+                            Bus {formatPracticeTime12h(ev.busDepartureTime) || ev.busDepartureTime}
                           </span>
                         )}
                         {ev.locationName && (
@@ -273,6 +275,27 @@ export const FamilyMeetHubCard: React.FC<FamilyMeetHubCardProps> = ({
                       </a>
                     )}
                   </div>
+
+                  {Array.isArray(ev.curatedAlbumLinks) &&
+                    ev.curatedAlbumLinks.some((a) => /^https:\/\//i.test(a.url.trim())) && (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {ev.curatedAlbumLinks
+                          .filter((a) => /^https:\/\//i.test(a.url.trim()))
+                          .map((album) => (
+                            <a
+                              key={album.id}
+                              data-testid={`family-event-album-link-${ev.eventId}`}
+                              href={album.url.trim()}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-white/80 dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-ap-cobalt dark:text-ap-volt font-mono text-2xs font-bold hover:underline"
+                            >
+                              <span>{album.label || 'Meet Photos'}</span>
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                            </a>
+                          ))}
+                      </div>
+                    )}
 
                   <div className="flex flex-wrap items-center gap-1.5">
                     {RSVP_BUTTONS.map((btn) => {

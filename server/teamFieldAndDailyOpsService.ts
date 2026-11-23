@@ -576,6 +576,8 @@ export async function postTeamAnnouncement(params: {
       eventGroup: targetGroups && targetGroups.length === 1 ? targetGroups[0] : undefined,
       bodyText: `${cleanTitle} — ${cleanBody}`,
       isEmergency: category === 'WEATHER',
+      originUrl: params.originUrl,
+      enableEmailFallback: true,
     };
 
     if (

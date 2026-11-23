@@ -20,6 +20,7 @@ import type {
   TeamAnnouncementRecord,
   TeamAttendanceRecord,
   TeamAttendanceStatus,
+  TeamCustomSubgroup,
   TeamMessageChannelScope,
   TeamMessageRecord,
   TeamMessagingPolicy,
@@ -514,6 +515,7 @@ export async function postTeamMessageApi(params: {
   teamId: string;
   channelScope: TeamMessageChannelScope;
   eventGroup?: CoachEventGroup;
+  customSubgroupId?: string;
   targetMembershipId?: string;
   body: string;
   guardianCc?: boolean;
@@ -522,6 +524,7 @@ export async function postTeamMessageApi(params: {
 }) {
   return requestLifecycleJson<{
     message?: TeamMessageRecord;
+    emailFallbackCount?: number;
     team?: TeamSummaryWithRole;
     teams?: TeamSummaryWithRole[];
   }>(`/api/teams/${encodeURIComponent(params.teamId)}/messages`, {
@@ -529,6 +532,7 @@ export async function postTeamMessageApi(params: {
     body: JSON.stringify({
       channelScope: params.channelScope,
       eventGroup: params.eventGroup,
+      customSubgroupId: params.customSubgroupId,
       targetMembershipId: params.targetMembershipId,
       body: params.body,
       guardianCc: params.guardianCc,
@@ -571,6 +575,8 @@ export async function flagTeamMessageApi(params: {
 export async function updateTeamMessagingPolicyApi(params: {
   teamId: string;
   athleteRepliesEnabled?: boolean;
+  parentRepliesEnabled?: boolean;
+  enablePushEmailFallback?: boolean;
   quietHoursStartHour?: number;
   quietHoursEndHour?: number;
 }) {
@@ -581,8 +587,64 @@ export async function updateTeamMessagingPolicyApi(params: {
     method: 'PATCH',
     body: JSON.stringify({
       athleteRepliesEnabled: params.athleteRepliesEnabled,
+      parentRepliesEnabled: params.parentRepliesEnabled,
+      enablePushEmailFallback: params.enablePushEmailFallback,
       quietHoursStartHour: params.quietHoursStartHour,
       quietHoursEndHour: params.quietHoursEndHour,
     }),
   });
+}
+
+export async function upsertTeamCustomSubgroupApi(params: {
+  teamId: string;
+  subgroupId?: string;
+  name: string;
+  description?: string;
+  memberIds: string[];
+  includeLinkedParents?: boolean;
+}) {
+  return requestLifecycleJson<{
+    subgroup?: TeamCustomSubgroup;
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(`/api/teams/${encodeURIComponent(params.teamId)}/subgroups`, {
+    method: 'POST',
+    body: JSON.stringify({
+      subgroupId: params.subgroupId,
+      name: params.name,
+      description: params.description,
+      memberIds: params.memberIds,
+      includeLinkedParents: params.includeLinkedParents,
+    }),
+  });
+}
+
+export async function deleteTeamCustomSubgroupApi(params: {
+  teamId: string;
+  subgroupId: string;
+}) {
+  return requestLifecycleJson<{
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(
+    `/api/teams/${encodeURIComponent(params.teamId)}/subgroups/${encodeURIComponent(params.subgroupId)}`,
+    { method: 'DELETE' }
+  );
+}
+
+export async function updateTeamMemberPhotoReleaseApi(params: {
+  teamId: string;
+  membershipId: string;
+  photoReleaseOptOut: boolean;
+}) {
+  return requestLifecycleJson<{
+    team?: TeamSummaryWithRole;
+    teams?: TeamSummaryWithRole[];
+  }>(
+    `/api/teams/${encodeURIComponent(params.teamId)}/members/${encodeURIComponent(params.membershipId)}/photo-release`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ photoReleaseOptOut: params.photoReleaseOptOut }),
+    }
+  );
 }

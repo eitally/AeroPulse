@@ -34,6 +34,7 @@ import type {
   TeamBillingSummary,
   TeamBrandConfig,
   TeamBroadcastWorkout,
+  TeamCustomSubgroup,
   TeamExternalSyncConfig,
   TeamInjuryCaseRecord,
   TeamMemberRole,
@@ -117,6 +118,7 @@ export interface StoredTeamDocument {
   billing?: TeamBillingSummary;
   teamMessages?: TeamMessageRecord[];
   messagingPolicy?: TeamMessagingPolicy;
+  customSubgroups?: TeamCustomSubgroup[];
   coachAttribution?: CoachLandingAttribution;
   anonymousLinkOpens?: number;
   calendarFeedTokenHash?: string;
@@ -712,6 +714,9 @@ export function projectTeamSummaryForCaller(
       ...(m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {}),
       ...(m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {}),
       ...(m.genderDivision ? { genderDivision: m.genderDivision } : {}),
+      ...((isStaffViewer || isSelf || isLinkedChild) && typeof m.photoReleaseOptOut === 'boolean'
+        ? { photoReleaseOptOut: m.photoReleaseOptOut }
+        : {}),
       status: m.status,
       emailDeliveryStatus: isCoach || isSelf ? m.emailDeliveryStatus : undefined,
       invitedAt: m.invitedAt,
@@ -808,9 +813,34 @@ export function projectTeamSummaryForCaller(
       ? doc.fieldMarkLogs || []
       : (doc.fieldMarkLogs || []).filter((f) => f.membershipId === myMembership.membershipId);
 
+  const subgroupById = new Map<string, TeamCustomSubgroup>(
+    (doc.customSubgroups || []).map((sg) => [sg.id, sg])
+  );
+
+  const visibleCustomSubgroups = (doc.customSubgroups || []).filter((sg) => {
+    if (isStaffViewer) return true;
+    if (sg.memberIds.includes(myMembership.membershipId)) return true;
+    if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+      return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
+    }
+    return false;
+  });
+
   const visibleTeamMessages: TeamMessageRecord[] = (doc.teamMessages || []).filter((msg) => {
     if (isStaffViewer) return true;
     if (msg.channelScope === 'COACHES_STAFF') return false;
+    if (msg.channelScope === 'PARENTS_ONLY') {
+      return isParentFollower;
+    }
+    if (msg.channelScope === 'CUSTOM_SUBGROUP') {
+      const sg = msg.customSubgroupId ? subgroupById.get(msg.customSubgroupId) : undefined;
+      if (!sg) return false;
+      if (sg.memberIds.includes(myMembership.membershipId)) return true;
+      if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+        return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
+      }
+      return false;
+    }
     if (msg.channelScope === 'ALL_TEAM') {
       if (isParentFollower) {
         return canViewSafeguardingMedicalRole(msg.senderRole);
@@ -843,6 +873,8 @@ export function projectTeamSummaryForCaller(
 
   const resolvedMessagingPolicy: TeamMessagingPolicy = {
     athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    parentRepliesEnabled: doc.messagingPolicy?.parentRepliesEnabled ?? true,
+    enablePushEmailFallback: doc.messagingPolicy?.enablePushEmailFallback ?? true,
     quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
     quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
     requireGuardianCcForMinors: Boolean(
@@ -998,6 +1030,7 @@ export function projectTeamSummaryForCaller(
       : {}),
     teamMessages: visibleTeamMessages,
     messagingPolicy: resolvedMessagingPolicy,
+    ...(visibleCustomSubgroups.length > 0 ? { customSubgroups: visibleCustomSubgroups } : {}),
   };
 }
 

@@ -2088,6 +2088,7 @@ export interface TeamSummaryWithRole {
   billing?: TeamBillingSummary;
   teamMessages?: TeamMessageRecord[];
   messagingPolicy?: TeamMessagingPolicy;
+  customSubgroups?: TeamCustomSubgroup[];
 }
 
 export interface TeamInvitePreviewPayload {
@@ -2268,8 +2269,21 @@ export interface TeamAnnouncementRecord {
 export type TeamMessageChannelScope =
   | 'ALL_TEAM'
   | 'EVENT_GROUP'
+  | 'PARENTS_ONLY'
+  | 'CUSTOM_SUBGROUP'
   | 'COACHES_STAFF'
   | 'DIRECT_TRANSPARENT';
+
+export interface TeamCustomSubgroup {
+  id: string;
+  name: string;
+  description?: string;
+  memberIds: string[];
+  includeLinkedParents?: boolean;
+  createdByMembershipId: string;
+  createdByName: string;
+  createdAt: string;
+}
 
 export interface TeamMessageRecord {
   id: string;
@@ -2277,6 +2291,8 @@ export interface TeamMessageRecord {
   channelId: string;
   channelScope: TeamMessageChannelScope;
   eventGroup?: CoachEventGroup;
+  customSubgroupId?: string;
+  customSubgroupName?: string;
   targetMembershipId?: string;
   targetAthleteName?: string;
   senderSid: string;
@@ -2287,6 +2303,7 @@ export interface TeamMessageRecord {
   createdAt: string;
   guardianCcApplied: boolean;
   guardianEmailNotified?: boolean;
+  emailFallbackCount?: number;
   secondAdultVisible: boolean;
   sentDuringQuietHours?: boolean;
   isEmergencyOverride?: boolean;
@@ -2297,6 +2314,8 @@ export interface TeamMessageRecord {
 
 export interface TeamMessagingPolicy {
   athleteRepliesEnabled: boolean;
+  parentRepliesEnabled?: boolean;
+  enablePushEmailFallback?: boolean;
   quietHoursStartHour: number;
   quietHoursEndHour: number;
   requireGuardianCcForMinors: boolean;

@@ -10572,6 +10572,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       ...m.externalAthleteId ? { externalAthleteId: m.externalAthleteId } : {},
       ...m.externalProfileUrl ? { externalProfileUrl: m.externalProfileUrl } : {},
       ...m.genderDivision ? { genderDivision: m.genderDivision } : {},
+      ...(isStaffViewer || isSelf || isLinkedChild) && typeof m.photoReleaseOptOut === "boolean" ? { photoReleaseOptOut: m.photoReleaseOptOut } : {},
       status: m.status,
       emailDeliveryStatus: isCoach || isSelf ? m.emailDeliveryStatus : void 0,
       invitedAt: m.invitedAt,
@@ -10648,9 +10649,32 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     return Boolean(myMembership.eventGroup) && ann.targetEventGroups.includes(myMembership.eventGroup);
   });
   const visibleFieldMarks = isParentFollower ? [] : isStaffViewer ? doc.fieldMarkLogs || [] : (doc.fieldMarkLogs || []).filter((f) => f.membershipId === myMembership.membershipId);
+  const subgroupById = new Map(
+    (doc.customSubgroups || []).map((sg) => [sg.id, sg])
+  );
+  const visibleCustomSubgroups = (doc.customSubgroups || []).filter((sg) => {
+    if (isStaffViewer) return true;
+    if (sg.memberIds.includes(myMembership.membershipId)) return true;
+    if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+      return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
+    }
+    return false;
+  });
   const visibleTeamMessages = (doc.teamMessages || []).filter((msg) => {
     if (isStaffViewer) return true;
     if (msg.channelScope === "COACHES_STAFF") return false;
+    if (msg.channelScope === "PARENTS_ONLY") {
+      return isParentFollower;
+    }
+    if (msg.channelScope === "CUSTOM_SUBGROUP") {
+      const sg = msg.customSubgroupId ? subgroupById.get(msg.customSubgroupId) : void 0;
+      if (!sg) return false;
+      if (sg.memberIds.includes(myMembership.membershipId)) return true;
+      if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+        return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
+      }
+      return false;
+    }
     if (msg.channelScope === "ALL_TEAM") {
       if (isParentFollower) {
         return canViewSafeguardingMedicalRole(msg.senderRole);
@@ -10678,6 +10702,8 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   });
   const resolvedMessagingPolicy = {
     athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    parentRepliesEnabled: doc.messagingPolicy?.parentRepliesEnabled ?? true,
+    enablePushEmailFallback: doc.messagingPolicy?.enablePushEmailFallback ?? true,
     quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
     quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
     requireGuardianCcForMinors: Boolean(
@@ -10771,7 +10797,8 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       };
     })() : {},
     teamMessages: visibleTeamMessages,
-    messagingPolicy: resolvedMessagingPolicy
+    messagingPolicy: resolvedMessagingPolicy,
+    ...visibleCustomSubgroups.length > 0 ? { customSubgroups: visibleCustomSubgroups } : {}
   };
 }
 async function loadTeamDocsForCaller(callerSid) {
@@ -11268,6 +11295,7 @@ import { generateVAPIDKeys, sendNotification } from "web-push";
 var VAPID_VAULT_KEY = "thresh_vapid_keys_v1";
 var cachedVapidKeys = null;
 var testSenderOverride = null;
+var testEmailFallbackSenderOverride = null;
 function pushSubsVaultKey(userSid) {
   return `push_subs_${sanitizeTenantId(userSid)}`;
 }
@@ -11393,6 +11421,33 @@ function resolvePushRecipientSidsForTeamEvent(params) {
       }
       return Array.from(sids);
     }
+    if (params.channelScope === "PARENTS_ONLY") {
+      for (const m of activeMembers) {
+        if (canViewSafeguardingMedicalRole(m.role) || m.role === "PARENT_FOLLOWER") {
+          sids.add(m.userSid);
+        }
+      }
+      return Array.from(sids);
+    }
+    if (params.channelScope === "CUSTOM_SUBGROUP") {
+      const sg = (params.doc.customSubgroups || []).find(
+        (g) => g.id === params.customSubgroupId
+      );
+      if (!sg) return [];
+      const memberSet = new Set(sg.memberIds || []);
+      for (const m of activeMembers) {
+        if (canViewSafeguardingMedicalRole(m.role) || memberSet.has(m.membershipId)) {
+          sids.add(m.userSid);
+        } else if (m.role === "PARENT_FOLLOWER" && sg.includeLinkedParents !== false && m.invitedEmail) {
+          const parentEmail = m.invitedEmail.trim().toLowerCase();
+          const hasChild = params.doc.memberships.some(
+            (child) => memberSet.has(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === parentEmail
+          );
+          if (hasChild) sids.add(m.userSid);
+        }
+      }
+      return Array.from(sids);
+    }
     if (params.channelScope === "ALL_TEAM") {
       for (const m of activeMembers) {
         sids.add(m.userSid);
@@ -11451,7 +11506,9 @@ function buildSafePushPayload(params) {
   };
 }
 async function dispatchPushPayloadToUsers(params) {
-  if (params.recipientSids.length === 0) return { deliveredCount: 0, prunedCount: 0 };
+  if (params.recipientSids.length === 0) {
+    return { deliveredCount: 0, prunedCount: 0, deliveredSids: [], undeliveredSids: [] };
+  }
   const keys = await getOrInitVapidKeys();
   const sender = testSenderOverride || (async (sub, payloadJson2) => {
     const res = await sendNotification(sub, payloadJson2, {
@@ -11467,15 +11524,25 @@ async function dispatchPushPayloadToUsers(params) {
   const payloadJson = JSON.stringify(params.payload);
   let deliveredCount = 0;
   let prunedCount = 0;
+  const deliveredSids = [];
+  const undeliveredSids = [];
   for (const sid of params.recipientSids) {
     const subs = await listUserPushSubscriptions(sid);
+    if (subs.length === 0) {
+      undeliveredSids.push(sid);
+      continue;
+    }
+    let sidDelivered = false;
+    let skippedDueToQuietHours = false;
     for (const sub of subs) {
       if (params.isQuietHours && !params.payload.isEmergency && sub.muteQuietHours !== false) {
+        skippedDueToQuietHours = true;
         continue;
       }
       try {
         await sender({ endpoint: sub.endpoint, keys: sub.keys }, payloadJson);
         deliveredCount += 1;
+        sidDelivered = true;
       } catch (err) {
         const statusCode = typeof err === "object" && err !== null && "statusCode" in err ? Number(err.statusCode) : 0;
         if (statusCode === 404 || statusCode === 410) {
@@ -11484,12 +11551,17 @@ async function dispatchPushPayloadToUsers(params) {
         }
       }
     }
+    if (sidDelivered) {
+      deliveredSids.push(sid);
+    } else if (!skippedDueToQuietHours) {
+      undeliveredSids.push(sid);
+    }
   }
-  return { deliveredCount, prunedCount };
+  return { deliveredCount, prunedCount, deliveredSids, undeliveredSids };
 }
 async function dispatchTeamPushNotifications(params) {
   const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { deliveredCount: 0, prunedCount: 0 };
+  if (!doc) return { deliveredCount: 0, prunedCount: 0, emailFallbackCount: 0 };
   const targetMem = params.targetMembershipId ? doc.memberships.find((m) => m.membershipId === params.targetMembershipId) : void 0;
   const isMinorTarget = Boolean(
     targetMem?.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield
@@ -11506,6 +11578,7 @@ async function dispatchTeamPushNotifications(params) {
     kind: params.kind,
     channelScope: params.channelScope,
     eventGroup: params.eventGroup,
+    customSubgroupId: params.customSubgroupId,
     targetMembershipId: params.targetMembershipId
   });
   const payload = buildSafePushPayload({
@@ -11519,11 +11592,93 @@ async function dispatchTeamPushNotifications(params) {
     isMinorTarget,
     isEmergency: params.isEmergency
   });
-  return dispatchPushPayloadToUsers({
+  const pushRes = await dispatchPushPayloadToUsers({
     recipientSids,
     payload,
     isQuietHours: quietHours
   });
+  let emailFallbackCount = 0;
+  const emailFallbackEnabled = policy?.enablePushEmailFallback !== false && params.enableEmailFallback !== false && (!quietHours || Boolean(params.isEmergency)) && Boolean(testEmailFallbackSenderOverride || isResendConfigured());
+  if (emailFallbackEnabled) {
+    const undeliveredSet = new Set(pushRes.undeliveredSids);
+    const deliveredSet = new Set(pushRes.deliveredSids);
+    const senderMem = doc.memberships.find((m) => m.userSid === params.senderSid);
+    const excludedEmails = new Set(
+      [
+        senderMem?.invitedEmail,
+        ...params.excludeFallbackEmails || []
+      ].filter((e) => typeof e === "string" && e.includes("@")).map((e) => e.trim().toLowerCase())
+    );
+    const candidateEmails = /* @__PURE__ */ new Set();
+    const subgroup = params.channelScope === "CUSTOM_SUBGROUP" && params.customSubgroupId ? (doc.customSubgroups || []).find((g) => g.id === params.customSubgroupId) : void 0;
+    const subgroupMembers = new Set(subgroup?.memberIds || []);
+    for (const m of doc.memberships) {
+      if (m.status === "REVOKED" || m.status === "ALUMNI") continue;
+      if (m.userSid && m.userSid === params.senderSid) continue;
+      const hadUndeliveredSid = Boolean(m.userSid && undeliveredSet.has(m.userSid));
+      const hadDeliveredSid = Boolean(m.userSid && deliveredSet.has(m.userSid));
+      if (hadDeliveredSid) continue;
+      const parentEmailLower = m.invitedEmail?.trim().toLowerCase();
+      const hasLinkedChildInSubgroup = Boolean(parentEmailLower) && doc.memberships.some(
+        (child) => subgroupMembers.has(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === parentEmailLower
+      );
+      const unlinkedParentInParentsScope = !m.userSid && m.role === "PARENT_FOLLOWER" && (params.channelScope === "PARENTS_ONLY" || params.kind === "ANNOUNCEMENT" || params.channelScope === "CUSTOM_SUBGROUP" && Boolean(subgroup) && (subgroupMembers.has(m.membershipId) || subgroup.includeLinkedParents !== false && hasLinkedChildInSubgroup));
+      const guardianAlreadyDeliveredByPush = Boolean(m.parentGuardianEmail) && doc.memberships.some(
+        (p) => p.role === "PARENT_FOLLOWER" && Boolean(p.userSid && deliveredSet.has(p.userSid)) && p.invitedEmail?.trim().toLowerCase() === m.parentGuardianEmail?.trim().toLowerCase()
+      );
+      const includeGuardianForChild = !guardianAlreadyDeliveredByPush && Boolean(m.parentGuardianEmail) && (params.channelScope === "PARENTS_ONLY" || params.kind === "ANNOUNCEMENT" || params.channelScope === "CUSTOM_SUBGROUP" && subgroup?.includeLinkedParents !== false && subgroupMembers.has(m.membershipId));
+      if (hadUndeliveredSid || unlinkedParentInParentsScope) {
+        const email = m.invitedEmail?.trim().toLowerCase();
+        if (email && email.includes("@") && !excludedEmails.has(email)) {
+          candidateEmails.add(email);
+        }
+      }
+      if (includeGuardianForChild && m.parentGuardianEmail) {
+        const guardianEmail = m.parentGuardianEmail.trim().toLowerCase();
+        if (guardianEmail.includes("@") && !excludedEmails.has(guardianEmail)) {
+          candidateEmails.add(guardianEmail);
+        }
+      }
+    }
+    const emailSender = testEmailFallbackSenderOverride || (async (emailReq) => {
+      const res = await withBoundedTimeout(sendEmailViaResend(emailReq), 8e3, "push-email-fallback");
+      return { delivered: res.delivered };
+    });
+    const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
+    const deepLink = `${cleanOrigin}${payload.url.startsWith("/") ? payload.url : `/${payload.url}`}`;
+    const safeTitle = escapeHtml(payload.title);
+    const safeBody = escapeHtml(payload.body);
+    const safeLink = escapeHtml(deepLink);
+    const html = `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:520px;line-height:1.5;color:#141413"><h2 style="margin:0 0 8px">${safeTitle}</h2><p style="margin:0 0 16px">${safeBody}</p><p><a href="${safeLink}" style="display:inline-block;padding:10px 16px;background:#0F172A;color:#D6FF2A;text-decoration:none;border-radius:8px;font-weight:700">Open in MeetReady</a></p><p style="font-size:12px;color:#555">Automatic email fallback delivered because push notifications are not active on your device.</p></div>`;
+    const text = `${payload.title}
+
+${payload.body}
+
+Open in MeetReady: ${deepLink}`;
+    const cappedRecipients = Array.from(candidateEmails).slice(0, 50);
+    if (cappedRecipients.length > 0) {
+      const results = await Promise.allSettled(
+        cappedRecipients.map(
+          (to) => emailSender({
+            to,
+            subject: payload.title,
+            html,
+            text
+          })
+        )
+      );
+      for (const item of results) {
+        if (item.status === "fulfilled" && item.value.delivered) {
+          emailFallbackCount += 1;
+        }
+      }
+    }
+  }
+  return {
+    deliveredCount: pushRes.deliveredCount,
+    prunedCount: pushRes.prunedCount,
+    emailFallbackCount
+  };
 }
 
 // server/athleticSyncService.ts
@@ -13555,6 +13710,54 @@ async function updateTeamMemberEventGroup(params) {
     doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
     await saveTeamDocRaw(params.teamId, doc);
     return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+  });
+}
+async function updateTeamMemberPhotoRelease(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTenantVaultAsync(
+      teamDocVaultKey(params.teamId),
+      null
+    );
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: "Team membership required." };
+    }
+    const targetMem = doc.memberships.find(
+      (m) => m.membershipId === params.membershipId && m.status !== "REVOKED"
+    );
+    if (!targetMem) {
+      return { ok: false, status: 404, error: "Roster member not found." };
+    }
+    const isStaff = canProgramWorkoutsRole(callerMem.role) || callerMem.role === "ORG_ADMIN";
+    const isSelf = callerMem.membershipId === targetMem.membershipId;
+    const isLinkedGuardian = callerMem.role === "PARENT_FOLLOWER" && Boolean(callerMem.invitedEmail && targetMem.parentGuardianEmail) && callerMem.invitedEmail.trim().toLowerCase() === targetMem.parentGuardianEmail.trim().toLowerCase();
+    if (!isStaff && !isSelf && !isLinkedGuardian) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only coaching staff, the athlete, or a linked guardian may update FERPA photo release status."
+      };
+    }
+    targetMem.photoReleaseOptOut = Boolean(params.photoReleaseOptOut);
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "MEMBER_PHOTO_RELEASE_UPDATED",
+      targetId: targetMem.membershipId,
+      metadata: {
+        athleteName: targetMem.invitedName,
+        photoReleaseOptOut: targetMem.photoReleaseOptOut
+      }
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
   });
 }
 async function broadcastWorkoutToTeamSquad(params) {
@@ -16733,7 +16936,9 @@ async function postTeamAnnouncement(params) {
       announcementCategory: category,
       eventGroup: targetGroups && targetGroups.length === 1 ? targetGroups[0] : void 0,
       bodyText: `${cleanTitle} \u2014 ${cleanBody}`,
-      isEmergency: category === "WEATHER"
+      isEmergency: category === "WEATHER",
+      originUrl: params.originUrl,
+      enableEmailFallback: true
     };
     if (params.publishToParentHub === true && announcement.publishToParentHub && doc.brand.externalSync?.enablePublicParentHub) {
       pendingParentEmailPayload = {
@@ -17221,6 +17426,8 @@ function escapeHtml3(raw) {
 function defaultPolicyForDoc(doc) {
   return {
     athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    parentRepliesEnabled: doc.messagingPolicy?.parentRepliesEnabled ?? true,
+    enablePushEmailFallback: doc.messagingPolicy?.enablePushEmailFallback ?? true,
     quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
     quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
     requireGuardianCcForMinors: Boolean(
@@ -17239,6 +17446,8 @@ function isWithinQuietHours2(hour, startHour, endHour) {
 var ALLOWED_CHANNEL_SCOPES = /* @__PURE__ */ new Set([
   "ALL_TEAM",
   "EVENT_GROUP",
+  "PARENTS_ONLY",
+  "CUSTOM_SUBGROUP",
   "DIRECT_TRANSPARENT",
   "COACHES_STAFF"
 ]);
@@ -17273,11 +17482,25 @@ async function postTeamMessage(params) {
         error: "Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff."
       };
     }
+    if (params.channelScope === "PARENTS_ONLY" && callerMem.role === "ATHLETE") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Athletes cannot post to or view the Parents Only channel."
+      };
+    }
+    if (params.channelScope === "PARENTS_ONLY" && isParentFollower && policy.parentRepliesEnabled === false) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Parent replies in Parents Only are currently set to coach-announcements-only."
+      };
+    }
     if (isParentFollower && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP" || params.channelScope === "COACHES_STAFF")) {
       return {
         ok: false,
         status: 403,
-        error: "Parents may view announcements or message coaching staff transparently regarding their linked athlete."
+        error: "Parents may use Parents Only, linked sub-groups, or transparent Direct threads with coaching staff."
       };
     }
     if (callerMem.role === "ATHLETE" && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP") && !policy.athleteRepliesEnabled) {
@@ -17289,12 +17512,60 @@ async function postTeamMessage(params) {
     }
     let channelId = "team:all";
     let resolvedEventGroup;
+    let customSubgroupId;
+    let customSubgroupName;
     let targetMembershipId;
     let targetAthleteName;
     let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
     if (params.channelScope === "COACHES_STAFF") {
       channelId = "staff:only";
       guardianCcApplied = false;
+    } else if (params.channelScope === "PARENTS_ONLY") {
+      channelId = "parents";
+      guardianCcApplied = true;
+    } else if (params.channelScope === "CUSTOM_SUBGROUP") {
+      const requestedId = String(params.customSubgroupId || "").trim();
+      const subgroup = (doc.customSubgroups || []).find((sg) => sg.id === requestedId);
+      if (!subgroup) {
+        return {
+          ok: false,
+          status: 404,
+          error: "Select a valid team sub-group."
+        };
+      }
+      const isDirectMember = subgroup.memberIds.includes(callerMem.membershipId);
+      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
+      const isLinkedParentMember = isParentFollower && subgroup.includeLinkedParents !== false && Boolean(callerParentEmail) && doc.memberships.some(
+        (child) => subgroup.memberIds.includes(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === callerParentEmail
+      );
+      if (!isStaff && !isDirectMember && !isLinkedParentMember) {
+        return {
+          ok: false,
+          status: 403,
+          error: "You are not assigned to this team sub-group."
+        };
+      }
+      if (callerMem.role === "ATHLETE" && !policy.athleteRepliesEnabled) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Athlete replies are currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
+        };
+      }
+      if (isParentFollower && policy.parentRepliesEnabled === false) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Parent replies are currently set to coach announcements only."
+        };
+      }
+      const hasMinorInSubgroup = doc.memberships.some(
+        (m) => subgroup.memberIds.includes(m.membershipId) && (m.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL")
+      );
+      channelId = `subgroup:${subgroup.id}`;
+      customSubgroupId = subgroup.id;
+      customSubgroupName = subgroup.name;
+      guardianCcApplied = Boolean(hasMinorInSubgroup || subgroup.includeLinkedParents !== false);
     } else if (params.channelScope === "EVENT_GROUP") {
       resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
       channelId = `group:${resolvedEventGroup}`;
@@ -17369,6 +17640,8 @@ async function postTeamMessage(params) {
       channelId,
       channelScope: params.channelScope,
       ...resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {},
+      ...customSubgroupId ? { customSubgroupId } : {},
+      ...customSubgroupName ? { customSubgroupName } : {},
       ...targetMembershipId ? { targetMembershipId } : {},
       ...targetAthleteName ? { targetAthleteName } : {},
       senderSid: params.callerSid,
@@ -17394,10 +17667,13 @@ async function postTeamMessage(params) {
       kind: "TEAM_MESSAGE",
       channelScope: params.channelScope,
       eventGroup: resolvedEventGroup,
+      customSubgroupId,
       targetMembershipId,
       bodyText: cleanBody,
       clientLocalHour: params.clientLocalHour,
-      isEmergency: effectiveEmergencyOverride
+      isEmergency: effectiveEmergencyOverride,
+      originUrl: params.originUrl,
+      ...pendingGuardianEmail ? { excludeFallbackEmails: [pendingGuardianEmail.to] } : {}
     };
     await appendAuditLogAsync({
       teamId: params.teamId,
@@ -17406,6 +17682,7 @@ async function postTeamMessage(params) {
       targetId: targetMembershipId || channelId,
       metadata: {
         channelScope: params.channelScope,
+        ...customSubgroupId ? { customSubgroupId } : {},
         guardianCcApplied,
         secondAdultVisible: true,
         sentDuringQuietHours: Boolean(record.sentDuringQuietHours),
@@ -17423,29 +17700,37 @@ async function postTeamMessage(params) {
   }
   const emailToSend = pendingGuardianEmail;
   const pushToSend = pendingPushPayload;
-  const [emailOutcome] = await Promise.allSettled([
+  const [emailOutcome, pushOutcome] = await Promise.allSettled([
     emailToSend ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "guardian-dm-email") : Promise.resolve(null),
     pushToSend ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "team-message-push") : Promise.resolve(null)
   ]);
   const emailDelivered = Boolean(emailToSend) && emailOutcome.status === "fulfilled" && emailOutcome.value !== null && emailOutcome.value.delivered === true;
-  if (emailDelivered) {
+  const pushEmailFallbackCount = pushOutcome.status === "fulfilled" && pushOutcome.value !== null ? pushOutcome.value.emailFallbackCount || 0 : 0;
+  if (emailDelivered || pushEmailFallbackCount > 0) {
     const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
       const freshDoc = await loadTeamDocRaw(params.teamId);
       if (!freshDoc) return null;
       const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
       if (targetMsg) {
-        targetMsg.guardianEmailNotified = true;
+        if (emailDelivered) targetMsg.guardianEmailNotified = true;
+        if (pushEmailFallbackCount > 0) targetMsg.emailFallbackCount = pushEmailFallbackCount;
         freshDoc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
         await saveTeamDocRaw(params.teamId, freshDoc);
       }
       return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
     });
-    lockedResult.message.guardianEmailNotified = true;
+    if (emailDelivered) lockedResult.message.guardianEmailNotified = true;
+    if (pushEmailFallbackCount > 0) {
+      lockedResult.message.emailFallbackCount = pushEmailFallbackCount;
+    }
     if (refreshedTeam) {
       lockedResult.team = refreshedTeam;
     }
   }
-  return lockedResult;
+  return {
+    ...lockedResult,
+    ...pushEmailFallbackCount > 0 ? { emailFallbackCount: pushEmailFallbackCount } : {}
+  };
 }
 async function acknowledgeTeamMessage(params) {
   return withTeamRowLock(params.teamId, async () => {
@@ -17516,6 +17801,8 @@ async function updateTeamMessagingPolicy(params) {
     const current = defaultPolicyForDoc(doc);
     doc.messagingPolicy = {
       athleteRepliesEnabled: typeof params.athleteRepliesEnabled === "boolean" ? params.athleteRepliesEnabled : current.athleteRepliesEnabled,
+      parentRepliesEnabled: typeof params.parentRepliesEnabled === "boolean" ? params.parentRepliesEnabled : current.parentRepliesEnabled ?? true,
+      enablePushEmailFallback: typeof params.enablePushEmailFallback === "boolean" ? params.enablePushEmailFallback : current.enablePushEmailFallback ?? true,
       quietHoursStartHour: typeof params.quietHoursStartHour === "number" && params.quietHoursStartHour >= 0 && params.quietHoursStartHour <= 23 ? Math.round(params.quietHoursStartHour) : current.quietHoursStartHour,
       quietHoursEndHour: typeof params.quietHoursEndHour === "number" && params.quietHoursEndHour >= 0 && params.quietHoursEndHour <= 23 ? Math.round(params.quietHoursEndHour) : current.quietHoursEndHour,
       requireGuardianCcForMinors: Boolean(
@@ -17530,6 +17817,110 @@ async function updateTeamMessagingPolicy(params) {
       action: "TEAM_MESSAGING_POLICY_UPDATED",
       targetId: params.teamId,
       metadata: doc.messagingPolicy
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function upsertTeamCustomSubgroup(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coaching or Athletic Admin permissions are required to manage team sub-groups."
+      };
+    }
+    const cleanName = String(params.name || "").trim().slice(0, 48);
+    if (cleanName.length < 2) {
+      return { ok: false, status: 400, error: "Sub-group name must be at least 2 characters." };
+    }
+    const activeMemberSet = new Set(
+      doc.memberships.filter((m) => m.status !== "REVOKED" && m.status !== "ALUMNI").map((m) => m.membershipId)
+    );
+    const validMemberIds = Array.from(
+      new Set(
+        (Array.isArray(params.memberIds) ? params.memberIds : []).map((id) => String(id || "").trim()).filter((id) => activeMemberSet.has(id))
+      )
+    );
+    const existingList = doc.customSubgroups || [];
+    const targetId = params.subgroupId ? String(params.subgroupId).trim() : "";
+    const existingIdx = targetId ? existingList.findIndex((g) => g.id === targetId) : -1;
+    if (existingIdx < 0 && existingList.length >= 20) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Maximum of 20 custom sub-groups per team reached."
+      };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const cleanDesc = params.description ? String(params.description).trim().slice(0, 140) : void 0;
+    const saved = {
+      id: existingIdx >= 0 ? existingList[existingIdx].id : `sgrp_${crypto16.randomBytes(5).toString("hex")}`,
+      name: cleanName,
+      ...cleanDesc ? { description: cleanDesc } : {},
+      memberIds: validMemberIds,
+      includeLinkedParents: params.includeLinkedParents !== false,
+      createdByMembershipId: existingIdx >= 0 ? existingList[existingIdx].createdByMembershipId : callerMem.membershipId,
+      createdByName: existingIdx >= 0 ? existingList[existingIdx].createdByName : callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
+      createdAt: existingIdx >= 0 ? existingList[existingIdx].createdAt : nowIso
+    };
+    const nextList = existingIdx >= 0 ? existingList.map((g, i) => i === existingIdx ? saved : g) : [saved, ...existingList];
+    doc.customSubgroups = nextList;
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "CUSTOM_SUBGROUP_SAVED",
+      targetId: saved.id,
+      metadata: {
+        name: saved.name,
+        memberCount: saved.memberIds.length,
+        includeLinkedParents: saved.includeLinkedParents
+      }
+    });
+    return {
+      ok: true,
+      subgroup: saved,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function deleteTeamCustomSubgroup(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coaching or Athletic Admin permissions are required to delete sub-groups."
+      };
+    }
+    const beforeCount = (doc.customSubgroups || []).length;
+    doc.customSubgroups = (doc.customSubgroups || []).filter((g) => g.id !== params.subgroupId);
+    if (doc.customSubgroups.length === beforeCount) {
+      return { ok: false, status: 404, error: "Sub-group not found." };
+    }
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "CUSTOM_SUBGROUP_DELETED",
+      targetId: params.subgroupId,
+      metadata: {}
     });
     return {
       ok: true,
@@ -19748,6 +20139,37 @@ teamRouter.patch("/api/teams/:teamId/members/:membershipId/event-group", async (
     });
   }
 });
+teamRouter.patch("/api/teams/:teamId/members/:membershipId/photo-release", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await updateTeamMemberPhotoRelease({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      membershipId: String(req.params.membershipId || ""),
+      photoReleaseOptOut: req.body?.photoReleaseOptOut === true,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to update photo release setting."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to update photo release setting."
+    });
+  }
+});
 teamRouter.post("/api/teams/:teamId/stopwatch-activities", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -20956,6 +21378,7 @@ teamRouter.post("/api/teams/:teamId/messages", async (req, res) => {
       teamId: String(req.params.teamId || ""),
       channelScope: scope,
       eventGroup: typeof body.eventGroup === "string" ? body.eventGroup : void 0,
+      customSubgroupId: typeof body.customSubgroupId === "string" ? body.customSubgroupId : void 0,
       targetMembershipId: typeof body.targetMembershipId === "string" ? body.targetMembershipId : void 0,
       body: String(body.body || ""),
       privateDirectToMinor: body.privateDirectToMinor === true,
@@ -20972,7 +21395,13 @@ teamRouter.post("/api/teams/:teamId/messages", async (req, res) => {
       return;
     }
     const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, message: result.message, team: result.team, teams });
+    res.json({
+      ok: true,
+      message: result.message,
+      team: result.team,
+      teams,
+      ...typeof result.emailFallbackCount === "number" ? { emailFallbackCount: result.emailFallbackCount } : {}
+    });
   } catch (err) {
     res.status(400).json({
       ok: false,
@@ -21055,6 +21484,8 @@ teamRouter.patch("/api/teams/:teamId/messaging-policy", async (req, res) => {
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ""),
       athleteRepliesEnabled: typeof body.athleteRepliesEnabled === "boolean" ? body.athleteRepliesEnabled : void 0,
+      parentRepliesEnabled: typeof body.parentRepliesEnabled === "boolean" ? body.parentRepliesEnabled : void 0,
+      enablePushEmailFallback: typeof body.enablePushEmailFallback === "boolean" ? body.enablePushEmailFallback : void 0,
       quietHoursStartHour: typeof body.quietHoursStartHour === "number" ? body.quietHoursStartHour : void 0,
       quietHoursEndHour: typeof body.quietHoursEndHour === "number" ? body.quietHoursEndHour : void 0,
       originUrl
@@ -21072,6 +21503,71 @@ teamRouter.patch("/api/teams/:teamId/messaging-policy", async (req, res) => {
     res.status(400).json({
       ok: false,
       error: err instanceof Error ? err.message : "Failed updating messaging policy."
+    });
+  }
+});
+teamRouter.post("/api/teams/:teamId/subgroups", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const body = req.body || {};
+    const result = await upsertTeamCustomSubgroup({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      subgroupId: typeof body.subgroupId === "string" ? body.subgroupId : void 0,
+      name: String(body.name || ""),
+      description: typeof body.description === "string" ? body.description : void 0,
+      memberIds: Array.isArray(body.memberIds) ? body.memberIds.map((v) => String(v)) : [],
+      includeLinkedParents: typeof body.includeLinkedParents === "boolean" ? body.includeLinkedParents : true,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to save sub-group."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, subgroup: result.subgroup, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed saving sub-group."
+    });
+  }
+});
+teamRouter.delete("/api/teams/:teamId/subgroups/:subgroupId", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveRequestOrigin(req);
+    const result = await deleteTeamCustomSubgroup({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      subgroupId: String(req.params.subgroupId || ""),
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.status || 403).json({
+        ok: false,
+        error: result.error || "Unable to delete sub-group."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: result.team, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed deleting sub-group."
     });
   }
 });
@@ -33364,7 +33860,7 @@ apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
   const env = process.env;
-  const buildTimestamp = "2026-11-23T16:15:21Z" ? "2026-11-23T16:15:21Z" : SERVER_BOOT_ISO;
+  const buildTimestamp = "2026-11-23T16:52:52Z" ? "2026-11-23T16:52:52Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",
