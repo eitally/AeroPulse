@@ -23,9 +23,11 @@ import type {
   TeamAnnouncementRecord,
   TeamAthleteLiveSnapshot,
   TeamAttendanceRecord,
+  TeamBillingSummary,
   TeamBrandConfig,
   TeamBroadcastWorkout,
   TeamExternalSyncConfig,
+  TeamInjuryCaseRecord,
   TeamMemberRole,
   TeamMembershipRecord,
   TeamMessageRecord,
@@ -97,6 +99,8 @@ export interface StoredTeamDocument {
   fieldMarkLogs?: FieldEventLogRecord[];
   fieldMarkLogsTotalCount?: number;
   meetDayPackets?: MeetDayPacketRecord[];
+  injuryCases?: TeamInjuryCaseRecord[];
+  billing?: TeamBillingSummary;
   teamMessages?: TeamMessageRecord[];
   messagingPolicy?: TeamMessagingPolicy;
   coachAttribution?: CoachLandingAttribution;
@@ -367,7 +371,7 @@ export function projectTeamSummaryForCaller(
       const rawWatch = m.liveSnapshot.safeSportWatch;
       const projectedSafeSportWatch = !rawWatch
         ? undefined
-        : isSelf
+        : isSelf || myMembership.role === 'ATHLETIC_TRAINER'
           ? rawWatch
           : isCoach
             ? {
@@ -688,6 +692,40 @@ export function projectTeamSummaryForCaller(
       ? { fieldMarkLogsTotalCount: doc.fieldMarkLogsTotalCount }
       : {}),
     ...(isStaffViewer && !isParentFollower ? { meetDayPackets: doc.meetDayPackets || [] } : {}),
+    ...(Array.isArray(doc.injuryCases)
+      ? {
+          injuryCases: doc.injuryCases
+            .filter((c) => {
+              if (isStaffViewer) return true;
+              if (isParentFollower) {
+                return Boolean(
+                  linkedChildMembershipIds && linkedChildMembershipIds.has(c.membershipId)
+                );
+              }
+              return c.membershipId === myMembership.membershipId;
+            })
+            .map((c) => {
+              if (myMembership.role === 'ATHLETIC_TRAINER') return c;
+              const { privateClinicalNotes: _dropClinical, ...coachSafe } = c;
+              return coachSafe;
+            }),
+        }
+      : {}),
+    ...(canManageTeamGovernanceRole(myMembership.role) && doc.billing
+      ? (() => {
+          const {
+            stripeCustomerId: _stripeCust,
+            stripeSubscriptionId: _stripeSub,
+            ...safeBilling
+          } = doc.billing;
+          return {
+            billing: {
+              ...safeBilling,
+              stripeConfigured: Boolean(process.env.STRIPE_SECRET_KEY?.trim()),
+            },
+          };
+        })()
+      : {}),
     teamMessages: visibleTeamMessages,
     messagingPolicy: resolvedMessagingPolicy,
   };

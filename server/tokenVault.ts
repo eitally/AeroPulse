@@ -515,6 +515,14 @@ export interface CompactCookieVaultPayload {
   polarExpiresAt?: number;
   polarScope?: string;
   garminPersonalApiKey?: string;
+  garminOAuthAccessToken?: string;
+  garminOAuthRefreshToken?: string;
+  garminOAuthExpiresAt?: number;
+  corosAccessToken?: string;
+  corosRefreshToken?: string;
+  corosExpiresAt?: number;
+  corosAthleteId?: string;
+  corosAthleteName?: string;
 }
 
 /**

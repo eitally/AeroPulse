@@ -775,7 +775,7 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.setHeader(
       'Access-Control-Allow-Headers',
-      'Content-Type, Authorization, x-session-token, x-strava-client-id, x-strava-client-secret, x-strava-refresh-token, x-strava-access-token, x-strava-expires-at, x-strava-sync-window, x-strava-import-gear, x-intervals-api-key, x-intervals-athlete-id, x-intervals-access-token, x-wahoo-access-token, x-polar-access-token, x-garmin-personal-api-key, x-garmin-bearer-token, x-garmin-oauth1-token, x-garmin-oauth1-secret, x-map-tile-api-key, x-map-tile-provider, x-gemini-api-key'
+      'Content-Type, Authorization, x-session-token, x-strava-client-id, x-strava-client-secret, x-strava-refresh-token, x-strava-access-token, x-strava-expires-at, x-strava-sync-window, x-strava-import-gear, x-intervals-api-key, x-intervals-athlete-id, x-intervals-access-token, x-wahoo-access-token, x-polar-access-token, x-coros-access-token, x-garmin-personal-api-key, x-garmin-bearer-token, x-garmin-oauth1-token, x-garmin-oauth1-secret, x-map-tile-api-key, x-map-tile-provider, x-gemini-api-key'
     );
     res.setHeader('Vary', 'Origin');
   }

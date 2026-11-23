@@ -204,6 +204,7 @@ export type ActivitySourceBadge =
   | 'Strava'
   | 'Wahoo'
   | 'Polar'
+  | 'COROS'
   | 'Athletic.net'
   | 'TFRRS'
   | 'MileSplit'
@@ -254,6 +255,8 @@ export interface UnifiedActivity {
   stravaId?: string;
   wahooId?: string;
   polarId?: string;
+  corosId?: string;
+  garminId?: string;
   startDateLocal: string; // Local wall-clock ISO string YYYY-MM-DDTHH:mm:ss (no trailing Z)
   startDateUtcMs?: number; // Canonical UTC epoch ms for timezone- & DST-safe dedup/fusion
   name: string;
@@ -594,7 +597,7 @@ export interface ThreshPasskeySummary {
 }
 
 export interface ThreshConnectedService {
-  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar';
+  service: 'strava' | 'garmin' | 'intervals' | 'wahoo' | 'polar' | 'coros';
   connectedAt: string;
   status: 'CONNECTED' | 'DISCONNECTED';
   athleteId?: string;
@@ -621,11 +624,16 @@ export interface ConnectionStatus {
   mode: 'LIVE' | 'SANDBOX_CALIBRATION';
   vaultStorageBackend?: 'POSTGRES' | 'ENCRYPTED_FILE';
   currentUser?: ThreshUser | null;
+  garminConfigured?: boolean;
   garminConnected?: boolean;
+  garminAuthMethod?: 'OAUTH' | 'PERSONAL_KEY' | 'NONE';
+  garminCanPushWorkouts?: boolean;
   garminAthleteName?: string;
   intervalsConfigured?: boolean;
   intervalsConnected: boolean;
   intervalsAuthMethod?: 'OAUTH' | 'API_KEY' | 'NONE';
+  intervalsScope?: string;
+  intervalsCanWriteCalendar?: boolean;
   intervalsAthleteId: string;
   intervalsAthleteName?: string;
   intervalsSource: 'ENV' | 'USER_INPUT' | 'OAUTH' | 'NONE';
@@ -637,6 +645,10 @@ export interface ConnectionStatus {
   polarConnected?: boolean;
   polarAthleteId?: string;
   polarAthleteName?: string;
+  corosConfigured?: boolean;
+  corosConnected?: boolean;
+  corosAthleteId?: string;
+  corosAthleteName?: string;
   stravaConfigured?: boolean;
   stravaConnected: boolean;
   stravaClientId?: string;
@@ -1705,6 +1717,66 @@ export interface MeetDayPacketRecord {
   updatedByName?: string;
 }
 
+export type TeamInjuryRtpStage = 'OUT' | 'MODIFIED' | 'LIMITED' | 'CLEARED';
+
+export interface TeamInjuryCaseRecord {
+  id: string;
+  teamId: string;
+  membershipId: string;
+  athleteName: string;
+  bodyRegion: NonNullable<SessionCheckInRecord['painArea']>;
+  severity: 'LOW' | 'MODERATE' | 'HIGH';
+  rtpStage: TeamInjuryRtpStage;
+  restrictions: string;
+  coachGuidance: string;
+  privateClinicalNotes?: string;
+  targetReturnDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBySid?: string;
+  updatedByName?: string;
+}
+
+export type TeamBillingPlanCode =
+  | 'FREE_FOUNDING'
+  | 'HS_250'
+  | 'COLLEGIATE_1200'
+  | 'DISTRICT_2000';
+
+export type TeamBillingStatus =
+  | 'PILOT'
+  | 'PO_ISSUED'
+  | 'ACTIVE_PAID'
+  | 'RENEWAL_DUE'
+  | 'PAST_DUE';
+
+export interface SchoolPoInvoiceRecord {
+  invoiceNumber: string;
+  planCode: TeamBillingPlanCode;
+  amountUsd: number;
+  schoolOrDistrictName: string;
+  poNumber?: string;
+  billingContactEmail: string;
+  issuedAt: string;
+  dueDate: string;
+  status: 'ISSUED' | 'PAID' | 'VOID';
+  paidAt?: string;
+}
+
+export interface TeamBillingSummary {
+  planCode: TeamBillingPlanCode;
+  status: TeamBillingStatus;
+  stripeConfigured?: boolean;
+  billingCycleEndIso?: string;
+  poNumber?: string;
+  schoolOrDistrictName?: string;
+  billingContactEmail?: string;
+  poInvoices?: SchoolPoInvoiceRecord[];
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+  updatedAt?: string;
+}
+
 export interface TeamSummaryWithRole {
   brand: TeamBrandConfig;
   myRole: TeamMemberRole;
@@ -1728,6 +1800,8 @@ export interface TeamSummaryWithRole {
   fieldMarkLogs?: FieldEventLogRecord[];
   fieldMarkLogsTotalCount?: number;
   meetDayPackets?: MeetDayPacketRecord[];
+  injuryCases?: TeamInjuryCaseRecord[];
+  billing?: TeamBillingSummary;
   teamMessages?: TeamMessageRecord[];
   messagingPolicy?: TeamMessagingPolicy;
 }

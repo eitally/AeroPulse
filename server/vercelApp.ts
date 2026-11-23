@@ -11,6 +11,9 @@ app.use(
   express.json({
     limit: '2mb',
     reviver: strava64BitJsonReviver as (key: string, value: unknown) => unknown,
+    verify: (req, _res, buf) => {
+      (req as { rawBody?: Buffer }).rawBody = buf;
+    },
   })
 );
 app.use(apiRouter);
