@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import express, { type Request, type Response } from 'express';
 import {
+  escapeHtml,
   getVerifiedSessionClaims,
   isCanonicalAuthenticatedClaims,
   resolveTrustedRequestOrigin,
@@ -8,9 +9,13 @@ import {
 } from '../securityUtils.ts';
 import {
   applyExternalTeamSyncBatch,
+  buildPublicTeamCalendarIcs,
+  confirmParentEmailSubscription,
   followTeamAsParentOrFan,
   getPublicTeamHubBySlugOrCode,
+  subscribeParentEmailToPublicHub,
   syncTeamIcsCalendar,
+  unsubscribeParentEmailSubscription,
   updateTeamExternalSyncConfig,
 } from '../athleticSyncService.ts';
 import { getUserById } from '../authService.ts';
@@ -208,3 +213,158 @@ teamSyncRouter.post('/api/teams/follow', async (req: Request, res: Response) => 
     });
   }
 });
+
+teamSyncRouter.get(
+  '/api/teams/public/:slugOrCode/calendar.ics',
+  async (req: Request, res: Response) => {
+    try {
+      const payload = await getPublicTeamHubBySlugOrCode(
+        String(req.params.slugOrCode || '')
+      );
+      if (!payload.found || !payload.brand) {
+        res.status(404).type('text/plain').send('Public team schedule not found.');
+        return;
+      }
+
+      const icsBody = buildPublicTeamCalendarIcs(payload);
+      const safeSlug = payload.brand.slug.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48) || 'team';
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', `inline; filename="${safeSlug}-schedule.ics"`);
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.status(200).send(icsBody);
+    } catch {
+      res.status(500).type('text/plain').send('Unable to generate calendar feed.');
+    }
+  }
+);
+
+teamSyncRouter.post(
+  '/api/teams/public/:slugOrCode/subscribe',
+  async (req: Request, res: Response) => {
+    try {
+      const originUrl = resolveSyncOrigin(req);
+      const result = await subscribeParentEmailToPublicHub({
+        slugOrCode: String(req.params.slugOrCode || ''),
+        email: String(req.body?.email || ''),
+        originUrl,
+      });
+      if (!result.ok) {
+        res.status(result.statusCode || 400).json({
+          ok: false,
+          error: result.error || 'Could not subscribe email.',
+        });
+        return;
+      }
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: err instanceof Error ? err.message : 'Subscription failed.',
+      });
+    }
+  }
+);
+
+function renderParentHubSubscriptionHtml(params: {
+  ok: boolean;
+  title: string;
+  heading: string;
+  body: string;
+  slug?: string;
+}): string {
+  const safeHubHref = params.slug ? `/team/${encodeURIComponent(params.slug)}` : '/';
+  const accent = params.ok ? '#1E4D36' : '#B83A24';
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(
+    params.title
+  )}</title></head><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;color:#121413;padding:40px 16px;margin:0;"><div style="max-width:500px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:28px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:${accent};">MeetReady Parent Hub</div><h1 style="margin:8px 0 10px;font-size:20px;">${escapeHtml(
+    params.heading
+  )}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 20px;">${escapeHtml(
+    params.body
+  )}</p><a href="${safeHubHref}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Back to Team Hub</a></div></body></html>`;
+}
+
+teamSyncRouter.get(
+  '/api/teams/public/:slugOrCode/subscribe/confirm',
+  async (req: Request, res: Response) => {
+    try {
+      const result = await confirmParentEmailSubscription({
+        slugOrCode: String(req.params.slugOrCode || ''),
+        token: String(req.query?.token || ''),
+      });
+      const wantsJson =
+        String(req.headers.accept || '').includes('application/json') &&
+        !String(req.headers.accept || '').includes('text/html');
+      if (wantsJson) {
+        res.status(result.statusCode || (result.ok ? 200 : 400)).json(result);
+        return;
+      }
+      if (!result.ok) {
+        res.status(result.statusCode || 400).send(
+          renderParentHubSubscriptionHtml({
+            ok: false,
+            title: 'Subscription Link Error · MeetReady',
+            heading: 'Could Not Confirm Subscription',
+            body: result.error || 'This confirmation link is invalid or already used.',
+          })
+        );
+        return;
+      }
+      res.status(200).send(
+        renderParentHubSubscriptionHtml({
+          ok: true,
+          title: 'Subscription Confirmed · MeetReady',
+          heading: 'Parent Hub Updates Confirmed',
+          body: `You are subscribed to public schedule alerts, weather changes, and meet notices for ${
+            result.teamName || 'this team'
+          }.`,
+          slug: result.slug,
+        })
+      );
+    } catch {
+      res.status(500).send('Unable to confirm subscription.');
+    }
+  }
+);
+
+teamSyncRouter.get(
+  '/api/teams/public/:slugOrCode/unsubscribe',
+  async (req: Request, res: Response) => {
+    try {
+      const result = await unsubscribeParentEmailSubscription({
+        slugOrCode: String(req.params.slugOrCode || ''),
+        token: String(req.query?.token || ''),
+      });
+      const wantsJson =
+        String(req.headers.accept || '').includes('application/json') &&
+        !String(req.headers.accept || '').includes('text/html');
+      if (wantsJson) {
+        res.status(result.statusCode || (result.ok ? 200 : 400)).json(result);
+        return;
+      }
+      if (!result.ok) {
+        res.status(result.statusCode || 400).send(
+          renderParentHubSubscriptionHtml({
+            ok: false,
+            title: 'Unsubscribe Link Error · MeetReady',
+            heading: 'Unsubscribe Link Not Recognized',
+            body: result.error || 'This unsubscribe link could not be verified.',
+          })
+        );
+        return;
+      }
+      res.status(200).send(
+        renderParentHubSubscriptionHtml({
+          ok: true,
+          title: 'Unsubscribed · MeetReady',
+          heading: 'Email Updates Turned Off',
+          body: `Your email has been unsubscribed from ${
+            result.teamName || 'this team'
+          } Parent Hub notifications.`,
+          slug: result.slug,
+        })
+      );
+    } catch {
+      res.status(500).send('Unable to unsubscribe.');
+    }
+  }
+);

@@ -146,6 +146,7 @@ export const ShareWorkoutPage: React.FC<ShareWorkoutPageProps> = ({
         ftpWatts,
         thresholdPaceSecsPerKm,
         unit,
+        shareUrl,
       });
       setStatusNotice(
         ok

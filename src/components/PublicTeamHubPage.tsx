@@ -4,7 +4,10 @@ import {
   Award,
   Bell,
   Calendar,
+  Check,
   CheckCircle2,
+  Copy,
+  Download,
   ExternalLink,
   MapPin,
   Moon,
@@ -76,6 +79,14 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
   const [selectedFieldFilter, setSelectedFieldFilter] = useState<FieldHubFilter>('ALL');
   const [followNotice, setFollowNotice] = useState<string | null>(null);
   const [isFollowing, setIsFollowing] = useState<boolean>(false);
+  const [showCalendarSubscribe, setShowCalendarSubscribe] = useState<boolean>(false);
+  const [copiedFeedUrl, setCopiedFeedUrl] = useState<boolean>(false);
+  const [subscribeEmail, setSubscribeEmail] = useState<string>('');
+  const [subscribingEmail, setSubscribingEmail] = useState<boolean>(false);
+  const [subscribeNotice, setSubscribeNotice] = useState<{
+    tone: 'ok' | 'error';
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     if (initialPayloadForTest) {
@@ -276,6 +287,136 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
     payload?.brand?.externalSync?.athleticNetUrl ||
     payload?.brand?.externalSync?.tfrrsTeamUrl;
 
+  const calendarFeedUrls = useMemo(() => {
+    const slug = payload?.brand?.slug || slugOrCode;
+    const encodedSlug = encodeURIComponent(slug);
+    const origin =
+      typeof window !== 'undefined' ? window.location.origin : 'https://meetready.app';
+    const host =
+      typeof window !== 'undefined' ? window.location.host : 'meetready.app';
+    const httpFeedUrl = `${origin}/api/teams/public/${encodedSlug}/calendar.ics`;
+    const webcalFeedUrl = `webcal://${host}/api/teams/public/${encodedSlug}/calendar.ics`;
+    const googleCalendarUrl = `https://calendar.google.com/calendar/render?cid=${encodeURIComponent(
+      webcalFeedUrl
+    )}`;
+    return { httpFeedUrl, webcalFeedUrl, googleCalendarUrl };
+  }, [payload?.brand?.slug, slugOrCode]);
+
+  const handleCopyFeedUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(calendarFeedUrls.httpFeedUrl);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = calendarFeedUrls.httpFeedUrl;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    setCopiedFeedUrl(true);
+    window.setTimeout(() => setCopiedFeedUrl(false), 2200);
+  };
+
+  const handleDownloadFallbackIcs = () => {
+    if (!payload?.brand) return;
+    const allMeets = [...payload.upcomingMeets, ...payload.recentSchedule];
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//MeetReady//Parent Hub Calendar//EN',
+      `X-WR-CALNAME:${payload.brand.name.replace(/[,;\n]/g, ' ')} Meet Schedule`,
+    ];
+    for (const meet of allMeets) {
+      const ymd = meet.date.replace(/-/g, '');
+      const safeTitle = `${payload.brand.shortName || 'Team'} · ${meet.name}`.replace(
+        /[,;\n]/g,
+        ' '
+      );
+      const safeLoc = (meet.locationName || '').replace(/[,;\n]/g, ' ');
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:${meet.id}@meetready.app`,
+        `DTSTART;VALUE=DATE:${ymd}`,
+        `SUMMARY:${safeTitle}`,
+        ...(safeLoc ? [`LOCATION:${safeLoc}`] : []),
+        'END:VEVENT'
+      );
+    }
+    lines.push('END:VCALENDAR');
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(payload.brand.slug || 'team').toLowerCase()}-meets.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handleSubscribeParentEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!payload?.brand) return;
+    const cleanEmail = subscribeEmail.trim();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(cleanEmail)) {
+      setSubscribeNotice({ tone: 'error', text: 'Enter a valid email address.' });
+      return;
+    }
+
+    const isDemoQuery =
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('demo') === '1';
+    if (isDemoQuery) {
+      setSubscribeNotice({
+        tone: 'ok',
+        text: `Demo preview: ${cleanEmail} would receive a confirmation link for ${payload.brand.shortName} meet & weather updates.`,
+      });
+      setSubscribeEmail('');
+      return;
+    }
+
+    setSubscribingEmail(true);
+    setSubscribeNotice(null);
+    try {
+      const resp = await fetch(
+        `/api/teams/public/${encodeURIComponent(payload.brand.slug)}/subscribe`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail }),
+        }
+      );
+      const data = (await resp.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+      };
+      if (!resp.ok || data.ok === false) {
+        setSubscribeNotice({
+          tone: 'error',
+          text: data.error || 'Could not save subscription right now.',
+        });
+        return;
+      }
+      setSubscribeNotice({
+        tone: 'ok',
+        text:
+          data.message ||
+          `Subscription recorded for ${cleanEmail}. Check your inbox to confirm updates.`,
+      });
+      setSubscribeEmail('');
+    } catch {
+      setSubscribeNotice({
+        tone: 'error',
+        text: 'Network error subscribing. Try Calendar Subscribe (.ics) above.',
+      });
+    } finally {
+      setSubscribingEmail(false);
+    }
+  };
+
   return (
     <div
       data-testid="public-team-hub-page"
@@ -461,8 +602,9 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
             )}
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
-              {/* Left Column: Meet Schedule */}
-              <section className="lg:col-span-5 ap-card p-4 sm:p-5 space-y-3">
+              {/* Left Column: Meet Schedule, Live Calendar Subscribe & Parent Email Updates */}
+              <div className="lg:col-span-5 space-y-4">
+              <section className="ap-card p-4 sm:p-5 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Calendar className="w-4 h-4 text-ap-cobalt dark:text-ap-volt" />
@@ -471,49 +613,74 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                     </h2>
                   </div>
                   <div className="flex items-center gap-2">
-                    {payload.upcomingMeets.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const lines = [
-                            'BEGIN:VCALENDAR',
-                            'VERSION:2.0',
-                            'PRODID:-//MeetReady//Team Meet Schedule//EN',
-                          ];
-                          for (const meet of payload.upcomingMeets) {
-                            const ymd = meet.date.replace(/-/g, '');
-                            const safeTitle = `${payload.brand?.shortName || 'Team'} · ${meet.name}`.replace(/[,;\n]/g, ' ');
-                            const safeLoc = (meet.locationName || '').replace(/[,;\n]/g, ' ');
-                            lines.push(
-                              'BEGIN:VEVENT',
-                              `UID:${meet.id}@meetready.app`,
-                              `DTSTART;VALUE=DATE:${ymd}`,
-                              `SUMMARY:${safeTitle}`,
-                              ...(safeLoc ? [`LOCATION:${safeLoc}`] : []),
-                              'END:VEVENT'
-                            );
-                          }
-                          lines.push('END:VCALENDAR');
-                          const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' });
-                          const url = URL.createObjectURL(blob);
-                          const a = document.createElement('a');
-                          a.href = url;
-                          a.download = `${(payload.brand?.slug || 'team').toLowerCase()}-meets.ics`;
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                          window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-                        }}
-                        className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg ap-card-inset text-2xs font-mono font-bold text-ap-cobalt dark:text-ap-volt hover:underline inline-flex items-center cursor-pointer"
-                      >
-                        + Add to Calendar (.ics)
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      data-testid="public-hub-calendar-subscribe-btn"
+                      aria-expanded={showCalendarSubscribe}
+                      onClick={() => setShowCalendarSubscribe((prev) => !prev)}
+                      className="min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-lg ap-card-inset text-2xs font-mono font-bold text-ap-cobalt dark:text-ap-volt hover:underline inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Calendar Subscribe</span>
+                    </button>
                     <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
                       {payload.upcomingMeets.length} upcoming
                     </span>
                   </div>
                 </div>
+
+                {showCalendarSubscribe && (
+                  <div
+                    data-testid="public-hub-calendar-subscribe-panel"
+                    className="rounded-xl ap-card-inset p-3 space-y-2.5 text-xs"
+                  >
+                    <div className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                      Live RFC 5545 schedule feed (auto-refreshes every 6h · public meets only):
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      <a
+                        href={calendarFeedUrls.webcalFeedUrl}
+                        data-testid="public-hub-webcal-link"
+                        className="min-h-[44px] sm:min-h-[36px] px-3 rounded-lg ap-btn-primary text-2xs font-bold inline-flex items-center justify-center gap-1.5"
+                      >
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span>Apple / Outlook (webcal)</span>
+                      </a>
+                      <a
+                        href={calendarFeedUrls.googleCalendarUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="public-hub-gcal-link"
+                        className="min-h-[44px] sm:min-h-[36px] px-3 rounded-lg ap-btn-secondary text-2xs font-semibold inline-flex items-center justify-center gap-1.5"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                        <span>Google Calendar</span>
+                      </a>
+                      <button
+                        type="button"
+                        data-testid="public-hub-copy-ics-url-btn"
+                        onClick={() => void handleCopyFeedUrl()}
+                        className="min-h-[44px] sm:min-h-[36px] px-3 rounded-lg ap-btn-secondary text-2xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        {copiedFeedUrl ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                        <span>{copiedFeedUrl ? 'Feed URL Copied' : 'Copy Feed URL'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="public-hub-download-ics-btn"
+                        onClick={handleDownloadFallbackIcs}
+                        className="min-h-[44px] sm:min-h-[36px] px-3 rounded-lg ap-btn-secondary text-2xs font-semibold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download .ics File</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {payload.upcomingMeets.length === 0 && payload.recentSchedule.length === 0 ? (
                   <p className="text-xs text-ap-muted dark:text-ap-muted-dark">
@@ -558,6 +725,57 @@ export const PublicTeamHubPage: React.FC<PublicTeamHubPageProps> = ({
                   </div>
                 )}
               </section>
+
+              {/* Compact Parent Email Updates Card */}
+              <section
+                data-testid="public-hub-email-subscribe-card"
+                className="ap-card p-4 sm:p-5 space-y-2.5"
+              >
+                <div className="flex items-center gap-2">
+                  <Bell className="w-4 h-4 text-ap-clay dark:text-ap-volt shrink-0" />
+                  <h2 className="text-sm font-bold">Parent Email Updates</h2>
+                </div>
+                <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-relaxed">
+                  Get weather changes, meet bus updates &amp; official results. Zero minor PII · 1-click unsubscribe anytime.
+                </p>
+                <form
+                  onSubmit={(e) => void handleSubscribeParentEmail(e)}
+                  className="flex flex-col sm:flex-row gap-2"
+                >
+                  <input
+                    type="email"
+                    required
+                    aria-label="Parent or supporter email address"
+                    data-testid="public-hub-subscribe-email-input"
+                    value={subscribeEmail}
+                    onChange={(e) => setSubscribeEmail(e.target.value)}
+                    placeholder="parent@family.com"
+                    className="flex-1 min-h-[44px] rounded-xl border border-ap-frame/25 dark:border-ap-edge bg-white dark:bg-ap-carbon px-3 text-xs text-ap-ink dark:text-ap-chalk"
+                  />
+                  <button
+                    type="submit"
+                    disabled={subscribingEmail}
+                    data-testid="public-hub-subscribe-btn"
+                    className="ap-btn-primary !min-h-[44px] px-4 py-2 text-xs font-bold cursor-pointer disabled:opacity-55 shrink-0"
+                  >
+                    {subscribingEmail ? 'Saving…' : 'Get Updates'}
+                  </button>
+                </form>
+                {subscribeNotice && (
+                  <div
+                    role="status"
+                    data-testid="public-hub-subscribe-status"
+                    className={`rounded-xl px-3 py-2 text-2xs font-semibold ${
+                      subscribeNotice.tone === 'ok'
+                        ? 'ap-status-prime'
+                        : 'ap-status-strained'
+                    }`}
+                  >
+                    {subscribeNotice.text}
+                  </div>
+                )}
+              </section>
+              </div>
 
               {/* Right Column: Roster & Official Results */}
               <section className="lg:col-span-7 ap-card p-4 sm:p-5 space-y-3">

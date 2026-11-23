@@ -65,6 +65,7 @@ const CoachingStaffPanel = lazyWithRetry(
     })),
   { chunkKey: 'CoachingStaffPanel', restoreTab: 'coach' }
 );
+const TeamBillingAndPoModal = lazyWithRetry(() => import('./coach/TeamBillingAndPoModal').then((m) => ({ default: m.TeamBillingAndPoModal })), { chunkKey: 'TeamBillingAndPoModal', restoreTab: 'coach' });
 
 interface TeamManagementPanelProps {
   selfName: string;
@@ -222,6 +223,7 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
   const [busyRosterMemberId, setBusyRosterMemberId] = useState<string | null>(null);
   const [isGraduatingClass, setIsGraduatingClass] = useState(false);
   const [showAuditLog, setShowAuditLog] = useState(false);
+  const [showBillingModal, setShowBillingModal] = useState(false);
   const [auditEntries, setAuditEntries] = useState<TeamAuditLogEntry[]>([]);
   const [isLoadingAuditLog, setIsLoadingAuditLog] = useState(false);
   const [auditLogError, setAuditLogError] = useState<string | null>(null);
@@ -1581,6 +1583,17 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
                         Edit Team
                       </button>
 
+                      {(activeTeam.myRole === 'HEAD_COACH' || activeTeam.myRole === 'ORG_ADMIN') && (
+                        <button
+                          type="button"
+                          data-testid="panel-open-billing-btn"
+                          onClick={() => setShowBillingModal(true)}
+                          className="min-h-[44px] sm:min-h-[34px] px-3 py-1.5 rounded-lg bg-stone-200/70 dark:bg-slate-800 hover:bg-stone-300/70 text-xs font-semibold cursor-pointer"
+                        >
+                          School PO &amp; Billing
+                        </button>
+                      )}
+
                       {onOpenClipboard && (
                         <button
                           type="button"
@@ -2433,6 +2446,12 @@ export const TeamManagementPanel: React.FC<TeamManagementPanelProps> = ({
             );
           })()}
         </div>
+      )}
+
+      {showBillingModal && activeTeam && (
+        <Suspense fallback={null}>
+          <TeamBillingAndPoModal isOpen={showBillingModal} onClose={() => setShowBillingModal(false)} activeTeam={activeTeam} myTeams={myTeams} isSampleDemoMode={isSampleDemoMode} onTeamsUpdated={onTeamsUpdated} />
+        </Suspense>
       )}
     </div>
   );

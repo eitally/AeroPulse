@@ -35,6 +35,7 @@ import {
   withBoundedTimeout,
 } from './teamEmailAndOtpService.ts';
 import { dispatchTeamPushNotifications } from './pushNotificationService.ts';
+import { dispatchParentHubAnnouncementEmails } from './athleticSyncService.ts';
 import { escapeHtml } from './securityUtils.ts';
 import {
   appendAuditLogAsync,
@@ -180,6 +181,8 @@ export async function postTeamAnnouncement(params: {
     : 'GENERAL';
 
   let pendingPushPayload: Parameters<typeof dispatchTeamPushNotifications>[0] | null = null;
+  let pendingParentEmailPayload: Parameters<typeof dispatchParentHubAnnouncementEmails>[0] | null =
+    null;
 
   const lockedResult = await withTeamRowLock(params.teamId, async () => {
     const doc = await loadTeamDocRaw(params.teamId);
@@ -221,6 +224,22 @@ export async function postTeamAnnouncement(params: {
       isEmergency: category === 'WEATHER',
     };
 
+    if (
+      params.publishToParentHub === true &&
+      announcement.publishToParentHub &&
+      doc.brand.externalSync?.enablePublicParentHub
+    ) {
+      pendingParentEmailPayload = {
+        teamId: params.teamId,
+        teamName: doc.brand.name,
+        teamSlug: doc.brand.slug,
+        category: announcement.category,
+        title: announcement.title,
+        body: announcement.body,
+        originUrl: params.originUrl,
+      };
+    }
+
     await appendAuditLogAsync({
       teamId: params.teamId,
       actorSid: params.callerSid,
@@ -239,11 +258,29 @@ export async function postTeamAnnouncement(params: {
     };
   });
 
-  if (lockedResult.ok && pendingPushPayload) {
-    const pushToSend = pendingPushPayload as Parameters<typeof dispatchTeamPushNotifications>[0];
-    await Promise.allSettled([
-      withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8000, 'announcement-push'),
-    ]);
+  if (lockedResult.ok) {
+    const fanoutTasks: Array<Promise<unknown>> = [];
+    if (pendingPushPayload) {
+      const pushToSend = pendingPushPayload as Parameters<typeof dispatchTeamPushNotifications>[0];
+      fanoutTasks.push(
+        withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8000, 'announcement-push')
+      );
+    }
+    if (pendingParentEmailPayload) {
+      const emailPayload = pendingParentEmailPayload as Parameters<
+        typeof dispatchParentHubAnnouncementEmails
+      >[0];
+      fanoutTasks.push(
+        withBoundedTimeout(
+          dispatchParentHubAnnouncementEmails(emailPayload),
+          8000,
+          'parent-hub-email-fanout'
+        )
+      );
+    }
+    if (fanoutTasks.length > 0) {
+      await Promise.allSettled(fanoutTasks);
+    }
   }
 
   return lockedResult;

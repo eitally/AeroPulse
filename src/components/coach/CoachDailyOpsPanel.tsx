@@ -397,16 +397,17 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                           </span>
                         )}
                       </div>
-                      <div className="flex gap-1 font-mono text-2xs">
-                        {(['PRESENT', 'LATE', 'ABSENT', 'EXCUSED'] as const).map((code) => {
+                      <div className="flex flex-wrap gap-1 font-mono text-2xs">
+                        {(['PRESENT', 'LATE', 'ABSENT', 'EXCUSED', 'INJURED_MODIFIED'] as const).map((code) => {
                           const active = status === code;
-                          const short = code[0];
+                          const short = code === 'INJURED_MODIFIED' ? 'MOD' : code[0];
                           return (
                             <button
                               key={code}
                               type="button"
                               aria-label={`${m.invitedName} ${code}`}
                               aria-pressed={active}
+                              title={code === 'INJURED_MODIFIED' ? 'Injured / Modified Practice' : code}
                               onClick={() =>
                                 setAttendanceMap((prev) => ({ ...prev, [m.membershipId]: code }))
                               }
@@ -416,7 +417,9 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                                     ? 'bg-rose-600 text-white'
                                     : code === 'LATE'
                                       ? 'bg-amber-500 text-ap-obsidian'
-                                      : 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
+                                      : code === 'INJURED_MODIFIED'
+                                        ? 'bg-ap-clay text-white'
+                                        : 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
                                   : 'ap-card-inset text-ap-muted dark:text-ap-muted-dark'
                               }`}
                             >

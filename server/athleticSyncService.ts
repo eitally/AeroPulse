@@ -1,5 +1,10 @@
 import crypto from 'crypto';
-import { isSafeHttpsUrl } from './securityUtils.ts';
+import {
+  assertSafeExternalFetch,
+  escapeHtml,
+  isSafeHttpsUrl,
+  timingSafeStringEqual,
+} from './securityUtils.ts';
 import type {
   CoachEventGroup,
   ExternalTeamPlatform,
@@ -36,20 +41,28 @@ import {
   formatPublicSafeSportDisplayName,
 } from '../src/physiology/fieldEventsEngine.ts';
 import { getLocalDateIso } from '../src/physiology/stravaLoadCalibration.ts';
+import { formatPracticeTime12h } from '../src/utils/workoutScheduleUtils.ts';
 import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import {
   applyParsedExternalFieldMarksToDoc,
   type MatchedExternalFieldMarkInput,
 } from './athleticFieldSyncHelper.ts';
-import { assertSafeExternalFetch } from './securityUtils.ts';
 import {
   loadFullTeamFieldMarksArchive,
   teamFieldLogsVaultKey,
 } from './teamFieldAndDailyOpsService.ts';
-import { saveTenantVaultAsync, withTeamRowLock } from './tokenVault.ts';
+import { isResendConfigured, sendEmailViaResend } from './teamEmailAndOtpService.ts';
+import {
+  loadTenantVaultAsync,
+  sanitizeTenantId,
+  saveTenantVaultAsync,
+  withTeamRowLock,
+  withVaultLock,
+} from './tokenVault.ts';
 import {
   addTeamToUserIndex,
   findTeamDocumentByCodeOrSlug,
+  hashToken,
   loadTeamDocRaw,
   projectSafePublicExternalSync,
   projectTeamSummaryForCaller,
@@ -772,3 +785,431 @@ export async function followTeamAsParentOrFan(params: {
     };
   });
 }
+
+// ============================================================================
+// Parent Hub Live RFC 5545 .ics Feed & Zero-PII Email Subscriptions
+// ============================================================================
+
+function escapeIcsText(raw?: string): string {
+  return String(raw || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\r?\n/g, '\\n')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .trim();
+}
+
+function foldIcsLine(line: string): string {
+  if (line.length <= 75) return line;
+  const chunks: string[] = [line.slice(0, 75)];
+  let idx = 75;
+  while (idx < line.length) {
+    chunks.push(` ${line.slice(idx, idx + 74)}`);
+    idx += 74;
+  }
+  return chunks.join('\r\n');
+}
+
+function formatIcsUtcTimestamp(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
+function nextIcsDateYmd(isoDate: string): string {
+  const parsed = new Date(`${isoDate.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoDate.slice(0, 10).replace(/-/g, '');
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+/**
+ * Generates a strict zero-PII RFC 5545 iCalendar feed for the Public Parent Hub.
+ */
+export function buildPublicTeamCalendarIcs(payload: PublicTeamHubPayload): string {
+  const teamName = payload.brand?.name || 'MeetReady Team';
+  const shortName = payload.brand?.shortName || teamName;
+  const dtStamp = formatIcsUtcTimestamp(new Date());
+  const seenIds = new Set<string>();
+  const combinedMeets = [...(payload.upcomingMeets || []), ...(payload.recentSchedule || [])]
+    .filter((m) => {
+      if (!m?.id || !/^\d{4}-\d{2}-\d{2}$/.test(m.date || '')) return false;
+      if (seenIds.has(m.id)) return false;
+      seenIds.add(m.id);
+      return true;
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const lines: string[] = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//MeetReady//Parent Hub Live Calendar//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    `X-WR-CALNAME:${escapeIcsText(`${teamName} Meet Schedule`)}`,
+    'REFRESH-INTERVAL;VALUE=DURATION:PT6H',
+    'X-PUBLISHED-TTL:PT6H',
+  ];
+
+  for (const meet of combinedMeets) {
+    const startYmd = meet.date.replace(/-/g, '');
+    const endYmd = nextIcsDateYmd(meet.date);
+    const uidSafe = String(meet.id).replace(/[^a-zA-Z0-9._-]/g, '-').slice(0, 80);
+    const descParts = [
+      meet.scheduledTime ? `Scheduled time: ${formatPracticeTime12h(meet.scheduledTime)}` : '',
+      meet.description || '',
+      payload.brand?.slug ? `Public Team Hub: https://meetready.app/team/${payload.brand.slug}` : '',
+    ].filter(Boolean);
+
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:meetready-${uidSafe}@meetready.app`,
+      `DTSTAMP:${dtStamp}`,
+      `DTSTART;VALUE=DATE:${startYmd}`,
+      `DTEND;VALUE=DATE:${endYmd}`,
+      `SUMMARY:${escapeIcsText(`${shortName} · ${meet.name}`)}`,
+      ...(meet.locationName ? [`LOCATION:${escapeIcsText(meet.locationName)}`] : []),
+      ...(descParts.length > 0 ? [`DESCRIPTION:${escapeIcsText(descParts.join(' · '))}`] : []),
+      'END:VEVENT'
+    );
+  }
+
+  lines.push('END:VCALENDAR');
+  return `${lines.map(foldIcsLine).join('\r\n')}\r\n`;
+}
+
+export interface ParentHubEmailSubscriptionRecord {
+  id: string;
+  teamId: string;
+  email: string;
+  status: 'PENDING' | 'CONFIRMED' | 'UNSUBSCRIBED';
+  confirmTokenHash?: string;
+  unsubscribeTokenHashes: string[];
+  createdAt: string;
+  confirmedAt?: string;
+  unsubscribedAt?: string;
+}
+
+export function parentEmailSubsVaultKey(teamId: string): string {
+  return `team_parent_email_subs_${sanitizeTenantId(teamId).slice(0, 40)}`;
+}
+
+const VALID_PARENT_EMAIL_RE = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i;
+
+export async function subscribeParentEmailToPublicHub(params: {
+  slugOrCode: string;
+  email: string;
+  originUrl: string;
+}): Promise<{
+  ok: boolean;
+  statusCode?: number;
+  status?: 'PENDING_CONFIRMATION' | 'PENDING_UNCONFIGURED_EMAIL' | 'ALREADY_CONFIRMED';
+  emailConfigured: boolean;
+  emailSent: boolean;
+  message?: string;
+  error?: string;
+}> {
+  const cleanEmail = String(params.email || '').trim().toLowerCase().slice(0, 160);
+  if (!cleanEmail || !VALID_PARENT_EMAIL_RE.test(cleanEmail)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      emailConfigured: isResendConfigured(),
+      emailSent: false,
+      error: 'Please enter a valid email address.',
+    };
+  }
+
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (!doc || !doc.brand.externalSync?.enablePublicParentHub) {
+    return {
+      ok: false,
+      statusCode: 404,
+      emailConfigured: isResendConfigured(),
+      emailSent: false,
+      error: 'Team Hub not found or public parent updates are disabled.',
+    };
+  }
+
+  const rawConfirmToken = crypto.randomBytes(24).toString('base64url');
+  const rawUnsubToken = crypto.randomBytes(24).toString('base64url');
+  const confirmHash = hashToken(rawConfirmToken);
+  const unsubHash = hashToken(rawUnsubToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+
+  const lockOutcome = await withVaultLock(vaultKey, async () => {
+    const existingList = await loadTenantVaultAsync<ParentHubEmailSubscriptionRecord[]>(
+      vaultKey,
+      []
+    );
+    const existing = existingList.find((r) => r.email === cleanEmail);
+    const nowIso = new Date().toISOString();
+
+    if (existing && existing.status === 'CONFIRMED') {
+      return { alreadyConfirmed: true as const };
+    }
+
+    const updatedRecord: ParentHubEmailSubscriptionRecord = {
+      id: existing?.id || `psub_${crypto.randomBytes(6).toString('hex')}`,
+      teamId: doc.brand.teamId,
+      email: cleanEmail,
+      status: 'PENDING',
+      confirmTokenHash: confirmHash,
+      unsubscribeTokenHashes: [unsubHash, ...(existing?.unsubscribeTokenHashes || [])].slice(0, 6),
+      createdAt: existing?.createdAt || nowIso,
+    };
+
+    const nextList = [
+      updatedRecord,
+      ...existingList.filter((r) => r.email !== cleanEmail),
+    ].slice(0, 500);
+    await saveTenantVaultAsync(vaultKey, nextList);
+    return { alreadyConfirmed: false as const };
+  });
+
+  if (lockOutcome.alreadyConfirmed) {
+    return {
+      ok: true,
+      statusCode: 200,
+      status: 'ALREADY_CONFIRMED',
+      emailConfigured: isResendConfigured(),
+      emailSent: false,
+      message: `${cleanEmail} is already confirmed for ${doc.brand.shortName} schedule updates.`,
+    };
+  }
+
+  const resendConfigured = isResendConfigured();
+  if (!resendConfigured) {
+    return {
+      ok: true,
+      statusCode: 200,
+      status: 'PENDING_UNCONFIGURED_EMAIL',
+      emailConfigured: false,
+      emailSent: false,
+      message:
+        'Subscription saved. Email dispatch is not configured on this server yet — use Calendar Subscribe (.ics / Webcal) above for instant schedule updates.',
+    };
+  }
+
+  const cleanOrigin = params.originUrl.replace(/\/+$/, '');
+  const slugEnc = encodeURIComponent(doc.brand.slug);
+  const confirmUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/subscribe/confirm?token=${encodeURIComponent(
+    rawConfirmToken
+  )}`;
+  const unsubscribeUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
+    rawUnsubToken
+  )}`;
+  const safeTeamName = escapeHtml(doc.brand.name);
+  const safeConfirm = escapeHtml(confirmUrl);
+  const safeUnsub = escapeHtml(unsubscribeUrl);
+
+  const sendRes = await sendEmailViaResend({
+    to: cleanEmail,
+    subject: `Confirm Parent Hub Updates for ${doc.brand.name} on MeetReady`,
+    html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">MeetReady Safe-Sport Parent Hub</div><h1 style="font-size:20px;margin:8px 0 12px;">Confirm Schedule &amp; Weather Updates</h1><p style="font-size:14px;line-height:1.5;color:#2C2A26;">Tap below to receive public meet schedule shifts, weather alerts, and official competition summaries for <strong>${safeTeamName}</strong>. Zero private athlete biometrics or student emails are ever included.</p><div style="margin:22px 0;text-align:center;"><a href="${safeConfirm}" style="display:inline-block;background:#B83A24;color:#FFFFFF;text-decoration:none;font-weight:700;font-size:14px;padding:12px 24px;border-radius:10px;">Confirm Email Updates</a></div><p style="font-size:12px;color:#57544D;">Didn&apos;t request this? <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe immediately</a>.</p></div></body></html>`,
+    text: [
+      `Confirm MeetReady Parent Hub updates for ${doc.brand.name}:`,
+      confirmUrl,
+      ``,
+      `Strict Zero-PII Policy: Public meet schedules, weather notices & official team summaries only.`,
+      `Unsubscribe: ${unsubscribeUrl}`,
+    ].join('\n'),
+  });
+
+  return {
+    ok: true,
+    statusCode: 200,
+    status: 'PENDING_CONFIRMATION',
+    emailConfigured: true,
+    emailSent: sendRes.delivered,
+    message: sendRes.delivered
+      ? `Confirmation link sent to ${cleanEmail}. Check your inbox to activate updates.`
+      : `Subscription saved, but email delivery failed (${sendRes.error || 'retry shortly'}).`,
+  };
+}
+
+export async function confirmParentEmailSubscription(params: {
+  slugOrCode: string;
+  token: string;
+}): Promise<{
+  ok: boolean;
+  statusCode?: number;
+  teamName?: string;
+  slug?: string;
+  alreadyConfirmed?: boolean;
+  error?: string;
+}> {
+  const cleanToken = String(params.token || '').trim();
+  if (!cleanToken) {
+    return { ok: false, statusCode: 400, error: 'Missing confirmation token.' };
+  }
+
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (!doc || !doc.brand.externalSync?.enablePublicParentHub) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error: 'Team Hub not found or public parent access is disabled.',
+    };
+  }
+
+  const targetHash = hashToken(cleanToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+
+  return withVaultLock(vaultKey, async () => {
+    const records = await loadTenantVaultAsync<ParentHubEmailSubscriptionRecord[]>(
+      vaultKey,
+      []
+    );
+    const match = records.find(
+      (r) => r.confirmTokenHash && timingSafeStringEqual(r.confirmTokenHash, targetHash)
+    );
+    if (!match) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: 'Invalid or already-used confirmation token.',
+      };
+    }
+
+    const alreadyConfirmed = match.status === 'CONFIRMED';
+    match.status = 'CONFIRMED';
+    match.confirmedAt = match.confirmedAt || new Date().toISOString();
+    delete match.confirmTokenHash;
+
+    await saveTenantVaultAsync(vaultKey, records);
+    return {
+      ok: true,
+      statusCode: 200,
+      teamName: doc.brand.name,
+      slug: doc.brand.slug,
+      alreadyConfirmed,
+    };
+  });
+}
+
+export async function unsubscribeParentEmailSubscription(params: {
+  slugOrCode: string;
+  token: string;
+}): Promise<{
+  ok: boolean;
+  statusCode?: number;
+  teamName?: string;
+  slug?: string;
+  error?: string;
+}> {
+  const cleanToken = String(params.token || '').trim();
+  if (!cleanToken) {
+    return { ok: false, statusCode: 400, error: 'Missing unsubscribe token.' };
+  }
+
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (!doc) {
+    return { ok: false, statusCode: 404, error: 'Team Hub not found.' };
+  }
+
+  const targetHash = hashToken(cleanToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+
+  return withVaultLock(vaultKey, async () => {
+    const records = await loadTenantVaultAsync<ParentHubEmailSubscriptionRecord[]>(
+      vaultKey,
+      []
+    );
+    const match = records.find((r) =>
+      (r.unsubscribeTokenHashes || []).some((h) => timingSafeStringEqual(h, targetHash))
+    );
+    if (!match) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: 'Invalid or expired unsubscribe token.',
+      };
+    }
+
+    match.status = 'UNSUBSCRIBED';
+    match.unsubscribedAt = new Date().toISOString();
+    delete match.confirmTokenHash;
+    await saveTenantVaultAsync(vaultKey, records);
+
+    return {
+      ok: true,
+      statusCode: 200,
+      teamName: doc.brand.name,
+      slug: doc.brand.slug,
+    };
+  });
+}
+
+export async function dispatchParentHubAnnouncementEmails(params: {
+  teamId: string;
+  teamName: string;
+  teamSlug: string;
+  category: string;
+  title: string;
+  body: string;
+  originUrl: string;
+}): Promise<{ sentCount: number }> {
+  if (!isResendConfigured()) {
+    return { sentCount: 0 };
+  }
+
+  const vaultKey = parentEmailSubsVaultKey(params.teamId);
+  const dispatchTargets: Array<{ email: string; rawUnsubToken: string }> = [];
+
+  await withVaultLock(vaultKey, async () => {
+    const records = await loadTenantVaultAsync<ParentHubEmailSubscriptionRecord[]>(
+      vaultKey,
+      []
+    );
+    const confirmed = records.filter((r) => r.status === 'CONFIRMED').slice(0, 50);
+    if (confirmed.length === 0) return;
+
+    for (const rec of confirmed) {
+      const rawUnsubToken = crypto.randomBytes(24).toString('base64url');
+      rec.unsubscribeTokenHashes = [
+        hashToken(rawUnsubToken),
+        ...(rec.unsubscribeTokenHashes || []),
+      ].slice(0, 6);
+      dispatchTargets.push({ email: rec.email, rawUnsubToken });
+    }
+    await saveTenantVaultAsync(vaultKey, records);
+  });
+
+  if (dispatchTargets.length === 0) {
+    return { sentCount: 0 };
+  }
+
+  const cleanOrigin = params.originUrl.replace(/\/+$/, '');
+  const slugEnc = encodeURIComponent(params.teamSlug);
+  const hubUrl = `${cleanOrigin}/team/${slugEnc}`;
+  const safeTeam = escapeHtml(params.teamName);
+  const safeCat = escapeHtml(params.category);
+  const safeTitle = escapeHtml(params.title);
+  const safeBody = escapeHtml(params.body);
+  const safeHubUrl = escapeHtml(hubUrl);
+
+  const results = await Promise.allSettled(
+    dispatchTargets.map(async (target) => {
+      const unsubUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
+        target.rawUnsubToken
+      )}`;
+      const safeUnsub = escapeHtml(unsubUrl);
+      return sendEmailViaResend({
+        to: target.email,
+        subject: `[${params.teamName}] ${params.title}`,
+        html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">${safeTeam} · ${safeCat}</div><h1 style="font-size:19px;margin:8px 0 10px;">${safeTitle}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 18px;">${safeBody}</p><a href="${safeHubUrl}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Open Public Team Hub</a><p style="margin-top:20px;font-size:12px;color:#57544D;">Public team notice only · <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe</a></p></div></body></html>`,
+        text: `${params.teamName} [${params.category}]\n${params.title}\n\n${params.body}\n\nPublic Team Hub: ${hubUrl}\nUnsubscribe: ${unsubUrl}`,
+      });
+    })
+  );
+
+  let sentCount = 0;
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value.delivered) {
+      sentCount += 1;
+    }
+  }
+  return { sentCount };
+}
+

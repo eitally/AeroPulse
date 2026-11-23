@@ -1,5 +1,6 @@
 import { parseWorkoutSteps } from './workoutParser.ts';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration.ts';
+import { generateQrMatrix } from './qrCodeSvg.ts';
 import {
   formatMmSs,
   type ComputedSharedStepPreview,
@@ -8,6 +9,20 @@ import {
 } from './shareWorkoutRoute.ts';
 
 export * from './shareWorkoutRoute.ts';
+
+export const SHARE_CARD_QR_FALLBACK_URL = 'https://meetready.app/share';
+export const SHARE_CARD_QR_MAX_UTF8_BYTES = 106;
+
+/**
+ * Respects qrCodeSvg.ts's 106-byte UTF-8 capacity cap for ISO/IEC 18004 EC-M Versions 1-6.
+ * Encodes the full shareUrl when <= 106 UTF-8 bytes, otherwise falls back to meetready.app/share.
+ */
+export function resolveShareCardQrTarget(shareUrl?: string): string {
+  const clean = String(shareUrl || '').trim();
+  if (!clean) return SHARE_CARD_QR_FALLBACK_URL;
+  const byteLength = new TextEncoder().encode(clean).length;
+  return byteLength <= SHARE_CARD_QR_MAX_UTF8_BYTES ? clean : SHARE_CARD_QR_FALLBACK_URL;
+}
 
 export function computeSharedWorkoutPreview(opts: {
   payload: SharedWorkoutPayload;
@@ -180,6 +195,7 @@ export async function renderShareCardPngBlob(opts: {
   ftpWatts: number;
   thresholdPaceSecsPerKm: number;
   unit: 'mi' | 'km';
+  shareUrl?: string;
 }): Promise<Blob | null> {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
@@ -321,49 +337,53 @@ export async function renderShareCardPngBlob(opts: {
 
   y += 164;
 
-  // 5. Interval Visual Bars or Split Table
+  // 5. Interval Visual Bars or Split Table (strictly bounded to ry + rowH <= 1124)
+  const MAX_CONTENT_BOTTOM_Y = 1124;
   if (payload.kind === 'STOPWATCH' && payload.splits && payload.splits.length > 0) {
     ctx.fillStyle = '#E2E8F0';
     ctx.font = '700 20px ui-monospace, SFMono-Regular, monospace';
     ctx.fillText('TRACKSIDE STOPWATCH SPLITS', 84, y);
-    y += 40;
+    y += 38;
 
-    const visibleSplits = payload.splits.slice(0, 9);
+    const rowH = 54;
+    const rowStride = 62;
+    const visibleSplits = payload.splits.slice(0, 8);
     visibleSplits.forEach((row, idx) => {
-      const ry = y + idx * 72;
+      const ry = y + idx * rowStride;
+      if (ry + rowH > MAX_CONTENT_BOTTOM_Y) return;
       ctx.fillStyle = idx % 2 === 0 ? '#1A1D1B' : '#151816';
-      drawRoundedRectPath(ctx, 84, ry, 912, 60, 14);
+      drawRoundedRectPath(ctx, 84, ry, 912, rowH, 14);
       ctx.fill();
 
       ctx.fillStyle = '#F6F3EC';
-      ctx.font = '600 23px system-ui, -apple-system, sans-serif';
-      ctx.fillText(row.label.slice(0, 32), 110, ry + 16);
+      ctx.font = '600 22px system-ui, -apple-system, sans-serif';
+      ctx.fillText(row.label.slice(0, 32), 110, ry + 14);
 
       ctx.fillStyle = '#D8FF2A';
-      ctx.font = '700 24px ui-monospace, SFMono-Regular, monospace';
-      ctx.fillText(row.lapTime, 620, ry + 16);
+      ctx.font = '700 23px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillText(row.lapTime, 620, ry + 14);
 
       if (row.paceOrPower) {
         ctx.fillStyle = '#A39E93';
-        ctx.font = '500 20px ui-monospace, SFMono-Regular, monospace';
-        ctx.fillText(row.paceOrPower, 790, ry + 18);
+        ctx.font = '500 19px ui-monospace, SFMono-Regular, monospace';
+        ctx.fillText(row.paceOrPower, 790, ry + 16);
       }
     });
   } else {
     // Visual zone bar chart
     ctx.fillStyle = '#1A1D1B';
-    drawRoundedRectPath(ctx, 84, y, 912, 168, 22);
+    drawRoundedRectPath(ctx, 84, y, 912, 148, 22);
     ctx.fill();
 
     const totalSecs = Math.max(60, preview.totalDurationSecs);
     let barX = 112;
     const usableW = 856;
-    const baseLineY = y + 142;
+    const baseLineY = y + 126;
 
     for (const st of preview.steps) {
       const segW = Math.max(8, (st.durationSecs / totalSecs) * usableW - 3);
       const heightRatio = Math.max(0.24, Math.min(1, st.intensityPct / 135));
-      const barH = Math.round(heightRatio * 108);
+      const barH = Math.round(heightRatio * 96);
       ctx.fillStyle = st.colorHex || '#B83A24';
       drawRoundedRectPath(ctx, barX, baseLineY - barH, segW, barH, 6);
       ctx.fill();
@@ -371,39 +391,76 @@ export async function renderShareCardPngBlob(opts: {
       if (barX > 965) break;
     }
 
-    y += 200;
+    y += 176;
     ctx.fillStyle = '#F6F3EC';
     ctx.font = '700 19px ui-monospace, SFMono-Regular, monospace';
     ctx.fillText('STRUCTURED INTERVAL BREAKDOWN', 84, y);
-    y += 38;
+    y += 34;
 
+    const rowH = 50;
+    const rowStride = 58;
     const rows = preview.steps.slice(0, 7);
     rows.forEach((st, idx) => {
-      const ry = y + idx * 68;
+      const ry = y + idx * rowStride;
+      if (ry + rowH > MAX_CONTENT_BOTTOM_Y) return;
       ctx.fillStyle = idx % 2 === 0 ? '#1A1D1B' : '#151816';
-      drawRoundedRectPath(ctx, 84, ry, 912, 56, 14);
+      drawRoundedRectPath(ctx, 84, ry, 912, rowH, 14);
       ctx.fill();
 
       ctx.fillStyle = st.colorHex || '#B83A24';
-      drawRoundedRectPath(ctx, 102, ry + 14, 10, 28, 5);
+      drawRoundedRectPath(ctx, 102, ry + 12, 10, 26, 5);
       ctx.fill();
 
       ctx.fillStyle = '#F6F3EC';
-      ctx.font = '600 22px system-ui, -apple-system, sans-serif';
-      ctx.fillText(`${st.durationLabel} · ${st.label}`.slice(0, 38), 130, ry + 14);
+      ctx.font = '600 21px system-ui, -apple-system, sans-serif';
+      ctx.fillText(`${st.durationLabel} · ${st.label}`.slice(0, 38), 130, ry + 12);
 
       ctx.fillStyle = '#D8FF2A';
-      ctx.font = '700 22px ui-monospace, SFMono-Regular, monospace';
-      ctx.fillText(st.prescribedTargetLabel, 690, ry + 15);
+      ctx.font = '700 21px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillText(st.prescribedTargetLabel, 690, ry + 13);
     });
   }
 
-  // 6. Clean Footer
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-  ctx.fillRect(84, 1218, 912, 2);
+  // 6. Clean Footer + Scannable QR Stamp (y = 1140 divider, 132x132 tile at 860, 1156)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.fillRect(84, 1140, 912, 2);
+
+  ctx.fillStyle = '#D8FF2A';
+  ctx.font = '700 22px ui-monospace, SFMono-Regular, monospace';
+  ctx.fillText('SCAN FOR SPLITS · meetready.app/share', 84, 1184);
+
   ctx.fillStyle = '#94A3B8';
-  ctx.font = '600 20px ui-monospace, SFMono-Regular, monospace';
-  ctx.fillText('Built for Meet Day  ·  meetready.app', 84, 1244);
+  ctx.font = '600 19px ui-monospace, SFMono-Regular, monospace';
+  ctx.fillText('Built for Meet Day  ·  Zero Login Split Recalc', 84, 1226);
+
+  const qrTileX = 860;
+  const qrTileY = 1156;
+  const qrTileSize = 132;
+  ctx.fillStyle = '#FFFFFF';
+  drawRoundedRectPath(ctx, qrTileX, qrTileY, qrTileSize, qrTileSize, 14);
+  ctx.fill();
+
+  const qrTarget = resolveShareCardQrTarget(opts.shareUrl);
+  const qrMatrix = generateQrMatrix(qrTarget);
+  const quietModules = 4;
+  const totalModules = qrMatrix.length + quietModules * 2;
+  const cellPx = Math.max(2, Math.floor(qrTileSize / totalModules));
+  const gridPx = qrMatrix.length * cellPx;
+  const qrOffset = Math.floor((qrTileSize - gridPx) / 2);
+
+  ctx.fillStyle = '#121413';
+  for (let r = 0; r < qrMatrix.length; r++) {
+    for (let c = 0; c < qrMatrix.length; c++) {
+      if (qrMatrix[r][c]) {
+        ctx.fillRect(
+          qrTileX + qrOffset + c * cellPx,
+          qrTileY + qrOffset + r * cellPx,
+          cellPx,
+          cellPx
+        );
+      }
+    }
+  }
 
   return new Promise((resolve) => {
     canvas.toBlob((blob) => resolve(blob), 'image/png');
@@ -415,6 +472,7 @@ export async function downloadShareCardPng(opts: {
   ftpWatts: number;
   thresholdPaceSecsPerKm: number;
   unit: 'mi' | 'km';
+  shareUrl?: string;
 }): Promise<boolean> {
   const blob = await renderShareCardPngBlob(opts);
   if (!blob || typeof document === 'undefined' || typeof URL === 'undefined') return false;

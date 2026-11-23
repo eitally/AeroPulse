@@ -46,6 +46,7 @@ import {
   ChevronDown,
   Download,
   Globe,
+  HeartPulse,
   HelpCircle,
   Shield,
   Users,
@@ -118,6 +119,13 @@ const MeetDayHeatAndFlightModal = lazyWithRetry(
       default: m.MeetDayHeatAndFlightModal,
     })),
   { chunkKey: 'MeetDayHeatAndFlightModal', restoreTab: 'coach' }
+);
+const AthleticTrainerInjuryHub = lazyWithRetry(
+  () =>
+    import('./coach/AthleticTrainerInjuryHub').then((m) => ({
+      default: m.AthleticTrainerInjuryHub,
+    })),
+  { chunkKey: 'AthleticTrainerInjuryHub', restoreTab: 'coach' }
 );
 
 export interface CoachWorkspaceViewProps {
@@ -811,6 +819,7 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     showOnboardingWizard,
   ]);
   const [showMeetDayModal, setShowMeetDayModal] = useState<boolean>(false);
+  const [showInjuryHubModal, setShowInjuryHubModal] = useState<boolean>(false);
   const [drawerAthleteId, setDrawerAthleteId] = useState<string | null>(null);
   const [caraSegment, setCaraSegment] = useState<NcaaCaraSeasonSegment>('IN_SEASON');
   const [caraStrengthHours, setCaraStrengthHours] = useState<number>(0);
@@ -892,6 +901,32 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
     selfSessionCheckIns,
     todayIso,
   ]);
+
+  const activeInjuryBadgeCount = useMemo(() => {
+    const ids = new Set<string>();
+    for (const c of activeTeam?.injuryCases || []) {
+      if (c.rtpStage !== 'CLEARED') ids.add(c.membershipId);
+    }
+    const cutoffMs = Date.parse(`${todayIso}T00:00:00Z`) - 6 * 86_400_000;
+    for (const m of activeTeam?.memberships || []) {
+      if (m.status === 'INJURED') ids.add(m.membershipId);
+      const hasRecentPain = (m.liveSnapshot?.sessionCheckIns || []).some(
+        (chk) => chk.painFlag && Date.parse(`${String(chk.date || '').slice(0, 10)}T12:00:00Z`) >= cutoffMs
+      );
+      if (hasRecentPain) ids.add(m.membershipId);
+    }
+    for (const ath of scopedConnectedAthletes) {
+      const memId = ath.id.startsWith('team-mem-')
+        ? ath.id.slice('team-mem-'.length)
+        : ath.id;
+      if (ath.teamMemberStatus === 'INJURED') ids.add(memId);
+      const hasRecentPain = (ath.sessionCheckIns || []).some(
+        (chk) => chk.painFlag && Date.parse(`${String(chk.date || '').slice(0, 10)}T12:00:00Z`) >= cutoffMs
+      );
+      if (hasRecentPain) ids.add(memId);
+    }
+    return ids.size;
+  }, [activeTeam?.injuryCases, activeTeam?.memberships, scopedConnectedAthletes, todayIso]);
 
   return (
     <div className="space-y-3" data-testid="coach-workspace-view">
@@ -1004,6 +1039,24 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
                 className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold cursor-pointer"
               >
                 Meet Packet
+              </button>
+
+              <button
+                type="button"
+                data-testid="coach-open-injury-hub-btn"
+                onClick={() => setShowInjuryHubModal(true)}
+                className="min-h-[44px] sm:min-h-[36px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <HeartPulse className="w-3.5 h-3.5 text-ap-clay dark:text-ap-volt" />
+                <span>Injury Hub</span>
+                {activeInjuryBadgeCount > 0 && (
+                  <span
+                    data-testid="coach-injury-hub-badge"
+                    className="px-1.5 py-0.5 rounded-full text-2xs font-mono font-bold bg-ap-clay text-white tabular-nums"
+                  >
+                    {activeInjuryBadgeCount}
+                  </span>
+                )}
               </button>
 
               <button
@@ -1684,6 +1737,21 @@ export const CoachWorkspaceView: React.FC<CoachWorkspaceViewProps> = ({
               activeTeam={activeTeam}
               myTeams={myTeams}
               connectedAthletes={connectedAthletesOnly}
+              onTeamsUpdated={onTeamsUpdated}
+            />
+          </Suspense>
+        </WorkspaceErrorBoundary>
+      )}
+
+      {showInjuryHubModal && (
+        <WorkspaceErrorBoundary fallbackTitle="Athletic Trainer Injury Hub" restoreTab="coach">
+          <Suspense fallback={null}>
+            <AthleticTrainerInjuryHub
+              isOpen={showInjuryHubModal}
+              onClose={() => setShowInjuryHubModal(false)}
+              activeTeam={activeTeam}
+              myTeams={myTeams}
+              isSampleDemoMode={isSampleDemoMode}
               onTeamsUpdated={onTeamsUpdated}
             />
           </Suspense>

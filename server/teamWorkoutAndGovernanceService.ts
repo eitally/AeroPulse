@@ -6,6 +6,7 @@ import {
 import { archiveCoachActivitiesForMember } from './athleteArchiveHelper.ts';
 import { escapeHtml } from './securityUtils.ts';
 import { evaluateSafeSportPatternWatch } from '../src/physiology/safeSportPatternWatchEngine.ts';
+import { normalizePainArea } from '../src/physiology/injuryHubEngine.ts';
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
 import {
   appendAuditLogAsync,
@@ -766,17 +767,7 @@ export async function syncAthleteSnapshotAcrossTeams(params: {
           ? undefined
           : Array.isArray(params.snapshot.sessionCheckIns)
             ? params.snapshot.sessionCheckIns.slice(0, 28).map((c) => {
-                const validArea =
-                  c?.painArea === 'KNEE' ||
-                  c?.painArea === 'SHIN' ||
-                  c?.painArea === 'ACHILLES' ||
-                  c?.painArea === 'HAMSTRING' ||
-                  c?.painArea === 'HIP' ||
-                  c?.painArea === 'FOOT' ||
-                  c?.painArea === 'BACK' ||
-                  c?.painArea === 'OTHER'
-                    ? c.painArea
-                    : undefined;
+                const validArea = normalizePainArea(c?.painArea);
                 const validLegFeel =
                   c?.legFeel === 'FRESH' || c?.legFeel === 'NORMAL' || c?.legFeel === 'HEAVY'
                     ? c.legFeel
