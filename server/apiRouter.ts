@@ -43,7 +43,12 @@ apiRouter.use(express.urlencoded({ extended: false }));
 apiRouter.use((req: Request, res: Response, next: NextFunction) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
-    const scopeKey = resolveSessionScopeKey(req);
+    const reqPath = (req.path || req.url || '').split('?')[0];
+    const skipPrewarm =
+      reqPath === '/api/health' ||
+      reqPath === '/api/analytics/event' ||
+      reqPath.startsWith('/api/teams/public/');
+    const scopeKey = skipPrewarm ? '' : resolveSessionScopeKey(req);
     if (scopeKey && process.env.DATABASE_URL?.trim()) {
       Promise.all([
         loadTenantVaultAsync(`session_${scopeKey}`, {}),

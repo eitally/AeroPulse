@@ -451,136 +451,148 @@ export async function applyExternalTeamSyncBatch(params: {
   addedMeets: number;
   recordedResults: number;
 }> {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+  const pendingArchives: Array<{ mem: StoredMembershipInternal; activity: UnifiedActivity }> = [];
+  const lockOutcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+      return {
+        summary: null,
+        addedAthletes: 0,
+        updatedAthletes: 0,
+        addedMeets: 0,
+        recordedResults: 0,
+      };
+    }
+
+    let addedAthletes = 0;
+    let updatedAthletes = 0;
+    let addedMeets = 0;
+    let recordedResults = 0;
+    const nowIso = new Date().toISOString();
+
+    for (const ath of (params.athletes || []).slice(0, 400)) {
+      const res = findOrCreateExternalMembership(doc, ath);
+      if (res.created) addedAthletes += 1;
+      else updatedAthletes += 1;
+    }
+
+    if (Array.isArray(params.meets) && params.meets.length > 0) {
+      const extSource: ExternalTeamPlatform =
+        params.externalSyncPatch?.platform === 'TFRRS' || doc.brand.externalSync?.platform === 'TFRRS'
+          ? 'TFRRS'
+          : 'ATHLETIC_NET';
+      addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
+    }
+
+    const matchedFieldItems: MatchedExternalFieldMarkInput[] = [];
+    for (const row of (params.results || []).slice(0, 200)) {
+      const { mem, created } = findOrCreateExternalMembership(doc, {
+        name: row.athleteName,
+        squadGroup: row.squadGroup,
+        graduationYear: row.graduationYear,
+        genderDivision: row.genderDivision,
+        seedMarkOrFtp: row.isFieldEvent
+          ? row.displayFieldMark || row.displayFatTime
+          : row.displayFatTime,
+        externalSource: row.externalSource,
+        externalAthleteId: row.externalAthleteId,
+        externalProfileUrl: row.externalProfileUrl,
+        isMinorU18: doc.brand.orgType === 'HIGH_SCHOOL',
+      });
+      if (created) addedAthletes += 1;
+
+      if (row.isFieldEvent) {
+        matchedFieldItems.push({ row, mem });
+        continue;
+      }
+
+      const existingActs = Array.isArray(mem.coachRecordedActivities)
+        ? mem.coachRecordedActivities
+        : [];
+      const duplicate = existingActs.some(
+        (a) =>
+          a.startDateLocal?.slice(0, 10) === row.date &&
+          a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters &&
+          Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
+      );
+      if (duplicate) continue;
+
+      const activity: UnifiedActivity = synthesizeOfficialRaceActivity({
+        id: `ext-meet-${crypto.randomBytes(5).toString('hex')}`,
+        date: row.date,
+        meetName: row.meetName,
+        eventLabel: row.eventLabel,
+        eventDistanceMeters: row.eventDistanceMeters,
+        fatTimeSecs: row.fatTimeSecs,
+        displayFatTime: row.displayFatTime || formatFatTime(row.fatTimeSecs),
+        platform: row.platform,
+        trackType: row.trackType,
+        placeFinish: row.placeFinish,
+        lapSplitDistanceMeters:
+          row.eventDistanceMeters <= 400
+            ? 200
+            : row.eventDistanceMeters >= 3000
+              ? 1000
+              : 400,
+        lapSplitsSecs: [],
+        includeWarmupCooldown: false,
+        sourceUrl: row.externalProfileUrl || row.sourceUrl,
+        startDateLocalIso: `${row.date}T09:00:00`,
+      });
+
+      mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
+      if (!mem.seedMarkOrFtp) {
+        mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
+      }
+      if (mem.userSid || mem.stravaAthleteId || mem.invitedEmail) {
+        pendingArchives.push({ mem, activity });
+      }
+      recordedResults += 1;
+    }
+
+    if (matchedFieldItems.length > 0) {
+      const existingFieldLogs = await loadFullTeamFieldMarksArchive(
+        params.teamId,
+        doc.fieldMarkLogs
+      );
+      const fieldRes = applyParsedExternalFieldMarksToDoc({
+        doc,
+        existingLogs: existingFieldLogs,
+        matchedFieldItems,
+      });
+      const boundedFieldLogs = fieldRes.mergedLogs.slice(0, 2500);
+      await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), boundedFieldLogs);
+      doc.fieldMarkLogs = boundedFieldLogs.slice(0, 150);
+      doc.fieldMarkLogsTotalCount = boundedFieldLogs.length;
+      recordedResults += fieldRes.addedCount;
+    }
+
+    doc.brand.externalSync = sanitizeExternalSyncConfig(
+      {
+        ...(params.externalSyncPatch || {}),
+        lastSyncedAt: nowIso,
+      },
+      doc.brand.externalSync
+    );
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+
     return {
-      summary: null,
-      addedAthletes: 0,
-      updatedAthletes: 0,
-      addedMeets: 0,
-      recordedResults: 0,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      addedAthletes,
+      updatedAthletes,
+      addedMeets,
+      recordedResults,
     };
-  }
+  });
 
-  let addedAthletes = 0;
-  let updatedAthletes = 0;
-  let addedMeets = 0;
-  let recordedResults = 0;
-  const nowIso = new Date().toISOString();
-
-  for (const ath of (params.athletes || []).slice(0, 400)) {
-    const res = findOrCreateExternalMembership(doc, ath);
-    if (res.created) addedAthletes += 1;
-    else updatedAthletes += 1;
-  }
-
-  if (Array.isArray(params.meets) && params.meets.length > 0) {
-    const extSource: ExternalTeamPlatform =
-      params.externalSyncPatch?.platform === 'TFRRS' || doc.brand.externalSync?.platform === 'TFRRS'
-        ? 'TFRRS'
-        : 'ATHLETIC_NET';
-    addedMeets = upsertMeetEventsOnDoc(doc, params.meets, extSource);
-  }
-
-  const matchedFieldItems: MatchedExternalFieldMarkInput[] = [];
-  for (const row of (params.results || []).slice(0, 200)) {
-    const { mem, created } = findOrCreateExternalMembership(doc, {
-      name: row.athleteName,
-      squadGroup: row.squadGroup,
-      graduationYear: row.graduationYear,
-      genderDivision: row.genderDivision,
-      seedMarkOrFtp: row.isFieldEvent
-        ? row.displayFieldMark || row.displayFatTime
-        : row.displayFatTime,
-      externalSource: row.externalSource,
-      externalAthleteId: row.externalAthleteId,
-      externalProfileUrl: row.externalProfileUrl,
-      isMinorU18: doc.brand.orgType === 'HIGH_SCHOOL',
-    });
-    if (created) addedAthletes += 1;
-
-    if (row.isFieldEvent) {
-      matchedFieldItems.push({ row, mem });
-      continue;
-    }
-
-    const existingActs = Array.isArray(mem.coachRecordedActivities)
-      ? mem.coachRecordedActivities
-      : [];
-    const duplicate = existingActs.some(
-      (a) =>
-        a.startDateLocal?.slice(0, 10) === row.date &&
-        a.officialRaceData?.eventDistanceMeters === row.eventDistanceMeters &&
-        Math.abs((a.officialRaceData?.fatTimeSecs || 0) - row.fatTimeSecs) < 0.05
+  if (pendingArchives.length > 0) {
+    await Promise.allSettled(
+      pendingArchives.map(({ mem, activity }) => archiveCoachActivitiesForMember(mem, [activity]))
     );
-    if (duplicate) continue;
-
-    const activity: UnifiedActivity = synthesizeOfficialRaceActivity({
-      id: `ext-meet-${crypto.randomBytes(5).toString('hex')}`,
-      date: row.date,
-      meetName: row.meetName,
-      eventLabel: row.eventLabel,
-      eventDistanceMeters: row.eventDistanceMeters,
-      fatTimeSecs: row.fatTimeSecs,
-      displayFatTime: row.displayFatTime || formatFatTime(row.fatTimeSecs),
-      platform: row.platform,
-      trackType: row.trackType,
-      placeFinish: row.placeFinish,
-      lapSplitDistanceMeters:
-        row.eventDistanceMeters <= 400
-          ? 200
-          : row.eventDistanceMeters >= 3000
-            ? 1000
-            : 400,
-      lapSplitsSecs: [],
-      includeWarmupCooldown: false,
-      sourceUrl: row.externalProfileUrl || row.sourceUrl,
-      startDateLocalIso: `${row.date}T09:00:00`,
-    });
-
-    mem.coachRecordedActivities = [activity, ...existingActs].slice(0, 80);
-    if (!mem.seedMarkOrFtp) {
-      mem.seedMarkOrFtp = activity.officialRaceData?.displayFatTime || row.displayFatTime;
-    }
-    if (mem.userSid || mem.stravaAthleteId || mem.invitedEmail) {
-      await archiveCoachActivitiesForMember(mem, [activity]).catch(() => undefined);
-    }
-    recordedResults += 1;
   }
 
-  if (matchedFieldItems.length > 0) {
-    const existingFieldLogs = await loadFullTeamFieldMarksArchive(
-      params.teamId,
-      doc.fieldMarkLogs
-    );
-    const fieldRes = applyParsedExternalFieldMarksToDoc({
-      doc,
-      existingLogs: existingFieldLogs,
-      matchedFieldItems,
-    });
-    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), fieldRes.mergedLogs);
-    doc.fieldMarkLogs = fieldRes.mergedLogs.slice(0, 150);
-    doc.fieldMarkLogsTotalCount = fieldRes.mergedLogs.length;
-    recordedResults += fieldRes.addedCount;
-  }
-
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    {
-      ...(params.externalSyncPatch || {}),
-      lastSyncedAt: nowIso,
-    },
-    doc.brand.externalSync
-  );
-  doc.updatedAt = nowIso;
-  await saveTeamDocRaw(params.teamId, doc);
-
-  return {
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-    addedAthletes,
-    updatedAthletes,
-    addedMeets,
-    recordedResults,
-  };
+  return lockOutcome;
 }
 
 /**
@@ -1028,6 +1040,82 @@ export async function subscribeParentEmailToPublicHub(params: {
   };
 }
 
+async function previewParentEmailSubscriptionToken(params: {
+  slugOrCode: string;
+  token: string;
+  mode: 'confirm' | 'unsubscribe';
+}): Promise<{
+  ok: boolean;
+  statusCode?: number;
+  teamName?: string;
+  slug?: string;
+  error?: string;
+}> {
+  const cleanToken = String(params.token || '').trim();
+  if (!cleanToken) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: params.mode === 'confirm' ? 'Missing confirmation token.' : 'Missing unsubscribe token.',
+    };
+  }
+
+  const doc = await findTeamDocumentByCodeOrSlug(params.slugOrCode);
+  if (
+    !doc ||
+    (params.mode === 'confirm' && !doc.brand.externalSync?.enablePublicParentHub)
+  ) {
+    return {
+      ok: false,
+      statusCode: 404,
+      error:
+        params.mode === 'confirm'
+          ? 'Team Hub not found or public parent access is disabled.'
+          : 'Team Hub not found.',
+    };
+  }
+
+  const targetHash = hashToken(cleanToken);
+  const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
+  const records = await loadTenantVaultAsync<ParentHubEmailSubscriptionRecord[]>(vaultKey, []);
+  const match = records.find((r) =>
+    params.mode === 'confirm'
+      ? Boolean(r.confirmTokenHash && timingSafeStringEqual(r.confirmTokenHash, targetHash))
+      : (r.unsubscribeTokenHashes || []).some((h) => timingSafeStringEqual(h, targetHash))
+  );
+  if (!match) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error:
+        params.mode === 'confirm'
+          ? 'Invalid or already-used confirmation token.'
+          : 'Invalid or expired unsubscribe token.',
+    };
+  }
+
+  return {
+    ok: true,
+    statusCode: 200,
+    teamName: doc.brand.name,
+    slug: doc.brand.slug,
+  };
+}
+
+export async function previewParentEmailSubscriptionConfirm(params: {
+  slugOrCode: string;
+  token: string;
+}) {
+  return previewParentEmailSubscriptionToken({ ...params, mode: 'confirm' });
+}
+
+export async function previewParentEmailSubscriptionUnsubscribe(params: {
+  slugOrCode: string;
+  token: string;
+}) {
+  return previewParentEmailSubscriptionToken({ ...params, mode: 'unsubscribe' });
+}
+
 export async function confirmParentEmailSubscription(params: {
   slugOrCode: string;
   token: string;
@@ -1162,7 +1250,7 @@ export async function dispatchParentHubAnnouncementEmails(params: {
       vaultKey,
       []
     );
-    const confirmed = records.filter((r) => r.status === 'CONFIRMED').slice(0, 50);
+    const confirmed = records.filter((r) => r.status === 'CONFIRMED').slice(0, 500);
     if (confirmed.length === 0) return;
 
     for (const rec of confirmed) {
@@ -1189,25 +1277,28 @@ export async function dispatchParentHubAnnouncementEmails(params: {
   const safeBody = escapeHtml(params.body);
   const safeHubUrl = escapeHtml(hubUrl);
 
-  const results = await Promise.allSettled(
-    dispatchTargets.map(async (target) => {
-      const unsubUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
-        target.rawUnsubToken
-      )}`;
-      const safeUnsub = escapeHtml(unsubUrl);
-      return sendEmailViaResend({
-        to: target.email,
-        subject: `[${params.teamName}] ${params.title}`,
-        html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">${safeTeam} · ${safeCat}</div><h1 style="font-size:19px;margin:8px 0 10px;">${safeTitle}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 18px;">${safeBody}</p><a href="${safeHubUrl}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Open Public Team Hub</a><p style="margin-top:20px;font-size:12px;color:#57544D;">Public team notice only · <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe</a></p></div></body></html>`,
-        text: `${params.teamName} [${params.category}]\n${params.title}\n\n${params.body}\n\nPublic Team Hub: ${hubUrl}\nUnsubscribe: ${unsubUrl}`,
-      });
-    })
-  );
-
+  const CHUNK_SIZE = 25;
   let sentCount = 0;
-  for (const r of results) {
-    if (r.status === 'fulfilled' && r.value.delivered) {
-      sentCount += 1;
+  for (let i = 0; i < dispatchTargets.length; i += CHUNK_SIZE) {
+    const chunk = dispatchTargets.slice(i, i + CHUNK_SIZE);
+    const results = await Promise.allSettled(
+      chunk.map(async (target) => {
+        const unsubUrl = `${cleanOrigin}/api/teams/public/${slugEnc}/unsubscribe?token=${encodeURIComponent(
+          target.rawUnsubToken
+        )}`;
+        const safeUnsub = escapeHtml(unsubUrl);
+        return sendEmailViaResend({
+          to: target.email,
+          subject: `[${params.teamName}] ${params.title}`,
+          html: `<!DOCTYPE html><html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#F6F3EC;padding:24px 12px;color:#121413;"><div style="max-width:520px;margin:0 auto;background:#FFFFFF;border:1px solid #CFC9BC;border-radius:16px;padding:24px;"><div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#B83A24;text-transform:uppercase;">${safeTeam} · ${safeCat}</div><h1 style="font-size:19px;margin:8px 0 10px;">${safeTitle}</h1><p style="font-size:14px;line-height:1.55;color:#2C2A26;margin:0 0 18px;">${safeBody}</p><a href="${safeHubUrl}" style="display:inline-block;background:#121413;color:#D8FF2A;text-decoration:none;font-weight:700;font-size:13px;padding:10px 18px;border-radius:10px;">Open Public Team Hub</a><p style="margin-top:20px;font-size:12px;color:#57544D;">Public team notice only · <a href="${safeUnsub}" style="color:#B83A24;">Unsubscribe</a></p></div></body></html>`,
+          text: `${params.teamName} [${params.category}]\n${params.title}\n\n${params.body}\n\nPublic Team Hub: ${hubUrl}\nUnsubscribe: ${unsubUrl}`,
+        });
+      })
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.delivered) {
+        sentCount += 1;
+      }
     }
   }
   return { sentCount };

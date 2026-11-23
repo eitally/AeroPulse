@@ -182,6 +182,17 @@ export function scrubMemberFromTeamDocument(params: {
   doc.updatedAt = nowIso;
 }
 
+export function collectMemberInjuryCaseIds(
+  doc: StoredTeamDocument,
+  targetMembershipIds: Set<string>
+): Set<string> {
+  return new Set<string>(
+    (doc.injuryCases || [])
+      .filter((c) => targetMembershipIds.has(c.membershipId))
+      .map((c) => c.id)
+  );
+}
+
 /**
  * Scrubs member records from external sidecar vaults (`team_field_logs_*`, `audit_log_*`)
  * and normalized PostgreSQL tables (`thresh_team_members`, `thresh_audit_log`).
@@ -191,8 +202,9 @@ export async function scrubMemberSidecarVaultsAndPostgres(params: {
   targetMembershipIds: Set<string>;
   targetSids: Set<string>;
   emails?: string[];
+  injuryCaseIds?: Set<string>;
 }): Promise<number | undefined> {
-  const { teamId, targetMembershipIds, targetSids, emails } = params;
+  const { teamId, targetMembershipIds, targetSids, emails, injuryCaseIds } = params;
   let updatedFieldLogCount: number | undefined;
 
   const fieldKey = teamFieldLogsVaultKey(teamId);
@@ -210,13 +222,24 @@ export async function scrubMemberSidecarVaultsAndPostgres(params: {
   });
 
   const auditKey = `audit_log_${sanitizeTenantId(teamId).slice(0, 40)}`;
+  const scrubbedReferenceIds = [
+    ...Array.from(targetMembershipIds),
+    ...(injuryCaseIds ? Array.from(injuryCaseIds) : []),
+  ].filter(Boolean);
   await withVaultLock(auditKey, async () => {
     const entries = await loadTenantVaultAsync<PersistedAuditLogEntry[]>(auditKey, []);
     let changed = false;
     const scrubbed = entries.map((entry) => {
-      const matchesTarget = entry.targetId ? targetMembershipIds.has(entry.targetId) : false;
+      const matchesTarget = entry.targetId
+        ? targetMembershipIds.has(entry.targetId) ||
+          Boolean(injuryCaseIds && injuryCaseIds.has(entry.targetId))
+        : false;
       const matchesActor = targetSids.has(entry.actorSid);
-      if (!matchesTarget && !matchesActor) return entry;
+      const serializedMeta =
+        entry.metadata && scrubbedReferenceIds.length > 0 ? JSON.stringify(entry.metadata) : '';
+      const matchesMetadata =
+        serializedMeta.length > 0 && scrubbedReferenceIds.some((id) => serializedMeta.includes(id));
+      if (!matchesTarget && !matchesActor && !matchesMetadata) return entry;
       changed = true;
       return {
         ...entry,
@@ -234,6 +257,7 @@ export async function scrubMemberSidecarVaultsAndPostgres(params: {
     membershipIds: Array.from(targetMembershipIds),
     userSids: Array.from(targetSids),
     emails,
+    injuryCaseIds: injuryCaseIds ? Array.from(injuryCaseIds) : [],
   });
 
   return updatedFieldLogCount;
@@ -340,10 +364,14 @@ export async function revokeAthleteGuardianConsentForTeam(params: {
     );
     if (!mem) return { ok: false, error: 'Membership not found.' };
 
-    const canonicalBmy =
+    const storedBmy =
       mem.birthMonthYear ||
-      params.verifiedUserBirthMonthYear ||
-      (mem.isMinorU18 && !mem.birthYear ? undefined : params.birthMonthYear);
+      (typeof mem.birthYear === 'number' && mem.birthYear > 1900
+        ? `${mem.birthYear}-12`
+        : undefined);
+    const canonicalBmy =
+      storedBmy ||
+      (mem.isMinorU18 ? undefined : params.verifiedUserBirthMonthYear || params.birthMonthYear);
     const ageCheck = resolveAthleteAgeTier({
       birthMonthYear: canonicalBmy,
       birthYear: mem.birthYear,
@@ -886,6 +914,7 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
       const targetMembershipIds = new Set<string>([mem.membershipId]);
       const targetSids = new Set<string>(mem.userSid ? [mem.userSid] : []);
       const emails = mem.invitedEmail ? [mem.invitedEmail] : [];
+      const injuryCaseIds = collectMemberInjuryCaseIds(freshDoc, targetMembershipIds);
       scrubMemberFromTeamDocument({
         doc: freshDoc,
         targetMembershipIds,
@@ -897,6 +926,7 @@ export async function declineAndPurgeParentConsent(token: string): Promise<{
         targetMembershipIds,
         targetSids,
         emails,
+        injuryCaseIds,
       });
       if (typeof updatedFieldCount === 'number') {
         freshDoc.fieldMarkLogsTotalCount = updatedFieldCount;

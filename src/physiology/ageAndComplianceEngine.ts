@@ -63,15 +63,17 @@ export function resolveAthleteAgeTier(params: {
     params.birthYear <= nowYear + 1
       ? Math.round(params.birthYear)
       : undefined;
+  // Conservatively normalize year-only birthYear to YYYY-12 so 12-year-olds born
+  // late in currentYear - 13 cannot bypass COPPA (<13) or U18 SafeSport checks.
+  const effectiveBmy =
+    normBmy ?? (explicitYear !== undefined ? `${explicitYear}-12` : undefined);
 
   let estimatedAgeYears: number | null = null;
-  if (normBmy) {
-    const bYear = Number(normBmy.slice(0, 4));
-    const bMonth = Number(normBmy.slice(5, 7));
+  if (effectiveBmy) {
+    const bYear = Number(effectiveBmy.slice(0, 4));
+    const bMonth = Number(effectiveBmy.slice(5, 7));
     const completedMonths = (nowYear - bYear) * 12 + (nowMonth - bMonth) - 1;
     estimatedAgeYears = Math.max(0, Math.floor(completedMonths / 12));
-  } else if (explicitYear !== undefined) {
-    estimatedAgeYears = Math.max(0, nowYear - explicitYear);
   }
 
   let ageTier: AthleteAgeComplianceTier = 'UNKNOWN';
@@ -112,7 +114,7 @@ export function resolveAthleteAgeTier(params: {
     isUnder13,
     isMinorU18,
     shouldAutoGraduateHs,
-    birthYear: parseBirthYearFromBirthMonthYear(normBmy) ?? explicitYear,
-    birthMonthYear: normBmy,
+    birthYear: parseBirthYearFromBirthMonthYear(effectiveBmy) ?? explicitYear,
+    birthMonthYear: effectiveBmy,
   };
 }

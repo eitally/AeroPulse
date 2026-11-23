@@ -1706,7 +1706,6 @@ intervalsRouter.post('/api/intervals/connect', async (req: Request, res: Respons
 
     res.json({
       connected: true,
-      sessionToken,
       athleteId: resolvedId,
       athleteName: resolvedName,
     });

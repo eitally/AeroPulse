@@ -596,12 +596,26 @@ describe('Sprint 2C: Athletic Trainer Injury Hub, Parent Growth, Share PNG QR, S
     );
     expect(JSON.stringify(storedVault)).not.toContain(rawConfirmToken);
 
-    // Confirm subscription
-    const confirmRes = await realFetch(
+    // SafeLinks-proof GET preview renders POST confirmation form WITHOUT prematurely confirming
+    const confirmPreviewRes = await realFetch(
       `${baseUrl}/api/teams/public/${encodeURIComponent(
         slug
       )}/subscribe/confirm?token=${encodeURIComponent(rawConfirmToken)}`,
-      { headers: { Accept: 'application/json' } }
+      { headers: { Accept: 'text/html' } }
+    );
+    expect(confirmPreviewRes.status).toBe(200);
+    const confirmPreviewHtml = await confirmPreviewRes.text();
+    expect(confirmPreviewHtml).toContain('<form method="POST"');
+    expect(confirmPreviewHtml).toContain('/subscribe/confirm');
+
+    // Confirm subscription via POST (hidden form / API)
+    const confirmRes = await realFetch(
+      `${baseUrl}/api/teams/public/${encodeURIComponent(slug)}/subscribe/confirm`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ token: rawConfirmToken }),
+      }
     );
     expect(confirmRes.status).toBe(200);
     const confirmData = await confirmRes.json();
@@ -630,11 +644,25 @@ describe('Sprint 2C: Athletic Trainer Injury Hub, Parent Growth, Share PNG QR, S
     expect(unsubMatch?.[1]).toBeTruthy();
     const rawUnsubToken = decodeURIComponent(unsubMatch![1]);
 
-    const unsubRes = await realFetch(
+    // SafeLinks-proof GET on /unsubscribe renders POST confirmation form without unsubscribing
+    const unsubPreviewRes = await realFetch(
       `${baseUrl}/api/teams/public/${encodeURIComponent(
         slug
       )}/unsubscribe?token=${encodeURIComponent(rawUnsubToken)}`,
-      { headers: { Accept: 'application/json' } }
+      { headers: { Accept: 'text/html' } }
+    );
+    expect(unsubPreviewRes.status).toBe(200);
+    const unsubPreviewHtml = await unsubPreviewRes.text();
+    expect(unsubPreviewHtml).toContain('<form method="POST"');
+    expect(unsubPreviewHtml).toContain('/unsubscribe');
+
+    const unsubRes = await realFetch(
+      `${baseUrl}/api/teams/public/${encodeURIComponent(slug)}/unsubscribe`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ token: rawUnsubToken }),
+      }
     );
     expect(unsubRes.status).toBe(200);
 

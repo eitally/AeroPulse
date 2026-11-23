@@ -126,7 +126,22 @@ let pgPoolUrl: string | null = null;
 let testPgPoolOverride: pg.Pool | null = null;
 let pgSchemaInitialized = false;
 let pgSchemaPromise: Promise<void> | null = null;
-const pgTxContext = new AsyncLocalStorage<pg.PoolClient>();
+interface PgTxState {
+  client: pg.PoolClient;
+  pendingVaultWrites: Map<string, { data: unknown; envelope: string }>;
+  pendingVaultDeletes: Set<string>;
+  touchedKeys: Set<string>;
+}
+
+const pgTxContext = new AsyncLocalStorage<PgTxState>();
+
+function getActivePgTxState(): PgTxState | undefined {
+  return pgTxContext.getStore();
+}
+
+function getActivePgTxClient(): pg.PoolClient | undefined {
+  return pgTxContext.getStore()?.client;
+}
 
 export function setPostgresPoolForTesting(pool: pg.Pool | null): void {
   testPgPoolOverride = pool;
@@ -253,6 +268,19 @@ async function ensurePostgresVaultSchema(pool: pg.Pool): Promise<void> {
           ON thresh_funnel_events (created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_thresh_funnel_events_name_created
           ON thresh_funnel_events (event_name, created_at DESC);
+        CREATE TABLE IF NOT EXISTS thresh_stripe_events (
+          event_id TEXT PRIMARY KEY,
+          event_type TEXT NOT NULL,
+          team_id TEXT,
+          customer_id TEXT,
+          subscription_id TEXT,
+          status TEXT NOT NULL DEFAULT 'PROCESSED',
+          processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_thresh_stripe_events_customer
+          ON thresh_stripe_events (customer_id);
+        CREATE INDEX IF NOT EXISTS idx_thresh_stripe_events_subscription
+          ON thresh_stripe_events (subscription_id);
       `);
       pgSchemaInitialized = true;
     })().catch((err) => {
@@ -268,7 +296,7 @@ export async function findTeamIdsByInvitedEmailPostgresAsync(
 ): Promise<string[] | null> {
   const cleanEmail = String(email || '').trim().toLowerCase();
   if (!cleanEmail) return [];
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return null;
   try {
@@ -286,6 +314,54 @@ export async function findTeamIdsByInvitedEmailPostgresAsync(
     return res.rows.map((r) => r.team_id);
   } catch (err: unknown) {
     warnServerFallback('vault:find-teams-by-email', err);
+    return null;
+  }
+}
+
+export async function findTeamIdsForUserPostgresAsync(
+  userSid?: string | string[] | null,
+  email?: string | null
+): Promise<string[] | null> {
+  const sids = Array.from(
+    new Set(
+      (Array.isArray(userSid) ? userSid : userSid ? [userSid] : [])
+        .map((s) => String(s || '').trim())
+        .filter(Boolean)
+    )
+  );
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+  if (sids.length === 0 && !cleanEmail) return [];
+
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    let res: pg.QueryResult<{ team_id: string }>;
+    if (sids.length > 0 && cleanEmail) {
+      res = await runner.query<{ team_id: string }>(
+        `SELECT team_id FROM thresh_team_members WHERE user_sid = ANY($1::text[])
+         UNION
+         SELECT team_id FROM thresh_team_members WHERE LOWER(invited_email) = $2`,
+        [sids, cleanEmail]
+      );
+    } else if (sids.length > 0) {
+      res = await runner.query<{ team_id: string }>(
+        `SELECT DISTINCT team_id FROM thresh_team_members WHERE user_sid = ANY($1::text[])`,
+        [sids]
+      );
+    } else {
+      res = await runner.query<{ team_id: string }>(
+        `SELECT DISTINCT team_id FROM thresh_team_members WHERE LOWER(invited_email) = $1`,
+        [cleanEmail]
+      );
+    }
+    return res.rows.map((r) => r.team_id);
+  } catch (err: unknown) {
+    warnServerFallback('vault:find-teams-for-user', err);
     return null;
   }
 }
@@ -412,13 +488,47 @@ export function saveTenantVaultSync<T>(tenantId: string, data: T): void {
   }
 }
 
+function flushPgTxCacheState(txState: PgTxState): void {
+  for (const safeId of txState.pendingVaultDeletes) {
+    memoryVaultCache.delete(safeId);
+    try {
+      const encPath = getEncryptedVaultFilePath(safeId);
+      if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
+    } catch {
+      // ignore ephemeral FS unlink failure
+    }
+  }
+  for (const [safeId, pending] of txState.pendingVaultWrites.entries()) {
+    setBoundedMemoryVaultEntry(safeId, structuredClone(pending.data));
+    try {
+      const encPath = getEncryptedVaultFilePath(safeId);
+      fs.writeFileSync(encPath, pending.envelope, { encoding: 'utf8', mode: 0o600 });
+    } catch {
+      // ignore ephemeral FS write errors
+    }
+  }
+}
+
+function invalidatePgTxTouchedKeys(txState: PgTxState): void {
+  for (const safeId of txState.touchedKeys) {
+    memoryVaultCache.delete(safeId);
+    try {
+      const encPath = getEncryptedVaultFilePath(safeId);
+      if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
+    } catch {
+      // ignore ephemeral FS unlink failure
+    }
+  }
+}
+
 /**
  * Async cloud-first read: queries Postgres `thresh_tenant_vault` when `DATABASE_URL` is set,
  * falling back to the encrypted local vault file.
  */
 export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Promise<T> {
   const safeId = sanitizeTenantId(tenantId);
-  const txClient = pgTxContext.getStore();
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -433,26 +543,30 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
       if (result.rows.length > 0) {
         const decrypted = decryptJsonFromVault<T>(result.rows[0].encrypted_envelope);
         if (decrypted !== null) {
-          setBoundedMemoryVaultEntry(safeId, decrypted);
-          try {
-            fs.writeFileSync(getEncryptedVaultFilePath(safeId), result.rows[0].encrypted_envelope, {
-              encoding: 'utf8',
-              mode: 0o600,
-            });
-          } catch {
-            // ignore ephemeral FS cache mirror failure
+          if (!txState) {
+            setBoundedMemoryVaultEntry(safeId, decrypted);
+            try {
+              fs.writeFileSync(getEncryptedVaultFilePath(safeId), result.rows[0].encrypted_envelope, {
+                encoding: 'utf8',
+                mode: 0o600,
+              });
+            } catch {
+              // ignore ephemeral FS cache mirror failure
+            }
           }
           return structuredClone(decrypted);
         }
       }
-      // Confirmed Postgres miss (rows.length === 0) or undecryptable row:
-      // purge memory cache + /tmp file so deleted rows are never resurrected.
-      memoryVaultCache.delete(safeId);
-      try {
-        const encPath = getEncryptedVaultFilePath(safeId);
-        if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
-      } catch {
-        // ignore ephemeral FS unlink failure
+      if (!txState) {
+        // Confirmed Postgres miss (rows.length === 0) or undecryptable row:
+        // purge memory cache + /tmp file so deleted rows are never resurrected.
+        memoryVaultCache.delete(safeId);
+        try {
+          const encPath = getEncryptedVaultFilePath(safeId);
+          if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
+        } catch {
+          // ignore ephemeral FS unlink failure
+        }
       }
       return structuredClone(fallback);
     } catch (err: unknown) {
@@ -466,15 +580,101 @@ export async function loadTenantVaultAsync<T>(tenantId: string, fallback: T): Pr
 }
 
 /**
+ * Batch cloud-first read across multiple tenant keys in a single Postgres `ANY($1)` query.
+ */
+export async function loadTenantVaultsBatchAsync<T>(
+  tenantIds: string[]
+): Promise<Map<string, T>> {
+  const uniqueSafeIds: string[] = [];
+  const seen = new Set<string>();
+  for (const rawId of tenantIds || []) {
+    if (!rawId) continue;
+    try {
+      const safeId = sanitizeTenantId(rawId);
+      if (!seen.has(safeId)) {
+        seen.add(safeId);
+        uniqueSafeIds.push(safeId);
+      }
+    } catch {
+      // skip invalid empty tenant id
+    }
+  }
+  const results = new Map<string, T>();
+  if (uniqueSafeIds.length === 0) return results;
+
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
+  const pool = getPostgresPool();
+  if (txClient || pool) {
+    try {
+      if (!txClient && pool) {
+        await ensurePostgresVaultSchema(pool);
+      }
+      const queryRunner = txClient || pool!;
+      const res = await queryRunner.query<{ tenant_id: string; encrypted_envelope: string }>(
+        'SELECT tenant_id, encrypted_envelope FROM thresh_tenant_vault WHERE tenant_id = ANY($1::text[])',
+        [uniqueSafeIds]
+      );
+      for (const row of res.rows) {
+        const decrypted = decryptJsonFromVault<T>(row.encrypted_envelope);
+        if (decrypted !== null) {
+          results.set(row.tenant_id, structuredClone(decrypted));
+          if (!txState) {
+            setBoundedMemoryVaultEntry(row.tenant_id, decrypted);
+            try {
+              fs.writeFileSync(getEncryptedVaultFilePath(row.tenant_id), row.encrypted_envelope, {
+                encoding: 'utf8',
+                mode: 0o600,
+              });
+            } catch {
+              // ignore ephemeral FS cache mirror failure
+            }
+          }
+        }
+      }
+      if (!txState) {
+        for (const safeId of uniqueSafeIds) {
+          if (!results.has(safeId)) {
+            memoryVaultCache.delete(safeId);
+            try {
+              const encPath = getEncryptedVaultFilePath(safeId);
+              if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
+            } catch {
+              // ignore ephemeral FS unlink failure
+            }
+          }
+        }
+      }
+      return results;
+    } catch (err: unknown) {
+      if (txClient) {
+        throw err;
+      }
+      warnServerFallback('vault:postgres-batch-read-fallback', err);
+    }
+  }
+
+  for (const safeId of uniqueSafeIds) {
+    const val = loadTenantVaultSync<T | null>(safeId, null);
+    if (val !== null) {
+      results.set(safeId, val);
+    }
+  }
+  return results;
+}
+
+/**
  * Awaited cloud-first write: encrypts tenant credentials/state with AES-256-GCM, writes to `/tmp`,
  * and awaits the Postgres upsert when `DATABASE_URL` is set so Vercel Serverless functions never
- * freeze before the transaction commits.
+ * freeze before the transaction commits. Inside an active PG transaction, memory & `/tmp` updates
+ * are deferred until `COMMIT` succeeds so rollbacks never poison local caches.
  */
 export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promise<void> {
   const safeId = sanitizeTenantId(tenantId);
   const envelope = encryptJsonForVault(data);
 
-  const txClient = pgTxContext.getStore();
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -493,6 +693,13 @@ export async function saveTenantVaultAsync<T>(tenantId: string, data: T): Promis
       warnServerFallback('vault:postgres-upsert', err);
       throw err;
     }
+  }
+
+  if (txState) {
+    txState.touchedKeys.add(safeId);
+    txState.pendingVaultDeletes.delete(safeId);
+    txState.pendingVaultWrites.set(safeId, { data: structuredClone(data), envelope });
+    return;
   }
 
   setBoundedMemoryVaultEntry(safeId, structuredClone(data));
@@ -613,14 +820,8 @@ export function buildClearUserCookieHeader(): string {
  */
 export async function deleteTenantVault(tenantId: string): Promise<void> {
   const safeId = sanitizeTenantId(tenantId);
-  memoryVaultCache.delete(safeId);
-  try {
-    const encPath = getEncryptedVaultFilePath(safeId);
-    if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
-  } catch (err: unknown) {
-    warnServerFallback('vault:local-unlink', err);
-  }
-  const txClient = pgTxContext.getStore();
+  const txState = getActivePgTxState();
+  const txClient = txState?.client;
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -633,6 +834,19 @@ export async function deleteTenantVault(tenantId: string): Promise<void> {
       warnServerFallback('vault:postgres-delete', err);
       throw err;
     }
+  }
+  if (txState) {
+    txState.touchedKeys.add(safeId);
+    txState.pendingVaultWrites.delete(safeId);
+    txState.pendingVaultDeletes.add(safeId);
+    return;
+  }
+  memoryVaultCache.delete(safeId);
+  try {
+    const encPath = getEncryptedVaultFilePath(safeId);
+    if (fs.existsSync(encPath)) fs.unlinkSync(encPath);
+  } catch (err: unknown) {
+    warnServerFallback('vault:local-unlink', err);
   }
 }
 
@@ -749,7 +963,7 @@ export async function syncNormalizedTeamPostgresAsync(
   docPayload: unknown,
   members: NormalizedTeamMemberSyncInput[]
 ): Promise<void> {
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return;
   const safeTeamId = sanitizeTenantId(teamId);
@@ -794,24 +1008,32 @@ export async function withTeamRowLock<T>(
   const safeTeamId = sanitizeTenantId(teamId);
   const lockKey = `team_doc_${safeTeamId.slice(0, 40)}`;
   return withVaultLock(lockKey, async () => {
-    const existingClient = pgTxContext.getStore();
-    if (existingClient) {
-      await existingClient.query('SELECT pg_advisory_xact_lock(hashtext($1))', [safeTeamId]);
+    const existingTxState = getActivePgTxState();
+    if (existingTxState) {
+      await existingTxState.client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [safeTeamId]);
       return fn();
     }
     const pool = getPostgresPool();
     if (!pool) return fn();
     await ensurePostgresVaultSchema(pool);
     const client = await pool.connect();
+    const txState: PgTxState = {
+      client,
+      pendingVaultWrites: new Map(),
+      pendingVaultDeletes: new Set(),
+      touchedKeys: new Set(),
+    };
     try {
       await client.query('BEGIN');
       await client.query("SET LOCAL lock_timeout = '4000ms'");
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [safeTeamId]);
-      const result = await pgTxContext.run(client, fn);
+      const result = await pgTxContext.run(txState, fn);
       await client.query('COMMIT');
+      flushPgTxCacheState(txState);
       return result;
     } catch (err) {
       await client.query('ROLLBACK').catch(() => undefined);
+      invalidatePgTxTouchedKeys(txState);
       throw err;
     } finally {
       client.release();
@@ -863,7 +1085,7 @@ export async function appendAuditLogAsync(params: {
     await saveTenantVaultAsync(key, next);
   });
 
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -900,7 +1122,7 @@ export async function listTeamAuditLogAsync(
 ): Promise<PersistedAuditLogEntry[]> {
   const safeTeamId = sanitizeTenantId(teamId);
   const clampedLimit = Math.max(1, Math.min(250, Math.round(limit)));
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (txClient || pool) {
     try {
@@ -965,7 +1187,7 @@ export async function consumeRateLimitPostgresAsync(
   if (!cleanKey) {
     return { allowed: true, retryAfterSecs: 0, remaining: Math.max(0, limit) };
   }
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return null;
 
@@ -1041,7 +1263,7 @@ export async function resetRateLimitsPostgresForTesting(prefix?: string): Promis
  */
 export async function deleteTeamPostgresRowsAsync(teamId: string): Promise<void> {
   const safeTeamId = sanitizeTenantId(teamId);
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return;
 
@@ -1061,15 +1283,17 @@ export async function deleteTeamPostgresRowsAsync(teamId: string): Promise<void>
 
 /**
  * Deletes normalized Postgres `thresh_team_members` rows and scrubs PII in `thresh_audit_log`
- * for an erased athlete/user or declined minor consent.
+ * for an erased athlete/user or declined minor consent (matching membershipId, injuryCaseId,
+ * and `metadata_json` references).
  */
 export async function deleteMemberPostgresRowsAsync(params: {
   teamId?: string;
   membershipIds?: string[];
+  injuryCaseIds?: string[];
   userSids?: string[];
   emails?: string[];
 }): Promise<void> {
-  const txClient = pgTxContext.getStore();
+  const txClient = getActivePgTxClient();
   const pool = getPostgresPool();
   if (!txClient && !pool) return;
 
@@ -1077,6 +1301,10 @@ export async function deleteMemberPostgresRowsAsync(params: {
   const membershipIds = Array.from(
     new Set((params.membershipIds || []).map((v) => String(v || '').trim()).filter(Boolean))
   );
+  const injuryCaseIds = Array.from(
+    new Set((params.injuryCaseIds || []).map((v) => String(v || '').trim()).filter(Boolean))
+  );
+  const auditTargetIds = Array.from(new Set([...membershipIds, ...injuryCaseIds]));
   const userSids = Array.from(
     new Set((params.userSids || []).map((v) => String(v || '').trim()).filter(Boolean))
   );
@@ -1084,7 +1312,7 @@ export async function deleteMemberPostgresRowsAsync(params: {
     new Set((params.emails || []).map((v) => String(v || '').trim().toLowerCase()).filter(Boolean))
   );
 
-  if (membershipIds.length === 0 && userSids.length === 0 && emails.length === 0) {
+  if (auditTargetIds.length === 0 && userSids.length === 0 && emails.length === 0) {
     return;
   }
 
@@ -1098,12 +1326,34 @@ export async function deleteMemberPostgresRowsAsync(params: {
         'DELETE FROM thresh_team_members WHERE team_id = $1 AND membership_id = ANY($2::text[])',
         [safeTeamId, membershipIds]
       );
-      await runner.query(
-        `UPDATE thresh_audit_log
-         SET metadata_json = '{"redacted":true}'
-         WHERE team_id = $1 AND target_id = ANY($2::text[])`,
-        [safeTeamId, membershipIds]
-      );
+    }
+    if (auditTargetIds.length > 0) {
+      if (safeTeamId) {
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET metadata_json = '{"redacted":true}'
+           WHERE team_id = $1
+             AND (
+               target_id = ANY($2::text[])
+               OR EXISTS (
+                 SELECT 1 FROM unnest($2::text[]) AS tid
+                 WHERE strpos(metadata_json, tid) > 0
+               )
+             )`,
+          [safeTeamId, auditTargetIds]
+        );
+      } else {
+        await runner.query(
+          `UPDATE thresh_audit_log
+           SET metadata_json = '{"redacted":true}'
+           WHERE target_id = ANY($1::text[])
+              OR EXISTS (
+                SELECT 1 FROM unnest($1::text[]) AS tid
+                WHERE strpos(metadata_json, tid) > 0
+              )`,
+          [auditTargetIds]
+        );
+      }
     }
     if (userSids.length > 0) {
       if (safeTeamId) {
@@ -1161,10 +1411,11 @@ export interface FunnelEventDbRow {
   landing_path?: string | null;
   role?: string | null;
   tier?: string | null;
+  event_count?: number;
 }
 
 export async function insertFunnelEventPostgresAsync(
-  row: Omit<FunnelEventDbRow, 'created_at'>
+  row: Omit<FunnelEventDbRow, 'created_at' | 'event_count'>
 ): Promise<boolean | null> {
   const pool = getPostgresPool();
   if (!pool) return null;
@@ -1203,18 +1454,143 @@ export async function queryFunnelEventsPostgresAsync(
   if (!pool) return null;
   try {
     await ensurePostgresVaultSchema(pool);
+    const cappedLimit = Math.max(1, Math.min(10000, Math.floor(limit)));
     const res = await pool.query<FunnelEventDbRow>(
-      `SELECT event_name, created_at::text AS created_at, utm_source, utm_medium, utm_campaign,
-              utm_content, src, referrer_host, landing_path, role, tier
+      `SELECT event_name,
+              TO_CHAR(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS created_at,
+              utm_source,
+              utm_medium,
+              utm_campaign,
+              referrer_host,
+              COALESCE(NULLIF(role, ''), 'UNKNOWN') AS role,
+              tier,
+              COUNT(*)::int AS event_count
        FROM thresh_funnel_events
        WHERE created_at >= $1::timestamptz
+       GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
        ORDER BY created_at DESC
        LIMIT $2`,
-      [sinceIso, Math.max(1, Math.min(25000, Math.floor(limit)))]
+      [sinceIso, cappedLimit]
     );
     return res.rows;
   } catch (err: unknown) {
     warnServerFallback('vault:query-funnel-events-postgres', err);
     return null;
+  }
+}
+
+export const DELETED_USERS_TOMBSTONES_KEY = 'deleted_users_tombstones_v1';
+
+export async function markDeletedUserTombstoneAsync(userId: string): Promise<void> {
+  const cleanId = String(userId || '').trim();
+  if (!cleanId.startsWith('usr_')) return;
+  await withVaultLock(DELETED_USERS_TOMBSTONES_KEY, async () => {
+    const existing = await loadTenantVaultAsync<{ ids?: Record<string, string> }>(
+      DELETED_USERS_TOMBSTONES_KEY,
+      { ids: {} }
+    );
+    const ids = { ...(existing?.ids || {}) };
+    ids[cleanId] = new Date().toISOString();
+    const entries = Object.entries(ids);
+    const trimmed =
+      entries.length > 5000
+        ? Object.fromEntries(entries.sort((a, b) => a[1].localeCompare(b[1])).slice(-5000))
+        : ids;
+    await saveTenantVaultAsync(DELETED_USERS_TOMBSTONES_KEY, { ids: trimmed });
+  });
+}
+
+export async function isUserDeletedTombstoneAsync(userId: string): Promise<boolean> {
+  const cleanId = String(userId || '').trim();
+  if (!cleanId.startsWith('usr_')) return false;
+  const existing = await loadTenantVaultAsync<{ ids?: Record<string, string> }>(
+    DELETED_USERS_TOMBSTONES_KEY,
+    { ids: {} }
+  );
+  return Boolean(existing?.ids && Object.prototype.hasOwnProperty.call(existing.ids, cleanId));
+}
+
+export async function lookupStripeEventPostgresAsync(params: {
+  eventId: string;
+  customerId?: string;
+  subscriptionId?: string;
+}): Promise<{ alreadyProcessed: boolean; resolvedTeamId?: string } | null> {
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    const dupRes = await runner.query<{ event_id: string }>(
+      'SELECT event_id FROM thresh_stripe_events WHERE event_id = $1 LIMIT 1',
+      [params.eventId]
+    );
+    if (dupRes.rows.length > 0) {
+      return { alreadyProcessed: true };
+    }
+
+    let resolvedTeamId: string | undefined;
+    if (params.subscriptionId) {
+      const subRes = await runner.query<{ team_id: string | null }>(
+        `SELECT team_id FROM thresh_stripe_events
+         WHERE subscription_id = $1 AND team_id IS NOT NULL
+         ORDER BY processed_at DESC LIMIT 1`,
+        [params.subscriptionId]
+      );
+      if (subRes.rows[0]?.team_id) resolvedTeamId = subRes.rows[0].team_id;
+    }
+    if (!resolvedTeamId && params.customerId) {
+      const custRes = await runner.query<{ team_id: string | null }>(
+        `SELECT team_id FROM thresh_stripe_events
+         WHERE customer_id = $1 AND team_id IS NOT NULL
+         ORDER BY processed_at DESC LIMIT 1`,
+        [params.customerId]
+      );
+      if (custRes.rows[0]?.team_id) resolvedTeamId = custRes.rows[0].team_id;
+    }
+    return { alreadyProcessed: false, resolvedTeamId };
+  } catch (err: unknown) {
+    warnServerFallback('stripe:postgres-lookup', err);
+    if (txClient) throw err;
+    return null;
+  }
+}
+
+export async function recordStripeEventPostgresAsync(params: {
+  eventId: string;
+  eventType: string;
+  teamId?: string;
+  customerId?: string;
+  subscriptionId?: string;
+}): Promise<{ inserted: boolean } | null> {
+  const txClient = getActivePgTxClient();
+  const pool = getPostgresPool();
+  if (!txClient && !pool) return null;
+
+  try {
+    if (!txClient && pool) {
+      await ensurePostgresVaultSchema(pool);
+    }
+    const runner = txClient || pool!;
+    const res = await runner.query<{ event_id: string }>(
+      `INSERT INTO thresh_stripe_events (event_id, event_type, team_id, customer_id, subscription_id, status, processed_at)
+       VALUES ($1, $2, $3, $4, $5, 'PROCESSED', NOW())
+       ON CONFLICT (event_id) DO NOTHING
+       RETURNING event_id`,
+      [
+        params.eventId,
+        params.eventType,
+        params.teamId || null,
+        params.customerId || null,
+        params.subscriptionId || null,
+      ]
+    );
+    return { inserted: res.rows.length > 0 };
+  } catch (err: unknown) {
+    warnServerFallback('stripe:postgres-record', err);
+    throw err;
   }
 }

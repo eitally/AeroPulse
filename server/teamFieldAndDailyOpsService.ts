@@ -142,7 +142,7 @@ export async function recordTeamAttendanceBatch(params: {
       const existingRec = dayBucket[memId];
       const keepGpsMeta =
         existingRec?.method === 'GPS_GEOFENCE' &&
-        (status === 'PRESENT' || status === 'LATE');
+        (status === 'PRESENT' || status === 'LATE' || status === 'INJURED_MODIFIED');
 
       dayBucket[memId] = {
         date: cleanDate,
@@ -288,6 +288,36 @@ export async function selfCheckInTeamAttendance(params: {
       error: 'Valid YYYY-MM-DD check-in date required.',
     };
   }
+  const [yr, mo, dy] = cleanDate.split('-').map(Number);
+  const parsedDateUtc = Date.UTC(yr, mo - 1, dy);
+  const checkDate = new Date(parsedDateUtc);
+  if (
+    checkDate.getUTCFullYear() !== yr ||
+    checkDate.getUTCMonth() !== mo - 1 ||
+    checkDate.getUTCDate() !== dy
+  ) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: 'Valid calendar YYYY-MM-DD check-in date required.',
+    };
+  }
+  const nowDate = new Date();
+  const todayUtc = Date.UTC(
+    nowDate.getUTCFullYear(),
+    nowDate.getUTCMonth(),
+    nowDate.getUTCDate()
+  );
+  const dayDiff = Math.abs(Math.round((parsedDateUtc - todayUtc) / 86_400_000));
+  if (dayDiff > 1) {
+    return {
+      ok: false,
+      statusCode: 400,
+      verifiedOnSite: false,
+      error: 'GPS self check-in date must be within +/- 1 day of today (UTC).',
+    };
+  }
 
   const lat = Number(params.latitude);
   const lng = Number(params.longitude);
@@ -388,7 +418,8 @@ export async function selfCheckInTeamAttendance(params: {
       };
     }
 
-    if (distanceMeters > selectedVenue.radiusMeters) {
+    const accuracyCushionMeters = Math.min(Math.max(0, Number(params.accuracyMeters) || 0), 50);
+    if (distanceMeters > selectedVenue.radiusMeters + accuracyCushionMeters) {
       return {
         ok: false,
         statusCode: 400,
@@ -397,7 +428,9 @@ export async function selfCheckInTeamAttendance(params: {
         radiusMeters: selectedVenue.radiusMeters,
         venueId: selectedVenue.id,
         venueName: selectedVenue.name,
-        error: `Outside ${selectedVenue.name} practice geofence (${distanceMeters}m away; max ${selectedVenue.radiusMeters}m).`,
+        error: `Outside ${selectedVenue.name} practice geofence (${distanceMeters}m away; max ${selectedVenue.radiusMeters}m${
+          accuracyCushionMeters > 0 ? ` + ${Math.round(accuracyCushionMeters)}m accuracy cushion` : ''
+        }).`,
       };
     }
 
@@ -406,12 +439,25 @@ export async function selfCheckInTeamAttendance(params: {
     const dayBucket: Record<string, TeamAttendanceRecord> = {
       ...(doc.attendanceByDate[cleanDate] || {}),
     };
+    const existingRec = dayBucket[callerMem.membershipId];
+    if (existingRec && (existingRec.status === 'ABSENT' || existingRec.status === 'EXCUSED')) {
+      return {
+        ok: false,
+        statusCode: 409,
+        verifiedOnSite: false,
+        error: `Coach already marked attendance as ${existingRec.status} for ${cleanDate}.`,
+      };
+    }
+    const preservedStatus: TeamAttendanceStatus =
+      callerMem.status === 'INJURED' || existingRec?.status === 'INJURED_MODIFIED'
+        ? 'INJURED_MODIFIED'
+        : 'PRESENT';
 
     // Privacy-first: persist distanceMeters + venue metadata ONLY — never coordinates
     const record: TeamAttendanceRecord = {
       date: cleanDate,
       membershipId: callerMem.membershipId,
-      status: 'PRESENT',
+      status: preservedStatus,
       checkedInAt: nowIso,
       verifiedOnSite: true,
       distanceMeters,
@@ -1024,9 +1070,10 @@ export async function recordTeamFieldMarks(params: {
       }
     }
 
-    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), archive);
-    doc.fieldMarkLogs = archive.slice(0, 150);
-    doc.fieldMarkLogsTotalCount = archive.length;
+    const boundedArchive = archive.slice(0, 2500);
+    await saveTenantVaultAsync(teamFieldLogsVaultKey(params.teamId), boundedArchive);
+    doc.fieldMarkLogs = boundedArchive.slice(0, 150);
+    doc.fieldMarkLogsTotalCount = boundedArchive.length;
     doc.updatedAt = nowIso;
     await saveTeamDocRaw(params.teamId, doc);
     await appendAuditLogAsync({
@@ -1035,7 +1082,7 @@ export async function recordTeamFieldMarks(params: {
       action: 'FIELD_MARKS_RECORDED',
       metadata: {
         recordedCount,
-        totalArchiveCount: archive.length,
+        totalArchiveCount: boundedArchive.length,
         ...(topBatchId ? { clientBatchId: topBatchId } : {}),
       },
     });

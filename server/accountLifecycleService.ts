@@ -43,12 +43,18 @@ import {
   deleteMemberPostgresRowsAsync,
   deleteTeamPostgresRowsAsync,
   deleteTenantVault,
+  findTeamIdsForUserPostgresAsync,
+  getVaultStorageBackend,
+  isUserDeletedTombstoneAsync,
   loadTenantVaultAsync,
+  loadTenantVaultsBatchAsync,
+  markDeletedUserTombstoneAsync,
   sanitizeTenantId,
   saveTenantVaultAsync,
   withTeamRowLock,
   withVaultLock,
 } from './tokenVault.ts';
+import type { StoredTeamDocument } from './teamStoreCore.ts';
 import {
   appendSetCookieHeader,
   clearSessionCookie,
@@ -76,6 +82,7 @@ import {
   teamFieldLogsVaultKey,
 } from './teamFieldAndDailyOpsService.ts';
 import {
+  collectMemberInjuryCaseIds,
   scrubMemberFromTeamDocument,
   scrubMemberSidecarVaultsAndPostgres,
 } from './teamLifecycleService.ts';
@@ -181,8 +188,14 @@ async function resolveAuthenticatedUserForRequest(
   sub: string
 ): Promise<ThreshUser | null> {
   if (sub.startsWith('usr_')) {
+    if (await isUserDeletedTombstoneAsync(sub)) {
+      return null;
+    }
     const found = await getUserById(sub);
     if (found) return found;
+    if (getVaultStorageBackend() === 'POSTGRES') {
+      return null;
+    }
     const cookies = parseCookies(req.headers.cookie);
     const backupEnvelope = cookies[USER_VAULT_COOKIE_NAME];
     if (backupEnvelope) {
@@ -200,6 +213,55 @@ async function resolveAuthenticatedUserForRequest(
 }
 
 /**
+ * Resolves all candidate team IDs and batch-loads their documents without O(N) platform scans.
+ * In Postgres mode uses `findTeamIdsForUserPostgresAsync` + `userTeamsVaultKey` batch load;
+ * in non-Postgres mode falls back to the teams directory.
+ */
+async function collectCandidateTeamDocsAsync(
+  candidateSids: Set<string>,
+  cleanEmail: string
+): Promise<{ teamIds: string[]; docsByTeamId: Map<string, StoredTeamDocument> }> {
+  const sidList = Array.from(candidateSids).filter(Boolean);
+  const teamIdSet = new Set<string>();
+
+  if (sidList.length > 0) {
+    const idxDocs = await loadTenantVaultsBatchAsync<UserTeamsIndex | null>(
+      sidList.map((sid) => userTeamsVaultKey(sid))
+    );
+    for (const idx of idxDocs.values()) {
+      for (const id of idx?.teamIds || []) {
+        teamIdSet.add(id);
+      }
+    }
+  }
+
+  const pgTeamIds = await findTeamIdsForUserPostgresAsync(sidList, cleanEmail);
+  if (pgTeamIds !== null) {
+    for (const id of pgTeamIds) {
+      teamIdSet.add(id);
+    }
+  } else {
+    const dir = await loadDirectory();
+    for (const id of dir.allTeamIds || []) {
+      teamIdSet.add(id);
+    }
+  }
+
+  const teamIds = Array.from(teamIdSet);
+  const docsByTeamId = new Map<string, StoredTeamDocument>();
+  if (teamIds.length > 0) {
+    const docKeys = teamIds.map((id) => teamDocVaultKey(id));
+    const loadedDocs = await loadTenantVaultsBatchAsync<StoredTeamDocument | null>(docKeys);
+    for (const id of teamIds) {
+      const doc = loadedDocs.get(teamDocVaultKey(id)) ?? null;
+      if (doc) docsByTeamId.set(id, doc);
+    }
+  }
+
+  return { teamIds, docsByTeamId };
+}
+
+/**
  * Builds a clean-room, strictly caller-scoped FERPA / GDPR data export bundle
  * for the authenticated user without leaking secrets, tokens, or other athletes' PII.
  */
@@ -208,6 +270,9 @@ export async function buildUserDataExportPayload(
 ): Promise<UserDataExportPayload | null> {
   const claims = getVerifiedSessionClaims(req);
   if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+    return null;
+  }
+  if (claims.sub.startsWith('usr_') && (await isUserDeletedTombstoneAsync(claims.sub))) {
     return null;
   }
 
@@ -249,26 +314,15 @@ export async function buildUserDataExportPayload(
   }
 
   // Gather all teams where caller holds an active/invited/alumni membership
-  const teamIdSet = new Set<string>();
-  for (const sid of candidateSids) {
-    const idx = await loadTenantVaultAsync<UserTeamsIndex>(userTeamsVaultKey(sid), {
-      teamIds: [],
-      updatedAt: '',
-    });
-    for (const id of idx.teamIds || []) {
-      teamIdSet.add(id);
-    }
-  }
-  const dir = await loadDirectory();
-  for (const id of dir.allTeamIds || []) {
-    teamIdSet.add(id);
-  }
-
   const cleanUserEmail = user?.email?.trim().toLowerCase() || '';
+  const { teamIds: candidateTeamIds, docsByTeamId } = await collectCandidateTeamDocsAsync(
+    candidateSids,
+    cleanUserEmail
+  );
   const exportedTeams: ExportedTeamMembershipBundle[] = [];
 
-  for (const teamId of teamIdSet) {
-    const doc = await loadTeamDocRaw(teamId);
+  for (const teamId of candidateTeamIds) {
+    const doc = docsByTeamId.get(teamId);
     if (!doc) continue;
 
     const myMem = doc.memberships.find(
@@ -631,16 +685,25 @@ export async function deleteThreshAccountPermanently(
   const { candidateSids, stravaIds } = collectCandidateIdentityContext(req, user, claims.sid);
   const cleanEmail = user?.email ? user.email.trim().toLowerCase() : '';
 
-  // Sole Head Coach safety guard: prevent leaving active athletes/staff orphaned on a headless team
-  const dirForGuard = await loadDirectory();
-  for (const teamId of dirForGuard.allTeamIds || []) {
-    const doc = await loadTeamDocRaw(teamId);
+  // Resolve candidate teams via Postgres SQL + user index + batch vault fetch (never lock uninvolved teams)
+  const { teamIds: candidateTeamIds, docsByTeamId } = await collectCandidateTeamDocsAsync(
+    candidateSids,
+    cleanEmail
+  );
+  const matchedTeamIds: string[] = [];
+  for (const teamId of candidateTeamIds) {
+    const doc = docsByTeamId.get(teamId);
     if (!doc) continue;
-    const isMyHeadCoach = doc.memberships.some(
+    const myMems = doc.memberships.filter(
       (m) =>
-        candidateSids.has(m.userSid || '') &&
-        m.role === 'HEAD_COACH' &&
-        m.status !== 'REVOKED'
+        candidateSids.has(m.userSid || '') ||
+        (cleanEmail && m.invitedEmail?.trim().toLowerCase() === cleanEmail)
+    );
+    if (myMems.length === 0) continue;
+    matchedTeamIds.push(teamId);
+
+    const isMyHeadCoach = myMems.some(
+      (m) => m.role === 'HEAD_COACH' && m.status !== 'REVOKED'
     );
     if (!isMyHeadCoach) continue;
     const otherActive = doc.memberships.filter(
@@ -709,21 +772,9 @@ export async function deleteThreshAccountPermanently(
   }
   await bestEffortRevokeUpstreamTokens(stravaAccessToken, polarAccessToken, polarUserId);
 
-  // Collect all teams touched by any candidate sid or directory match
-  const affectedTeamIds = new Set<string>(dirForGuard.allTeamIds || []);
-  for (const sid of candidateSids) {
-    const idx = await loadTenantVaultAsync<UserTeamsIndex>(userTeamsVaultKey(sid), {
-      teamIds: [],
-      updatedAt: '',
-    });
-    for (const id of idx.teamIds) {
-      affectedTeamIds.add(id);
-    }
-  }
-
-  // Scrub team memberships, nested sub-arrays, sidecar vaults, and Postgres rows
+  // Scrub team memberships, nested sub-arrays, sidecar vaults, and Postgres rows for matched teams only
   const deletedTeamIds: string[] = [];
-  for (const teamId of affectedTeamIds) {
+  for (const teamId of matchedTeamIds) {
     await withTeamRowLock(teamId, async () => {
       const doc = await loadTeamDocRaw(teamId);
       if (!doc) return;
@@ -753,6 +804,7 @@ export async function deleteThreshAccountPermanently(
       }
 
       const targetSids = new Set<string>(candidateSids);
+      const injuryCaseIds = collectMemberInjuryCaseIds(doc, targetMembershipIds);
       scrubMemberFromTeamDocument({
         doc,
         targetMembershipIds,
@@ -764,6 +816,7 @@ export async function deleteThreshAccountPermanently(
         targetMembershipIds,
         targetSids,
         emails: cleanEmail ? [cleanEmail] : [],
+        injuryCaseIds,
       });
       if (typeof updatedFieldCount === 'number') {
         doc.fieldMarkLogsTotalCount = updatedFieldCount;
@@ -844,6 +897,13 @@ export async function deleteThreshAccountPermanently(
         // ignore
       }
     }
+  }
+
+  const tombstoneIds = new Set<string>();
+  if (claims.sub.startsWith('usr_')) tombstoneIds.add(claims.sub);
+  if (user?.id && user.id.startsWith('usr_')) tombstoneIds.add(user.id);
+  for (const tid of tombstoneIds) {
+    await markDeletedUserTombstoneAsync(tid).catch(() => undefined);
   }
 
   runtimeStore.stravaAccessToken = '';

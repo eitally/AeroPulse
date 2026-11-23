@@ -301,7 +301,8 @@ describe('Sprint 3C · Coach Parity (GPS Practice Check-In, District AD Overview
       });
       expect(followRes.status).toBe(200);
 
-      const todayIso = '2026-11-22';
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const tomorrowIso = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
 
       // Unauthenticated -> 401
       const unauthRes = await fetch(`${baseUrl}/api/teams/${encodeURIComponent(teamId)}/attendance/self-checkin`, {
@@ -434,27 +435,27 @@ describe('Sprint 3C · Coach Parity (GPS Practice Check-In, District AD Overview
       await selfCheckInTeamAttendance({
         callerSid: ath1Sid,
         teamId,
-        date: '2026-11-23',
+        date: tomorrowIso,
         latitude: 37.4006,
         longitude: -122.133,
       });
       const keepLate = await recordTeamAttendanceBatch({
         callerSid: coachSid,
         teamId,
-        date: '2026-11-23',
+        date: tomorrowIso,
         entries: [{ membershipId: ath1MemId, status: 'LATE' }],
         originUrl: baseUrl,
       });
-      expect(keepLate.team?.attendanceByDate?.['2026-11-23']?.[ath1MemId]?.method).toBe('GPS_GEOFENCE');
+      expect(keepLate.team?.attendanceByDate?.[tomorrowIso]?.[ath1MemId]?.method).toBe('GPS_GEOFENCE');
 
       const overrideAbsent = await recordTeamAttendanceBatch({
         callerSid: coachSid,
         teamId,
-        date: '2026-11-23',
+        date: tomorrowIso,
         entries: [{ membershipId: ath1MemId, status: 'ABSENT' }],
         originUrl: baseUrl,
       });
-      expect(overrideAbsent.team?.attendanceByDate?.['2026-11-23']?.[ath1MemId]?.method).toBe('COACH_MANUAL');
+      expect(overrideAbsent.team?.attendanceByDate?.[tomorrowIso]?.[ath1MemId]?.method).toBe('COACH_MANUAL');
     });
 
     it('renders PracticeAttendanceCheckInCard privacy caption & CoachDailyOpsPanel GPS pill', () => {
@@ -578,7 +579,8 @@ describe('Sprint 3C · Coach Parity (GPS Practice Check-In, District AD Overview
       const adSid = crypto.randomBytes(12).toString('hex');
       const adCookie = `${SESSION_COOKIE_NAME}=${issueSessionToken('usr_ad_1', adSid, 'verified')}`;
 
-      const todayIso = '2026-11-22';
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const tomorrowIso = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
       const docs: StoredTeamDocument[] = [
         {
           brand: {

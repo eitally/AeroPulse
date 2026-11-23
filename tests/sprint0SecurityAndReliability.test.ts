@@ -1255,7 +1255,10 @@ describe('Sprint 0: Track A Security, SafeSport & Serverless Reliability P0s', (
         "'/sticker': '/?demo=1&sample=coach&utm_source=print&utm_medium=sticker&utm_campaign=varsity_crest#coach'"
       );
       expect(serverTs).toContain(
-        "'/tee': '/?demo=1&sample=coach&utm_source=print&utm_medium=tee&utm_campaign=coach_tee#coach'"
+        "'/tee': '/?demo=1&sample=coach&utm_source=print&utm_medium=tee&utm_campaign=meet_day_tee#coach'"
+      );
+      expect(serverTs).toContain(
+        "'/share': '/share/workout?preset=8x400&utm_source=share&utm_medium=card&utm_campaign=share_card'"
       );
       expect(serverTs).toContain('captureServerException');
     });

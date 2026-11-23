@@ -571,6 +571,17 @@ describe('Sprint 2 Track 2B: FERPA Export, COPPA Direct-Signup Gate, Full Erasur
       if (trimmed.startsWith('SELECT pg_advisory_xact_lock')) {
         return { rows: [{ pg_advisory_xact_lock: '' }] };
       }
+      if (trimmed.startsWith('SELECT tenant_id, encrypted_envelope FROM thresh_tenant_vault')) {
+        const keys = Array.isArray(params[0]) ? params[0].map((k) => String(k)) : [];
+        return {
+          rows: keys
+            .map((k) => {
+              const env = vaultRows.get(k);
+              return env ? { tenant_id: k, encrypted_envelope: env } : null;
+            })
+            .filter(Boolean),
+        };
+      }
       if (trimmed.startsWith('SELECT encrypted_envelope FROM thresh_tenant_vault')) {
         const env = vaultRows.get(String(params[0] || ''));
         return { rows: env ? [{ encrypted_envelope: env }] : [] };

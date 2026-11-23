@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { escapeHtml, timingSafeStringEqual } from './securityUtils.ts';
+import { validateCoppaAgeInput } from './coppaGuard.ts';
 import { resolveAthleteAgeTier } from '../src/physiology/ageAndComplianceEngine.ts';
 import { normalizeAthleteMatchKey } from '../src/utils/athleticNetAndTfrrsEngine.ts';
 import {
@@ -27,6 +28,7 @@ import {
   addTeamToUserIndex,
   hashToken,
   loadDirectory,
+  loadTeamDocRaw,
   projectTeamSummaryForCaller,
   sanitizeDistrictName,
   sanitizeExternalSyncConfig,
@@ -63,6 +65,15 @@ export * from './teamStoreCore.ts';
 export * from './teamEmailAndOtpService.ts';
 export * from './teamWorkoutAndGovernanceService.ts';
 
+const RASTER_LOGO_DATA_URL_RE = /^data:image\/(png|jpeg|jpg|webp|gif);base64,/i;
+
+function sanitizeRasterLogoDataUrl(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > 96_000) return undefined;
+  return RASTER_LOGO_DATA_URL_RE.test(trimmed) ? trimmed : undefined;
+}
+
 export async function updateTeamMemberEmailsForUser(params: {
   callerSid?: string;
   oldEmail?: string;
@@ -90,32 +101,30 @@ export async function updateTeamMemberEmailsForUser(params: {
   }
 
   if (params.callerSid) {
-    const idx = await loadTenantVaultAsync<UserTeamsIndex>(userTeamsVaultKey(params.callerSid), {
+    const callerSid = params.callerSid;
+    const idx = await loadTenantVaultAsync<UserTeamsIndex>(userTeamsVaultKey(callerSid), {
       teamIds: [],
       updatedAt: new Date().toISOString(),
     });
     if (idx.email !== cleanNew) {
       idx.email = cleanNew;
       idx.updatedAt = new Date().toISOString();
-      await saveTenantVaultAsync(userTeamsVaultKey(params.callerSid), idx);
+      await saveTenantVaultAsync(userTeamsVaultKey(callerSid), idx);
     }
     for (const teamId of idx.teamIds) {
-      await withVaultLock(teamDocVaultKey(teamId), async () => {
-        const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-          teamDocVaultKey(teamId),
-          null
-        );
+      await withTeamRowLock(teamId, async () => {
+        const doc = await loadTeamDocRaw(teamId);
         if (!doc) return;
         let changed = false;
         for (const m of doc.memberships) {
-          if (m.userSid === params.callerSid && m.status !== 'REVOKED') {
+          if (m.userSid === callerSid && m.status !== 'REVOKED') {
             m.invitedEmail = cleanNew;
             changed = true;
           }
         }
         if (changed) {
           doc.updatedAt = new Date().toISOString();
-          await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+          await saveTeamDocRaw(teamId, doc);
         }
       });
     }
@@ -143,31 +152,33 @@ export async function migrateAnonymousTeamsToSid(params: {
   if (oldIdx.teamIds.length === 0) return;
 
   for (const teamId of oldIdx.teamIds) {
-    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
-    let changed = false;
-    for (const m of doc.memberships) {
-      if (m.userSid === oldSid && m.status !== 'REVOKED') {
-        m.userSid = newSid;
-        if (stravaAthleteId) m.stravaAthleteId = stravaAthleteId;
-        if (email && !m.invitedEmail) m.invitedEmail = email;
-        if (
-          athleteName &&
-          (!m.invitedName ||
-            m.invitedName === 'Team Athlete' ||
-            m.invitedName.toLowerCase().startsWith('anonymous'))
-        ) {
-          m.invitedName = athleteName.slice(0, 64);
+    const migrated = await withTeamRowLock(teamId, async () => {
+      const doc = await loadTeamDocRaw(teamId);
+      if (!doc) return false;
+      let changed = false;
+      for (const m of doc.memberships) {
+        if (m.userSid === oldSid && m.status !== 'REVOKED') {
+          m.userSid = newSid;
+          if (stravaAthleteId) m.stravaAthleteId = stravaAthleteId;
+          if (email && !m.invitedEmail) m.invitedEmail = email;
+          if (
+            athleteName &&
+            (!m.invitedName ||
+              m.invitedName === 'Team Athlete' ||
+              m.invitedName.toLowerCase().startsWith('anonymous'))
+          ) {
+            m.invitedName = athleteName.slice(0, 64);
+          }
+          changed = true;
         }
-        changed = true;
       }
-    }
-    if (changed) {
-      doc.updatedAt = new Date().toISOString();
-      await saveTenantVaultAsync(teamDocVaultKey(teamId), doc);
+      if (changed) {
+        doc.updatedAt = new Date().toISOString();
+        await saveTeamDocRaw(teamId, doc);
+      }
+      return changed;
+    });
+    if (migrated) {
       await addTeamToUserIndex(newSid, teamId, athleteName || oldIdx.displayName, email || oldIdx.email);
     }
   }
@@ -297,12 +308,7 @@ export async function createTeamForCoach(params: {
       ? params.enableParentGuardianCc
       : orgDefaults.enableParentGuardianCc;
 
-  const safeLogo =
-    params.logoDataUrl &&
-    params.logoDataUrl.startsWith('data:image/') &&
-    params.logoDataUrl.length <= 96_000
-      ? params.logoDataUrl
-      : undefined;
+  const safeLogo = sanitizeRasterLogoDataUrl(params.logoDataUrl);
 
   const cleanDistrictName = sanitizeDistrictName(params.districtName);
   const cleanPracticeVenues = sanitizePracticeVenues(params.practiceVenues);
@@ -465,12 +471,11 @@ export async function updateTeamBranding(params: {
     }
     if (u.logoDataUrl === '') {
       doc.brand.logoDataUrl = undefined;
-    } else if (
-      u.logoDataUrl &&
-      u.logoDataUrl.startsWith('data:image/') &&
-      u.logoDataUrl.length <= 96_000
-    ) {
-      doc.brand.logoDataUrl = u.logoDataUrl;
+    } else {
+      const sanitizedLogo = sanitizeRasterLogoDataUrl(u.logoDataUrl);
+      if (sanitizedLogo) {
+        doc.brand.logoDataUrl = sanitizedLogo;
+      }
     }
 
     doc.updatedAt = new Date().toISOString();
@@ -701,71 +706,129 @@ export async function resendPendingTeamInvites(params: {
   emailedCount: number;
   resendConfigured: boolean;
 }> {
-  const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-    teamDocVaultKey(params.teamId),
-    null
-  );
-  if (!doc) return { summary: null, emailedCount: 0, resendConfigured: isResendConfigured() };
+  const cleanOrigin = params.originUrl.replace(/\/+$/, '');
+  const prepared = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return null;
 
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
-  );
-  if (
-    !callerMem ||
-    (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
-  ) {
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== 'REVOKED'
+    );
+    if (
+      !callerMem ||
+      (callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ASSISTANT_COACH')
+    ) {
+      return null;
+    }
+
+    let tokensUpdated = false;
+    const pendingEmails: Array<{
+      membershipId: string;
+      to: string;
+      cc?: string;
+      subject: string;
+      html: string;
+      text: string;
+    }> = [];
+
+    for (const m of doc.memberships) {
+      if (m.status === 'ACTIVE' || m.status === 'REVOKED' || !m.invitedEmail) continue;
+      if (
+        params.membershipId &&
+        params.membershipId !== 'ALL_PENDING' &&
+        m.membershipId !== params.membershipId
+      ) {
+        continue;
+      }
+
+      if (!m.rawInviteToken) {
+        m.rawInviteToken = crypto.randomBytes(12).toString('base64url');
+        m.inviteTokenHash = hashToken(m.rawInviteToken);
+        tokensUpdated = true;
+      }
+
+      const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : '';
+      const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam}`;
+      const ccEmail =
+        doc.brand.enableParentGuardianCc && m.parentGuardianEmail
+          ? m.parentGuardianEmail
+          : undefined;
+      const emailContent = buildTeamInviteEmailContent({
+        brand: doc.brand,
+        invitedName: m.invitedName,
+        squadGroup: m.squadGroup,
+        magicJoinUrl,
+        hasParentCc: Boolean(ccEmail),
+        seedMarkOrFtp: m.seedMarkOrFtp,
+      });
+
+      pendingEmails.push({
+        membershipId: m.membershipId,
+        to: m.invitedEmail,
+        cc: ccEmail,
+        subject: `Reminder: ${emailContent.subject}`,
+        html: emailContent.html,
+        text: emailContent.text,
+      });
+    }
+
+    if (tokensUpdated) {
+      doc.updatedAt = new Date().toISOString();
+      await saveTeamDocRaw(params.teamId, doc);
+    }
+
+    return { doc, pendingEmails };
+  });
+
+  if (!prepared) {
     return { summary: null, emailedCount: 0, resendConfigured: isResendConfigured() };
   }
 
-  const cleanOrigin = params.originUrl.replace(/\/+$/, '');
   let emailedCount = 0;
-
-  for (const m of doc.memberships) {
-    if (m.status === 'ACTIVE' || m.status === 'REVOKED' || !m.invitedEmail) continue;
-    if (
-      params.membershipId &&
-      params.membershipId !== 'ALL_PENDING' &&
-      m.membershipId !== params.membershipId
-    ) {
-      continue;
-    }
-
-    if (!m.rawInviteToken) {
-      m.rawInviteToken = crypto.randomBytes(12).toString('base64url');
-      m.inviteTokenHash = hashToken(m.rawInviteToken);
-    }
-
-    const emailParam = m.invitedEmail ? `&email=${encodeURIComponent(m.invitedEmail)}` : '';
-    const magicJoinUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${m.rawInviteToken}${emailParam}`;
-    const ccEmail =
-      doc.brand.enableParentGuardianCc && m.parentGuardianEmail
-        ? m.parentGuardianEmail
-        : undefined;
-    const emailContent = buildTeamInviteEmailContent({
-      brand: doc.brand,
-      invitedName: m.invitedName,
-      squadGroup: m.squadGroup,
-      magicJoinUrl,
-      hasParentCc: Boolean(ccEmail),
-      seedMarkOrFtp: m.seedMarkOrFtp,
-    });
-
-    const sendRes = await sendEmailViaResend({
-      to: m.invitedEmail,
-      cc: ccEmail,
-      subject: `Reminder: ${emailContent.subject}`,
-      html: emailContent.html,
-      text: emailContent.text,
-    });
-
-    m.emailDeliveryStatus = sendRes.status;
-    if (sendRes.delivered) emailedCount += 1;
+  if (prepared.pendingEmails.length === 0) {
+    return {
+      summary: projectTeamSummaryForCaller(prepared.doc, params.callerSid, params.originUrl),
+      emailedCount: 0,
+      resendConfigured: isResendConfigured(),
+    };
   }
 
-  doc.updatedAt = new Date().toISOString();
-  await saveTenantVaultAsync(teamDocVaultKey(params.teamId), doc);
+  const statusById = new Map<string, TeamMembershipRecord['emailDeliveryStatus']>();
+  for (let i = 0; i < prepared.pendingEmails.length; i += 4) {
+    const batch = prepared.pendingEmails.slice(i, i + 4);
+    await Promise.all(
+      batch.map(async (item) => {
+        const sendRes = await sendEmailViaResend({
+          to: item.to,
+          cc: item.cc,
+          subject: item.subject,
+          html: item.html,
+          text: item.text,
+        });
+        statusById.set(item.membershipId, sendRes.status);
+        if (sendRes.delivered) emailedCount += 1;
+      })
+    );
+  }
+
+  const finalSummary = await withTeamRowLock(params.teamId, async () => {
+    const latestDoc = await loadTeamDocRaw(params.teamId);
+    if (!latestDoc) return null;
+    for (const m of latestDoc.memberships) {
+      const nextStatus = statusById.get(m.membershipId);
+      if (nextStatus) {
+        m.emailDeliveryStatus = nextStatus;
+      }
+    }
+    latestDoc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, latestDoc);
+    return projectTeamSummaryForCaller(latestDoc, params.callerSid, params.originUrl);
+  });
+
   return {
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+    summary:
+      finalSummary ||
+      projectTeamSummaryForCaller(prepared.doc, params.callerSid, params.originUrl),
     emailedCount,
     resendConfigured: isResendConfigured(),
   };
@@ -852,6 +915,7 @@ export async function claimTeamJoinInvite(params: {
   deferParentEmail?: boolean;
 }): Promise<{
   ok: boolean;
+  statusCode?: number;
   summary?: TeamSummaryWithRole;
   calibrated?: ReturnType<typeof calibrateThresholdsFromSeedMark>;
   safeSportShieldEnforced?: boolean;
@@ -955,9 +1019,45 @@ export async function claimTeamJoinInvite(params: {
     }
 
     const isStaffInvite = Boolean(mem && mem.role !== 'ATHLETE');
+    const hadPreExistingMinor = Boolean(mem && mem.isMinorU18);
+    const hadPreExistingParentEmail = mem?.parentGuardianEmail?.trim().toLowerCase() || undefined;
+    const existingMemBmy =
+      mem?.birthMonthYear ||
+      (typeof mem?.birthYear === 'number' && mem.birthYear > 1900
+        ? `${mem.birthYear}-12`
+        : undefined);
 
-    // Evaluate COPPA (<13) and Minor/Adult (13-17 vs 18+) before mutating roster
-    // Prefer existing stored DOB over incoming payload so a minor cannot overwrite DOB to 18+.
+    if (!isStaffInvite) {
+      const coppaCheck = validateCoppaAgeInput({
+        birthMonthYear: params.birthMonthYear,
+        birthYear: params.birthYear,
+        existingBirthMonthYear: existingMemBmy,
+      });
+      if (!coppaCheck.ok) {
+        return {
+          ok: false,
+          statusCode: coppaCheck.statusCode || 400,
+          error: coppaCheck.error,
+        };
+      }
+      if (
+        mem &&
+        mem.status === 'ACTIVE' &&
+        mem.isMinorU18 &&
+        !existingMemBmy &&
+        coppaCheck.ageTier === 'ADULT_18_PLUS'
+      ) {
+        return {
+          ok: false,
+          statusCode: 403,
+          error: 'Minor birth date cannot be altered to an adult date directly.',
+        };
+      }
+    }
+
+    // Evaluate COPPA (<13) and Minor/Adult (13-17 vs 18+) before mutating roster.
+    // Prefer existing stored DOB (including year-only mem.birthYear normalized to YYYY-12)
+    // so an existing minor cannot overwrite DOB to 18+.
     const ageCheck = isStaffInvite
       ? {
           ageTier: 'ADULT_18_PLUS' as const,
@@ -967,7 +1067,7 @@ export async function claimTeamJoinInvite(params: {
           birthMonthYear: undefined,
         }
       : resolveAthleteAgeTier({
-          birthMonthYear: mem?.birthMonthYear || params.birthMonthYear,
+          birthMonthYear: existingMemBmy || params.birthMonthYear,
           birthYear: mem?.birthYear ?? params.birthYear,
           orgType: doc.brand.orgType,
           graduationYear: params.graduationYear ?? mem?.graduationYear,
@@ -1070,19 +1170,28 @@ export async function claimTeamJoinInvite(params: {
       if (!mem.joinedAt) mem.joinedAt = nowIso;
     }
 
-    mem.isMinorU18 = isMinor;
-    if (ageCheck.birthMonthYear && !mem.birthMonthYear) {
+    const preserveMinorAndParent = Boolean(
+      !isStaffInvite &&
+        ((hadPreExistingMinor && !existingMemBmy && hadPreExistingParentEmail) ||
+          (hadPreExistingMinor && existingMemBmy && ageCheck.isMinorU18))
+    );
+    mem.isMinorU18 = preserveMinorAndParent ? true : isMinor;
+    if (existingMemBmy && !mem.birthMonthYear) {
+      mem.birthMonthYear = existingMemBmy;
+    } else if (ageCheck.birthMonthYear && !mem.birthMonthYear && !preserveMinorAndParent) {
       mem.birthMonthYear = ageCheck.birthMonthYear;
     }
-    if (ageCheck.birthYear && ageCheck.birthYear > 1900 && !mem.birthYear) {
+    if (ageCheck.birthYear && ageCheck.birthYear > 1900 && !mem.birthYear && !preserveMinorAndParent) {
       mem.birthYear = ageCheck.birthYear;
     }
-    if (ageCheck.ageTier === 'ADULT_18_PLUS') {
+    if (ageCheck.ageTier === 'ADULT_18_PLUS' && !hadPreExistingParentEmail && !preserveMinorAndParent) {
       // 18+ athletes own their account; remove mandatory minor guardian requirement
       mem.parentGuardianEmail = undefined;
       mem.parentConsentToken = undefined;
       mem.parentConsentTokenHash = undefined;
       mem.parentConsentStatus = 'NOT_REQUIRED';
+    } else if (hadPreExistingParentEmail) {
+      mem.parentGuardianEmail = effectiveParentEmail || hadPreExistingParentEmail;
     } else if (effectiveParentEmail) {
       mem.parentGuardianEmail = effectiveParentEmail;
     }

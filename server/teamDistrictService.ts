@@ -11,12 +11,9 @@ import { summarizeNcaaCaraWeeklyHours } from '../src/physiology/scholasticEngine
 import { TEAM_BILLING_PLANS } from './teamBillingService.ts';
 import {
   canManageTeamGovernanceRole,
-  loadTeamDocRaw,
-  userTeamsVaultKey,
+  loadTeamDocsForCaller,
   type StoredTeamDocument,
-  type UserTeamsIndex,
 } from './teamStoreCore.ts';
-import { loadTenantVaultAsync } from './tokenVault.ts';
 
 const STAFF_ROLES = new Set(['HEAD_COACH', 'ASSISTANT_COACH', 'ATHLETIC_TRAINER', 'ORG_ADMIN']);
 
@@ -244,6 +241,7 @@ export function buildDistrictOverviewFromDocs(
     };
   });
 
+  const countedDistrictCommitments = new Set<string>();
   const totalsAccumulator = schools.reduce(
     (acc, s) => {
       acc.totalAthletes += s.totalAthletes;
@@ -258,7 +256,18 @@ export function buildDistrictOverviewFromDocs(
       acc.caraOverCapCount += s.caraOverCapCount;
       acc.caraWarningCount += s.caraWarningCount;
       if (s.renewalAlert) acc.schoolsNeedingRenewal += 1;
-      acc.totalAnnualCommittedUsd += committedPlanAmountUsd(s.billingPlanCode, s.billingStatus);
+      const planAmount = committedPlanAmountUsd(s.billingPlanCode, s.billingStatus);
+      if (s.billingPlanCode === 'DISTRICT_2000' && planAmount > 0) {
+        const districtKey = (s.districtName || s.billingSchoolOrDistrictName || '')
+          .trim()
+          .toLowerCase();
+        if (!districtKey || !countedDistrictCommitments.has(districtKey)) {
+          if (districtKey) countedDistrictCommitments.add(districtKey);
+          acc.totalAnnualCommittedUsd += planAmount;
+        }
+      } else {
+        acc.totalAnnualCommittedUsd += planAmount;
+      }
       return acc;
     },
     {
@@ -308,18 +317,7 @@ export async function getDistrictAdOverview(params: {
   callerSid: string;
   districtName?: string;
 }): Promise<DistrictOverviewReport> {
-  const userIdx = await loadTenantVaultAsync<UserTeamsIndex>(
-    userTeamsVaultKey(params.callerSid),
-    {
-      teamIds: [],
-      updatedAt: '',
-    }
-  );
-  const docs: StoredTeamDocument[] = [];
-  for (const teamId of userIdx.teamIds) {
-    const doc = await loadTeamDocRaw(teamId);
-    if (doc) docs.push(doc);
-  }
+  const docs = await loadTeamDocsForCaller(params.callerSid);
   return buildDistrictOverviewFromDocs(docs, params.callerSid, {
     districtName: params.districtName,
   });

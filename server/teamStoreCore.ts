@@ -2,7 +2,9 @@ import crypto from 'crypto';
 import { stripSafeSportWeightAndBodyCompFields } from './cleanRoomFirewall.ts';
 import {
   findTeamIdsByInvitedEmailPostgresAsync,
+  findTeamIdsForUserPostgresAsync,
   loadTenantVaultAsync,
+  loadTenantVaultsBatchAsync,
   saveTenantVaultAsync,
   syncNormalizedTeamPostgresAsync,
   withTeamRowLock,
@@ -832,10 +834,11 @@ export function projectTeamSummaryForCaller(
   };
 }
 
-export async function listTeamsForUser(
-  callerSid: string,
-  originUrl: string
-): Promise<TeamSummaryWithRole[]> {
+/**
+ * Batch-loads all team documents associated with a caller SID using the user's index,
+ * Postgres membership table (when active), and `loadTenantVaultsBatchAsync` to eliminate N+1 reads.
+ */
+export async function loadTeamDocsForCaller(callerSid: string): Promise<StoredTeamDocument[]> {
   const userIdx = await loadTenantVaultAsync<UserTeamsIndex>(
     userTeamsVaultKey(callerSid),
     {
@@ -843,13 +846,28 @@ export async function listTeamsForUser(
       updatedAt: '',
     }
   );
+  const pgTeamIds = await findTeamIdsForUserPostgresAsync([callerSid]);
+  const teamIds = Array.from(
+    new Set([...(userIdx.teamIds || []), ...(pgTeamIds || [])].filter(Boolean))
+  );
+  if (teamIds.length === 0) return [];
+  const docKeys = teamIds.map((teamId) => teamDocVaultKey(teamId));
+  const docsByKey = await loadTenantVaultsBatchAsync<StoredTeamDocument | null>(docKeys);
+  const docs: StoredTeamDocument[] = [];
+  for (const key of docKeys) {
+    const doc = docsByKey.get(key) ?? null;
+    if (doc) docs.push(doc);
+  }
+  return docs;
+}
+
+export async function listTeamsForUser(
+  callerSid: string,
+  originUrl: string
+): Promise<TeamSummaryWithRole[]> {
+  const docs = await loadTeamDocsForCaller(callerSid);
   const out: TeamSummaryWithRole[] = [];
-  for (const teamId of userIdx.teamIds) {
-    const doc = await loadTenantVaultAsync<StoredTeamDocument | null>(
-      teamDocVaultKey(teamId),
-      null
-    );
-    if (!doc) continue;
+  for (const doc of docs) {
     const summary = projectTeamSummaryForCaller(doc, callerSid, originUrl);
     if (summary) out.push(summary);
   }

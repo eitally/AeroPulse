@@ -92,6 +92,7 @@ export async function ensureValidWahooAccessToken(
           grant_type: 'refresh_token',
           refresh_token: refreshToken,
         }).toString(),
+        signal: AbortSignal.timeout(12_000),
       });
 
       if (resp.ok) {
@@ -150,6 +151,7 @@ const { callbackHandler: wahooCallbackHandler } = registerOAuthConnectorRoutes(w
         Accept: 'application/json',
       },
       body: bodyParams.toString(),
+      signal: AbortSignal.timeout(12_000),
     });
 
     if (!tokenResp.ok) {
@@ -194,7 +196,7 @@ const { callbackHandler: wahooCallbackHandler } = registerOAuthConnectorRoutes(w
         if (tokenData.expires_in) {
           store.wahooExpiresAt = Math.floor(Date.now() / 1000) + tokenData.expires_in;
         }
-        store.wahooScope = tokenData.scope || 'user_read workouts_read';
+        store.wahooScope = tokenData.scope || WAHOO_OAUTH_SCOPES;
         store.wahooUserId = athleteId;
         store.wahooAthleteName = athleteName;
       },
@@ -226,6 +228,7 @@ wahooRouter.get('/api/wahoo/workouts', async (req: Request, res: Response) => {
 
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(12_000),
     });
 
     if (!resp.ok) {
@@ -266,6 +269,7 @@ wahooRouter.get('/api/wahoo/workouts/:id/file', async (req: Request, res: Respon
     const url = `https://api.wahooligan.com/v1/workouts/${workoutId}/file`;
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(12_000),
     });
 
     if (!resp.ok) {
@@ -298,6 +302,7 @@ wahooRouter.get('/api/wahoo/sync', async (req: Request, res: Response) => {
 
     const resp = await fetch('https://api.wahooligan.com/v1/workouts?per_page=50&order=created_at', {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(12_000),
     });
 
     if (!resp.ok) {
@@ -323,7 +328,7 @@ wahooRouter.get('/api/wahoo/sync', async (req: Request, res: Response) => {
 
     const activities = rawWorkouts.map((w) => {
       const summary = w.workout_summary || {};
-      const sport = w.workout_type_id === 2 ? 'Running' : 'Cycling';
+      const sport = w.workout_type_id === 1 || w.workout_type_id === 5 ? 'Running' : 'Cycling';
       const duration = Number(summary.duration_active_seconds || summary.duration_seconds || 0);
       const isIndoor = /kickr|indoor|trainer/i.test(w.name || '');
       const rawStartUtc = w.starts || new Date().toISOString();

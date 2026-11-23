@@ -178,6 +178,13 @@ export async function upsertTeamInjuryCase(params: {
     const existingCase = requestedId
       ? existingList.find((c) => c.id === requestedId)
       : undefined;
+    if (existingCase && existingCase.membershipId !== targetMem.membershipId) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'Injury case ID belongs to a different athlete membership.',
+      };
+    }
 
     const isTrainer = callerMem.role === 'ATHLETIC_TRAINER';
     const hasClinicalInput = params.input?.privateClinicalNotes !== undefined;
@@ -280,11 +287,17 @@ export async function deleteTeamInjuryCase(params: {
     const callerMem = doc.memberships.find(
       (m) => m.userSid === params.callerSid && m.status !== 'REVOKED' && m.status !== 'ALUMNI'
     );
-    if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    const canDeleteInjuryRole =
+      callerMem &&
+      (callerMem.role === 'ATHLETIC_TRAINER' ||
+        callerMem.role === 'HEAD_COACH' ||
+        callerMem.role === 'ORG_ADMIN');
+    if (!callerMem || !canDeleteInjuryRole) {
       return {
         ok: false,
         status: 403,
-        error: 'Coach, Athletic Trainer, or Org Admin permissions required.',
+        error:
+          'Athletic Trainer, Head Coach, or Org Admin permissions required to delete injury cases.',
       };
     }
 
@@ -292,6 +305,16 @@ export async function deleteTeamInjuryCase(params: {
     const targetCase = existingList.find((c) => c.id === cleanCaseId);
     if (!targetCase) {
       return { ok: false, status: 404, error: 'Injury case not found.' };
+    }
+    if (
+      callerMem.role !== 'ATHLETIC_TRAINER' &&
+      Boolean(targetCase.privateClinicalNotes && targetCase.privateClinicalNotes.trim())
+    ) {
+      return {
+        ok: false,
+        status: 403,
+        error: 'Only an Athletic Trainer may delete an injury case containing private clinical notes.',
+      };
     }
 
     doc.injuryCases = existingList.filter((c) => c.id !== cleanCaseId);

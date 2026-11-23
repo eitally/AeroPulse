@@ -27,9 +27,13 @@ import {
 } from '../webauthnVerify.ts';
 import {
   USER_VAULT_COOKIE_NAME,
+  buildClearUserCookieHeader,
+  buildClearVaultCookieHeader,
   buildEncryptedUserCookieHeader,
   decryptJsonFromVault,
   deleteTenantVault,
+  getVaultStorageBackend,
+  isUserDeletedTombstoneAsync,
   loadTenantVaultAsync,
   saveTenantVaultAsync,
 } from '../tokenVault.ts';
@@ -44,6 +48,7 @@ import {
   formatUserDataExportCsv,
 } from '../accountLifecycleService.ts';
 import { validateCoppaAgeInput } from '../coppaGuard.ts';
+import { normalizeBirthMonthYear } from '../../src/physiology/ageAndComplianceEngine.ts';
 import {
   checkDistributedRateLimitAsync,
   getClientRateLimitIp,
@@ -291,9 +296,15 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
     // Try finding user by sub (canonical MeetReady user ID)
     let user: ThreshUser | null = null;
     if (claims.sub.startsWith('usr_')) {
+      if (await isUserDeletedTombstoneAsync(claims.sub)) {
+        clearSessionCookie(res);
+        appendSetCookieHeader(res, buildClearVaultCookieHeader());
+        appendSetCookieHeader(res, buildClearUserCookieHeader());
+        return res.json({ authenticated: false, user: null });
+      }
       user = await getUserById(claims.sub);
-      if (!user) {
-        // Recover compact profile from encrypted cookie backup on stateless serverless cold starts
+      if (!user && getVaultStorageBackend() !== 'POSTGRES') {
+        // Recover compact profile from encrypted cookie backup on ephemeral non-Postgres cold starts only
         const cookies = parseCookies(req.headers.cookie);
         const backupEnvelope = cookies[USER_VAULT_COOKIE_NAME];
         if (backupEnvelope) {
@@ -307,6 +318,12 @@ authRouter.get('/api/auth/me', async (req: Request, res: Response) => {
             }
           }
         }
+      }
+      if (!user) {
+        clearSessionCookie(res);
+        appendSetCookieHeader(res, buildClearVaultCookieHeader());
+        appendSetCookieHeader(res, buildClearUserCookieHeader());
+        return res.json({ authenticated: false, user: null });
       }
     } else {
       // Legacy session with Strava athlete ID or generic subject
@@ -1069,6 +1086,27 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
   const verificationCode = String(req.body?.verificationCode || req.body?.code || '').trim();
 
   if (!verificationCode) {
+    const userRl = await checkDistributedRateLimitAsync(
+      `change_email_u:${userId}`,
+      3,
+      15 * 60 * 1000
+    );
+    const emailRl = newEmail
+      ? await checkDistributedRateLimitAsync(
+          `change_email_em:${hashAuthLookupKey(newEmail)}`,
+          2,
+          15 * 60 * 1000
+        )
+      : { allowed: true, retryAfterSecs: 0 };
+    if (!userRl.allowed || !emailRl.allowed) {
+      const retryAfterSecs = Math.max(userRl.retryAfterSecs || 0, emailRl.retryAfterSecs || 0, 1);
+      res.setHeader('Retry-After', String(retryAfterSecs));
+      return res.status(429).json({
+        error: 'Too many email change requests. Please wait 15 minutes and try again.',
+        retryAfterSecs,
+      });
+    }
+
     const reqRes = await createPendingEmailChange(userId, newEmail);
     if (!reqRes.ok) {
       const status = reqRes.error?.includes('unavailable') ? 503 : 400;
@@ -1081,6 +1119,19 @@ authRouter.post('/api/auth/change-email', async (req: Request, res: Response) =>
       pendingEmail: newEmail,
       devMode: exposeDev,
       ...(exposeDev && reqRes.devCode ? { devCode: reqRes.devCode } : {}),
+    });
+  }
+
+  const verifyRl = await checkDistributedRateLimitAsync(
+    `change_email_verify_u:${userId}`,
+    10,
+    15 * 60 * 1000
+  );
+  if (!verifyRl.allowed) {
+    res.setHeader('Retry-After', String(verifyRl.retryAfterSecs || 1));
+    return res.status(429).json({
+      error: 'Too many email verification attempts. Please try again later.',
+      retryAfterSecs: verifyRl.retryAfterSecs,
     });
   }
 
@@ -1123,10 +1174,28 @@ authRouter.post('/api/auth/birth-month', async (req: Request, res: Response) => 
     return res.status(404).json({ error: 'Account not found.' });
   }
 
+  const candidateStateKeys = [
+    `athlete_state_user_${existingUser.id}`,
+    `athlete_state_sid_${claims.sid}`,
+    `athlete_state_sid_${claims.sid.slice(0, 32)}`,
+    `athlete_state_sid_${claims.sid.slice(0, 24)}`,
+  ];
+  let existingStateBirthMonthYear: string | undefined;
+  for (const stateKey of candidateStateKeys) {
+    const stateEnv = await loadTenantVaultAsync<{
+      athleteProfile?: { birthMonthYear?: string };
+    } | null>(stateKey, null);
+    const stateBmy = normalizeBirthMonthYear(stateEnv?.athleteProfile?.birthMonthYear);
+    if (stateBmy) {
+      existingStateBirthMonthYear = stateBmy;
+      break;
+    }
+  }
+
   const ageCheck = validateCoppaAgeInput({
     birthMonthYear: req.body?.birthMonthYear,
     birthYear: req.body?.birthYear,
-    existingBirthMonthYear: existingUser.birthMonthYear,
+    existingBirthMonthYear: existingUser.birthMonthYear || existingStateBirthMonthYear,
     required: true,
   });
   if (!ageCheck.ok || !ageCheck.birthMonthYear) {

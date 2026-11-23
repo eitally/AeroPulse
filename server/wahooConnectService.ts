@@ -354,6 +354,7 @@ export async function pushWorkoutToWahooCloud(opts: {
         provider_updated_at: nowIso,
       },
     }),
+    signal: AbortSignal.timeout(12_000),
   });
 
   if (!planResp.ok) {
@@ -383,11 +384,12 @@ export async function pushWorkoutToWahooCloud(opts: {
         name: planJson.name,
         starts: `${planJson.planDate}T08:00:00.000Z`,
         minutes: Math.max(1, Math.round(planJson.estimatedDurationSecs / 60)),
-        workout_type_id: isRunning ? 0 : 1,
+        workout_type_id: isRunning ? 1 : 0,
         ...(planId !== undefined ? { plan_id: planId } : {}),
         workout_token: externalId,
       },
     }),
+    signal: AbortSignal.timeout(12_000),
   });
 
   if (workoutResp.status === 403) {

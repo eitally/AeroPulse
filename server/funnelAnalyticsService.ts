@@ -282,10 +282,14 @@ function pct(numerator: number, denominator: number): number {
   return Math.round((numerator / denominator) * 1000) / 10;
 }
 
-function incrementDimension(map: Record<string, number>, rawValue: string | null | undefined): void {
+function incrementDimension(
+  map: Record<string, number>,
+  rawValue: string | null | undefined,
+  count = 1
+): void {
   const clean = typeof rawValue === 'string' ? rawValue.trim() : '';
   if (!clean) return;
-  map[clean] = (map[clean] || 0) + 1;
+  map[clean] = (map[clean] || 0) + count;
 }
 
 export async function getFunnelSummaryAsync(opts?: {
@@ -327,15 +331,16 @@ export async function getFunnelSummaryAsync(opts?: {
   for (const row of rows) {
     if (!row || !isValidFunnelEventName(row.event_name)) continue;
     const eventName = row.event_name;
-    totalEvents += 1;
-    byEvent[eventName] += 1;
+    const weight = Math.max(1, Number(row.event_count || 1));
+    totalEvents += weight;
+    byEvent[eventName] += weight;
 
-    incrementDimension(byUtmSource, row.utm_source);
-    incrementDimension(byUtmMedium, row.utm_medium);
-    incrementDimension(byUtmCampaign, row.utm_campaign);
-    incrementDimension(byReferrerHost, row.referrer_host);
-    incrementDimension(byRole, row.role || 'UNKNOWN');
-    incrementDimension(byTier, row.tier);
+    incrementDimension(byUtmSource, row.utm_source, weight);
+    incrementDimension(byUtmMedium, row.utm_medium, weight);
+    incrementDimension(byUtmCampaign, row.utm_campaign, weight);
+    incrementDimension(byReferrerHost, row.referrer_host, weight);
+    incrementDimension(byRole, row.role || 'UNKNOWN', weight);
+    incrementDimension(byTier, row.tier, weight);
 
     const parsedDate = row.created_at ? new Date(String(row.created_at)) : null;
     const dateKey =
@@ -352,8 +357,8 @@ export async function getFunnelSummaryAsync(opts?: {
       };
       dailyMap.set(dateKey, bucket);
     }
-    bucket.total += 1;
-    bucket.byEvent[eventName] += 1;
+    bucket.total += weight;
+    bucket.byEvent[eventName] += weight;
   }
 
   const dailyCounts = Array.from(dailyMap.values()).sort((a, b) =>

@@ -38,9 +38,9 @@ async function startServer() {
     '/clinic': '/?demo=1&sample=coach&utm_source=event&utm_medium=qr&utm_campaign=clinic#coach',
     '/flyer': '/?demo=1&sample=coach&utm_source=print&utm_medium=flyer&utm_campaign=pilot_2026#coach',
     '/sticker': '/?demo=1&sample=coach&utm_source=print&utm_medium=sticker&utm_campaign=varsity_crest#coach',
-    '/tee': '/?demo=1&sample=coach&utm_source=print&utm_medium=tee&utm_campaign=coach_tee#coach',
+    '/tee': '/?demo=1&sample=coach&utm_source=print&utm_medium=tee&utm_campaign=meet_day_tee#coach',
     '/go/clipboard': '/?demo=1&sample=coach&utm_source=print&utm_medium=clipboard_qr&utm_campaign=pod_sheet#coach',
-    '/share': '/?role=coach&utm_source=share&utm_medium=card&utm_campaign=share_card',
+    '/share': '/share/workout?preset=8x400&utm_source=share&utm_medium=card&utm_campaign=share_card',
   };
   for (const [sourcePath, destination] of Object.entries(vanityRedirects)) {
     app.get([sourcePath, `${sourcePath}/`], (_req, res) => {

@@ -43,7 +43,9 @@ describe('Sprint 0 Track B: GTM Vanity Redirects, Technical SEO, Print Outlines 
       const rootHeaders = vercel.headers[0]?.headers ?? [];
       const hsts = rootHeaders.find((h) => h.key === 'Strict-Transport-Security');
       const csp = rootHeaders.find((h) => h.key === 'Content-Security-Policy');
+      const permissionsPolicy = rootHeaders.find((h) => h.key === 'Permissions-Policy');
       expect(hsts?.value).toContain('max-age=63072000');
+      expect(permissionsPolicy?.value).toBe('camera=(), microphone=(), geolocation=(self)');
       expect(csp?.value).toContain("'self'");
       expect(csp?.value).toContain("'unsafe-inline'");
       expect(csp?.value).toContain('https://fonts.googleapis.com');
@@ -65,7 +67,7 @@ describe('Sprint 0 Track B: GTM Vanity Redirects, Technical SEO, Print Outlines 
       const expectedCoachQrRedirects: Array<{ source: string; medium: string }> = [
         { source: '/demo', medium: 'utm_medium=qr' },
         { source: '/meet', medium: 'utm_medium=banner' },
-        { source: '/go/clipboard', medium: 'utm_medium=clipboard' },
+        { source: '/go/clipboard', medium: 'utm_medium=clipboard_qr' },
         { source: '/sticker', medium: 'utm_medium=sticker' },
         { source: '/tee', medium: 'utm_medium=tee' },
         { source: '/clinic', medium: 'utm_medium=qr' },
@@ -83,6 +85,12 @@ describe('Sprint 0 Track B: GTM Vanity Redirects, Technical SEO, Print Outlines 
         expect(match?.destination).toContain(item.medium);
         expect(match?.destination).toContain('utm_campaign=');
       }
+
+      const shareRedirect = vercel.redirects.find((r) => r.source === '/share');
+      expect(shareRedirect?.permanent).toBe(false);
+      expect(shareRedirect?.destination).toBe(
+        '/share/workout?preset=8x400&utm_source=share&utm_medium=card&utm_campaign=share_card'
+      );
 
       const adRedirect = vercel.redirects.find((r) => r.source === '/ad');
       expect(adRedirect?.permanent).toBe(false);

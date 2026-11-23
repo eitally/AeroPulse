@@ -20,6 +20,8 @@ import { escapeHtml } from './securityUtils.ts';
 import {
   appendAuditLogAsync,
   loadTenantVaultAsync,
+  lookupStripeEventPostgresAsync,
+  recordStripeEventPostgresAsync,
   saveTenantVaultAsync,
   withTeamRowLock,
   withVaultLock,
@@ -534,6 +536,34 @@ interface StripeWebhookEventPayload {
   };
 }
 
+async function recordStripeWebhookEventInVault(params: {
+  eventId: string;
+  teamId?: string;
+  customerId?: string;
+  subscriptionId?: string;
+}): Promise<void> {
+  await withVaultLock(STRIPE_WEBHOOK_STATE_KEY, async () => {
+    const state = await loadTenantVaultAsync<StripeWebhookStateVault>(
+      STRIPE_WEBHOOK_STATE_KEY,
+      {
+        processedEventIds: [],
+        teamByStripeCustomer: {},
+        teamByStripeSubscription: {},
+      }
+    );
+    if (params.teamId) {
+      if (params.customerId) state.teamByStripeCustomer[params.customerId] = params.teamId;
+      if (params.subscriptionId) {
+        state.teamByStripeSubscription[params.subscriptionId] = params.teamId;
+      }
+    }
+    if (!state.processedEventIds.includes(params.eventId)) {
+      state.processedEventIds = [...state.processedEventIds, params.eventId].slice(-500);
+    }
+    await saveTenantVaultAsync(STRIPE_WEBHOOK_STATE_KEY, state);
+  });
+}
+
 export async function processStripeWebhookEvent(params: {
   rawBody: Buffer | string;
   signatureHeader: string;
@@ -597,8 +627,24 @@ export async function processStripeWebhookEvent(params: {
         ? obj.id.trim()
         : undefined;
 
-  const lockState = await withVaultLock(STRIPE_WEBHOOK_STATE_KEY, async () => {
-    const state = await loadTenantVaultAsync<StripeWebhookStateVault>(
+  let resolvedTeamId: string | undefined;
+  try {
+    const pgPrecheck = await lookupStripeEventPostgresAsync({
+      eventId,
+      customerId,
+      subscriptionId,
+    });
+    if (pgPrecheck?.alreadyProcessed) {
+      return {
+        ok: true,
+        status: 200,
+        duplicate: true,
+        eventId,
+        eventType,
+      };
+    }
+
+    const vaultState = await loadTenantVaultAsync<StripeWebhookStateVault>(
       STRIPE_WEBHOOK_STATE_KEY,
       {
         processedEventIds: [],
@@ -606,114 +652,162 @@ export async function processStripeWebhookEvent(params: {
         teamByStripeSubscription: {},
       }
     );
-
-    if (state.processedEventIds.includes(eventId)) {
-      return { duplicate: true as const, resolvedTeamId: undefined };
+    if (vaultState.processedEventIds.includes(eventId)) {
+      return {
+        ok: true,
+        status: 200,
+        duplicate: true,
+        eventId,
+        eventType,
+      };
     }
 
     const metaTeamId =
       obj.metadata?.teamId ||
       obj.subscription_details?.metadata?.teamId ||
       obj.client_reference_id;
-    const resolvedTeamId =
+    resolvedTeamId =
       (metaTeamId ? String(metaTeamId).trim() : '') ||
-      (subscriptionId ? state.teamByStripeSubscription[subscriptionId] : '') ||
-      (customerId ? state.teamByStripeCustomer[customerId] : '') ||
+      pgPrecheck?.resolvedTeamId ||
+      (subscriptionId ? vaultState.teamByStripeSubscription[subscriptionId] : '') ||
+      (customerId ? vaultState.teamByStripeCustomer[customerId] : '') ||
       undefined;
 
-    if (resolvedTeamId) {
-      if (customerId) state.teamByStripeCustomer[customerId] = resolvedTeamId;
-      if (subscriptionId) state.teamByStripeSubscription[subscriptionId] = resolvedTeamId;
+    if (!resolvedTeamId) {
+      await recordStripeEventPostgresAsync({
+        eventId,
+        eventType,
+        customerId,
+        subscriptionId,
+      });
+      await recordStripeWebhookEventInVault({
+        eventId,
+        customerId,
+        subscriptionId,
+      });
+      return { ok: true, status: 200, eventId, eventType };
     }
 
-    state.processedEventIds = [...state.processedEventIds, eventId].slice(-500);
-    await saveTenantVaultAsync(STRIPE_WEBHOOK_STATE_KEY, state);
-    return { duplicate: false as const, resolvedTeamId };
-  });
+    const teamId = resolvedTeamId;
+    const metaPlan =
+      obj.metadata?.planCode || obj.subscription_details?.metadata?.planCode;
+    const periodEndEpoch =
+      obj.current_period_end || obj.lines?.data?.[0]?.period?.end || undefined;
 
-  if (lockState.duplicate) {
+    const txOutcome = await withTeamRowLock(teamId, async () => {
+      const pgInside = await lookupStripeEventPostgresAsync({
+        eventId,
+        customerId,
+        subscriptionId,
+      });
+      if (pgInside?.alreadyProcessed) {
+        return { duplicate: true as const };
+      }
+
+      const doc = await loadTeamDocRaw(teamId);
+      if (doc) {
+        const nowIso = new Date().toISOString();
+        const nextBilling: TeamBillingSummary = {
+          ...(doc.billing || { planCode: 'FREE_FOUNDING', status: 'PILOT' }),
+          ...(isValidPaidPlanCode(metaPlan) ? { planCode: metaPlan } : {}),
+          ...(customerId ? { stripeCustomerId: customerId } : {}),
+          ...(subscriptionId ? { stripeSubscriptionId: subscriptionId } : {}),
+          updatedAt: nowIso,
+        };
+
+        let auditAction = 'BILLING_STRIPE_EVENT';
+        let shouldPersistDoc = true;
+        if (eventType === 'checkout.session.completed' || eventType === 'invoice.paid') {
+          nextBilling.status = 'ACTIVE_PAID';
+          const cycleEnd = periodEndEpoch
+            ? new Date(periodEndEpoch * 1000).toISOString()
+            : new Date(Date.now() + 365 * 86_400_000).toISOString();
+          nextBilling.billingCycleEndIso = cycleEnd;
+          if (Array.isArray(nextBilling.poInvoices)) {
+            nextBilling.poInvoices = nextBilling.poInvoices.map((inv) =>
+              inv.status === 'ISSUED' &&
+              (!isValidPaidPlanCode(metaPlan) || inv.planCode === metaPlan)
+                ? { ...inv, status: 'PAID', paidAt: nowIso }
+                : inv
+            );
+          }
+          auditAction =
+            eventType === 'checkout.session.completed'
+              ? 'BILLING_STRIPE_ACTIVATED'
+              : 'BILLING_STRIPE_RENEWED';
+        } else if (eventType === 'invoice.payment_failed') {
+          nextBilling.status = 'PAST_DUE';
+          auditAction = 'BILLING_STRIPE_PAST_DUE';
+        } else if (eventType === 'customer.subscription.deleted') {
+          nextBilling.status = 'RENEWAL_DUE';
+          auditAction = 'BILLING_STRIPE_SUB_ENDED';
+        } else {
+          shouldPersistDoc = false;
+        }
+
+        if (shouldPersistDoc) {
+          doc.billing = nextBilling;
+          doc.updatedAt = nowIso;
+          await saveTeamDocRaw(teamId, doc);
+          await appendAuditLogAsync({
+            teamId,
+            actorSid: 'stripe_webhook',
+            action: auditAction,
+            targetId: eventId,
+            metadata: {
+              eventType,
+              planCode: nextBilling.planCode,
+              status: nextBilling.status,
+            },
+          });
+        }
+      }
+
+      const pgRecorded = await recordStripeEventPostgresAsync({
+        eventId,
+        eventType,
+        teamId,
+        customerId,
+        subscriptionId,
+      });
+      if (pgRecorded && !pgRecorded.inserted) {
+        return { duplicate: true as const };
+      }
+      return { duplicate: false as const };
+    });
+
+    if (txOutcome.duplicate) {
+      return {
+        ok: true,
+        status: 200,
+        duplicate: true,
+        eventId,
+        eventType,
+      };
+    }
+
+    await recordStripeWebhookEventInVault({
+      eventId,
+      teamId,
+      customerId,
+      subscriptionId,
+    });
+
     return {
       ok: true,
       status: 200,
-      duplicate: true,
       eventId,
       eventType,
-    };
-  }
-
-  const teamId = lockState.resolvedTeamId;
-  if (!teamId) {
-    return { ok: true, status: 200, eventId, eventType };
-  }
-
-  const metaPlan =
-    obj.metadata?.planCode || obj.subscription_details?.metadata?.planCode;
-  const periodEndEpoch =
-    obj.current_period_end || obj.lines?.data?.[0]?.period?.end || undefined;
-
-  await withTeamRowLock(teamId, async () => {
-    const doc = await loadTeamDocRaw(teamId);
-    if (!doc) return;
-
-    const nowIso = new Date().toISOString();
-    const nextBilling: TeamBillingSummary = {
-      ...(doc.billing || { planCode: 'FREE_FOUNDING', status: 'PILOT' }),
-      ...(isValidPaidPlanCode(metaPlan) ? { planCode: metaPlan } : {}),
-      ...(customerId ? { stripeCustomerId: customerId } : {}),
-      ...(subscriptionId ? { stripeSubscriptionId: subscriptionId } : {}),
-      updatedAt: nowIso,
-    };
-
-    let auditAction = 'BILLING_STRIPE_EVENT';
-    if (eventType === 'checkout.session.completed' || eventType === 'invoice.paid') {
-      nextBilling.status = 'ACTIVE_PAID';
-      const cycleEnd = periodEndEpoch
-        ? new Date(periodEndEpoch * 1000).toISOString()
-        : new Date(Date.now() + 365 * 86_400_000).toISOString();
-      nextBilling.billingCycleEndIso = cycleEnd;
-      if (Array.isArray(nextBilling.poInvoices)) {
-        nextBilling.poInvoices = nextBilling.poInvoices.map((inv) =>
-          inv.status === 'ISSUED' &&
-          (!isValidPaidPlanCode(metaPlan) || inv.planCode === metaPlan)
-            ? { ...inv, status: 'PAID', paidAt: nowIso }
-            : inv
-        );
-      }
-      auditAction =
-        eventType === 'checkout.session.completed'
-          ? 'BILLING_STRIPE_ACTIVATED'
-          : 'BILLING_STRIPE_RENEWED';
-    } else if (eventType === 'invoice.payment_failed') {
-      nextBilling.status = 'PAST_DUE';
-      auditAction = 'BILLING_STRIPE_PAST_DUE';
-    } else if (eventType === 'customer.subscription.deleted') {
-      nextBilling.status = 'RENEWAL_DUE';
-      auditAction = 'BILLING_STRIPE_SUB_ENDED';
-    } else {
-      return;
-    }
-
-    doc.billing = nextBilling;
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(teamId, doc);
-    await appendAuditLogAsync({
       teamId,
-      actorSid: 'stripe_webhook',
-      action: auditAction,
-      targetId: eventId,
-      metadata: {
-        eventType,
-        planCode: nextBilling.planCode,
-        status: nextBilling.status,
-      },
-    });
-  });
-
-  return {
-    ok: true,
-    status: 200,
-    eventId,
-    eventType,
-    teamId,
-  };
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      eventId,
+      eventType,
+      teamId: resolvedTeamId,
+      error: err instanceof Error ? err.message : 'Stripe billing update failed.',
+    };
+  }
 }

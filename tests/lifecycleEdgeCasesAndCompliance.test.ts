@@ -40,6 +40,7 @@ import {
   listTeamsForUser,
   loadTeamDocRaw,
   recordCoachStopwatchActivities,
+  saveTeamDocRaw,
   syncAthleteSnapshotAcrossTeams,
   teamDocVaultKey,
   updateTeamBranding,
@@ -348,7 +349,7 @@ describe('LIFECYCLE · Identity, Team Departure, Age Compliance, RBAC & Concurre
     expect(seniorMem.isMinorU18).toBe(false);
     expect(seniorMem.parentConsentStatus).toBe('NOT_REQUIRED');
 
-    // Legacy 17-yr minor who turned 18 can self-revoke guardian CC cleanly
+    // 17-yr minor CANNOT bypass guardian consent by tampering birthMonthYear to an adult date
     const turning18Sid = `turn18_${tag}`;
     await claimTeamJoinInvite({
       callerSid: turning18Sid,
@@ -358,6 +359,21 @@ describe('LIFECYCLE · Identity, Team Departure, Age Compliance, RBAC & Concurre
       birthYear: currentYear - 17,
       parentGuardianEmail: 'old.parent@family.test',
     });
+    const blockedTamperRev = await revokeAthleteGuardianConsentForTeam({
+      callerSid: turning18Sid,
+      teamId: hsTeam.brand.teamId,
+      originUrl: origin,
+      birthMonthYear: adultBirthMonthYear,
+    });
+    expect(blockedTamperRev.ok).toBe(false);
+
+    // Legacy minor whose stored birthYear has aged to 18+ can self-revoke guardian CC cleanly
+    const hsDocPreAge = await loadTeamDocRaw(hsTeam.brand.teamId);
+    const legacyMem = hsDocPreAge!.memberships.find((m) => m.userSid === turning18Sid)!;
+    legacyMem.birthYear = currentYear - 19;
+    delete legacyMem.birthMonthYear;
+    await saveTeamDocRaw(hsTeam.brand.teamId, hsDocPreAge!);
+
     const revGuardian = await revokeAthleteGuardianConsentForTeam({
       callerSid: turning18Sid,
       teamId: hsTeam.brand.teamId,

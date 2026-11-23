@@ -531,8 +531,10 @@ teamRouter.post('/api/teams/join-claim', async (req: Request, res: Response) => 
     if (!claimed.ok || !claimed.summary) {
       const isValidationError =
         Boolean(claimed.error) &&
-        /COPPA|13 or older|Parent or guardian email/i.test(claimed.error || '');
-      res.status(isValidationError ? 400 : 404).json({
+        /COPPA|13 or older|Parent or guardian email|Minor birth date|Valid YYYY-MM|Valid 4-digit/i.test(
+          claimed.error || ''
+        );
+      res.status(claimed.statusCode || (isValidationError ? 400 : 404)).json({
         ok: false,
         error: claimed.error || 'Team invite could not be claimed.',
       });
@@ -1579,6 +1581,21 @@ teamRouter.post('/api/teams/:teamId/attendance/self-checkin', async (req: Reques
       res.status(401).json({ ok: false, error: 'Authentication required.' });
       return;
     }
+    const rl = await checkDistributedRateLimitAsync(
+      `gps_checkin_u:${claims.sid}`,
+      10,
+      10 * 60 * 1000
+    );
+    if (!rl.allowed) {
+      res.setHeader('Retry-After', String(rl.retryAfterSecs || 1));
+      res.status(429).json({
+        ok: false,
+        verifiedOnSite: false,
+        error: 'Too many GPS self check-in attempts. Please wait a few minutes and try again.',
+        retryAfterSecs: rl.retryAfterSecs,
+      });
+      return;
+    }
     const originUrl = resolveRequestOrigin(req);
     const body = (req.body || {}) as {
       date?: unknown;
@@ -1592,6 +1609,7 @@ teamRouter.post('/api/teams/:teamId/attendance/self-checkin', async (req: Reques
       if (typeof raw === 'string' && raw.trim() !== '') return Number(raw);
       return Number.NaN;
     };
+    const parsedAccuracy = parseCoord(body.accuracyMeters);
     const result = await selfCheckInTeamAttendance({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ''),
@@ -1599,10 +1617,7 @@ teamRouter.post('/api/teams/:teamId/attendance/self-checkin', async (req: Reques
       venueId: typeof body.venueId === 'string' ? body.venueId : undefined,
       latitude: parseCoord(body.latitude),
       longitude: parseCoord(body.longitude),
-      accuracyMeters:
-        typeof body.accuracyMeters === 'number' && Number.isFinite(body.accuracyMeters)
-          ? body.accuracyMeters
-          : undefined,
+      accuracyMeters: Number.isFinite(parsedAccuracy) ? parsedAccuracy : undefined,
       originUrl,
     });
     if (!result.ok) {

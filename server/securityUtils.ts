@@ -742,7 +742,7 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
 
   const forwardedProto = String(req.headers['x-forwarded-proto'] || '')
     .split(',')[0]
@@ -758,14 +758,36 @@ export function securityHeadersMiddleware(req: Request, res: Response, next: Nex
     /^\/auth\/[^/]+\/callback\/?$/i.test(rawPath) ||
     rawPath === '/api/auth/magic-link/verify' ||
     rawPath === '/api/teams/parent-consent';
+  const isPublicTeamApiPath = rawPath.startsWith('/api/teams/public/');
+  const strictApiCsp = "default-src 'none'; frame-ancestors 'none'";
+  const publicHtmlCsp =
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'";
 
   if (isAuthOrConsentHtmlPath) {
     res.setHeader(
       'Content-Security-Policy',
       "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'"
     );
+  } else if (isPublicTeamApiPath) {
+    const applyPublicCsp = () => {
+      const contentType = String(res.getHeader('content-type') || '').toLowerCase();
+      res.setHeader(
+        'Content-Security-Policy',
+        contentType.includes('text/html') ? publicHtmlCsp : strictApiCsp
+      );
+    };
+    applyPublicCsp();
+    if (typeof res.end === 'function') {
+      const origEnd = res.end;
+      res.end = function (this: Response, ...args: unknown[]) {
+        if (!this.headersSent) {
+          applyPublicCsp();
+        }
+        return (origEnd as (...fnArgs: unknown[]) => Response).apply(this, args);
+      } as typeof res.end;
+    }
   } else if (rawPath.startsWith('/api/')) {
-    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    res.setHeader('Content-Security-Policy', strictApiCsp);
   }
 
   const allowedOrigin = resolveTrustedCorsOrigin(req.headers.origin as string | undefined);

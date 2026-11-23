@@ -13,7 +13,7 @@
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
-        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(self)" },
         { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains" },
         {
           "key": "Content-Security-Policy",
@@ -78,12 +78,12 @@
     },
     {
       "source": "/go/clipboard",
-      "destination": "/?demo=1&sample=coach&utm_source=print&utm_medium=clipboard&utm_campaign=pod_sheet#coach",
+      "destination": "/?demo=1&sample=coach&utm_source=print&utm_medium=clipboard_qr&utm_campaign=pod_sheet#coach",
       "permanent": false
     },
     {
       "source": "/share",
-      "destination": "/?role=coach&utm_source=share&utm_medium=card&utm_campaign=share_card",
+      "destination": "/share/workout?preset=8x400&utm_source=share&utm_medium=card&utm_campaign=share_card",
       "permanent": false
     }
   ],
