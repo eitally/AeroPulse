@@ -12,6 +12,7 @@ import type {
 } from '../types';
 import {
   computeRaceStandings,
+  computeRelayQuartetTelemetry,
   computeRunnerSplitTelemetry,
   DEFAULT_POD_WAVE_OFFSETS,
   RACE_STOPWATCH_PRESETS,
@@ -42,6 +43,11 @@ import {
 } from '../physiology/trackLiveAutoRegulationEngine';
 import { TracksideAutoRegBanner } from './track/TracksideAutoRegBanner';
 import { TracksideRunnerCardsAndMatrix } from './stopwatch/TracksideRunnerCardsAndMatrix';
+import {
+  TracksideRelayBatonPanel,
+  buildRelayCsvTelemetries,
+  buildRelaySavedEntries,
+} from './stopwatch/TracksideRelayBatonPanel';
 import { TracksideWalkOnAndSaveBar } from './stopwatch/TracksideWalkOnAndSaveBar';
 import { openShareWorkoutRoute } from '../utils/shareWorkoutEngine';
 import { STORAGE_KEYS } from '../utils/storageKeys';
@@ -154,6 +160,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     autoRegPivotHistory,
     endedEarlyStimulusRatio,
     dismissedAutoRegSignatures,
+    relayQuartets,
+    relayBatonTimestampsSecs,
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -186,6 +194,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     convertRemainingToCv,
     endSessionStimulusAchieved,
     dismissAutoRegCue,
+    tapRelayBatonHandoff,
+    setRelayQuartetConfig,
+    addRelayQuartet,
+    removeRelayQuartet,
   } = useTracksideStopwatch(50);
 
   const [showEnvPhysicsPanel, setShowEnvPhysicsPanel] = useState<boolean>(false);
@@ -496,7 +508,8 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   const activeRacePreset = useMemo(
     () =>
       RACE_STOPWATCH_PRESETS.find((p) => p.label === raceEventLabel) ||
-      RACE_STOPWATCH_PRESETS[3],
+      RACE_STOPWATCH_PRESETS.find((p) => p.label === '1600m') ||
+      RACE_STOPWATCH_PRESETS[0],
     [raceEventLabel]
   );
 
@@ -931,13 +944,32 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
     setExtraPodAthletes((prev) => prev.filter((a) => a.id !== id));
   };
 
+  const isRelayMode = sessionType === 'RACE' && Boolean(activeRacePreset.isRelay);
+
+  const relayTelemetries = useMemo(
+    () =>
+      isRelayMode
+        ? relayQuartets.map((quartet) =>
+            computeRelayQuartetTelemetry({
+              quartet,
+              preset: activeRacePreset,
+              rawHandoffTimestampsSecs: relayBatonTimestampsSecs[quartet.id] || [],
+              isRunning: stopwatchRunning,
+            })
+          )
+        : [],
+    [isRelayMode, relayQuartets, activeRacePreset, relayBatonTimestampsSecs, stopwatchRunning]
+  );
+
   const buildCsvPayload = () =>
     buildTracksideStopwatchCsv({
       sessionType,
       sessionTitle,
       presetOrEventLabel:
         sessionType === 'RACE' ? activeRacePreset.label : activeWorkoutPreset.label,
-      telemetries: runnerTelemetries,
+      telemetries: isRelayMode
+        ? buildRelayCsvTelemetries(relayTelemetries)
+        : runnerTelemetries,
     });
 
   const handleCopyCsv = async () => {
@@ -980,7 +1012,10 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   };
 
   const handleShareStopwatchCard = () => {
-    const timed = runnerTelemetries.filter((t) => t.lapCount > 0 && t.netTotalSecs !== null);
+    const sourceTelemetries = isRelayMode
+      ? buildRelayCsvTelemetries(relayTelemetries)
+      : runnerTelemetries;
+    const timed = sourceTelemetries.filter((t) => t.lapCount > 0 && t.netTotalSecs !== null);
     if (timed.length === 0) return;
     const teamName = myTeams.find((tm) => tm.brand.teamId === activeTeamId)?.brand.name;
     const presetLabel =
@@ -1006,15 +1041,30 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
   };
 
   const handleSaveToThresh = async () => {
+    const relayCompleted = isRelayMode
+      ? relayTelemetries.filter((rt) => rt.completedLegs > 0)
+      : [];
     const timed = runnerTelemetries.filter((t) => t.lapCount > 0 && t.netTotalSecs !== null);
-    if (timed.length === 0 || isSavingToThresh) return;
+    if ((!isRelayMode && timed.length === 0) || (isRelayMode && relayCompleted.length === 0) || isSavingToThresh) return;
 
     const rosterById = new Map(roster.map((r) => [r.id, r]));
     const derivedStartMs =
       sessionStartedEpochMs ?? Math.max(0, Date.now() - Math.max(0, stopwatchElapsedMs));
     const startDateLocalIso = formatLocalWallClockIso(derivedStartMs);
 
-    const entries: SavedStopwatchEntry[] = timed.map((t) => {
+    const entries: SavedStopwatchEntry[] = isRelayMode
+      ? buildRelaySavedEntries({
+          relayTelemetries,
+          activeRacePreset,
+          rosterById,
+          selfProfile,
+          sessionTitle,
+          includeWarmupCooldown,
+          startDateLocalIso,
+          derivedStartMs,
+          trackLane,
+        })
+      : timed.map((t) => {
       const targetId = t.runnerId;
       const athleteProfileForTarget =
         targetId === 'SELF'
@@ -2149,7 +2199,7 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Quick rep distance">
-              {([200, 400, 800, 1000, 1600] as const).map((dist) => {
+              {([30, 60, 100, 200, 400, 800, 1000, 1600] as const).map((dist) => {
                 const isSelected = activeWorkoutPreset.repDistanceMeters === dist;
                 return (
                   <button
@@ -2224,18 +2274,40 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
 
       {autoRegBannerNode}
 
-      {/* 2. Unified Clean Runner Tap Area (4-Datum Cards OR Matrix) */}
-      <TracksideRunnerCardsAndMatrix
-        viewMode={viewMode}
-        sessionType={sessionType}
-        filteredTelemetries={filteredTelemetries}
-        runnerPodLookup={runnerPodLookup}
-        chuteQueueSecs={chuteQueueSecs}
-        lastTappedRunnerId={lastTappedRunnerId}
-        targetRaceLaps={targetRaceLaps}
-        maxColumnsInMatrix={maxColumnsInMatrix}
-        onRunnerAction={handleRunnerAction}
-      />
+      {/* 2. Unified Clean Runner Tap Area (Relay Baton Panel OR 4-Datum Cards / Matrix) */}
+      {isRelayMode ? (
+        <TracksideRelayBatonPanel
+          activeRacePreset={activeRacePreset}
+          quartets={relayQuartets}
+          relayTelemetries={relayTelemetries}
+          rosterInputs={rosterInputs}
+          stopwatchRunning={stopwatchRunning}
+          onTapBatonHandoff={(qId) => {
+            const res = tapRelayBatonHandoff(qId);
+            if (!res.blockedByFinishLock) {
+              playFeedback(res.legNumber === 4 ? 'BELL' : 'SPLIT');
+              setLiveAnnouncement(
+                `Relay handoff leg ${res.legNumber} recorded at ${formatTrackMark(res.handoffSecs, 2)}`
+              );
+            }
+          }}
+          onUpdateQuartet={setRelayQuartetConfig}
+          onAddQuartet={addRelayQuartet}
+          onRemoveQuartet={removeRelayQuartet}
+        />
+      ) : (
+        <TracksideRunnerCardsAndMatrix
+          viewMode={viewMode}
+          sessionType={sessionType}
+          filteredTelemetries={filteredTelemetries}
+          runnerPodLookup={runnerPodLookup}
+          chuteQueueSecs={chuteQueueSecs}
+          lastTappedRunnerId={lastTappedRunnerId}
+          targetRaceLaps={targetRaceLaps}
+          maxColumnsInMatrix={maxColumnsInMatrix}
+          onRunnerAction={handleRunnerAction}
+        />
+      )}
 
       {/* 5. Walk-On Roster Deck & 1-Click MeetReady Save / CSV Export Footer */}
       <TracksideWalkOnAndSaveBar

@@ -1,6 +1,9 @@
 import type {
   CoachEventGroup,
   ExternalTeamPlatform,
+  FieldEventCode,
+  FieldEventLogRecord,
+  FieldTrialEntry,
   OfficialRacePlatform,
   OfficialTrackSurface,
   PracticeVenueCategory,
@@ -23,6 +26,12 @@ import {
   getOrgTypeSafeguardingDefaults,
   inferEventGroupFromSeedMark,
 } from '../physiology/teamOnboardingEngine.ts';
+import {
+  formatFieldMarkDual,
+  getFieldEventSpec,
+  parseFieldMarkToMeters,
+  summarizeFieldSeries,
+} from '../physiology/fieldEventsEngine.ts';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration.ts';
 
 export type ExternalPasteKind = 'ICS_CALENDAR' | 'ROSTER' | 'SCHEDULE' | 'MEET_RESULTS';
@@ -83,6 +92,13 @@ export interface ParsedExternalMeetResultRow {
   externalAthleteId?: string;
   externalProfileUrl?: string;
   sourceUrl?: string;
+  isFieldEvent?: boolean;
+  fieldEventCode?: FieldEventCode;
+  fieldMarkMeters?: number;
+  displayFieldMark?: string;
+  windMps?: number;
+  isWindAided?: boolean;
+  isNoMarkOrFoul?: boolean;
 }
 
 export interface RosterMatchMemberRef {
@@ -100,6 +116,14 @@ export interface MatchedExternalMeetResult {
   matchedAthleteName?: string;
   candidate: ParsedOfficialRaceCandidate;
   activity: UnifiedActivity;
+}
+
+export interface MatchedExternalFieldResult {
+  row: ParsedExternalMeetResultRow;
+  action: 'MATCHED' | 'CREATE_NEW';
+  membershipId?: string;
+  matchedAthleteName?: string;
+  fieldRecordPreview: FieldEventLogRecord;
 }
 
 export interface ThreshBookmarkletEnvelopeV1 {
@@ -157,31 +181,31 @@ export const COURSE_DISTANCE_PRESETS: Array<{
     trackType: 'XC_COURSE',
   },
   {
+    id: 'FIVE_K_XC',
+    label: '5K XC (5,000m)',
+    distanceMeters: 5000,
+    eventLabel: 'XC 5K',
+    trackType: 'XC_COURSE',
+  },
+  {
+    id: 'THREE_MILE_XC',
+    label: '3.0 mi XC (4,828m)',
+    distanceMeters: 4828,
+    eventLabel: '3.0 mi XC',
+    trackType: 'XC_COURSE',
+  },
+  {
     id: 'CRYSTAL_SPRINGS',
-    label: 'Crystal Springs XC (2.95 mi · 4,748m)',
+    label: '2.95 mi XC — Crystal Springs (4,748m)',
     distanceMeters: 4748,
     eventLabel: '2.95 mi XC (Crystal Springs)',
     trackType: 'XC_COURSE',
   },
   {
     id: 'MONTGOMERY_HILL',
-    label: 'Montgomery Hill XC (2.74 mi · 4,410m)',
+    label: '2.74 mi XC — Montgomery Hill (4,410m)',
     distanceMeters: 4410,
     eventLabel: '2.74 mi XC (Montgomery Hill)',
-    trackType: 'XC_COURSE',
-  },
-  {
-    id: 'THREE_MILE_XC',
-    label: 'Bay Area / Toro / Mt. SAC 3.0 mi (4,828m)',
-    distanceMeters: 4828,
-    eventLabel: '3.0 mi XC',
-    trackType: 'XC_COURSE',
-  },
-  {
-    id: 'FIVE_K_XC',
-    label: 'Standard 5K XC / Woodward Park (5,000m)',
-    distanceMeters: 5000,
-    eventLabel: 'XC 5K',
     trackType: 'XC_COURSE',
   },
   {
@@ -400,10 +424,23 @@ export function resolveRaceEventDistance(
     }
   }
 
-  const meterMatch = s.match(/(\d{3,5}(?:,\d{3})?)\s*m(?:eters?)?\b/i);
+  const hurdleMatch = s.match(/(?<![\d.])(\d{2,3})\s*m\s*(?:h|hurdles?)\b/i);
+  if (hurdleMatch) {
+    const meters = parseInt(hurdleMatch[1], 10);
+    if (Number.isFinite(meters) && meters >= 50 && meters <= 400) {
+      return {
+        eventLabel: `${meters}mH`,
+        distanceMeters: meters,
+        trackType: trackSurface,
+        isCrossCountry: false,
+      };
+    }
+  }
+
+  const meterMatch = s.match(/(?<![\d.])(\d{2,5}(?:,\d{3})?)\s*m(?:eters?)?\b/i);
   if (meterMatch) {
     const meters = parseInt(meterMatch[1].replace(/,/g, ''), 10);
-    if (Number.isFinite(meters) && meters >= 60) {
+    if (Number.isFinite(meters) && meters >= 50) {
       const isXc = /\bxc\b|cross\s*country|varsity|frosh|jv\b/i.test(s) && meters >= 3000;
       const eventLabel =
         isXc && meters === 5000 ? 'XC 5K' : `${meters}m`;
@@ -799,8 +836,212 @@ export function formatAthleteDisplayName(rawName: string): string {
 const ATHLETE_NAME_CELL_PATTERN =
   /^[A-Za-zÀ-ÿ'’.-]{1,24}(?:\s+[A-Za-zÀ-ÿ'’.-]{1,24}){1,4}$|^[A-Za-zÀ-ÿ'’.-]{2,24},\s*[A-Za-zÀ-ÿ'’.-]{1,24}(?:\s+[A-Za-zÀ-ÿ'’.-]{1,24})?$/;
 
+function stripExternalNoiseForMarkScan(raw: string): string {
+  return String(raw || '')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/(?:AID=|\/athletes?\/)\d+/gi, ' ')
+    .replace(/\b\d{4}-\d{1,2}-\d{1,2}\b/g, ' ')
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, ' ');
+}
+
+function extractWindReading(raw: string): {
+  windMps?: number;
+  isWindAided?: boolean;
+  matchedText?: string;
+  cleaned: string;
+} {
+  let working = stripExternalNoiseForMarkScan(raw);
+  let windMps: number | undefined;
+  let isWindAided: boolean | undefined;
+  let matchedText: string | undefined;
+
+  const signedMatch = working.match(
+    /(?:^|[\s(|;,])((?:wind\s*[:=]?\s*|w\s*[:=]?\s*)?[+-]\s*\d(?:\.\d{1,2})?\s*(?:m\/s|w)?)(?=$|[\s)|;,])/i
+  );
+  if (signedMatch) {
+    const token = signedMatch[1];
+    const numMatch = token.match(/([+-]\s*\d(?:\.\d{1,2})?)/);
+    if (numMatch) {
+      const parsed = parseFloat(numMatch[1].replace(/\s+/g, ''));
+      if (Number.isFinite(parsed) && Math.abs(parsed) <= 15) {
+        windMps = Number(parsed.toFixed(2));
+        isWindAided = windMps > 2.0;
+        matchedText = token;
+        working = working
+          .replace(token, ' ')
+          .replace(/\(\s*\)/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+    }
+  }
+
+  if (!isWindAided) {
+    if (/(?:\d+(?:\.\d+)?m?w\b|(?:^|\s)[(]?w[)]?(?=$|\s))/i.test(working)) {
+      isWindAided = true;
+    }
+  }
+
+  return { windMps, isWindAided, matchedText, cleaned: working };
+}
+
+function detectFieldEventContext(
+  text: string
+): { code: FieldEventCode; label: string; genderDivision?: 'M' | 'F' } | null {
+  const s = String(text || '').trim();
+  if (!s) return null;
+  const genderDivision: 'M' | 'F' | undefined = /\b(?:boys?|men'?s?|men)\b/i.test(s)
+    ? 'M'
+    : /\b(?:girls?|women'?s?|women)\b/i.test(s)
+      ? 'F'
+      : undefined;
+
+  const rules: Array<{ pattern: RegExp; code: FieldEventCode; label: string }> = [
+    { pattern: /\blong\s+jump\b|\bLJ\b/i, code: 'LJ', label: 'Long Jump' },
+    { pattern: /\btriple\s+jump\b|\bTJ\b/i, code: 'TJ', label: 'Triple Jump' },
+    { pattern: /\bhigh\s+jump\b|\bHJ\b/i, code: 'HJ', label: 'High Jump' },
+    { pattern: /\bpole\s+vault\b|\bPV\b/i, code: 'PV', label: 'Pole Vault' },
+    { pattern: /\bshot\s+put\b|(?:^|[\s|;,/])SP(?:$|[\s|;,/])/i, code: 'SP', label: 'Shot Put' },
+    { pattern: /\bdiscus(?:\s+throw)?\b|(?:^|[\s|;,/])DT(?:$|[\s|;,/])/i, code: 'DISCUS', label: 'Discus' },
+    { pattern: /\bjavelin(?:\s+throw)?\b|(?:^|[\s|;,/])JT(?:$|[\s|;,/])/i, code: 'JAVELIN', label: 'Javelin' },
+    { pattern: /\bhammer(?:\s+throw)?\b|(?:^|[\s|;,/])HT(?:$|[\s|;,/])/i, code: 'HAMMER', label: 'Hammer' },
+  ];
+  for (const r of rules) {
+    // Require uppercase for 2-letter abbreviations unless full event name is written
+    if (
+      r.pattern.test(s) &&
+      (/\b(?:long\s+jump|triple\s+jump|high\s+jump|pole\s+vault|shot\s+put|discus|javelin|hammer)\b/i.test(s) ||
+        /\b(?:LJ|TJ|HJ|PV|SP|DT|JT|HT)\b/.test(s))
+    ) {
+      return { code: r.code, label: r.label, ...(genderDivision ? { genderDivision } : {}) };
+    }
+  }
+  return null;
+}
+
+interface ExtractedFieldMarkCandidate {
+  rawToken: string;
+  markMeters?: number;
+  displayMark: string;
+  isNoMarkOrFoul?: boolean;
+  hasTrailingWindFlag?: boolean;
+}
+
+function extractFieldMarkCandidate(
+  raw: string,
+  hasFieldContext: boolean
+): ExtractedFieldMarkCandidate | null {
+  const windInfo = extractWindReading(raw);
+  const cleaned = windInfo.cleaned;
+
+  // 1. Imperial feet-inches quote format: 21' 6.5", 21'6", 6' 2"
+  const quoteMatch = cleaned.match(/(\d{1,3}\s*(?:'|ft)\s*\d{1,2}(?:\.\d{1,2})?\s*(?:"|in)?)\s*(w)?/i);
+  if (quoteMatch) {
+    const core = quoteMatch[1].replace(/w$/i, '').trim();
+    const meters = parseFieldMarkToMeters(core);
+    if (meters !== null) {
+      return {
+        rawToken: quoteMatch[0].trim(),
+        markMeters: meters,
+        displayMark: formatFieldMarkDual(meters),
+        hasTrailingWindFlag: Boolean(quoteMatch[2]),
+      };
+    }
+  }
+
+  // 2. Imperial dash format: 21-06.50, 6-02, 13-06.25, 45-04.25, 142-08
+  const dashMatch = cleaned.match(/\b(\d{1,3}-\d{1,2}(?:\.\d{1,2})?)(w)?\b/i);
+  if (dashMatch) {
+    const meters = parseFieldMarkToMeters(dashMatch[1]);
+    if (meters !== null) {
+      return {
+        rawToken: dashMatch[0],
+        markMeters: meters,
+        displayMark: formatFieldMarkDual(meters),
+        hasTrailingWindFlag: Boolean(dashMatch[2]),
+      };
+    }
+  }
+
+  // 3. Feet-only format: 15ft, 15'
+  const ftOnlyMatch = cleaned.match(/\b(\d{1,3}(?:\.\d{1,2})?\s*(?:'|ft))(w)?\b/i);
+  if (ftOnlyMatch && hasFieldContext) {
+    const meters = parseFieldMarkToMeters(ftOnlyMatch[1]);
+    if (meters !== null) {
+      return {
+        rawToken: ftOnlyMatch[0],
+        markMeters: meters,
+        displayMark: formatFieldMarkDual(meters),
+        hasTrailingWindFlag: Boolean(ftOnlyMatch[2]),
+      };
+    }
+  }
+
+  // 4. Metric field mark with decimal + 'm' suffix: 6.57m, 1.95m, 14.82m, 52.10m
+  const metricMatch = cleaned.match(/(?<![\d.])(\d{1,3}\.\d{1,3})\s*m(?:eters?)?(w)?\b/i);
+  if (metricMatch) {
+    const meters = parseFieldMarkToMeters(`${metricMatch[1]}m`);
+    if (meters !== null) {
+      return {
+        rawToken: metricMatch[0].trim(),
+        markMeters: meters,
+        displayMark: formatFieldMarkDual(meters),
+        hasTrailingWindFlag: Boolean(metricMatch[2]),
+      };
+    }
+  }
+
+  if (hasFieldContext) {
+    // 5. Bare metric mark under an explicit field header (without colon time)
+    if (!/\d{1,2}:\d{2}/.test(cleaned)) {
+      const bareMetric = cleaned.match(/(?<![\d.:+-])(\d{1,3}\.\d{1,2})(w)?(?![\d.:%])/i);
+      if (bareMetric) {
+        const meters = parseFieldMarkToMeters(bareMetric[1]);
+        if (meters !== null) {
+          return {
+            rawToken: bareMetric[0],
+            markMeters: meters,
+            displayMark: formatFieldMarkDual(meters),
+            hasTrailingWindFlag: Boolean(bareMetric[2]),
+          };
+        }
+      }
+    }
+
+    // 6. FOUL / NH / NM / ND under field context
+    const nmMatch = cleaned.match(/\b(FOUL|NH|NM|ND)\b/i);
+    if (nmMatch) {
+      const label = nmMatch[1].toUpperCase();
+      return {
+        rawToken: nmMatch[0],
+        displayMark: label,
+        isNoMarkOrFoul: true,
+      };
+    }
+  }
+
+  return null;
+}
+
+function detectTrackEventHeader(line: string): boolean {
+  const s = String(line || '').trim();
+  if (!s || s.length > 90) return false;
+  if (detectFieldEventContext(s)) return false;
+  if (/\d{1,2}:\d{2}/.test(s)) return false;
+  if (extractFieldMarkCandidate(s, false)) return false;
+  return /\b(?:50|55|60|100|110|200|300|400|800|1000|1500|1600|3000|3200|5000|10000)\s*m(?:h|eters?)?\b|\b4x\d{3}m?\b|\bdmr\b|\b(?:1|2)\s*miles?\b|\bxc\b|cross\s*country|\b(?:3|5|6|8|10)k\b/i.test(
+    s
+  );
+}
+
 function extractSeedTimeToken(raw: string): string | undefined {
-  const match = raw.match(/\b(\d{1,2}:\d{2}(?:\.\d{1,2})?[a-zA-Z]*|\d{2}\.\d{2}[a-zA-Z]*)\b/);
+  const { cleaned } = extractWindReading(raw);
+  const withoutFieldMarks = cleaned
+    .replace(/\b\d{1,3}\s*(?:'|ft|-)\s*\d{1,2}(?:\.\d{1,2})?(?:\s*(?:"|in))?[a-zA-Z]*\b/g, ' ')
+    .replace(/\b\d+(?:\.\d+)?\s*(?:miles?|mi|km|k|meters?|m|ft|in)[a-zA-Z]*\b/gi, ' ');
+  const match = withoutFieldMarks.match(
+    /\b(\d{1,2}:\d{2}(?:\.\d{1,2})?[a-zA-Z]*|\d{1,2}\.\d{2}[a-zA-Z]*)\b/
+  );
   return match ? match[1] : undefined;
 }
 
@@ -1068,13 +1309,50 @@ export function parseExternalMeetResults(
       if (teamKeyword && r.teamName && !r.teamName.toLowerCase().includes(teamKeyword)) {
         continue;
       }
+      if (!r.athleteName) continue;
+      const gm = resolveGraduationYearFromGradeToken(r.gradeOrYear || '');
+      const inlineField = detectFieldEventContext(r.eventText || '');
+      const fieldMark = extractFieldMarkCandidate(r.markText || '', Boolean(inlineField));
+      const windInfo = extractWindReading(r.markText || '');
+      if (inlineField || (fieldMark && !extractSeedTimeToken(r.markText || ''))) {
+        const fc: FieldEventCode = inlineField?.code || 'LJ';
+        const spec = getFieldEventSpec(fc);
+        out.push({
+          athleteName: formatAthleteDisplayName(r.athleteName),
+          ...(r.teamName ? { teamName: r.teamName } : {}),
+          ...(gm.gradeLabel ? { gradeOrYear: gm.gradeLabel } : {}),
+          ...(gm.graduationYear ? { graduationYear: gm.graduationYear } : {}),
+          ...(inlineField?.genderDivision ? { genderDivision: inlineField.genderDivision } : {}),
+          date: parseFlexibleDateToIso(r.date || '') || defaultDate,
+          meetName: r.meetName || envelope.pageTitle || defaultMeet,
+          eventLabel: inlineField?.label || spec.label,
+          eventDistanceMeters: 0,
+          fatTimeSecs: 0,
+          displayFatTime: fieldMark?.displayMark || r.markText || 'NM',
+          ...(r.placeFinish ? { placeFinish: r.placeFinish } : {}),
+          trackType: 'OUTDOOR_400M',
+          platform: envelope.sourcePlatform === 'TFRRS' ? 'TFRRS' : 'Athletic.net',
+          externalSource: envelope.sourcePlatform,
+          ...(r.externalAthleteId ? { externalAthleteId: r.externalAthleteId } : {}),
+          ...(r.externalProfileUrl ? { externalProfileUrl: r.externalProfileUrl } : {}),
+          sourceUrl: envelope.pageUrl || options.sourceUrl,
+          isFieldEvent: true,
+          fieldEventCode: fc,
+          ...(fieldMark?.markMeters !== undefined ? { fieldMarkMeters: fieldMark.markMeters } : {}),
+          displayFieldMark: fieldMark?.displayMark || r.markText || 'NM',
+          ...(typeof windInfo.windMps === 'number' ? { windMps: windInfo.windMps } : {}),
+          ...(windInfo.isWindAided || fieldMark?.hasTrailingWindFlag ? { isWindAided: true } : {}),
+          ...(fieldMark?.isNoMarkOrFoul ? { isNoMarkOrFoul: true } : {}),
+        });
+        continue;
+      }
+
       const fatSecs = parseFatTimeString(r.markText);
-      if (!r.athleteName || fatSecs <= 0) continue;
+      if (fatSecs <= 0) continue;
       const resolvedDist = resolveRaceEventDistance(
         `${r.eventText || ''} ${r.meetName || ''} ${options.defaultCourseOrDistance || ''}`,
         5000
       );
-      const gm = resolveGraduationYearFromGradeToken(r.gradeOrYear || '');
       out.push({
         athleteName: formatAthleteDisplayName(r.athleteName),
         ...(r.teamName ? { teamName: r.teamName } : {}),
@@ -1093,6 +1371,8 @@ export function parseExternalMeetResults(
         ...(r.externalAthleteId ? { externalAthleteId: r.externalAthleteId } : {}),
         ...(r.externalProfileUrl ? { externalProfileUrl: r.externalProfileUrl } : {}),
         sourceUrl: envelope.pageUrl || options.sourceUrl,
+        ...(typeof windInfo.windMps === 'number' ? { windMps: windInfo.windMps } : {}),
+        ...(windInfo.isWindAided ? { isWindAided: true } : {}),
       });
     }
     return out;
@@ -1107,6 +1387,8 @@ export function parseExternalMeetResults(
   let currentDate = defaultDate;
   let currentCourse = options.defaultCourseOrDistance || '';
   let currentSquad: string | undefined;
+  let currentGender: 'M' | 'F' | undefined;
+  let currentFieldEvent: { code: FieldEventCode; label: string; genderDivision?: 'M' | 'F' } | undefined;
   const results: ParsedExternalMeetResultRow[] = [];
 
   for (const rawLine of lines) {
@@ -1116,8 +1398,13 @@ export function parseExternalMeetResults(
       currentMeet = meetHeader[1].trim();
       const d = parseFlexibleDateToIso(rawLine);
       if (d) currentDate = d;
-      if (/mile|km|k\b|meter|springs|hill|park/i.test(rawLine)) {
+      const headerField = detectFieldEventContext(rawLine);
+      if (headerField) {
+        currentFieldEvent = headerField;
+        if (headerField.genderDivision) currentGender = headerField.genderDivision;
+      } else if (/mile|km|k\b|meter|springs|hill|park/i.test(rawLine)) {
         currentCourse = rawLine;
+        currentFieldEvent = undefined;
       }
       continue;
     }
@@ -1125,17 +1412,57 @@ export function parseExternalMeetResults(
     const sectionHeader = detectSquadSectionHeader(rawLine);
     if (sectionHeader) {
       currentSquad = sectionHeader;
-      if (/mile|km|k\b|meter|springs|hill|park/i.test(rawLine)) {
+      const g = inferGenderFromSection(rawLine);
+      if (g) currentGender = g;
+      const headerField = detectFieldEventContext(rawLine);
+      if (headerField) {
+        currentFieldEvent = headerField;
+      } else if (detectTrackEventHeader(rawLine)) {
+        currentFieldEvent = undefined;
+        currentCourse = rawLine;
+      } else if (/mile|km|k\b|meter|springs|hill|park/i.test(rawLine)) {
         currentCourse = rawLine;
       }
       continue;
     }
 
-    // Extract time mark anywhere in the row
-    const markToken = extractSeedTimeToken(rawLine);
-    if (!markToken) continue;
-    const fatSecs = parseFatTimeString(markToken);
-    if (!fatSecs || fatSecs < 9 || fatSecs > 7200) continue;
+    // Event header lines such as "Boys Long Jump", "Girls Shot Put Finals", "Boys 60m Finals"
+    const lineFieldHeader = detectFieldEventContext(rawLine);
+    const hasSeedTimeOnLine = Boolean(extractSeedTimeToken(rawLine));
+    const hasFieldMarkOnLine = Boolean(extractFieldMarkCandidate(rawLine, Boolean(lineFieldHeader || currentFieldEvent)));
+    if (lineFieldHeader && !hasFieldMarkOnLine && !hasSeedTimeOnLine && !rawLine.includes('|') && !rawLine.includes('\t')) {
+      currentFieldEvent = lineFieldHeader;
+      if (lineFieldHeader.genderDivision) currentGender = lineFieldHeader.genderDivision;
+      continue;
+    }
+    if (detectTrackEventHeader(rawLine) && !rawLine.includes('|') && !rawLine.includes('\t')) {
+      currentFieldEvent = undefined;
+      currentCourse = rawLine;
+      const g = inferGenderFromSection(rawLine);
+      if (g) currentGender = g;
+      continue;
+    }
+
+    // Determine row-level event classification (inline field event overrides track, inline track event overrides field header)
+    const inlineField = detectFieldEventContext(rawLine);
+    const inlineTrackMatch =
+      !inlineField &&
+      /\b(?:50|55|60|100|110|200|300|400|800|1000|1500|1600|3000|3200|5000|10000)\s*m(?:h|eters?)?\b|\b4x\d{3}m?\b|\bdmr\b|\b(?:1|2)\s*miles?\b|\b(?:3|5|6|8|10)k\b/i.test(
+        rawLine
+      );
+    const activeFieldEvent = inlineField || (inlineTrackMatch ? undefined : currentFieldEvent);
+    const windInfo = extractWindReading(rawLine);
+    const fieldCandidate = extractFieldMarkCandidate(rawLine, Boolean(activeFieldEvent));
+    const markToken = !activeFieldEvent ? extractSeedTimeToken(rawLine) : undefined;
+    const isFieldRow = Boolean(activeFieldEvent && fieldCandidate) || (!markToken && Boolean(fieldCandidate && inlineField));
+
+    if (!isFieldRow && !markToken) continue;
+
+    let fatSecs = 0;
+    if (!isFieldRow && markToken) {
+      fatSecs = parseFatTimeString(markToken);
+      if (!fatSecs || fatSecs < 5.5 || fatSecs > 7200) continue;
+    }
 
     // Extract optional explicit date & external athlete ID
     const rowDate = parseFlexibleDateToIso(rawLine) || currentDate;
@@ -1149,13 +1476,34 @@ export function parseExternalMeetResults(
     let graduationYear: number | undefined;
     let eventContextText = `${currentCourse} ${currentMeet}`;
 
-    if (cols.length >= 3) {
+    const strippedMarkToken = isFieldRow ? fieldCandidate?.rawToken || '' : markToken || '';
+    const strippedWindToken = windInfo.matchedText || '';
+
+    if (cols.length >= 2) {
       for (const cell of cols) {
-        if (!cell || cell === markToken || cell === rowDate) continue;
+        if (
+          !cell ||
+          cell === strippedMarkToken ||
+          cell === rowDate ||
+          (strippedWindToken && cell.includes(strippedWindToken)) ||
+          /^[+-]\s*\d(?:\.\d{1,2})?\s*(?:m\/s|w)?$/i.test(cell.replace(/[()]/g, '').trim())
+        ) {
+          continue;
+        }
+        if (
+          isFieldRow &&
+          fieldCandidate &&
+          (cell === fieldCandidate.rawToken ||
+            cell.replace(/\s+/g, ' ').includes(fieldCandidate.rawToken))
+        ) {
+          continue;
+        }
+        if (isFieldRow && detectFieldEventContext(cell)) {
+          continue;
+        }
         if (/^(\d{1,4})(?:st|nd|rd|th)?$/i.test(cell) && !placeFinish && parseInt(cell, 10) <= 2000) {
           const val = parseInt(cell, 10);
           if (val >= 9 && val <= 12 && !gradeOrYear && !athleteName) {
-            // Ambiguous before name unless small place; check next cells
             placeFinish = String(val);
           } else if (val >= 9 && val <= 12 && athleteName && !gradeOrYear) {
             const gm = resolveGraduationYearFromGradeToken(cell);
@@ -1174,7 +1522,7 @@ export function parseExternalMeetResults(
         }
         if (/(\d+(?:\.\d+)?\s*(?:miles?|mi|k|km|m)\b|crystal\s*springs|montgomery\s*hill|track|xc)/i.test(cell)) {
           eventContextText = `${cell} ${eventContextText}`;
-          if (!/^\d{3,4}m$|^\d+(?:\.\d+)?\s*(?:miles?|mi|k)$/i.test(cell) && !currentMeet) {
+          if (!/^\d{2,4}m$|^\d+(?:\.\d+)?\s*(?:miles?|mi|k)$/i.test(cell) && !currentMeet) {
             currentMeet = cell;
           }
           continue;
@@ -1188,19 +1536,37 @@ export function parseExternalMeetResults(
         }
       }
     } else {
-      // Single-line pasted row e.g. "4  Lucas Alvarez  11  Willow Glen  15:18.4  2.95 mi"
-      const tokens = rawLine
-        .replace(markToken, '')
-        .replace(rowDate, '')
-        .trim()
-        .split(/\s+/);
+      // Single-line pasted row e.g. "4  Lucas Alvarez  11  Willow Glen  15:18.4  2.95 mi" or "1  Marcus Vance  11  Central HS  21-06.50 (+1.4)"
+      let lineRemainder = rawLine
+        .replace(strippedMarkToken, ' ')
+        .replace(rowDate, ' ');
+      if (strippedWindToken) {
+        lineRemainder = lineRemainder.replace(strippedWindToken, ' ');
+      }
+      lineRemainder = lineRemainder.replace(/\(\s*\)/g, ' ').trim();
+      const tokens = lineRemainder.split(/\s+/).filter(Boolean);
       const placeCandidate = tokens[0]?.match(/^(\d{1,3})\.?$/);
       if (placeCandidate) {
         placeFinish = placeCandidate[1];
         tokens.shift();
       }
       const words: string[] = [];
-      for (const tok of tokens) {
+      for (let tIdx = 0; tIdx < tokens.length; tIdx += 1) {
+        const tok = tokens[tIdx];
+        if (/^[+-]\s*\d(?:\.\d{1,2})?(?:w|m\/s)?$/i.test(tok.replace(/[()]/g, ''))) continue;
+        if (/^\d{2,4}m(?:h)?$/i.test(tok) || /^\d+(?:\.\d+)?k$/i.test(tok)) {
+          eventContextText = `${tok} ${eventContextText}`;
+          continue;
+        }
+        if (
+          /^\d+(?:\.\d+)?$/.test(tok) &&
+          tokens[tIdx + 1] &&
+          /^(?:mi|miles?|km|k)$/i.test(tokens[tIdx + 1])
+        ) {
+          eventContextText = `${tok} ${tokens[tIdx + 1]} ${eventContextText}`;
+          tIdx += 1;
+          continue;
+        }
         const gm = resolveGraduationYearFromGradeToken(tok);
         if (!gradeOrYear && (gm.graduationYear || gm.gradeLabel)) {
           gradeOrYear = gm.gradeLabel;
@@ -1222,15 +1588,56 @@ export function parseExternalMeetResults(
       continue;
     }
 
-    const resolvedDist = resolveRaceEventDistance(eventContextText, 5000);
     const platform: OfficialRacePlatform = source === 'TFRRS' ? 'TFRRS' : 'Athletic.net';
+    const rowGender =
+      inlineField?.genderDivision ||
+      activeFieldEvent?.genderDivision ||
+      inferGenderFromSection(rawLine) ||
+      currentGender;
 
+    if (isFieldRow && fieldCandidate) {
+      const fc: FieldEventCode = activeFieldEvent?.code || 'LJ';
+      const spec = getFieldEventSpec(fc);
+      const displayField = fieldCandidate.displayMark;
+      const isWindAided = Boolean(windInfo.isWindAided || fieldCandidate.hasTrailingWindFlag);
+      results.push({
+        athleteName: athleteName.slice(0, 64),
+        ...(teamName ? { teamName } : {}),
+        ...(gradeOrYear ? { gradeOrYear } : {}),
+        ...(graduationYear ? { graduationYear } : {}),
+        ...(currentSquad ? { squadGroup: currentSquad } : {}),
+        ...(rowGender ? { genderDivision: rowGender } : {}),
+        date: rowDate,
+        meetName: currentMeet,
+        eventLabel: activeFieldEvent?.label || spec.label,
+        eventDistanceMeters: 0,
+        fatTimeSecs: 0,
+        displayFatTime: displayField,
+        ...(placeFinish ? { placeFinish } : {}),
+        trackType: 'OUTDOOR_400M',
+        platform,
+        externalSource: source,
+        ...(aidMatch?.[1] ? { externalAthleteId: aidMatch[1] } : {}),
+        ...(options.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
+        isFieldEvent: true,
+        fieldEventCode: fc,
+        ...(fieldCandidate.markMeters !== undefined ? { fieldMarkMeters: fieldCandidate.markMeters } : {}),
+        displayFieldMark: displayField,
+        ...(typeof windInfo.windMps === 'number' ? { windMps: windInfo.windMps } : {}),
+        ...(isWindAided ? { isWindAided: true } : {}),
+        ...(fieldCandidate.isNoMarkOrFoul ? { isNoMarkOrFoul: true } : {}),
+      });
+      continue;
+    }
+
+    const resolvedDist = resolveRaceEventDistance(eventContextText, 5000);
     results.push({
       athleteName: athleteName.slice(0, 64),
       ...(teamName ? { teamName } : {}),
       ...(gradeOrYear ? { gradeOrYear } : {}),
       ...(graduationYear ? { graduationYear } : {}),
       ...(currentSquad ? { squadGroup: currentSquad } : {}),
+      ...(rowGender ? { genderDivision: rowGender } : {}),
       date: rowDate,
       meetName: currentMeet,
       eventLabel: resolvedDist.eventLabel,
@@ -1243,21 +1650,119 @@ export function parseExternalMeetResults(
       externalSource: source,
       ...(aidMatch?.[1] ? { externalAthleteId: aidMatch[1] } : {}),
       ...(options.sourceUrl ? { sourceUrl: options.sourceUrl } : {}),
+      ...(typeof windInfo.windMps === 'number' ? { windMps: windInfo.windMps } : {}),
+      ...(windInfo.isWindAided ? { isWindAided: true } : {}),
     });
   }
 
   return results;
 }
 
+export function buildExternalFieldEventLogRecord(params: {
+  row: ParsedExternalMeetResultRow;
+  teamId?: string;
+  membershipId?: string;
+  athleteName?: string;
+  nowIso?: string;
+  idSuffix?: string;
+}): FieldEventLogRecord {
+  const { row, teamId, membershipId, athleteName, nowIso, idSuffix } = params;
+  const eventCode: FieldEventCode = row.fieldEventCode || 'LJ';
+  const spec = getFieldEventSpec(eventCode);
+  const attempts: FieldTrialEntry[] = row.isNoMarkOrFoul
+    ? [
+        {
+          attemptNumber: 1,
+          outcome: spec.mode === 'VERTICAL' ? 'MISS' : 'FOUL',
+          ...(typeof row.windMps === 'number' ? { windMps: row.windMps } : {}),
+          note: `${row.displayFieldMark || 'NM'} (${row.meetName})`,
+        },
+      ]
+    : typeof row.fieldMarkMeters === 'number' && row.fieldMarkMeters > 0
+      ? [
+          {
+            attemptNumber: 1,
+            outcome: spec.mode === 'VERTICAL' ? 'CLEAR' : 'MARK',
+            ...(spec.mode === 'VERTICAL'
+              ? { barHeightMeters: row.fieldMarkMeters }
+              : { markMeters: row.fieldMarkMeters }),
+            ...(typeof row.windMps === 'number' ? { windMps: row.windMps } : {}),
+            note: row.displayFieldMark || formatFieldMarkDual(row.fieldMarkMeters),
+          },
+        ]
+      : [];
+  const summary = summarizeFieldSeries(eventCode, attempts);
+  const placeNum = row.placeFinish ? parseInt(row.placeFinish.replace(/\D/g, ''), 10) : NaN;
+  const isWindAided = Boolean(row.isWindAided || (typeof row.windMps === 'number' && row.windMps > 2.0));
+  const bestWindLegalMeters =
+    typeof row.fieldMarkMeters === 'number' && row.fieldMarkMeters > 0 && !isWindAided
+      ? row.fieldMarkMeters
+      : undefined;
+
+  return {
+    id: `ext-field-${row.date}-${eventCode.toLowerCase()}-${idSuffix || Math.random().toString(36).slice(2, 8)}`,
+    ...(teamId ? { teamId } : {}),
+    ...(membershipId ? { membershipId } : {}),
+    athleteName: athleteName || row.athleteName,
+    date: row.date,
+    eventCode,
+    eventGroup: spec.eventGroup,
+    isCompetition: true,
+    meetOrPracticeTitle: row.meetName,
+    attempts,
+    ...(summary.bestMarkMeters !== null ? { bestMarkMeters: summary.bestMarkMeters } : {}),
+    ...(bestWindLegalMeters !== undefined ? { bestWindLegalMeters } : {}),
+    ...(typeof row.windMps === 'number' ? { bestMarkWindMps: row.windMps } : {}),
+    ...(isWindAided ? { isWindAidedBest: true } : {}),
+    ...(row.isNoMarkOrFoul ? { isNoHeight: true } : {}),
+    ...(Number.isFinite(placeNum) && placeNum > 0 ? { placeRank: placeNum } : {}),
+    createdAt: nowIso || new Date().toISOString(),
+  };
+}
+
+export function isDuplicateExternalFieldLog(
+  existing: FieldEventLogRecord,
+  candidate: {
+    membershipId?: string;
+    athleteName: string;
+    date: string;
+    eventCode: FieldEventCode;
+    bestMarkMeters?: number;
+    isNoHeight?: boolean;
+  }
+): boolean {
+  if (existing.date !== candidate.date || existing.eventCode !== candidate.eventCode) {
+    return false;
+  }
+  const sameAthlete =
+    candidate.membershipId && existing.membershipId
+      ? existing.membershipId === candidate.membershipId
+      : normalizeAthleteMatchKey(existing.athleteName) ===
+        normalizeAthleteMatchKey(candidate.athleteName);
+  if (!sameAthlete) return false;
+  if (candidate.isNoHeight || existing.isNoHeight) {
+    return Boolean(candidate.isNoHeight) === Boolean(existing.isNoHeight);
+  }
+  if (
+    typeof candidate.bestMarkMeters === 'number' &&
+    typeof existing.bestMarkMeters === 'number'
+  ) {
+    return Math.abs(existing.bestMarkMeters - candidate.bestMarkMeters) < 0.005;
+  }
+  return existing.bestMarkMeters === candidate.bestMarkMeters;
+}
+
 /**
  * Matches parsed meet result rows against an existing MeetReady team roster and generates
- * official race candidates & full UnifiedActivity objects with VDOT calibration.
+ * official race candidates & full UnifiedActivity objects with VDOT calibration (running),
+ * or FieldEventLogRecord previews (jumps/throws/vaults without synthesizing running VDOT).
  */
 export function matchExternalResultsToRoster(
   parsedResults: ParsedExternalMeetResultRow[],
   rosterMembers: RosterMatchMemberRef[]
 ): {
   matched: MatchedExternalMeetResult[];
+  matchedFieldItems: MatchedExternalFieldResult[];
   matchedExistingCount: number;
   newWalkOnCount: number;
 } {
@@ -1276,14 +1781,37 @@ export function matchExternalResultsToRoster(
 
   let matchedExistingCount = 0;
   let newWalkOnCount = 0;
+  const matched: MatchedExternalMeetResult[] = [];
+  const matchedFieldItems: MatchedExternalFieldResult[] = [];
 
-  const matched: MatchedExternalMeetResult[] = parsedResults.map((row, idx) => {
+  parsedResults.forEach((row, idx) => {
     const extMatch = row.externalAthleteId ? byExternalId.get(row.externalAthleteId.trim()) : undefined;
     const nameMatch = byNormName.get(normalizeAthleteMatchKey(row.athleteName));
     const target = extMatch || nameMatch;
 
     if (target) matchedExistingCount += 1;
     else newWalkOnCount += 1;
+
+    if (row.isFieldEvent) {
+      const fieldRecordPreview = buildExternalFieldEventLogRecord({
+        row,
+        membershipId: target?.membershipId,
+        athleteName: target?.invitedName || row.athleteName,
+        idSuffix: String(idx),
+      });
+      matchedFieldItems.push({
+        row,
+        action: target ? 'MATCHED' : 'CREATE_NEW',
+        ...(target
+          ? {
+              membershipId: target.membershipId,
+              matchedAthleteName: target.invitedName,
+            }
+          : {}),
+        fieldRecordPreview,
+      });
+      return;
+    }
 
     const candidate: ParsedOfficialRaceCandidate = {
       id: `ext-race-${row.date}-${idx}-${row.athleteName.replace(/[^a-z0-9]/gi, '').slice(0, 8)}`,
@@ -1310,7 +1838,7 @@ export function matchExternalResultsToRoster(
 
     const activity = synthesizeOfficialRaceActivity(candidate);
 
-    return {
+    matched.push({
       row,
       action: target ? 'MATCHED' : 'CREATE_NEW',
       ...(target
@@ -1321,11 +1849,12 @@ export function matchExternalResultsToRoster(
         : {}),
       candidate,
       activity,
-    };
+    });
   });
 
   return {
     matched,
+    matchedFieldItems,
     matchedExistingCount,
     newWalkOnCount,
   };
@@ -1353,12 +1882,24 @@ export function detectExternalPasteKind(rawText: string): ExternalPasteKind {
   const lines = s.split(/\r?\n/).filter(Boolean);
   const meetHeaderLike = lines.some((l) => /^meet\s*:|place\s*[|\t;,]/i.test(l));
   const multiTimeRows = lines.filter((l) => Boolean(extractSeedTimeToken(l))).length;
+  const hasFieldHeader = lines.some((l) => Boolean(detectFieldEventContext(l)));
+  const fieldMarkRows = lines.filter((l) =>
+    Boolean(extractFieldMarkCandidate(l, hasFieldHeader || Boolean(detectFieldEventContext(l))))
+  ).length;
+  const resultRowsCount = multiTimeRows + fieldMarkRows;
   const dateRows = lines.filter((l) => Boolean(parseFlexibleDateToIso(l))).length;
 
-  if (dateRows >= 2 && multiTimeRows === 0) {
+  if (dateRows >= 2 && resultRowsCount === 0) {
     return 'SCHEDULE';
   }
-  if (meetHeaderLike || (multiTimeRows >= 2 && /invitational|finals|chs|ccs|bval|dual|meet\s*results|5k|1600m|3200m|crystal\s*springs/i.test(s))) {
+  if (
+    meetHeaderLike ||
+    (resultRowsCount >= 2 &&
+      (hasFieldHeader ||
+        /invitational|finals|prelims|chs|ccs|bval|dual|meet\s*results|5k|1600m|3200m|100m|200m|400m|800m|60m|110mh|300mh|400mh|crystal\s*springs|long\s*jump|triple\s*jump|high\s*jump|pole\s*vault|shot\s*put|discus|javelin|hammer/i.test(
+          s
+        )))
+  ) {
     return 'MEET_RESULTS';
   }
   return 'ROSTER';
@@ -1370,7 +1911,7 @@ export function detectExternalPasteKind(rawText: string): ExternalPasteKind {
  */
 export function buildThreshExternalSyncBookmarklet(appOrigin: string): string {
   const safeOrigin = String(appOrigin || 'https://meetready.app').replace(/\/+$/, '');
-  const code = `(function(){try{var u=location.href,h=location.hostname.toLowerCase(),p=h.indexOf('tfrrs')!==-1?'TFRRS':'ATHLETIC_NET',ath=[],seen={},rows=document.querySelectorAll('table tr,.athlete-row,[data-athlete-id]');for(var i=0;i<rows.length;i++){var r=rows[i],a=r.querySelector('a[href*="AID="],a[href*="/athletes/"],a[href*="/athlete/"]');var id='';if(a){var m=a.href.match(/(?:AID=|athletes?\\/)(\\d{4,10})/i);if(m)id=m[1];}var txt=(r.innerText||'').replace(/\\s+/g,' ').trim();if(txt.length>4&&txt.length<260&&!seen[txt]){seen[txt]=1;ath.push({name:a?(a.textContent||'').trim():txt.split(/\\t|\\s{2,}/)[0],externalAthleteId:id||undefined,externalProfileUrl:a?a.href:undefined,seedMark:(txt.match(/\\b\\d{1,2}:\\d{2}(?:\\.\\d{1,2})?[a-zA-Z]*\\b/)||[])[0]});}}var payload={schema:'THRESH_SYNC_V1',sourcePlatform:p,pageUrl:u,pageTitle:document.title,capturedAt:new Date().toISOString(),athletes:ath.slice(0,200),rawTextFallback:document.body.innerText.slice(0,30000)};var clip='THRESH_SYNC_V1:'+JSON.stringify(payload);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(clip).catch(function(){});}var w=window.open('${safeOrigin}/#coach-sync','thresh_coach_sync');var n=0,t=setInterval(function(){n++;if(!w||n>20){clearInterval(t);return;}try{w.postMessage({type:'THRESH_EXTERNAL_SYNC_V1',payload:payload},'${safeOrigin}');}catch(e){}},350);}catch(e){alert('MeetReady Sync could not read this page: '+e);}})();`;
+  const code = `(function(){try{var u=location.href,h=location.hostname.toLowerCase(),p=h.indexOf('tfrrs')!==-1?'TFRRS':'ATHLETIC_NET',ath=[],seen={},rows=document.querySelectorAll('table tr,.athlete-row,[data-athlete-id]');for(var i=0;i<rows.length;i++){var r=rows[i],a=r.querySelector('a[href*="AID="],a[href*="/athletes/"],a[href*="/athlete/"]');var id='';if(a){var m=a.href.match(/(?:AID=|athletes?\\/)(\\d{4,10})/i);if(m)id=m[1];}var txt=(r.innerText||'').replace(/\\s+/g,' ').trim();if(txt.length>4&&txt.length<260&&!seen[txt]){seen[txt]=1;ath.push({name:a?(a.textContent||'').trim():txt.split(/\\t|\\s{2,}/)[0],externalAthleteId:id||undefined,externalProfileUrl:a?a.href:undefined,seedMark:(txt.match(/\\b(?:\\d{1,2}:\\d{2}(?:\\.\\d{1,2})?|\\d{1,3}-\\d{1,2}(?:\\.\\d{1,2})?|\\d{1,3}\\.\\d{1,3}m|\\d{1,2}\\.\\d{2})[a-zA-Z]*\\b|\\d{1,3}'\\s*\\d{1,2}(?:\\.\\d{1,2})?"?|\\b(?:FOUL|NH|NM)\\b/)||[])[0]});}}var payload={schema:'THRESH_SYNC_V1',sourcePlatform:p,pageUrl:u,pageTitle:document.title,capturedAt:new Date().toISOString(),athletes:ath.slice(0,200),rawTextFallback:document.body.innerText.slice(0,30000)};var clip='THRESH_SYNC_V1:'+JSON.stringify(payload);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(clip).catch(function(){});}var w=window.open('${safeOrigin}/#coach-sync','thresh_coach_sync');var n=0,t=setInterval(function(){n++;if(!w||n>20){clearInterval(t);return;}try{w.postMessage({type:'THRESH_EXTERNAL_SYNC_V1',payload:payload},'${safeOrigin}');}catch(e){}},350);}catch(e){alert('MeetReady Sync could not read this page: '+e);}})();`;
   return `javascript:${encodeURIComponent(code)}`;
 }
 
@@ -1608,19 +2149,44 @@ export function applyExternalSyncLocallyToTeamSummary(
     addedMeets += 1;
   }
 
+  const nextFieldMarkLogs: FieldEventLogRecord[] = Array.isArray(team.fieldMarkLogs)
+    ? [...team.fieldMarkLogs]
+    : [];
+
   for (const row of batch.results || []) {
+    const isField = Boolean(row.isFieldEvent);
     const { mem, created } = upsertAthlete({
       name: row.athleteName,
       squadGroup: row.squadGroup,
+      ...(isField
+        ? { eventGroup: getFieldEventSpec(row.fieldEventCode || 'LJ').eventGroup }
+        : { seedMarkOrFtp: row.displayFatTime }),
       graduationYear: row.graduationYear,
       genderDivision: row.genderDivision,
-      seedMarkOrFtp: row.displayFatTime,
       externalSource: row.externalSource,
       externalAthleteId: row.externalAthleteId,
       externalProfileUrl: row.externalProfileUrl,
       isMinorU18: team.brand.orgType === 'HIGH_SCHOOL',
     });
     if (created) addedAthletes += 1;
+
+    if (isField) {
+      const candidateLog = buildExternalFieldEventLogRecord({
+        row,
+        teamId: team.brand.teamId,
+        membershipId: mem.membershipId,
+        athleteName: mem.invitedName,
+        nowIso,
+      });
+      const dupField = nextFieldMarkLogs.some((existing) =>
+        isDuplicateExternalFieldLog(existing, candidateLog)
+      );
+      if (dupField) continue;
+      nextFieldMarkLogs.unshift(candidateLog);
+      recordedResults += 1;
+      continue;
+    }
+
     const acts = mem.coachRecordedActivities || [];
     const dup = acts.some(
       (a) =>
@@ -1668,6 +2234,12 @@ export function applyExternalSyncLocallyToTeamSummary(
     memberships,
     totalInvited: memberships.length,
     broadcastWorkouts: nextBroadcasts,
+    ...(nextFieldMarkLogs.length > 0
+      ? {
+          fieldMarkLogs: nextFieldMarkLogs,
+          fieldMarkLogsTotalCount: nextFieldMarkLogs.length,
+        }
+      : {}),
   };
 
   return {

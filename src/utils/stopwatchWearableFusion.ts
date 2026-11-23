@@ -228,7 +228,7 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
   }
 
   const optimalLagSecs = tStart + bestTau;
-  const repDist = Math.max(100, repDistanceMeters);
+  const repDist = Math.max(10, repDistanceMeters);
   const safeThreshPace = Math.max(115, Math.min(540, thresholdPaceSecsPerKm));
 
   const sliceMean = (
@@ -270,7 +270,7 @@ export function fuseWearableStreamWithStopwatchSplits(params: {
 
   for (let idx = 0; idx < validSplits.length; idx++) {
     const planRep = expandedReps[idx];
-    const thisRepDist = Math.max(100, planRep?.repDistanceMeters ?? repDist);
+    const thisRepDist = Math.max(10, planRep?.repDistanceMeters ?? repDist);
     const thisRestInt = Math.max(0, Math.round(planRep?.restDurationSecs ?? defaultRestInt));
     const lapSecs = Number(validSplits[idx].toFixed(2));
     const repStart = cursor;

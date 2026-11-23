@@ -391,7 +391,7 @@ export function generateDefaultLapSplits(
   );
   // Adjust last split so the sum equals fatTimeSecs to the hundredth
   const sumExceptLast = rawSplits.slice(0, -1).reduce((s, v) => s + v, 0);
-  rawSplits[rawSplits.length - 1] = Number(Math.max(10, fatTimeSecs - sumExceptLast).toFixed(2));
+  rawSplits[rawSplits.length - 1] = Number(Math.max(1, fatTimeSecs - sumExceptLast).toFixed(2));
   return rawSplits;
 }
 
@@ -419,7 +419,7 @@ export function synthesizeOfficialRaceActivity(
   );
 
   // Build per-second synthetic telemetry stream across all laps so the Activity Stream Inspector works out-of-the-box
-  const totalSecs = Math.max(10, Math.round(candidate.fatTimeSecs));
+  const totalSecs = Math.max(5, Math.round(candidate.fatTimeSecs));
   const timeStream: number[] = [];
   const distanceStream: number[] = [];
   const velocityStream: number[] = [];
@@ -433,9 +433,9 @@ export function synthesizeOfficialRaceActivity(
   splits.forEach((lapSecs, idx) => {
     const lapDist =
       idx === splits.length - 1
-        ? Math.max(100, candidate.eventDistanceMeters - elapsedDistCursor)
+        ? Math.max(10, candidate.eventDistanceMeters - elapsedDistCursor)
         : splitMeters;
-    const lapSpeedMps = lapDist / Math.max(1, lapSecs);
+    const lapSpeedMps = lapDist / Math.max(0.5, lapSecs);
     const lapPaceSecsKm = Math.round(1000 / Math.max(0.5, lapSpeedMps));
     const lapDurationInt = Math.max(1, Math.round(lapSecs));
 
@@ -720,7 +720,7 @@ export function parseOfficialResultsTextDeterministically(
       lapSplitsSecs = splitsMatch[1]
         .split(/[,\s]+/)
         .map((s) => parseFatTimeString(s))
-        .filter((n) => n > 8 && n < 400);
+        .filter((n) => n > 4 && n < 600);
     }
     if (lapSplitsSecs.length === 0) {
       lapSplitsSecs = generateDefaultLapSplits(

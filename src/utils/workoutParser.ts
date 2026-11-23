@@ -182,7 +182,7 @@ function parseClockOrSecondsToken(token: string): number | null {
   return null;
 }
 
-function extractDistanceMeters(cleanLine: string): number | undefined {
+function extractDistanceMeters(cleanLine: string, isRepeatWork = false): number | undefined {
   // Strip target pace clauses ("at 1 mile pace", "@ mile pace") so race-pace names never hijack step distance
   const distPart = cleanLine.replace(/(?:\b(?:at|@)\b).*$/i, '').trim();
   const source = distPart.length > 0 ? distPart : cleanLine;
@@ -197,17 +197,30 @@ function extractDistanceMeters(cleanLine: string): number | undefined {
   const metersWordMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
   if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
 
-  // 2. Disambiguate `<val>m` (where 15m = 15 minutes vs 400m = 400 meters vs 60m sprint / 60m walk)
+  // 2. Disambiguate `<val>m` (where 15m 60% = 15 minutes vs 400m = 400m vs 30m fly/60m blocks/60m walk)
+  const hasExplicitMinutesHint =
+    /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|cooldown|cool-down|steady|progression)\b|\d+\s*%/i.test(
+      source
+    );
+
   const mTokens = Array.from(source.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
   for (const tok of mTokens) {
     const val = Number(tok[1]);
     if (val >= 100) return val;
-    if (
-      val >= 30 &&
-      val <= 99 &&
-      /\b(sprint|stride|fly|accel|hill|walk|jog|float|rec|recovery)\b/i.test(cleanLine)
-    ) {
-      return val;
+    if (val >= 10 && val <= 99 && !hasExplicitMinutesHint) {
+      if (
+        /\b(sprint|stride|fly|flys|flies|accel|acceleration|block|blocks|start|starts|wicket|wickets|hurdle|hurdles|hill|walk|jog|float)\b/i.test(
+          source
+        )
+      ) {
+        return val;
+      }
+      if (val >= 30 && /\b(rec|recovery)\b/i.test(source)) {
+        return val;
+      }
+      if (isRepeatWork) {
+        return val;
+      }
     }
   }
   return undefined;
@@ -318,9 +331,10 @@ function inferStepKind(cleanLine: string, explicitKind?: ParsedWorkoutStep['step
 function parseSingleWorkoutLine(
   cleanLine: string,
   thresholdPaceSecsPerKm = 250,
-  explicitKind?: ParsedWorkoutStep['stepKind']
+  explicitKind?: ParsedWorkoutStep['stepKind'],
+  isRepeatWork = false
 ): ParsedWorkoutStep {
-  const distanceMeters = extractDistanceMeters(cleanLine);
+  const distanceMeters = extractDistanceMeters(cleanLine, isRepeatWork);
   const explicitPct = extractExplicitIntensityPct(cleanLine);
   const { paceSecsPerKm: parsedTargetPace, repSplitSecs } = extractTargetPaceSecsPerKm(
     cleanLine,
@@ -354,8 +368,11 @@ function parseSingleWorkoutLine(
       intensityPct = 98;
     } else if (/z5|vo2|\bI\b/i.test(cleanLine)) {
       intensityPct = 110;
-    } else if (/z6|sprint|anaerobic/i.test(cleanLine)) {
-      intensityPct = 130;
+    } else if (
+      /z6|sprint|anaerobic|fly|flys|flies|blocks?|starts?|accel/i.test(cleanLine) ||
+      (distanceMeters !== undefined && distanceMeters < 100 && stepKind === 'work')
+    ) {
+      intensityPct = 135;
     }
   }
 
@@ -548,10 +565,10 @@ export function parseStructuredTrackWorkout(
         mainPart = remainder.slice(0, withRestMatch.index).trim();
       }
 
-      const workStep = parseSingleWorkoutLine(mainPart, thresholdPaceSecsPerKm, 'work');
+      const workStep = parseSingleWorkoutLine(mainPart, thresholdPaceSecsPerKm, 'work', true);
       const groupSteps: ParsedWorkoutStep[] = [workStep];
       if (restPart) {
-        groupSteps.push(parseSingleWorkoutLine(restPart, thresholdPaceSecsPerKm, 'rest'));
+        groupSteps.push(parseSingleWorkoutLine(restPart, thresholdPaceSecsPerKm, 'rest', false));
       }
       nodes.push({
         type: 'repeat',
@@ -562,7 +579,13 @@ export function parseStructuredTrackWorkout(
       continue;
     }
 
-    const step = parseSingleWorkoutLine(clean, thresholdPaceSecsPerKm);
+    const inferredKind = inferStepKind(clean);
+    const step = parseSingleWorkoutLine(
+      clean,
+      thresholdPaceSecsPerKm,
+      undefined,
+      Boolean(currentRepeat && inferredKind === 'work')
+    );
     if (currentRepeat) {
       if (step.stepKind === 'cooldown' || step.stepKind === 'warmup') {
         flushRepeat();
@@ -665,7 +688,7 @@ export function formatHumanReadableStepLine(
   if (sport === 'Running' && thresholdPaceSecsPerKm && thresholdPaceSecsPerKm > 0) {
     const repDist = extractDistanceMeters(normalizedPrefix);
     const named = resolveNamedTrackPaceSecsPerKm(normalizedPrefix, thresholdPaceSecsPerKm);
-    if (repDist && repDist >= 100 && repDist <= 3200 && named.paceSecsPerKm && !/\d+:\d{2}/.test(normalizedPrefix)) {
+    if (repDist && repDist >= 10 && repDist <= 3200 && named.paceSecsPerKm && !/\d+:\d{2}/.test(normalizedPrefix)) {
       const splitSecs = (named.paceSecsPerKm / 1000) * repDist;
       const mins = Math.floor(splitSecs / 60);
       const secs = splitSecs % 60;

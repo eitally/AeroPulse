@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { VdotPodRosterInput } from '../physiology/scholasticEngine';
-import { OFFICIAL_RACE_EVENTS } from '../utils/officialRaceSynthesizer';
+import { OFFICIAL_RACE_EVENTS, formatFatTime } from '../utils/officialRaceSynthesizer';
 import { parseStructuredTrackWorkout } from '../utils/workoutParser';
 import type {
   NcaaTrackFacilityType,
@@ -135,7 +135,44 @@ export interface RaceStopwatchPreset {
   distanceMeters: number;
   splitMeters: 60 | 100 | 200 | 400 | 1000;
   targetLaps: number | null;
+  isRelay?: boolean;
+  legDistancesMeters?: [number, number, number, number];
 }
+
+export const RELAY_RACE_PRESETS: RaceStopwatchPreset[] = [
+  {
+    label: '4x100m',
+    distanceMeters: 400,
+    splitMeters: 100,
+    targetLaps: 4,
+    isRelay: true,
+    legDistancesMeters: [100, 100, 100, 100],
+  },
+  {
+    label: '4x400m',
+    distanceMeters: 1600,
+    splitMeters: 400,
+    targetLaps: 4,
+    isRelay: true,
+    legDistancesMeters: [400, 400, 400, 400],
+  },
+  {
+    label: '4x800m',
+    distanceMeters: 3200,
+    splitMeters: 400,
+    targetLaps: 4,
+    isRelay: true,
+    legDistancesMeters: [800, 800, 800, 800],
+  },
+  {
+    label: 'DMR',
+    distanceMeters: 4000,
+    splitMeters: 400,
+    targetLaps: 4,
+    isRelay: true,
+    legDistancesMeters: [1200, 400, 800, 1600],
+  },
+];
 
 const INCLUDED_RACE_EVENT_LABELS = new Set([
   '60m',
@@ -163,11 +200,29 @@ export const RACE_STOPWATCH_PRESETS: RaceStopwatchPreset[] = [
     splitMeters: e.defaultSplitMeters,
     targetLaps: e.defaultLapCount,
   })),
+  ...RELAY_RACE_PRESETS,
   {
     label: 'Open Race',
     distanceMeters: 0,
     splitMeters: 400,
     targetLaps: null,
+  },
+];
+
+export interface RelayQuartetConfig {
+  id: string;
+  label: string;
+  legRunnerIds: [string, string, string, string];
+  legRunnerNames: [string, string, string, string];
+  targetTotalSecs?: number;
+}
+
+export const DEFAULT_RELAY_QUARTETS: RelayQuartetConfig[] = [
+  {
+    id: 'relay-A',
+    label: 'Quartet A',
+    legRunnerIds: ['', '', '', ''],
+    legRunnerNames: ['Leg 1', 'Leg 2', 'Leg 3', 'Leg 4'],
   },
 ];
 
@@ -182,8 +237,10 @@ export interface TracksideSplitTapEntry {
   runnerId: string;
   runnerName: string;
   timestampSecs: number;
-  kind?: 'RUNNER_SPLIT' | 'CHUTE_QUEUE' | 'CHUTE_ASSIGN';
+  kind?: 'RUNNER_SPLIT' | 'CHUTE_QUEUE' | 'CHUTE_ASSIGN' | 'RELAY_HANDOFF';
   previousLastTapEpochMs?: number;
+  quartetId?: string;
+  legIndex?: number;
 }
 
 export interface TracksideAutoRegPivotEntry {
@@ -225,6 +282,8 @@ export interface PersistedTracksideStopwatchState {
   autoRegPivotHistory?: TracksideAutoRegPivotEntry[];
   endedEarlyStimulusRatio?: number | null;
   dismissedAutoRegSignatures?: string[];
+  relayQuartets?: RelayQuartetConfig[];
+  relayBatonTimestampsSecs?: Record<string, number[]>;
 }
 
 const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
@@ -254,12 +313,14 @@ const DEFAULT_STOPWATCH_STATE: PersistedTracksideStopwatchState = {
   trackFacility: 'OUTDOOR_400M',
   airTempF: null,
   dewPointF: null,
-      windSpeedMps: 0,
+  windSpeedMps: 0,
   altitudeMeters: 0,
   footwearClass: 'DAILY_TRAINER',
   autoRegPivotHistory: [],
   endedEarlyStimulusRatio: null,
   dismissedAutoRegSignatures: [],
+  relayQuartets: DEFAULT_RELAY_QUARTETS,
+  relayBatonTimestampsSecs: {},
 };
 
 function sanitizeNumberRecord(raw: unknown): Record<string, number> {
@@ -471,6 +532,16 @@ export function readPersistedTracksideStopwatch(): PersistedTracksideStopwatchSt
       dismissedAutoRegSignatures: Array.isArray(parsed.dismissedAutoRegSignatures)
         ? parsed.dismissedAutoRegSignatures.filter((s): s is string => typeof s === 'string')
         : [],
+      relayQuartets:
+        Array.isArray(parsed.relayQuartets) && parsed.relayQuartets.length > 0
+          ? parsed.relayQuartets
+          : DEFAULT_RELAY_QUARTETS,
+      relayBatonTimestampsSecs:
+        parsed.relayBatonTimestampsSecs &&
+        typeof parsed.relayBatonTimestampsSecs === 'object' &&
+        !Array.isArray(parsed.relayBatonTimestampsSecs)
+          ? parsed.relayBatonTimestampsSecs
+          : {},
     };
   } catch {
     return DEFAULT_STOPWATCH_STATE;
@@ -536,6 +607,9 @@ export function applyResetStopwatch(
     ...(current.endedEarlyStimulusRatio !== undefined ? { endedEarlyStimulusRatio: null } : {}),
     ...(current.dismissedAutoRegSignatures !== undefined
       ? { dismissedAutoRegSignatures: [] }
+      : {}),
+    ...(current.relayBatonTimestampsSecs !== undefined
+      ? { relayBatonTimestampsSecs: {} }
       : {}),
   };
 }
@@ -855,6 +929,26 @@ export function applyUndoLastSplit(
     };
   }
 
+  if (lastEntry.kind === 'RELAY_HANDOFF') {
+    const qId = lastEntry.quartetId || lastEntry.runnerId;
+    const prevBaton = current.relayBatonTimestampsSecs?.[qId] || [];
+    const nextBaton = prevBaton.slice(0, -1);
+    const nextRelayMap = { ...(current.relayBatonTimestampsSecs || {}) };
+    if (nextBaton.length > 0) {
+      nextRelayMap[qId] = nextBaton;
+    } else {
+      delete nextRelayMap[qId];
+    }
+    return {
+      next: {
+        ...current,
+        relayBatonTimestampsSecs: nextRelayMap,
+        tapHistory: nextHistory,
+      },
+      undone: lastEntry,
+    };
+  }
+
   const prevMarks = current.athleteLapTimestampsSecs[lastEntry.runnerId] || [];
   const nextMarks = prevMarks.slice(0, -1);
   const nextMap = { ...current.athleteLapTimestampsSecs };
@@ -1085,6 +1179,177 @@ export function computeRaceStandings(
   });
 }
 
+export interface RelayLegTelemetry {
+  legNumber: 1 | 2 | 3 | 4;
+  distanceMeters: number;
+  timingContext: 'Leg 1 Leadoff' | 'Flying';
+  athleteId: string;
+  athleteName: string;
+  cumulativeSecs: number | null;
+  legSplitSecs: number | null;
+  pacePer400mSecs: number | null;
+}
+
+export interface RelayQuartetTelemetry {
+  quartetId: string;
+  quartetLabel: string;
+  eventLabel: string;
+  legs: RelayLegTelemetry[];
+  completedLegs: number;
+  isFinished: boolean;
+  totalActualSecs: number | null;
+  projectedTeamFinishSecs: number | null;
+  exchangeAlert: string;
+}
+
+export function applyTapRelayBatonHandoff(
+  current: PersistedTracksideStopwatchState,
+  teamOrQuartetId: string,
+  nowEpochMs: number = Date.now()
+): {
+  next: PersistedTracksideStopwatchState;
+  handoffSecs: number;
+  legNumber: number;
+  blockedByFinishLock?: boolean;
+} {
+  const existing = current.relayBatonTimestampsSecs?.[teamOrQuartetId] || [];
+  if (existing.length >= 4) {
+    return {
+      next: current,
+      handoffSecs: existing[existing.length - 1] ?? 0,
+      legNumber: 4,
+      blockedByFinishLock: true,
+    };
+  }
+  const activeState = autoStartIfIdle(current, nowEpochMs);
+  const handoffSecs = Number(
+    Math.max(0.01, computeElapsedMs(activeState, nowEpochMs) / 1000).toFixed(2)
+  );
+  const legNumber = existing.length + 1;
+  const quartet = (activeState.relayQuartets || DEFAULT_RELAY_QUARTETS).find(
+    (q) => q.id === teamOrQuartetId
+  );
+  const runnerLabel = quartet
+    ? `${quartet.label} Leg ${legNumber}`
+    : `Relay ${teamOrQuartetId} Leg ${legNumber}`;
+
+  return {
+    next: {
+      ...activeState,
+      relayBatonTimestampsSecs: {
+        ...(activeState.relayBatonTimestampsSecs || {}),
+        [teamOrQuartetId]: [...existing, handoffSecs],
+      },
+      tapHistory: [
+        ...activeState.tapHistory,
+        {
+          runnerId: teamOrQuartetId,
+          runnerName: runnerLabel,
+          timestampSecs: handoffSecs,
+          kind: 'RELAY_HANDOFF',
+          quartetId: teamOrQuartetId,
+          legIndex: legNumber,
+        },
+      ],
+    },
+    handoffSecs,
+    legNumber,
+  };
+}
+
+export function computeRelayQuartetTelemetry(params: {
+  quartet: RelayQuartetConfig;
+  preset: RaceStopwatchPreset;
+  rawHandoffTimestampsSecs: number[];
+  isRunning?: boolean;
+}): RelayQuartetTelemetry {
+  const { quartet, preset, rawHandoffTimestampsSecs, isRunning = false } = params;
+  const legDistances = preset.legDistancesMeters || [400, 400, 400, 400];
+  const marks = rawHandoffTimestampsSecs.slice(0, 4);
+
+  const legs: RelayLegTelemetry[] = ([0, 1, 2, 3] as const).map((idx) => {
+    const legNum = (idx + 1) as 1 | 2 | 3 | 4;
+    const dist = legDistances[idx] ?? 400;
+    const cum = marks[idx] !== undefined ? Number(marks[idx].toFixed(2)) : null;
+    const prevCum = idx > 0 && marks[idx - 1] !== undefined ? marks[idx - 1] : 0;
+    const split =
+      cum !== null ? Number(Math.max(0.01, idx === 0 ? cum : cum - prevCum).toFixed(2)) : null;
+    const pacePer400 = split !== null ? Number(((split / dist) * 400).toFixed(2)) : null;
+    return {
+      legNumber: legNum,
+      distanceMeters: dist,
+      timingContext: idx === 0 ? 'Leg 1 Leadoff' : 'Flying',
+      athleteId: quartet.legRunnerIds[idx] || '',
+      athleteName: quartet.legRunnerNames[idx] || `Leg ${legNum}`,
+      cumulativeSecs: cum,
+      legSplitSecs: split,
+      pacePer400mSecs: pacePer400,
+    };
+  });
+
+  const completedLegs = marks.length;
+  const isFinished = completedLegs >= 4;
+  const totalActualSecs = isFinished ? legs[3].cumulativeSecs : null;
+
+  let projectedTeamFinishSecs: number | null = null;
+  if (isFinished) {
+    projectedTeamFinishSecs = totalActualSecs;
+  } else if (completedLegs >= 1) {
+    const doneDist = legDistances.slice(0, completedLegs).reduce((s, d) => s + d, 0);
+    const totalDist = legDistances.reduce((s, d) => s + d, 0);
+    const doneSecs = marks[completedLegs - 1];
+    if (doneDist > 0 && doneSecs > 0) {
+      projectedTeamFinishSecs = Number(((doneSecs / doneDist) * totalDist).toFixed(2));
+    }
+  }
+
+  let exchangeAlert = '';
+  if (completedLegs === 0) {
+    exchangeAlert = isRunning
+      ? `Leg 1 Leadoff (${legDistances[0]}m) on track — Tap Baton Handoff at Exchange 1`
+      : 'Ready — Assign Leg 1–4 athletes & tap Baton Handoff at Exchange 1';
+  } else if (completedLegs < 4) {
+    const leadoffSplit = legs[0].legSplitSecs;
+    const lastSplit = legs[completedLegs - 1].legSplitSecs;
+    const equalLegEvent = legDistances.every((d) => d === legDistances[0]);
+    if (
+      equalLegEvent &&
+      completedLegs >= 2 &&
+      leadoffSplit !== null &&
+      lastSplit !== null &&
+      lastSplit > leadoffSplit + 0.65
+    ) {
+      exchangeAlert = `Exchange ${completedLegs} Warning: +${(lastSplit - leadoffSplit).toFixed(2)}s slower than Leg 1 leadoff`;
+    } else if (
+      equalLegEvent &&
+      completedLegs >= 2 &&
+      leadoffSplit !== null &&
+      lastSplit !== null &&
+      lastSplit < leadoffSplit - 0.15
+    ) {
+      exchangeAlert = `Clean Exchange ${completedLegs} (-${(leadoffSplit - lastSplit).toFixed(2)}s flying gain) — Leg ${completedLegs + 1} on track`;
+    } else if (completedLegs === 3) {
+      exchangeAlert = `Anchor Leg (Leg 4 Flying · ${legDistances[3]}m) on track — Tap Anchor Finish`;
+    } else {
+      exchangeAlert = `Exchange ${completedLegs} complete — Leg ${completedLegs + 1} (${legDistances[completedLegs]}m Flying) on track`;
+    }
+  } else if (totalActualSecs !== null) {
+    exchangeAlert = `Relay Complete · Official Mark ${formatFatTime(totalActualSecs)}`;
+  }
+
+  return {
+    quartetId: quartet.id,
+    quartetLabel: quartet.label,
+    eventLabel: preset.label,
+    legs,
+    completedLegs,
+    isFinished,
+    totalActualSecs,
+    projectedTeamFinishSecs,
+    exchangeAlert,
+  };
+}
+
 export function useIsStopwatchRunning(): boolean {
   const [running, setRunning] = useState<boolean>(() => readPersistedTracksideStopwatch().isRunning);
 
@@ -1148,14 +1413,17 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
 
   const elapsedMs = computeElapsedMs(persisted, nowEpochMs);
 
-  const totalSplitCount = useMemo(
-    () =>
-      Object.values(persisted.athleteLapTimestampsSecs).reduce(
-        (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
-        0
-      ),
-    [persisted.athleteLapTimestampsSecs]
-  );
+  const totalSplitCount = useMemo(() => {
+    const individualSplits = Object.values(persisted.athleteLapTimestampsSecs).reduce(
+      (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
+      0
+    );
+    const relaySplits = Object.values(persisted.relayBatonTimestampsSecs || {}).reduce(
+      (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0),
+      0
+    );
+    return individualSplits + relaySplits;
+  }, [persisted.athleteLapTimestampsSecs, persisted.relayBatonTimestampsSecs]);
 
   const chuteQueueSecs = persisted.chuteQueueSecs || [];
   const hasActiveSession =
@@ -1492,6 +1760,59 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     [commitState]
   );
 
+  const tapRelayBatonHandoff = useCallback(
+    (teamOrQuartetId: string) => {
+      const current = readPersistedTracksideStopwatch();
+      const now = Date.now();
+      const res = applyTapRelayBatonHandoff(current, teamOrQuartetId, now);
+      if (!res.blockedByFinishLock) {
+        commitState(res.next, now);
+      }
+      return res;
+    },
+    [commitState]
+  );
+
+  const setRelayQuartetConfig = useCallback(
+    (quartetId: string, updater: (prev: RelayQuartetConfig) => RelayQuartetConfig) => {
+      const current = readPersistedTracksideStopwatch();
+      const list = current.relayQuartets || DEFAULT_RELAY_QUARTETS;
+      const nextList = list.map((q) => (q.id === quartetId ? updater(q) : q));
+      commitState({ ...current, relayQuartets: nextList });
+    },
+    [commitState]
+  );
+
+  const addRelayQuartet = useCallback(() => {
+    const current = readPersistedTracksideStopwatch();
+    const list = current.relayQuartets || DEFAULT_RELAY_QUARTETS;
+    const nextIdx = list.length + 1;
+    const letter = String.fromCharCode(64 + Math.min(26, nextIdx));
+    const created: RelayQuartetConfig = {
+      id: `relay-${letter}-${Date.now().toString(36).slice(-4)}`,
+      label: `Quartet ${letter}`,
+      legRunnerIds: ['', '', '', ''],
+      legRunnerNames: ['Leg 1', 'Leg 2', 'Leg 3', 'Leg 4'],
+    };
+    commitState({ ...current, relayQuartets: [...list, created] });
+  }, [commitState]);
+
+  const removeRelayQuartet = useCallback(
+    (quartetId: string) => {
+      const current = readPersistedTracksideStopwatch();
+      const list = current.relayQuartets || DEFAULT_RELAY_QUARTETS;
+      if (list.length <= 1) return;
+      const nextRelayBaton = { ...(current.relayBatonTimestampsSecs || {}) };
+      delete nextRelayBaton[quartetId];
+      commitState({
+        ...current,
+        relayQuartets: list.filter((q) => q.id !== quartetId),
+        relayBatonTimestampsSecs: nextRelayBaton,
+      });
+    },
+    [commitState]
+  );
+
   return {
     stopwatchRunning: persisted.isRunning,
     stopwatchElapsedMs: elapsedMs,
@@ -1527,6 +1848,8 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     autoRegPivotHistory: persisted.autoRegPivotHistory || [],
     endedEarlyStimulusRatio: persisted.endedEarlyStimulusRatio ?? null,
     dismissedAutoRegSignatures: persisted.dismissedAutoRegSignatures || [],
+    relayQuartets: persisted.relayQuartets || DEFAULT_RELAY_QUARTETS,
+    relayBatonTimestampsSecs: persisted.relayBatonTimestampsSecs || {},
     toggleStartPause,
     resetStopwatch,
     tapRunnerSplit,
@@ -1560,6 +1883,10 @@ export function useTracksideStopwatch(tickIntervalMs: number = 50) {
     convertRemainingToCv,
     endSessionStimulusAchieved,
     dismissAutoRegCue,
+    tapRelayBatonHandoff,
+    setRelayQuartetConfig,
+    addRelayQuartet,
+    removeRelayQuartet,
   };
 }
 
@@ -1648,7 +1975,7 @@ export function inferTrackWorkoutSpecFromPlannedEvent(
 
       if (node.type === 'repeat') {
         const workStep = node.steps.find(
-          (s) => s.stepKind !== 'rest' && (s.distanceMeters ?? 0) >= 100
+          (s) => s.stepKind !== 'rest' && (s.distanceMeters ?? 0) >= 10
         );
         if (workStep && workStep.distanceMeters) {
           const restStep = node.steps.find((s) => s.stepKind === 'rest');
@@ -1694,9 +2021,14 @@ export function inferTrackWorkoutSpecFromPlannedEvent(
     }
   }
 
-  const match = `${ev.name}\n${syntax}`.match(
-    /(\d{1,2})\s*[x×]\s*(150|200|300|400|500|600|800|1000|1200|1600)\s*m?\b/i
-  );
+  const looksLikeTimedFtpSet =
+    /%\s*ftp/i.test(syntax) ||
+    /\b(?:10|15|20|30|40|45|50|60)\s*m\s+\d{2,3}\s*%/i.test(syntax);
+  const match = !looksLikeTimedFtpSet
+    ? `${ev.name}\n${syntax}`.match(
+        /(\d{1,2})\s*[x×]\s*(10|20|30|40|50|60|80|100|110|120|150|200|300|400|500|600|800|1000|1200|1600)\s*m?\b/i
+      )
+    : null;
   if (match) {
     const repCount = Math.max(1, Number(match[1]));
     const repDistanceMeters = snapRepDistance(Number(match[2]));

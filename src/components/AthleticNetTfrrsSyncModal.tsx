@@ -87,7 +87,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
     activeTeam?.brand.externalSync?.teamFilterKeyword ||
       (activeTeam?.brand.name
         ? activeTeam.brand.name.replace(/\s+(high\s+school|xc|track|varsity).*$/i, '').trim()
-        : 'Willow Glen')
+        : '')
   );
   const [coursePresetId, setCoursePresetId] = useState<string>('AUTO');
   const [pasteMode, setPasteMode] = useState<ExternalPasteKind>('ROSTER');
@@ -101,7 +101,10 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
   const [copiedHubLink, setCopiedHubLink] = useState<boolean>(false);
 
   useEffect(() => {
-    if (!activeTeam) return;
+    if (!activeTeam) {
+      setTeamFilterKeyword('');
+      return;
+    }
     setTeamUrlInput(
       activeTeam.brand.externalSync?.athleticNetUrl ||
         activeTeam.brand.externalSync?.tfrrsTeamUrl ||
@@ -109,9 +112,10 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
     );
     setIcsUrlInput(activeTeam.brand.externalSync?.icsCalendarUrl || '');
     setEnablePublicHub(activeTeam.brand.externalSync?.enablePublicParentHub !== false);
-    if (activeTeam.brand.externalSync?.teamFilterKeyword) {
-      setTeamFilterKeyword(activeTeam.brand.externalSync.teamFilterKeyword);
-    }
+    setTeamFilterKeyword(
+      activeTeam.brand.externalSync?.teamFilterKeyword ||
+        activeTeam.brand.name.replace(/\s+(high\s+school|xc|track|varsity).*$/i, '').trim()
+    );
   }, [activeTeam]);
 
   // Listen for live 1-Click "Send to MeetReady" Bookmarklet postMessage payloads
@@ -158,7 +162,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         athletes: [],
         meets: [],
         results: [],
-        matchedSummary: { matched: [], matchedExistingCount: 0, newWalkOnCount: 0 },
+        matchedSummary: { matched: [], matchedFieldItems: [], matchedExistingCount: 0, newWalkOnCount: 0 },
       };
     }
 
@@ -174,7 +178,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         athletes: [],
         meets: parseIcsCalendarToMeets(trimmed, extSource),
         results: [],
-        matchedSummary: { matched: [], matchedExistingCount: 0, newWalkOnCount: 0 },
+        matchedSummary: { matched: [], matchedFieldItems: [], matchedExistingCount: 0, newWalkOnCount: 0 },
       };
     }
     if (pasteMode === 'SCHEDULE') {
@@ -182,7 +186,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         athletes: [],
         meets: parsePastedScheduleToMeets(trimmed, { externalSource: extSource }),
         results: [],
-        matchedSummary: { matched: [], matchedExistingCount: 0, newWalkOnCount: 0 },
+        matchedSummary: { matched: [], matchedFieldItems: [], matchedExistingCount: 0, newWalkOnCount: 0 },
       };
     }
     if (pasteMode === 'MEET_RESULTS') {
@@ -218,7 +222,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
       }),
       meets: [],
       results: [],
-      matchedSummary: { matched: [], matchedExistingCount: 0, newWalkOnCount: 0 },
+      matchedSummary: { matched: [], matchedFieldItems: [], matchedExistingCount: 0, newWalkOnCount: 0 },
     };
   }, [
     rawPasteText,
@@ -238,9 +242,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
     [appOrigin]
   );
 
-  const publicHubUrl = activeTeam
-    ? `${appOrigin}/team/${activeTeam.brand.slug}`
-    : `${appOrigin}/team/willow-glen-high-school-xc`;
+  const publicHubUrl = activeTeam ? `${appOrigin}/team/${activeTeam.brand.slug}` : '';
 
   const updateLocalOrRemoteTeamList = (updated: TeamSummaryWithRole) => {
     const exists = myTeams.some((t) => t.brand.teamId === updated.brand.teamId);
@@ -369,7 +371,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
         fallbackTeam.brand.externalSync?.tfrrsTeamUrl ||
         ''
     );
-    setTeamFilterKeyword(fallbackTeam.brand.externalSync?.teamFilterKeyword || 'Willow Glen');
+    setTeamFilterKeyword(fallbackTeam.brand.externalSync?.teamFilterKeyword || '');
     setStatusBanner({
       tone: 'success',
       text: isWg
@@ -452,37 +454,41 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
   };
 
   const handleSyncIcsFeed = async (icsBodyOverride?: string) => {
-    const targetTeam =
-      activeTeam || buildPresetExternalTeamSummary('WILLOW_GLEN', selfName || 'Head Coach');
+    if (!activeTeam) {
+      setStatusBanner({
+        tone: 'warning',
+        text: 'Create or select an active team first (or choose a 1-Click Quick Setup preset above) before syncing .ics meets.',
+      });
+      return;
+    }
+    const targetTeam = activeTeam;
     setIsBusy(true);
     setStatusBanner(null);
 
     try {
-      if (activeTeam) {
-        const resp = await fetch(
-          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/external-sync/ics`,
-          {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
-            body: JSON.stringify({
-              origin: appOrigin,
-              icsUrl: icsBodyOverride ? undefined : icsUrlInput.trim(),
-              icsText: icsBodyOverride,
-            }),
-          }
-        );
-        if (resp.ok) {
-          const data = await resp.json();
-          if (Array.isArray(data.teams)) {
-            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
-          }
-          setStatusBanner({
-            tone: data.ok ? 'success' : 'warning',
-            text: data.note || 'Calendar check completed.',
-          });
-          return;
+      const resp = await fetch(
+        `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/external-sync/ics`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+          body: JSON.stringify({
+            origin: appOrigin,
+            icsUrl: icsBodyOverride ? undefined : icsUrlInput.trim(),
+            icsText: icsBodyOverride,
+          }),
         }
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (Array.isArray(data.teams)) {
+          onTeamsUpdated(data.teams, activeTeam.brand.teamId);
+        }
+        setStatusBanner({
+          tone: data.ok ? 'success' : 'warning',
+          text: data.note || 'Calendar check completed.',
+        });
+        return;
       }
     } catch {
       // local fallback if icsBodyOverride present
@@ -513,8 +519,15 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
       previewAnalysis.results.length > 0;
     if (!hasPayload) return;
 
-    const targetTeam =
-      activeTeam || buildPresetExternalTeamSummary('WILLOW_GLEN', selfName || 'Head Coach');
+    if (!activeTeam) {
+      setStatusBanner({
+        tone: 'warning',
+        text: 'Create or select an active team first (or choose a 1-Click Quick Setup preset above) before syncing pasted results.',
+      });
+      return;
+    }
+
+    const targetTeam = activeTeam;
     setIsBusy(true);
     setStatusBanner(null);
 
@@ -536,37 +549,44 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
       enablePublicParentHub: enablePublicHub,
     };
 
+    const hasFieldMarks = previewAnalysis.matchedSummary.matchedFieldItems.length > 0;
+    const hasRunningMarks = previewAnalysis.matchedSummary.matched.length > 0;
+    const resultsNoun =
+      hasFieldMarks && !hasRunningMarks
+        ? 'official field marks'
+        : hasFieldMarks && hasRunningMarks
+          ? 'official race & field results'
+          : 'official race results';
+
     try {
-      if (activeTeam) {
-        const resp = await fetch(
-          `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/external-sync/apply`,
-          {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
-            body: JSON.stringify({
-              origin: appOrigin,
-              externalSyncPatch: extPatch,
-              athletes: previewAnalysis.athletes,
-              meets: previewAnalysis.meets,
-              results: previewAnalysis.results,
-            }),
-          }
-        );
-        if (resp.ok) {
-          const data = await resp.json();
-          if (Array.isArray(data.teams)) {
-            onTeamsUpdated(data.teams, activeTeam.brand.teamId);
-          } else if (data.team) {
-            updateLocalOrRemoteTeamList(data.team);
-          }
-          setStatusBanner({
-            tone: 'success',
-            text: `Synced ${data.addedAthletes || 0} new athletes (${data.updatedAthletes || 0} updated), ${data.addedMeets || 0} meets, and ${data.recordedResults || 0} official race results.`,
-          });
-          setRawPasteText('');
-          return;
+      const resp = await fetch(
+        `/api/teams/${encodeURIComponent(activeTeam.brand.teamId)}/external-sync/apply`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...getSavedIntervalsHeaders() },
+          body: JSON.stringify({
+            origin: appOrigin,
+            externalSyncPatch: extPatch,
+            athletes: previewAnalysis.athletes,
+            meets: previewAnalysis.meets,
+            results: previewAnalysis.results,
+          }),
         }
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        if (Array.isArray(data.teams)) {
+          onTeamsUpdated(data.teams, activeTeam.brand.teamId);
+        } else if (data.team) {
+          updateLocalOrRemoteTeamList(data.team);
+        }
+        setStatusBanner({
+          tone: 'success',
+          text: `Synced ${data.addedAthletes || 0} new athletes (${data.updatedAthletes || 0} updated), ${data.addedMeets || 0} meets, and ${data.recordedResults || 0} ${resultsNoun}.`,
+        });
+        setRawPasteText('');
+        return;
       }
     } catch {
       // local fallback
@@ -583,7 +603,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
     updateLocalOrRemoteTeamList(localRes.updatedTeam);
     setStatusBanner({
       tone: 'success',
-      text: `Synced ${localRes.addedAthletes} new athletes (${localRes.updatedAthletes} updated), ${localRes.addedMeets} meets, and ${localRes.recordedResults} official race results.`,
+      text: `Synced ${localRes.addedAthletes} new athletes (${localRes.updatedAthletes} updated), ${localRes.addedMeets} meets, and ${localRes.recordedResults} ${resultsNoun}.`,
     });
     setRawPasteText('');
   };
@@ -841,7 +861,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     type="text"
                     value={teamFilterKeyword}
                     onChange={(e) => setTeamFilterKeyword(e.target.value)}
-                    placeholder="e.g. Willow Glen"
+                    placeholder="e.g. Oak Grove High or Central"
                     className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 text-xs text-ap-ink dark:text-ap-chalk"
                   />
                 </div>
@@ -908,7 +928,14 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     {previewAnalysis.meets.length > 0 &&
                       `${previewAnalysis.meets.length} Scheduled Meets Parsed`}
                     {previewAnalysis.results.length > 0 &&
-                      `${previewAnalysis.results.length} Race Marks (${previewAnalysis.matchedSummary.matchedExistingCount} Matched · ${previewAnalysis.matchedSummary.newWalkOnCount} New Roster)`}
+                      `${previewAnalysis.results.length} ${
+                        previewAnalysis.matchedSummary.matchedFieldItems.length > 0 &&
+                        previewAnalysis.matchedSummary.matched.length === 0
+                          ? 'Field Marks'
+                          : previewAnalysis.matchedSummary.matchedFieldItems.length > 0
+                            ? 'Meet Marks'
+                            : 'Race Marks'
+                      } (${previewAnalysis.matchedSummary.matchedExistingCount} Matched · ${previewAnalysis.matchedSummary.newWalkOnCount} New Roster)`}
                   </span>
                 </div>
 
@@ -956,8 +983,38 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                         </span>
                       </span>
                       <span className="text-ap-cobalt dark:text-ap-volt font-bold shrink-0">
-                        {item.row.displayFatTime} · VDOT{' '}
-                        {item.activity.officialRaceData?.vdotScore.toFixed(1)}
+                        {item.row.displayFatTime}
+                        {typeof item.row.windMps === 'number'
+                          ? ` (${item.row.windMps >= 0 ? '+' : ''}${item.row.windMps.toFixed(1)})`
+                          : item.row.isWindAided
+                            ? ' (w)'
+                            : ''}
+                        {item.activity.officialRaceData?.vdotScore &&
+                        Number.isFinite(item.activity.officialRaceData.vdotScore)
+                          ? ` · VDOT ${item.activity.officialRaceData.vdotScore.toFixed(1)}`
+                          : ''}
+                      </span>
+                    </div>
+                  ))}
+                  {previewAnalysis.matchedSummary.matchedFieldItems.slice(0, 8).map((item, idx) => (
+                    <div
+                      key={`field-${item.row.athleteName}-${idx}`}
+                      className="py-1.5 flex items-center justify-between gap-2"
+                    >
+                      <span className="font-sans font-semibold text-ap-ink dark:text-ap-chalk truncate">
+                        {item.row.athleteName}{' '}
+                        <span className="font-mono text-2xs text-ap-muted dark:text-ap-muted-dark">
+                          ({item.row.eventLabel} · Field ·{' '}
+                          {item.action === 'MATCHED' ? 'Matched' : 'Add to Roster'})
+                        </span>
+                      </span>
+                      <span className="text-ap-cobalt dark:text-ap-volt font-bold shrink-0">
+                        {item.row.displayFieldMark || item.row.displayFatTime}
+                        {typeof item.row.windMps === 'number'
+                          ? ` (${item.row.windMps >= 0 ? '+' : ''}${item.row.windMps.toFixed(1)}${item.row.isWindAided ? 'w' : ''})`
+                          : item.row.isWindAided
+                            ? ' (w)'
+                            : ''}
                       </span>
                     </div>
                   ))}
@@ -1003,7 +1060,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                     type="url"
                     value={teamUrlInput}
                     onChange={(e) => setTeamUrlInput(e.target.value)}
-                    placeholder="https://www.athletic.net/team/1073/xc or https://xc.tfrrs.org/teams/..."
+                    placeholder="https://www.athletic.net/team/<school-id>/xc or https://xc.tfrrs.org/teams/..."
                     className="flex-1 min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-3 py-1.5 font-mono text-xs text-ap-ink dark:text-ap-chalk"
                   />
                   <button
@@ -1107,35 +1164,44 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                 Shares meet schedules and official marks publicly; athlete emails, GPS routes, HRV, RPE, and weight stay private.
               </p>
               <div className="flex flex-wrap items-center gap-2 pt-1">
-                <code className="flex-1 min-w-[200px] rounded-lg border border-stone-200 dark:border-ap-edge bg-white dark:bg-ap-turf px-2.5 py-2 font-mono text-2xs text-ap-ink dark:text-ap-chalk truncate">
-                  {publicHubUrl}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(publicHubUrl).catch(() => {});
-                    setCopiedHubLink(true);
-                    window.setTimeout(() => setCopiedHubLink(false), 2000);
-                  }}
-                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  {copiedHubLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedHubLink ? 'Copied' : 'Copy Link'}</span>
-                </button>
-                {onOpenPublicHub && (
-                  <button
-                    type="button"
-                    data-testid="sync-open-public-hub-btn"
-                    onClick={() => {
-                      const slug = activeTeam?.brand.slug || 'willow-glen-high-school-xc';
-                      onClose();
-                      onOpenPublicHub(slug);
-                    }}
-                    className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <ShareNetwork className="w-3.5 h-3.5" />
-                    <span>Preview Parent Hub</span>
-                  </button>
+                {publicHubUrl ? (
+                  <>
+                    <code className="flex-1 min-w-[200px] rounded-lg border border-stone-200 dark:border-ap-edge bg-white dark:bg-ap-turf px-2.5 py-2 font-mono text-2xs text-ap-ink dark:text-ap-chalk truncate">
+                      {publicHubUrl}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(publicHubUrl).catch(() => {});
+                        setCopiedHubLink(true);
+                        window.setTimeout(() => setCopiedHubLink(false), 2000);
+                      }}
+                      className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                    >
+                      {copiedHubLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedHubLink ? 'Copied' : 'Copy Link'}</span>
+                    </button>
+                    {onOpenPublicHub && (
+                      <button
+                        type="button"
+                        data-testid="sync-open-public-hub-btn"
+                        onClick={() => {
+                          const slug = activeTeam?.brand.slug;
+                          if (!slug) return;
+                          onClose();
+                          onOpenPublicHub(slug);
+                        }}
+                        className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <ShareNetwork className="w-3.5 h-3.5" />
+                        <span>Preview Parent Hub</span>
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-2xs font-mono text-ap-muted dark:text-ap-muted-dark">
+                    Create or select an active team to generate a shareable Parent Hub link.
+                  </p>
                 )}
               </div>
             </div>
@@ -1159,7 +1225,7 @@ export const AthleticNetTfrrsSyncModal: React.FC<AthleticNetTfrrsSyncModalProps>
                 Drag the <strong>Send to MeetReady</strong> button below onto your browser&rsquo;s Bookmarks Bar.
               </li>
               <li>
-                Open any Athletic.net team/meet page (e.g., Willow Glen <code>1073/xc</code>) or TFRRS team page and click <strong>Send to MeetReady</strong>.
+                Open any Athletic.net team or meet page or TFRRS team page and click <strong>Send to MeetReady</strong>.
               </li>
             </ol>
 

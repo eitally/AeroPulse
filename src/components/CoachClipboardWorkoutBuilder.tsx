@@ -647,7 +647,7 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
       }
 
       const workStep = node.steps.find(
-        (s) => s.stepKind !== 'rest' && (s.distanceMeters ?? 0) >= 100
+        (s) => s.stepKind !== 'rest' && (s.distanceMeters ?? 0) >= 10
       );
       if (workStep && workStep.distanceMeters) {
         const restStep = node.steps.find((s) => s.stepKind === 'rest');
@@ -1500,6 +1500,14 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
             {
               label: '8×400m Repeats',
               text: '1.5mi warm-up, 8x400m at mile pace (90s jog), 1.5mi cooldown',
+            },
+            {
+              label: '6×30m Flys',
+              text: '6x30m flys (4m rest)',
+            },
+            {
+              label: '4×60m Blocks',
+              text: '4x60m blocks (4m rest)',
             },
           ].map((tpl) => (
             <button

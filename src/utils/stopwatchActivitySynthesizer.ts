@@ -165,7 +165,7 @@ export function synthesizeTracksideWorkoutActivity(params: {
 
   const validSplits = lapSplitsSecs.filter((s) => Number.isFinite(s) && s > 0);
   const safeThresholdPace = Math.max(115, Math.min(480, thresholdPaceSecsPerKm || 245));
-  const fallbackRepDist = Math.max(100, repDistanceMeters);
+  const fallbackRepDist = Math.max(10, repDistanceMeters);
   const expandedReps =
     multiSetSpec?.sets && multiSetSpec.sets.length > 0
       ? expandTrackWorkoutSpecReps(multiSetSpec)
