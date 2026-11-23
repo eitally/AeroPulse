@@ -287,6 +287,7 @@ export interface UnifiedActivity {
     power?: number[]; // 7 zones [Z1..Z7]
     pace?: number[]; // 7 zones [Z1..Z7]
   };
+  gearId?: string;
   gearName?: string;
   stravaPrCount: number;
   kudosCount?: number;
@@ -468,6 +469,12 @@ export interface AthleteGearItem {
   distanceMeters: number;
   maxRecommendedMeters: number;
   primary: boolean;
+  brand?: string;
+  footwearClass?: TrackFootwearClass;
+  retired?: boolean;
+  retiredAt?: string;
+  purchaseDate?: string;
+  notes?: string;
 }
 
 export type MapTileProvider = 'OSM_KEYLESS' | 'MAPBOX' | 'THUNDERFOREST';
@@ -816,6 +823,7 @@ export interface WorkoutQuickLog {
   carbsGramsPerHour?: number;
   sodiumMgPerHour?: number;
   hydrationMl?: number;
+  gearId?: string;
   gearName?: string;
   footwearClass?: TrackFootwearClass;
   spikedDistanceMeters?: number;
@@ -1605,6 +1613,24 @@ export interface PublicTeamHubAthleteResultItem {
   sourceUrl?: string;
 }
 
+export interface PublicTeamHubFieldPrItem {
+  id: string;
+  membershipId?: string;
+  displayName: string;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
+  graduationYear?: number;
+  squadGroup?: string;
+  eventCode: FieldEventCode;
+  eventLabel: string;
+  bestMarkMeters?: number;
+  displayMark: string;
+  windMps?: number;
+  isWindAided?: boolean;
+  multiPoints?: number;
+  meetName?: string;
+  date: string;
+}
+
 export interface PublicTeamHubRosterEntry {
   membershipId: string;
   name: string;
@@ -1617,6 +1643,7 @@ export interface PublicTeamHubRosterEntry {
   externalAthleteId?: string;
   externalProfileUrl?: string;
   officialResults: PublicTeamHubAthleteResultItem[];
+  fieldPrs?: PublicTeamHubFieldPrItem[];
 }
 
 export interface PublicTeamHubPayload {
@@ -1641,6 +1668,7 @@ export interface PublicTeamHubPayload {
   upcomingMeets: PublicTeamHubMeetItem[];
   recentSchedule: PublicTeamHubMeetItem[];
   rosterLeaderboard: PublicTeamHubRosterEntry[];
+  fieldLeaderboard?: PublicTeamHubFieldPrItem[];
   announcements?: Array<
     Pick<TeamAnnouncementRecord, 'id' | 'title' | 'body' | 'category' | 'createdAt'>
   >;
@@ -1648,7 +1676,33 @@ export interface PublicTeamHubPayload {
     athleteCount: number;
     meetCount: number;
     officialResultCount: number;
+    fieldPrCount?: number;
   };
+}
+
+export interface MeetDayPacketEntryRecord {
+  id: string;
+  athleteName: string;
+  membershipId?: string;
+  genderDivision?: 'M' | 'F' | 'NONBINARY';
+  division?: string;
+  graduationYear?: number;
+  eventCode: string;
+  seedMarkRaw: string;
+  relayTeamCode?: string;
+  relayLegOrder?: 1 | 2 | 3 | 4;
+}
+
+export interface MeetDayPacketRecord {
+  packetId: string;
+  meetTitle: string;
+  meetDate: string;
+  laneCount: number;
+  flightSize: number;
+  partitionByDivision: boolean;
+  entries: MeetDayPacketEntryRecord[];
+  updatedAt: string;
+  updatedByName?: string;
 }
 
 export interface TeamSummaryWithRole {
@@ -1672,6 +1726,8 @@ export interface TeamSummaryWithRole {
   attendanceByDate?: Record<string, Record<string, TeamAttendanceRecord>>;
   announcements?: TeamAnnouncementRecord[];
   fieldMarkLogs?: FieldEventLogRecord[];
+  fieldMarkLogsTotalCount?: number;
+  meetDayPackets?: MeetDayPacketRecord[];
   teamMessages?: TeamMessageRecord[];
   messagingPolicy?: TeamMessagingPolicy;
 }
@@ -1746,6 +1802,7 @@ export interface AthleteCloudStateEnvelope {
   annualMileageGoals: AnnualMileageGoal[];
   athleteProfile?: Partial<AthleteProfile>;
   distanceUnit?: DistanceUnit;
+  gearItems?: AthleteGearItem[];
   sessionCheckIns?: SessionCheckInRecord[];
   coachArchivedActivities?: UnifiedActivity[];
 }
@@ -1773,6 +1830,7 @@ export interface FieldTrialEntry {
   markMeters?: number;
   barHeightMeters?: number;
   windMps?: number;
+  round?: 'PRELIM' | 'FINAL';
   note?: string;
 }
 
@@ -1786,13 +1844,23 @@ export interface FieldEventLogRecord {
   eventGroup: CoachEventGroup;
   isCompetition: boolean;
   meetOrPracticeTitle: string;
+  flightName?: string;
   implementSpec?: string;
   poleSpec?: string;
   approachSteps?: number;
   attempts: FieldTrialEntry[];
   bestMarkMeters?: number;
+  bestWindLegalMeters?: number;
+  bestMarkWindMps?: number;
+  isWindAidedBest?: boolean;
+  isNoHeight?: boolean;
+  missesAtClearingHeight?: number;
+  totalVerticalMisses?: number;
+  placeRank?: number;
+  advancedToFinals?: boolean;
   multiPoints?: number;
   rpe?: number;
+  clientBatchId?: string;
   createdAt: string;
 }
 

@@ -35,6 +35,16 @@ export function buildThreshSessionHeaders(): Record<string, string> {
   };
 }
 
+export class TeamLifecycleApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'TeamLifecycleApiError';
+    this.status = status;
+  }
+}
+
 async function requestLifecycleJson<T>(url: string, init: RequestInit): Promise<T & { ok?: boolean; error?: string }> {
   const resp = await fetch(url, {
     credentials: 'include',
@@ -43,7 +53,7 @@ async function requestLifecycleJson<T>(url: string, init: RequestInit): Promise<
   });
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok || data?.ok === false) {
-    throw new Error(data?.error || 'Request failed.');
+    throw new TeamLifecycleApiError(data?.error || 'Request failed.', resp.status);
   }
   return data;
 }

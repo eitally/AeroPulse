@@ -19,6 +19,7 @@ import type { CoachLandingAttribution } from '../src/utils/attribution.ts';
 import type {
   FieldEventLogRecord,
   GuardianSafetyAlertRecord,
+  MeetDayPacketRecord,
   TeamAnnouncementRecord,
   TeamAthleteLiveSnapshot,
   TeamAttendanceRecord,
@@ -94,6 +95,8 @@ export interface StoredTeamDocument {
   attendanceByDate?: Record<string, Record<string, TeamAttendanceRecord>>;
   announcements?: TeamAnnouncementRecord[];
   fieldMarkLogs?: FieldEventLogRecord[];
+  fieldMarkLogsTotalCount?: number;
+  meetDayPackets?: MeetDayPacketRecord[];
   teamMessages?: TeamMessageRecord[];
   messagingPolicy?: TeamMessagingPolicy;
   coachAttribution?: CoachLandingAttribution;
@@ -681,6 +684,10 @@ export function projectTeamSummaryForCaller(
     ...(isStaffViewer && doc.attendanceByDate ? { attendanceByDate: doc.attendanceByDate } : {}),
     announcements: visibleAnnouncements,
     ...(isParentFollower ? {} : { fieldMarkLogs: visibleFieldMarks }),
+    ...(typeof doc.fieldMarkLogsTotalCount === 'number' && !isParentFollower
+      ? { fieldMarkLogsTotalCount: doc.fieldMarkLogsTotalCount }
+      : {}),
+    ...(isStaffViewer && !isParentFollower ? { meetDayPackets: doc.meetDayPackets || [] } : {}),
     teamMessages: visibleTeamMessages,
     messagingPolicy: resolvedMessagingPolicy,
   };
