@@ -1115,8 +1115,10 @@ describe('Sprint 2C: Athletic Trainer Injury Hub, Parent Growth, Share PNG QR, S
     );
     expect(dailyOpsSrc).toContain('INJURED_MODIFIED');
 
-    const typesSrc = fs.readFileSync(path.join(ROOT, 'src/types.ts'), 'utf8');
-    expect(typesSrc).toContain(
+    const typesFacadeSrc = fs.readFileSync(path.join(ROOT, 'src/types.ts'), 'utf8');
+    expect(typesFacadeSrc).toContain('./types/workouts.ts');
+    const workoutTypesSrc = fs.readFileSync(path.join(ROOT, 'src/types/workouts.ts'), 'utf8');
+    expect(workoutTypesSrc).toContain(
       "export type CoachWorkspaceSubTab = 'CLIPBOARD' | 'WORKOUTS' | 'TEAM_PLAN' | 'STOPWATCH' | 'ROSTER';"
     );
   });

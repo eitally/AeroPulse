@@ -43,6 +43,28 @@ describe('Sprint 3C: Monolith Decomposition Ceiling & Extracted Helper Guards', 
     expect(violations).toEqual([]);
   });
 
+  it('keeps src/types.ts, server/routers/teamRouter.ts, and telemetryStorage.ts as thin <= 120-line facades with <= 1,200-line submodules', () => {
+    const facadeCeilings = [
+      'src/types.ts',
+      'server/routers/teamRouter.ts',
+      'src/utils/telemetryStorage.ts',
+    ];
+    for (const rel of facadeCeilings) {
+      const lines = fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n').length;
+      expect(lines, `${rel} exceeded thin facade ceiling`).toBeLessThanOrEqual(120);
+    }
+
+    const domainDirs = ['src/types', 'server/routers/team', 'src/utils/telemetryStorage'];
+    for (const dirRel of domainDirs) {
+      const files = collectComponentFiles(path.join(ROOT, dirRel));
+      expect(files.length, `${dirRel} should contain extracted domain modules`).toBeGreaterThanOrEqual(4);
+      for (const file of files) {
+        const lines = fs.readFileSync(file, 'utf8').split('\n').length;
+        expect(lines, `${path.relative(ROOT, file)} exceeded 1,200-line module ceiling`).toBeLessThanOrEqual(1200);
+      }
+    }
+  });
+
   it('extractActivitySeries and sampleSeriesAt extract and interpolate 1Hz activity streams accurately', () => {
     const mockActivity: UnifiedActivity = {
       id: 'act-series-1',

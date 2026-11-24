@@ -209,9 +209,11 @@ describe('Sprint 1 Track 1C: Shoe & Spike Closet, Calendar DnD/Copy, Sync Reliab
     const cleared = sanitizeAthleteCloudState({ gearItems: [] }, sanitized);
     expect(cleared.gearItems).toEqual([]);
 
-    const telemetrySrc = readRel('src/utils/telemetryStorage.ts');
-    expect(telemetrySrc).toContain('export async function replaceGearItemsInStore');
-    expect(telemetrySrc).toMatch(/if\s*\(Array\.isArray\(snapshot\.gearItems\)\)\s*\{\s*await db\.gearItems\.clear\(\)/);
+    const telemetryFacadeSrc = readRel('src/utils/telemetryStorage.ts');
+    expect(telemetryFacadeSrc).toContain('./telemetryStorage/snapshotStore');
+    const snapshotStoreSrc = readRel('src/utils/telemetryStorage/snapshotStore.ts');
+    expect(snapshotStoreSrc).toContain('export async function replaceGearItemsInStore');
+    expect(snapshotStoreSrc).toMatch(/if\s*\(Array\.isArray\(snapshot\.gearItems\)\)\s*\{\s*await db\.gearItems\.clear\(\)/);
   });
 
   it('computes calendar drag patches and week copies accurately across Mondays and renders Copy Week popover', () => {

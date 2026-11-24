@@ -24,7 +24,13 @@ describe('Track 6: Dead-Code Removal, Bundle Diet & WCAG AA Contrast Polish', ()
   });
 
   it('keeps eager telemetryStorage, AeroPulseLogo, TracksideLiveHeaderPill, App, and cloudSync decoupled from heavy lazy modules', () => {
-    const telemetrySrc = readSrc('src/utils/telemetryStorage.ts');
+    const telemetryFacadeSrc = readSrc('src/utils/telemetryStorage.ts');
+    const telemetryDomainFiles = fs
+      .readdirSync(path.join(ROOT, 'src/utils/telemetryStorage'))
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => readSrc(`src/utils/telemetryStorage/${name}`));
+    const telemetryAllSrc = [telemetryFacadeSrc, ...telemetryDomainFiles].join('\n');
+    const activityMergeSrc = readSrc('src/utils/telemetryStorage/activityMerge.ts');
     const logoSrc = readSrc('src/components/AeroPulseLogo.tsx');
     const brandAssetSrc = readSrc('src/utils/brandAssetEngine.ts');
     const teamBrandDomSrc = readSrc('src/utils/teamBrandDom.ts');
@@ -32,8 +38,8 @@ describe('Track 6: Dead-Code Removal, Bundle Diet & WCAG AA Contrast Polish', ()
     const appSrc = readSrc('src/App.tsx');
     const cloudSyncSrc = readSrc('src/hooks/useAthleteCloudSync.ts');
 
-    expect(telemetrySrc).toContain('./stopwatchWearableFusion');
-    expect(telemetrySrc).not.toContain('stopwatchActivitySynthesizer');
+    expect(activityMergeSrc).toContain('../stopwatchWearableFusion');
+    expect(telemetryAllSrc).not.toContain('stopwatchActivitySynthesizer');
 
     expect(logoSrc).toContain('../utils/teamPalette');
     expect(logoSrc).not.toContain('teamOnboardingEngine');

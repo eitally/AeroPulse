@@ -1,9 +1,9 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express16 from "express";
+import express21 from "express";
 
 // server/apiRouter.ts
-import express14 from "express";
+import express19 from "express";
 
 // server/securityUtils.ts
 import crypto from "crypto";
@@ -8915,621 +8915,531 @@ webhooksAndExportRouter.post("/api/physiology/race-passport", (req, res) => {
 });
 
 // server/routers/teamRouter.ts
+import express8 from "express";
+
+// server/routers/team/emailOtpRouter.ts
 import express3 from "express";
 
-// server/teamFieldAndDailyOpsService.ts
-import crypto15 from "crypto";
+// server/teamService.ts
+import crypto11 from "crypto";
 
-// src/physiology/fieldEventsEngine.ts
-var FIELD_EVENT_CATALOG = [
+// src/utils/officialRaceSynthesizer.ts
+var OFFICIAL_RACE_EVENTS = [
   {
-    code: "LJ",
-    label: "Long Jump",
-    shortLabel: "LJ",
-    eventGroup: "JUMPS",
-    mode: "HORIZONTAL"
+    label: "60m",
+    distanceMeters: 60,
+    defaultSplitMeters: 60,
+    defaultLapCount: 1,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "TJ",
-    label: "Triple Jump",
-    shortLabel: "TJ",
-    eventGroup: "JUMPS",
-    mode: "HORIZONTAL"
+    label: "100m",
+    distanceMeters: 100,
+    defaultSplitMeters: 100,
+    defaultLapCount: 1,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "HJ",
-    label: "High Jump",
-    shortLabel: "HJ",
-    eventGroup: "JUMPS",
-    mode: "VERTICAL",
-    barStepMeters: 0.0508
-    // 2 in
+    label: "200m",
+    distanceMeters: 200,
+    defaultSplitMeters: 200,
+    defaultLapCount: 1,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "PV",
-    label: "Pole Vault",
-    shortLabel: "PV",
-    eventGroup: "POLE_VAULT",
-    mode: "VERTICAL",
-    barStepMeters: 0.1524
-    // 6 in
+    label: "100mH",
+    distanceMeters: 100,
+    defaultSplitMeters: 100,
+    defaultLapCount: 1,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "SP",
-    label: "Shot Put",
-    shortLabel: "Shot Put",
-    eventGroup: "THROWS",
-    mode: "THROW",
-    defaultImplementSpec: "12 lb (HS Boys) / 4 kg (HS Girls)",
-    implementPresets: ["12 lb (HS Boys)", "4 kg (HS Girls / Women)", "16 lb (College Men)", "10 lb (Heavy Ball)"]
+    label: "110mH",
+    distanceMeters: 110,
+    defaultSplitMeters: 100,
+    defaultLapCount: 1,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "DISCUS",
-    label: "Discus Throw",
-    shortLabel: "Discus",
-    eventGroup: "THROWS",
-    mode: "THROW",
-    defaultImplementSpec: "1.6 kg (HS Boys) / 1.0 kg (HS Girls)",
-    implementPresets: ["1.6 kg (HS Boys)", "1.0 kg (Girls / Women)", "2.0 kg (College Men)", "1.75 kg (Heavy)"]
+    label: "300mH",
+    distanceMeters: 300,
+    defaultSplitMeters: 200,
+    defaultLapCount: 2,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "JAVELIN",
-    label: "Javelin Throw",
-    shortLabel: "Javelin",
-    eventGroup: "THROWS",
-    mode: "THROW",
-    defaultImplementSpec: "800g (Boys/Men) / 600g (Girls/Women)",
-    implementPresets: ["800g (Boys / Men)", "600g (Girls / Women)", "700g (Trainer)"]
+    label: "400mH",
+    distanceMeters: 400,
+    defaultSplitMeters: 200,
+    defaultLapCount: 2,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "HAMMER",
-    label: "Hammer Throw",
-    shortLabel: "Hammer",
-    eventGroup: "THROWS",
-    mode: "THROW",
-    defaultImplementSpec: "12 lb / 16 lb / 4 kg",
-    implementPresets: ["12 lb (HS Boys)", "4 kg (Girls / Women)", "16 lb (College Men)"]
+    label: "400m",
+    distanceMeters: 400,
+    defaultSplitMeters: 200,
+    defaultLapCount: 2,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "PENT",
-    label: "Pentathlon",
-    shortLabel: "Pent",
-    eventGroup: "MULTI",
-    mode: "MULTI"
+    label: "800m",
+    distanceMeters: 800,
+    defaultSplitMeters: 400,
+    defaultLapCount: 2,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "HEPT",
-    label: "Heptathlon",
-    shortLabel: "Hept",
-    eventGroup: "MULTI",
-    mode: "MULTI"
+    label: "1500m",
+    distanceMeters: 1500,
+    defaultSplitMeters: 400,
+    defaultLapCount: 4,
+    category: "TRACK",
+    typicalSubType: "Track"
   },
   {
-    code: "DEC",
-    label: "Decathlon",
-    shortLabel: "Dec",
-    eventGroup: "MULTI",
-    mode: "MULTI"
+    label: "1600m",
+    distanceMeters: 1600,
+    defaultSplitMeters: 400,
+    defaultLapCount: 4,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "1 Mile",
+    distanceMeters: 1609.34,
+    defaultSplitMeters: 400,
+    defaultLapCount: 4,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "3000m",
+    distanceMeters: 3e3,
+    defaultSplitMeters: 400,
+    defaultLapCount: 8,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "3200m",
+    distanceMeters: 3200,
+    defaultSplitMeters: 400,
+    defaultLapCount: 8,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "5000m",
+    distanceMeters: 5e3,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "10000m",
+    distanceMeters: 1e4,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 10,
+    category: "TRACK",
+    typicalSubType: "Track"
+  },
+  {
+    label: "XC 5K",
+    distanceMeters: 5e3,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "XC",
+    typicalSubType: "Cross Country"
+  },
+  {
+    label: "Road 5K",
+    distanceMeters: 5e3,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "ROAD",
+    typicalSubType: "Road"
+  },
+  {
+    label: "Half Marathon",
+    distanceMeters: 21097.5,
+    defaultSplitMeters: 1e3,
+    defaultLapCount: 5,
+    category: "ROAD",
+    typicalSubType: "Road"
   }
 ];
-function getFieldEventSpec(code) {
-  return FIELD_EVENT_CATALOG.find((c) => c.code === code) || FIELD_EVENT_CATALOG[0];
-}
-function formatFieldMarkImperial(meters) {
-  if (!Number.isFinite(meters) || meters <= 0) return "\u2014";
-  const totalInches = meters / 0.0254;
-  let feet = Math.floor(totalInches / 12);
-  let inches = Math.round((totalInches - feet * 12) * 4) / 4;
-  if (inches >= 12) {
-    feet += 1;
-    inches = 0;
+function formatFatTime(seconds, forceHundredths = true) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00.00";
+  const totalHundredths = Math.round(seconds * 100);
+  const hundredths = totalHundredths % 100;
+  const wholeSecsTotal = Math.floor(totalHundredths / 100);
+  const hours = Math.floor(wholeSecsTotal / 3600);
+  const mins = Math.floor(wholeSecsTotal % 3600 / 60);
+  const secs = wholeSecsTotal % 60;
+  const hStr = hundredths.toString().padStart(2, "0");
+  if (hours > 0) {
+    return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}${forceHundredths ? `.${hStr}` : ""}`;
   }
-  const inchStr = Number.isInteger(inches) ? String(inches) : inches.toFixed(2).replace(/0$/, "");
-  return `${feet}' ${inchStr}"`;
+  if (mins === 0) {
+    return `${secs}.${hStr}`;
+  }
+  return `${mins}:${secs.toString().padStart(2, "0")}${forceHundredths || hundredths > 0 ? `.${hStr}` : ""}`;
 }
-function formatFieldMarkDual(meters) {
-  if (!Number.isFinite(meters) || meters <= 0) return "\u2014";
-  return `${formatFieldMarkImperial(meters)} (${meters.toFixed(2)}m)`;
+function parseFatTimeString(raw) {
+  const cleaned = String(raw || "").trim().replace(/[a-zA-Z]+$/g, "").trim();
+  if (!cleaned) return 0;
+  const parts = cleaned.split(":").map((p) => p.trim());
+  if (parts.length === 1) {
+    const val = parseFloat(parts[0]);
+    return Number.isFinite(val) && val > 0 ? Number(val.toFixed(2)) : 0;
+  }
+  if (parts.length === 2) {
+    const mins = parseInt(parts[0], 10);
+    const secs = parseFloat(parts[1]);
+    if (!Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
+    return Number((mins * 60 + secs).toFixed(2));
+  }
+  if (parts.length === 3) {
+    const hrs = parseInt(parts[0], 10);
+    const mins = parseInt(parts[1], 10);
+    const secs = parseFloat(parts[2]);
+    if (!Number.isFinite(hrs) || !Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
+    return Number((hrs * 3600 + mins * 60 + secs).toFixed(2));
+  }
+  return 0;
 }
-function evaluateVerticalFlightAthlete(attempts) {
-  let bestClearedHeightMeters = null;
-  let consecutiveMisses = 0;
-  let isEliminated = false;
-  const heightOrder = [];
-  const heightBuckets = /* @__PURE__ */ new Map();
-  const summaryTokens = [];
-  let totalMissesAll = 0;
-  for (const a of attempts || []) {
-    const symbol = a.outcome === "CLEAR" ? "O" : a.outcome === "MISS" ? "X" : "-";
-    const h = a.barHeightMeters ?? a.markMeters;
-    summaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
-    if (typeof h === "number" && Number.isFinite(h) && h > 0) {
-      const hKey = h.toFixed(3);
-      let bucket = heightBuckets.get(hKey);
-      if (!bucket) {
-        bucket = { heightMeters: Number(h.toFixed(3)), tokens: [], misses: 0 };
-        heightBuckets.set(hKey, bucket);
-        heightOrder.push(hKey);
-      }
-      bucket.tokens.push(symbol);
-      if (symbol === "X") {
-        bucket.misses += 1;
-      }
+function computeJackDanielsVdot(distanceMeters, timeSecs) {
+  if (!distanceMeters || !timeSecs || timeSecs <= 0) return 55;
+  const timeMins = timeSecs / 60;
+  const velocityMetersPerMin = distanceMeters / timeMins;
+  const vo2Cost = -4.6 + 0.182258 * velocityMetersPerMin + 104e-6 * velocityMetersPerMin * velocityMetersPerMin;
+  const pctVo2Max = 0.8 + 0.1894393 * Math.exp(-0.012778 * timeMins) + 0.2989558 * Math.exp(-0.1932605 * timeMins);
+  const rawVdot = vo2Cost / Math.max(0.55, pctVo2Max);
+  return Number(Math.max(32, Math.min(88, rawVdot)).toFixed(1));
+}
+function computeOfficialRaceTrainingLoad(distanceMeters, fatTimeSecs, includeWarmupCooldown) {
+  let raceEffortTss = 45;
+  if (distanceMeters <= 120) {
+    raceEffortTss = 18;
+  } else if (distanceMeters <= 250) {
+    raceEffortTss = 24;
+  } else if (distanceMeters <= 350) {
+    raceEffortTss = 30;
+  } else if (distanceMeters <= 450) {
+    raceEffortTss = 34;
+  } else if (distanceMeters <= 900) {
+    raceEffortTss = 44;
+  } else if (distanceMeters <= 1700) {
+    raceEffortTss = 54;
+  } else if (distanceMeters <= 3400) {
+    raceEffortTss = 68;
+  } else if (distanceMeters <= 5200) {
+    raceEffortTss = 84;
+  } else if (distanceMeters <= 10500) {
+    raceEffortTss = 108;
+  } else {
+    raceEffortTss = Math.round(Math.min(185, fatTimeSecs / 3600 * 112));
+  }
+  const warmupCooldownTss = includeWarmupCooldown ? 32 : 0;
+  return raceEffortTss + warmupCooldownTss;
+}
+function generateDefaultLapSplits(eventDistanceMeters, fatTimeSecs, splitDistanceMeters = 400) {
+  if (!fatTimeSecs || fatTimeSecs <= 0) return [];
+  const numLaps = Math.max(1, Math.round(eventDistanceMeters / splitDistanceMeters));
+  if (numLaps <= 1) return [Number(fatTimeSecs.toFixed(2))];
+  const avgLap = fatTimeSecs / numLaps;
+  const weights = [];
+  for (let i = 0; i < numLaps; i++) {
+    if (i === 0) weights.push(0.988);
+    else if (i === numLaps - 1) weights.push(0.984);
+    else weights.push(1 + 0.014);
+  }
+  const weightSum = weights.reduce((s, w) => s + w, 0);
+  const rawSplits = weights.map(
+    (w) => Number((w / weightSum * fatTimeSecs).toFixed(2))
+  );
+  const sumExceptLast = rawSplits.slice(0, -1).reduce((s, v) => s + v, 0);
+  rawSplits[rawSplits.length - 1] = Number(Math.max(1, fatTimeSecs - sumExceptLast).toFixed(2));
+  return rawSplits;
+}
+function synthesizeOfficialRaceActivity(candidate, athleteLthr = 172, athleteMaxHr = 192) {
+  const splitMeters = candidate.lapSplitDistanceMeters || (candidate.eventDistanceMeters <= 400 ? 200 : candidate.eventDistanceMeters >= 5e3 ? 1e3 : 400);
+  const hasCandidateSplits = Boolean(candidate.lapSplitsSecs && candidate.lapSplitsSecs.length > 0);
+  const splits = hasCandidateSplits ? candidate.lapSplitsSecs : candidate.preserveEmptySplits ? [] : generateDefaultLapSplits(candidate.eventDistanceMeters, candidate.fatTimeSecs, splitMeters);
+  const splitsEstimated = candidate.splitsEstimated !== void 0 ? candidate.splitsEstimated : !hasCandidateSplits;
+  const vdot = computeJackDanielsVdot(candidate.eventDistanceMeters, candidate.fatTimeSecs);
+  const trainingLoad = computeOfficialRaceTrainingLoad(
+    candidate.eventDistanceMeters,
+    candidate.fatTimeSecs,
+    candidate.includeWarmupCooldown
+  );
+  const totalSecs = Math.max(5, Math.round(candidate.fatTimeSecs));
+  const timeStream = [];
+  const distanceStream = [];
+  const velocityStream = [];
+  const hrStream = [];
+  const cadenceStream = [];
+  const intervals = [];
+  let elapsedSecsCursor = 0;
+  let elapsedDistCursor = 0;
+  splits.forEach((lapSecs, idx) => {
+    const lapDist = idx === splits.length - 1 ? Math.max(10, candidate.eventDistanceMeters - elapsedDistCursor) : splitMeters;
+    const lapSpeedMps = lapDist / Math.max(0.5, lapSecs);
+    const lapPaceSecsKm = Math.round(1e3 / Math.max(0.5, lapSpeedMps));
+    const lapDurationInt = Math.max(1, Math.round(lapSecs));
+    const lapStartHr = idx === 0 ? Math.round(athleteLthr * 0.92) : Math.min(athleteMaxHr, Math.round(athleteLthr * 1.01 + idx * 2.5));
+    const lapEndHr = Math.min(
+      athleteMaxHr,
+      Math.round(athleteLthr * 1.03 + (idx + 1) * 3)
+    );
+    for (let s = 0; s < lapDurationInt; s++) {
+      const t = elapsedSecsCursor + s;
+      const frac = s / Math.max(1, lapDurationInt);
+      timeStream.push(t);
+      distanceStream.push(Number((elapsedDistCursor + frac * lapDist).toFixed(1)));
+      velocityStream.push(Number((lapSpeedMps * (0.99 + 0.02 * Math.sin(s * 0.4))).toFixed(2)));
+      hrStream.push(Math.round(lapStartHr + frac * (lapEndHr - lapStartHr)));
+      cadenceStream.push(
+        candidate.eventDistanceMeters <= 1650 ? 194 + (idx === splits.length - 1 ? 6 : 0) : 186
+      );
     }
-    if (symbol === "X") {
-      totalMissesAll += 1;
-    }
-    if (isEliminated) {
+    intervals.push({
+      id: `lap-${idx + 1}`,
+      type: "WORK",
+      label: `Lap ${idx + 1} (${Math.round(lapDist)}m): ${formatFatTime(lapSecs)}`,
+      startTimeSecs: Math.round(elapsedSecsCursor),
+      durationSecs: Number(lapSecs.toFixed(2)),
+      distanceMeters: Math.round(lapDist),
+      avgPaceSecsPerKm: lapPaceSecsKm,
+      gapPaceSecsPerKm: lapPaceSecsKm,
+      avgHr: Math.round((lapStartHr + lapEndHr) / 2),
+      maxHr: lapEndHr,
+      avgCadence: candidate.eventDistanceMeters <= 1650 ? 196 : 186,
+      zone: candidate.eventDistanceMeters <= 1650 ? 6 : 5
+    });
+    elapsedSecsCursor += lapSecs;
+    elapsedDistCursor += lapDist;
+  });
+  const streams = {
+    time: timeStream,
+    distance: distanceStream,
+    velocitySmooth: velocityStream,
+    heartrate: hrStream,
+    cadence: cadenceStream
+  };
+  const avgPaceSecsPerKm = Math.round(candidate.fatTimeSecs / candidate.eventDistanceMeters * 1e3);
+  const firstHalfSplits = splits.slice(0, Math.ceil(splits.length / 2));
+  const secondHalfSplits = splits.slice(Math.ceil(splits.length / 2));
+  const firstHalfAvg = firstHalfSplits.length > 0 ? firstHalfSplits.reduce((s, v) => s + v, 0) / firstHalfSplits.length : 0;
+  const secondHalfAvg = secondHalfSplits.length > 0 ? secondHalfSplits.reduce((s, v) => s + v, 0) / secondHalfSplits.length : firstHalfAvg;
+  const splitFadePct = firstHalfAvg > 0 ? Number(((secondHalfAvg - firstHalfAvg) / firstHalfAvg * 100).toFixed(1)) : 0;
+  const warmupSecs = candidate.includeWarmupCooldown ? 2100 : 0;
+  const z1Secs = candidate.includeWarmupCooldown ? 900 : 0;
+  const z2Secs = candidate.includeWarmupCooldown ? 1200 : 0;
+  const raceSecs = Math.round(candidate.fatTimeSecs);
+  const zoneSecsHr = candidate.eventDistanceMeters <= 1700 ? [z1Secs, z2Secs, 0, Math.round(raceSecs * 0.15), Math.round(raceSecs * 0.35), Math.round(raceSecs * 0.35), Math.round(raceSecs * 0.15)] : [z1Secs, z2Secs, 0, Math.round(raceSecs * 0.3), Math.round(raceSecs * 0.55), Math.round(raceSecs * 0.15), 0];
+  const isIndoorTrack = candidate.trackType === "INDOOR_BANKED_200M" || candidate.trackType === "INDOOR_FLAT_200M";
+  const subType = candidate.trackType === "XC_COURSE" ? "Cross Country" : candidate.trackType === "ROAD" ? "Road" : "Track";
+  const officialRaceData = {
+    platform: candidate.platform,
+    meetName: candidate.meetName,
+    eventLabel: candidate.eventLabel,
+    eventDistanceMeters: candidate.eventDistanceMeters,
+    fatTimeSecs: candidate.fatTimeSecs,
+    displayFatTime: candidate.displayFatTime || formatFatTime(candidate.fatTimeSecs),
+    trackType: candidate.trackType,
+    placeFinish: candidate.placeFinish,
+    windReading: candidate.windReading,
+    lapSplitDistanceMeters: splitMeters,
+    lapSplitsSecs: splits,
+    ...splitsEstimated ? { splitsEstimated: true } : {},
+    vdotScore: vdot,
+    includeWarmupCooldown: candidate.includeWarmupCooldown,
+    sourceUrl: candidate.sourceUrl
+  };
+  return {
+    id: candidate.id || `official-race-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    startDateLocal: candidate.startDateLocalIso || `${candidate.date.slice(0, 10)}T10:30:00`,
+    name: `${candidate.eventLabel} Official Race (${officialRaceData.displayFatTime}) \u2014 ${candidate.meetName}`,
+    sportCategory: "Running",
+    environment: isIndoorTrack ? "INDOOR" : "OUTDOOR",
+    subType,
+    movingTimeSecs: Math.round(candidate.fatTimeSecs) + warmupSecs,
+    distanceMeters: candidate.eventDistanceMeters + (candidate.includeWarmupCooldown ? 5600 : 0),
+    elevationGainMeters: candidate.trackType === "XC_COURSE" ? 85 : 0,
+    trainingLoad,
+    avgHr: Math.round(athleteLthr * 1.02),
+    maxHr: athleteMaxHr,
+    avgCadence: candidate.eventDistanceMeters <= 1650 ? 196 : 186,
+    avgPaceSecsPerKm,
+    gapPaceSecsPerKm: avgPaceSecsPerKm,
+    aerobicDecouplingPct: splitFadePct,
+    efficiencyFactor: Number((1e3 / avgPaceSecsPerKm * 60 / (athleteLthr * 1.02)).toFixed(2)),
+    firstHalfEf: 1.58,
+    secondHalfEf: 1.56,
+    deviceName: `Watchless FAT Timing (${candidate.platform})`,
+    zoneSecs: {
+      hr: zoneSecsHr,
+      pace: zoneSecsHr
+    },
+    stravaPrCount: 1,
+    segmentEfforts: [],
+    intervals,
+    streams,
+    officialRaceData,
+    sourceBadges: [candidate.platform]
+  };
+}
+var MONTH_NAME_MAP = {
+  jan: "01",
+  january: "01",
+  feb: "02",
+  february: "02",
+  mar: "03",
+  march: "03",
+  apr: "04",
+  april: "04",
+  may: "05",
+  jun: "06",
+  june: "06",
+  jul: "07",
+  july: "07",
+  aug: "08",
+  august: "08",
+  sep: "09",
+  sept: "09",
+  september: "09",
+  oct: "10",
+  october: "10",
+  nov: "11",
+  november: "11",
+  dec: "12",
+  december: "12"
+};
+function normalizeRaceEventToken(rawToken) {
+  const clean = rawToken.toLowerCase().replace(/,/g, "").replace(/\s+/g, " ").trim();
+  if (/^60\s*(?:m|meters?)$/.test(clean)) return "60m";
+  if (/^100\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "100mH";
+  if (/^110\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "110mH";
+  if (/^300\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "300mH";
+  if (/^400\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "400mH";
+  if (/^100\s*(?:m|meters?)$/.test(clean)) return "100m";
+  if (/^200\s*(?:m|meters?)$/.test(clean)) return "200m";
+  if (/^400\s*(?:m|meters?)$/.test(clean)) return "400m";
+  if (/^800\s*(?:m|meters?)$/.test(clean)) return "800m";
+  if (/^1500\s*(?:m|meters?)$/.test(clean)) return "1500m";
+  if (/^1600\s*(?:m|meters?)$/.test(clean)) return "1600m";
+  if (/^(?:1\s*)?mile$/.test(clean)) return "1 Mile";
+  if (/^3000\s*(?:m|meters?|s|sc|m\s*steeple(?:chase)?)$/.test(clean)) return "3000m";
+  if (/^3200\s*(?:m|meters?)$/.test(clean)) return "3200m";
+  if (/^5000\s*(?:m|meters?)$/.test(clean)) return "5000m";
+  if (/^10000\s*(?:m|meters?)$/.test(clean)) return "10000m";
+  if (/^xc\s*5k$/.test(clean)) return "XC 5K";
+  if (/^road\s*5k$/.test(clean)) return "Road 5K";
+  if (/^5k$/.test(clean)) return "XC 5K";
+  if (/half\s*marathon/.test(clean)) return "Half Marathon";
+  return rawToken;
+}
+function parseOfficialResultsTextDeterministically(rawText, defaultUrl) {
+  const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 5);
+  const detectedPlatformFromUrl = defaultUrl ? /tfrrs/i.test(defaultUrl) ? "TFRRS" : /milesplit/i.test(defaultUrl) ? "MileSplit" : /runsignup/i.test(defaultUrl) ? "RunSignup" : "Athletic.net" : "Athletic.net";
+  const results = [];
+  const seenKeys = /* @__PURE__ */ new Set();
+  const todayIso = getLocalDateIso();
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^athletic\.net\s*\/?\s*tfrrs/i.test(line) || /^date\s*\|\s*meet/i.test(line)) {
       continue;
     }
-    if (a.outcome === "CLEAR") {
-      consecutiveMisses = 0;
-      if (typeof h === "number" && Number.isFinite(h) && h > 0) {
-        const rounded = Number(h.toFixed(3));
-        if (bestClearedHeightMeters === null || rounded > bestClearedHeightMeters) {
-          bestClearedHeightMeters = rounded;
-        }
-      }
-    } else if (a.outcome === "MISS") {
-      consecutiveMisses += 1;
-      if (consecutiveMisses >= 3) {
-        isEliminated = true;
-      }
-    }
-  }
-  let missesAtClearingHeight = null;
-  let totalMisses = 0;
-  if (bestClearedHeightMeters !== null) {
-    const clearKey = bestClearedHeightMeters.toFixed(3);
-    missesAtClearingHeight = heightBuckets.get(clearKey)?.misses ?? 0;
-    for (const bucket of heightBuckets.values()) {
-      if (bucket.heightMeters <= bestClearedHeightMeters + 5e-4) {
-        totalMisses += bucket.misses;
-      }
-    }
-  } else {
-    totalMisses = totalMissesAll;
-  }
-  const heightMarks = heightOrder.map((key) => {
-    const b = heightBuckets.get(key);
-    return {
-      heightMeters: b.heightMeters,
-      tokens: b.tokens,
-      summary: b.tokens.join("")
-    };
-  });
-  return {
-    bestClearedHeightMeters,
-    missesAtClearingHeight,
-    totalMisses,
-    totalMissesAll,
-    consecutiveMisses,
-    isEliminated,
-    isNoHeight: isEliminated && bestClearedHeightMeters === null,
-    heightMarks,
-    verticalSeriesSummary: summaryTokens.join(" ")
-  };
-}
-function summarizeFieldSeries(eventCode, attempts, rpe) {
-  const spec = getFieldEventSpec(eventCode);
-  let bestMarkMeters = null;
-  let bestWindLegalMeters = null;
-  let bestMarkWindMps;
-  let isWindAidedBest = false;
-  let legalCount = 0;
-  let foulOrMissCount = 0;
-  const barSummaryTokens = [];
-  for (const a of attempts) {
-    if (a.outcome === "FOUL" || a.outcome === "MISS") {
-      foulOrMissCount += 1;
-    } else if (a.outcome === "MARK" || a.outcome === "CLEAR") {
-      legalCount += 1;
-      const candidateRaw = spec.mode === "VERTICAL" ? a.barHeightMeters ?? a.markMeters ?? 0 : a.markMeters ?? a.barHeightMeters ?? 0;
-      if (candidateRaw > 0) {
-        const candidate = Number(candidateRaw.toFixed(3));
-        const hasWind = typeof a.windMps === "number" && Number.isFinite(a.windMps);
-        const attemptWind = hasWind ? Number(a.windMps.toFixed(2)) : void 0;
-        const attemptWindAided = hasWind && a.windMps > 2;
-        if (bestMarkMeters === null || candidate > bestMarkMeters) {
-          bestMarkMeters = candidate;
-          bestMarkWindMps = attemptWind;
-          isWindAidedBest = attemptWindAided;
-        } else if (candidate === bestMarkMeters && isWindAidedBest && !attemptWindAided) {
-          bestMarkWindMps = attemptWind;
-          isWindAidedBest = false;
-        }
-        if (!attemptWindAided && (bestWindLegalMeters === null || candidate > bestWindLegalMeters)) {
-          bestWindLegalMeters = candidate;
-        }
-      }
-    }
-    if (spec.mode === "VERTICAL") {
-      const symbol = a.outcome === "CLEAR" ? "O" : a.outcome === "MISS" ? "X" : "-";
-      const h = a.barHeightMeters ?? a.markMeters;
-      barSummaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
-    }
-  }
-  let verticalEval = null;
-  if (spec.mode === "VERTICAL") {
-    verticalEval = evaluateVerticalFlightAthlete(attempts);
-    bestMarkMeters = verticalEval.bestClearedHeightMeters;
-    bestWindLegalMeters = verticalEval.bestClearedHeightMeters;
-  }
-  const totalContacts = attempts.filter((a) => a.outcome !== "PASS").length;
-  const basePerContact = spec.mode === "HORIZONTAL" ? 4.2 : spec.mode === "VERTICAL" ? 3.8 : spec.mode === "THROW" ? 2.2 : 5;
-  const effectiveRpe = Number.isFinite(rpe) && (rpe ?? 0) > 0 ? Number(rpe) : 6.5;
-  const estimatedLoadTss = Math.max(
-    18,
-    Math.min(115, Math.round(14 + totalContacts * basePerContact * (0.75 + effectiveRpe * 0.05)))
-  );
-  return {
-    bestMarkMeters,
-    bestWindLegalMeters,
-    ...bestMarkWindMps !== void 0 ? { bestMarkWindMps } : {},
-    isWindAidedBest,
-    legalCount,
-    foulOrMissCount,
-    totalContacts,
-    verticalSeriesSummary: barSummaryTokens.join(" "),
-    estimatedLoadTss,
-    ...verticalEval ? {
-      isNoHeight: verticalEval.isNoHeight,
-      ...verticalEval.missesAtClearingHeight !== null ? { missesAtClearingHeight: verticalEval.missesAtClearingHeight } : {},
-      totalVerticalMisses: verticalEval.totalMisses,
-      isEliminated: verticalEval.isEliminated
-    } : {}
-  };
-}
-function formatPublicSafeSportDisplayName(params) {
-  const isProtectedMinor = Boolean(
-    params.isMinorU18 || params.orgType === "HIGH_SCHOOL"
-  );
-  const abbreviateUnconsentedMinor = Boolean(
-    !params.externalSource && isProtectedMinor && params.parentConsentStatus !== "ACKNOWLEDGED"
-  );
-  if (!abbreviateUnconsentedMinor) {
-    return params.invitedName;
-  }
-  const parts = String(params.invitedName || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
-  }
-  return parts[0] || "Athlete";
-}
-function extractFieldLogPrEvaluation(log) {
-  const spec = getFieldEventSpec(log.eventCode);
-  if (spec.mode === "MULTI") {
-    const pts = typeof log.multiPoints === "number" && Number.isFinite(log.multiPoints) && log.multiPoints > 0 ? Math.round(log.multiPoints) : void 0;
-    return { isWindAidedOverall: false, multiPoints: pts };
-  }
-  let windLegalMeters;
-  let windLegalWindMps;
-  let overallMeters;
-  let overallWindMps;
-  let isWindAidedOverall = false;
-  if (Array.isArray(log.attempts) && log.attempts.length > 0) {
-    for (const a of log.attempts) {
-      if (a.outcome !== "MARK" && a.outcome !== "CLEAR") continue;
-      const rawMark = spec.mode === "VERTICAL" ? a.barHeightMeters ?? a.markMeters ?? 0 : a.markMeters ?? a.barHeightMeters ?? 0;
-      if (!Number.isFinite(rawMark) || rawMark <= 0) continue;
-      const roundedMark = Number(rawMark.toFixed(3));
-      const hasWind = typeof a.windMps === "number" && Number.isFinite(a.windMps);
-      const windVal = hasWind ? Number(a.windMps.toFixed(2)) : void 0;
-      const windAided = hasWind && a.windMps > 2;
-      if (overallMeters === void 0 || roundedMark > overallMeters) {
-        overallMeters = roundedMark;
-        overallWindMps = windVal;
-        isWindAidedOverall = windAided;
-      } else if (roundedMark === overallMeters && isWindAidedOverall && !windAided) {
-        overallWindMps = windVal;
-        isWindAidedOverall = false;
-      }
-      if (!windAided && (windLegalMeters === void 0 || roundedMark > windLegalMeters)) {
-        windLegalMeters = roundedMark;
-        windLegalWindMps = windVal;
-      }
-    }
-  }
-  if (windLegalMeters === void 0 && typeof log.bestWindLegalMeters === "number" && log.bestWindLegalMeters > 0) {
-    windLegalMeters = Number(log.bestWindLegalMeters.toFixed(3));
-    if (!log.isWindAidedBest && typeof log.bestMarkWindMps === "number") {
-      windLegalWindMps = Number(log.bestMarkWindMps.toFixed(2));
-    }
-  }
-  if (overallMeters === void 0 && typeof log.bestMarkMeters === "number" && log.bestMarkMeters > 0) {
-    overallMeters = Number(log.bestMarkMeters.toFixed(3));
-    overallWindMps = typeof log.bestMarkWindMps === "number" ? Number(log.bestMarkWindMps.toFixed(2)) : void 0;
-    isWindAidedOverall = Boolean(
-      log.isWindAidedBest || typeof log.bestMarkWindMps === "number" && log.bestMarkWindMps > 2
+    const eventMatch = line.match(
+      /\b(100\s*(?:meters?|m)\s*(?:h|hurdles?)|110\s*(?:meters?|m)\s*(?:h|hurdles?)|300\s*(?:meters?|m)\s*(?:h|hurdles?)|400\s*(?:meters?|m)\s*(?:h|hurdles?)|60\s*(?:meters?|m)|100\s*(?:meters?|m)|200\s*(?:meters?|m)|400\s*(?:meters?|m)|800\s*(?:meters?|m)|1500\s*(?:meters?|m)|1600\s*(?:meters?|m)|1\s*Mile|Mile|3000\s*(?:m\s*steeple(?:chase)?|meters?|sc|s|m)|3200\s*(?:meters?|m)|5000\s*(?:meters?|m)|10,?000\s*(?:meters?|m)|XC\s*5K|Road\s*5K|5K|Half\s*Marathon)\b/i
     );
-    if (!isWindAidedOverall && windLegalMeters === void 0) {
-      windLegalMeters = overallMeters;
-      windLegalWindMps = overallWindMps;
+    const timeMatch = line.match(
+      /\b(\d{1,2}:\d{2}(?:\.\d{1,2})?[a-zA-Z]?|[1-6]\d\.\d{2}[a-zA-Z]?|[6-9]\.\d{2}[a-zA-Z]?)\b/
+    );
+    if (!eventMatch || !timeMatch) continue;
+    const canonicalEventLabel = normalizeRaceEventToken(eventMatch[1]);
+    const matchedDef = OFFICIAL_RACE_EVENTS.find(
+      (d) => d.label.toLowerCase() === canonicalEventLabel.toLowerCase()
+    ) || OFFICIAL_RACE_EVENTS[1];
+    if (!matchedDef) continue;
+    const fatTimeSecs = parseFatTimeString(timeMatch[1]);
+    if (fatTimeSecs <= 5) continue;
+    const isoDateMatch = line.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
+    const slashDateMatch = line.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+    const monthDateMatch = line.match(
+      /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b/i
+    );
+    let dateStr = todayIso;
+    if (isoDateMatch) {
+      dateStr = isoDateMatch[1];
+    } else if (slashDateMatch) {
+      const m = slashDateMatch[1].padStart(2, "0");
+      const d = slashDateMatch[2].padStart(2, "0");
+      dateStr = `${slashDateMatch[3]}-${m}-${d}`;
+    } else if (monthDateMatch) {
+      const m = MONTH_NAME_MAP[monthDateMatch[1].toLowerCase()] || "01";
+      const d = monthDateMatch[2].padStart(2, "0");
+      dateStr = `${monthDateMatch[3]}-${m}-${d}`;
     }
-  }
-  return {
-    windLegalMeters,
-    windLegalWindMps,
-    overallMeters,
-    overallWindMps,
-    isWindAidedOverall
-  };
-}
-function buildPublicFieldLeaderboardFromLogs(params) {
-  const athleteByMemId = /* @__PURE__ */ new Map();
-  for (const m of params.memberships || []) {
-    if (m.status === "REVOKED" || m.role !== "ATHLETE") continue;
-    athleteByMemId.set(m.membershipId, {
-      mem: m,
-      displayName: formatPublicSafeSportDisplayName({
-        invitedName: m.invitedName,
-        externalSource: m.externalSource,
-        isMinorU18: m.isMinorU18,
-        parentConsentStatus: m.parentConsentStatus,
-        orgType: params.orgType
-      })
+    const dedupeKey = `${matchedDef.label}|${fatTimeSecs.toFixed(2)}|${dateStr}`;
+    if (seenKeys.has(dedupeKey)) continue;
+    seenKeys.add(dedupeKey);
+    let lapSplitsSecs = [];
+    const splitsMatch = line.match(/splits?\s*:\s*([0-9.,\s:]+)/i);
+    if (splitsMatch) {
+      lapSplitsSecs = splitsMatch[1].split(/[,\s]+/).map((s) => parseFatTimeString(s)).filter((n) => n > 4 && n < 600);
+    }
+    const hasExplicitSplits = lapSplitsSecs.length > 0;
+    if (!hasExplicitSplits) {
+      lapSplitsSecs = generateDefaultLapSplits(
+        matchedDef.distanceMeters,
+        fatTimeSecs,
+        matchedDef.defaultSplitMeters
+      );
+    }
+    const platform = /tfrrs/i.test(line) ? "TFRRS" : /milesplit/i.test(line) ? "MileSplit" : /runsignup/i.test(line) ? "RunSignup" : /athletic\.net/i.test(line) ? "Athletic.net" : detectedPlatformFromUrl;
+    const trackType = /banked/i.test(line) ? "INDOOR_BANKED_200M" : /indoor/i.test(line) ? "INDOOR_FLAT_200M" : /xc|cross country/i.test(line) || matchedDef.category === "XC" ? "XC_COURSE" : matchedDef.category === "ROAD" ? "ROAD" : "OUTDOOR_400M";
+    const placeMatch = line.match(/\b(\d+(?:st|nd|rd|th)(?:\s*\([^)]+\))?)\b/i);
+    const placeFinish = placeMatch ? placeMatch[1] : "Official Finisher";
+    const pipeParts = line.split("|").map((p) => p.trim());
+    const colParts = pipeParts.length >= 2 ? pipeParts : line.split(/\t|\s{2,}/).map((p) => p.trim());
+    let meetName = "Official Track & Field Invitational";
+    if (colParts.length >= 2) {
+      const candidateMeet = colParts.find(
+        (p) => p.length > 3 && !p.match(/^20\d{2}-\d{2}-\d{2}$/) && !p.match(/^\d{1,2}\/\d{1,2}\/20\d{2}$/) && !p.match(/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)/i) && !p.match(/^(400|800|1500|1600|1\s*Mile|3000|3200|5000|10,?000)\s*(?:meters?|m|s|sc)?$|^XC\s*5K$|^5K$/i) && !p.match(/^\d{1,2}:\d{2}/) && !p.match(/^\d+(?:st|nd|rd|th)\b/i) && !p.match(/splits?:/i)
+      );
+      if (candidateMeet) meetName = candidateMeet;
+    }
+    results.push({
+      id: `parsed-race-${Date.now()}-${i}`,
+      date: dateStr,
+      meetName,
+      eventLabel: matchedDef.label,
+      eventDistanceMeters: matchedDef.distanceMeters,
+      fatTimeSecs,
+      displayFatTime: formatFatTime(fatTimeSecs),
+      platform,
+      trackType,
+      placeFinish,
+      lapSplitDistanceMeters: matchedDef.defaultSplitMeters,
+      lapSplitsSecs,
+      splitsEstimated: !hasExplicitSplits,
+      includeWarmupCooldown: false,
+      sourceUrl: defaultUrl
     });
   }
-  const bestLegalByKey = /* @__PURE__ */ new Map();
-  const bestAidedByKey = /* @__PURE__ */ new Map();
-  for (const log of params.fieldLogs || []) {
-    if (!log || log.isCompetition !== true) continue;
-    if (!log.membershipId || !athleteByMemId.has(log.membershipId)) continue;
-    const evalRes = extractFieldLogPrEvaluation(log);
-    const key = `${log.membershipId}|${log.eventCode}`;
-    const spec = getFieldEventSpec(log.eventCode);
-    if (spec.mode === "MULTI") {
-      if (!evalRes.multiPoints) continue;
-      const existing = bestLegalByKey.get(key);
-      if (!existing || (existing.multiPoints ?? 0) < evalRes.multiPoints) {
-        bestLegalByKey.set(key, {
-          log,
-          multiPoints: evalRes.multiPoints,
-          isWindAided: false
-        });
-      }
-      continue;
-    }
-    if (evalRes.windLegalMeters !== void 0 && evalRes.windLegalMeters > 0) {
-      const existing = bestLegalByKey.get(key);
-      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.windLegalMeters) {
-        bestLegalByKey.set(key, {
-          log,
-          bestMarkMeters: evalRes.windLegalMeters,
-          windMps: evalRes.windLegalWindMps,
-          isWindAided: false
-        });
-      }
-    } else if (evalRes.overallMeters !== void 0 && evalRes.overallMeters > 0) {
-      const existing = bestAidedByKey.get(key);
-      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.overallMeters) {
-        bestAidedByKey.set(key, {
-          log,
-          bestMarkMeters: evalRes.overallMeters,
-          windMps: evalRes.overallWindMps,
-          isWindAided: evalRes.isWindAidedOverall
-        });
-      }
-    }
-  }
-  const allKeys = /* @__PURE__ */ new Set([...bestLegalByKey.keys(), ...bestAidedByKey.keys()]);
-  const eventOrder = new Map(
-    FIELD_EVENT_CATALOG.map((spec, idx) => [spec.code, idx])
-  );
-  const fieldPrsByMembershipId = /* @__PURE__ */ new Map();
-  const fieldLeaderboard = [];
-  for (const key of allKeys) {
-    const chosen = bestLegalByKey.get(key) || bestAidedByKey.get(key);
-    if (!chosen || !chosen.log.membershipId) continue;
-    const athRef = athleteByMemId.get(chosen.log.membershipId);
-    if (!athRef) continue;
-    const spec = getFieldEventSpec(chosen.log.eventCode);
-    const displayMark = spec.mode === "MULTI" && typeof chosen.multiPoints === "number" ? `${chosen.multiPoints.toLocaleString()} pts` : typeof chosen.bestMarkMeters === "number" ? formatFieldMarkDual(chosen.bestMarkMeters) : "";
-    if (!displayMark) continue;
-    const item = {
-      id: chosen.log.id,
-      membershipId: athRef.mem.membershipId,
-      displayName: athRef.displayName,
-      ...athRef.mem.genderDivision ? { genderDivision: athRef.mem.genderDivision } : {},
-      ...athRef.mem.graduationYear ? { graduationYear: athRef.mem.graduationYear } : {},
-      ...athRef.mem.squadGroup ? { squadGroup: athRef.mem.squadGroup } : {},
-      eventCode: chosen.log.eventCode,
-      eventLabel: spec.label,
-      ...typeof chosen.bestMarkMeters === "number" ? { bestMarkMeters: chosen.bestMarkMeters } : {},
-      displayMark,
-      ...typeof chosen.windMps === "number" ? { windMps: chosen.windMps } : {},
-      ...chosen.isWindAided ? { isWindAided: true } : {},
-      ...typeof chosen.multiPoints === "number" ? { multiPoints: chosen.multiPoints } : {},
-      ...chosen.log.meetOrPracticeTitle ? { meetName: chosen.log.meetOrPracticeTitle } : {},
-      date: chosen.log.date
-    };
-    fieldLeaderboard.push(item);
-    const list = fieldPrsByMembershipId.get(athRef.mem.membershipId) || [];
-    list.push(item);
-    fieldPrsByMembershipId.set(athRef.mem.membershipId, list);
-  }
-  const sortPrs = (a, b) => {
-    const orderDiff = (eventOrder.get(a.eventCode) ?? 99) - (eventOrder.get(b.eventCode) ?? 99);
-    if (orderDiff !== 0) return orderDiff;
-    const scoreA = a.multiPoints ?? a.bestMarkMeters ?? 0;
-    const scoreB = b.multiPoints ?? b.bestMarkMeters ?? 0;
-    if (scoreB !== scoreA) return scoreB - scoreA;
-    return a.displayName.localeCompare(b.displayName);
-  };
-  fieldLeaderboard.sort(sortPrs);
-  for (const list of fieldPrsByMembershipId.values()) {
-    list.sort(sortPrs);
-  }
-  return { fieldPrsByMembershipId, fieldLeaderboard };
-}
-var DECATHLON_MEN_COEFFS = {
-  "100m": { type: "TRACK", a: 25.4347, b: 18, c: 1.81 },
-  LJ: { type: "FIELD_CM", a: 0.14354, b: 220, c: 1.4 },
-  SP: { type: "FIELD_M", a: 51.39, b: 1.5, c: 1.05 },
-  HJ: { type: "FIELD_CM", a: 0.8465, b: 75, c: 1.42 },
-  "400m": { type: "TRACK", a: 1.53775, b: 82, c: 1.81 },
-  "110mH": { type: "TRACK", a: 5.74352, b: 28.5, c: 1.92 },
-  DISCUS: { type: "FIELD_M", a: 12.91, b: 4, c: 1.1 },
-  PV: { type: "FIELD_CM", a: 0.2797, b: 100, c: 1.35 },
-  JAVELIN: { type: "FIELD_M", a: 10.14, b: 7, c: 1.08 },
-  "1500m": { type: "TRACK", a: 0.03768, b: 480, c: 1.85 }
-};
-var HEPTATHLON_WOMEN_COEFFS = {
-  "100mH": { type: "TRACK", a: 9.23076, b: 26.7, c: 1.835 },
-  HJ: { type: "FIELD_CM", a: 1.84523, b: 75, c: 1.348 },
-  SP: { type: "FIELD_M", a: 56.0211, b: 1.5, c: 1.05 },
-  "200m": { type: "TRACK", a: 4.99087, b: 42.5, c: 1.81 },
-  LJ: { type: "FIELD_CM", a: 0.188807, b: 210, c: 1.41 },
-  JAVELIN: { type: "FIELD_M", a: 15.9803, b: 3.8, c: 1.04 },
-  "800m": { type: "TRACK", a: 0.11193, b: 254, c: 1.88 }
-};
-var PENTATHLON_WOMEN_COEFFS = {
-  "60mH": { type: "TRACK", a: 20.0479, b: 17, c: 1.835 },
-  HJ: HEPTATHLON_WOMEN_COEFFS.HJ,
-  SP: HEPTATHLON_WOMEN_COEFFS.SP,
-  LJ: HEPTATHLON_WOMEN_COEFFS.LJ,
-  "800m": HEPTATHLON_WOMEN_COEFFS["800m"]
-};
-var PENTATHLON_MEN_COEFFS = {
-  LJ: DECATHLON_MEN_COEFFS.LJ,
-  JAVELIN: DECATHLON_MEN_COEFFS.JAVELIN,
-  "200m": { type: "TRACK", a: 5.8425, b: 38, c: 1.81 },
-  DISCUS: DECATHLON_MEN_COEFFS.DISCUS,
-  "1500m": DECATHLON_MEN_COEFFS["1500m"]
-};
-
-// server/teamStoreCore.ts
-import crypto7 from "crypto";
-
-// server/cleanRoomFirewall.ts
-var FIRST_PARTY_HARDWARE_TOKENS = [
-  "garmin",
-  "fit",
-  "wahoo",
-  "coros",
-  "suunto",
-  "polar",
-  "apple_watch",
-  "apple watch",
-  "intervals"
-];
-var ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS = [
-  ...FIRST_PARTY_HARDWARE_TOKENS,
-  "apple",
-  "thresh_stopwatch",
-  "thresh stopwatch",
-  "stopwatch",
-  "manual",
-  "official_race",
-  "official race",
-  "official fat"
-];
-function isStravaOriginRecord(item) {
-  if (!item || typeof item !== "object") return false;
-  const obj = item;
-  const src = String(
-    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
-  ).toLowerCase();
-  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
-  const hasFirstPartyHardware = badges.some(
-    (b) => FIRST_PARTY_HARDWARE_TOKENS.some((tok) => b.includes(tok))
-  );
-  if (Boolean(obj.stravaId) && !hasFirstPartyHardware) return true;
-  if (src.includes("strava") && !hasFirstPartyHardware) return true;
-  if (badges.includes("strava") && !hasFirstPartyHardware) return true;
-  return false;
-}
-function hasVerifiedCleanRoomProvenance(item) {
-  if (!item || typeof item !== "object") return false;
-  if (isStravaOriginRecord(item)) return false;
-  const obj = item;
-  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
-  if (badges.some(
-    (b) => ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => b.includes(tok))
-  )) {
-    return true;
-  }
-  const src = String(
-    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
-  ).toLowerCase();
-  return ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => src.includes(tok));
-}
-var SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS = /* @__PURE__ */ new Set([
-  "weightkg",
-  "weightlbs",
-  "weight",
-  "bmi",
-  "bodymassindex",
-  "bodyfatpct",
-  "bodyfat",
-  "leanbodymass",
-  "wattsperkg",
-  "avgwattsperkg",
-  "targetwkg",
-  "wkg",
-  "wperkg"
-]);
-function stripSafeSportWeightAndBodyCompFields(input, options) {
-  if (input === null || input === void 0 || typeof input !== "object") {
-    return input;
-  }
-  if (Array.isArray(input)) {
-    return input.map(
-      (item) => stripSafeSportWeightAndBodyCompFields(item, options)
-    );
-  }
-  const record = input;
-  const isWellnessDayRecord = "hrvRMSSD" in record || "restingHR" in record;
-  const out = {};
-  for (const [k, v] of Object.entries(record)) {
-    const lowerKey = k.toLowerCase();
-    if (lowerKey === "weightkg" && options?.maskWellnessWeightKgZero && isWellnessDayRecord) {
-      out[k] = 0;
-      continue;
-    }
-    if (SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS.has(lowerKey)) {
-      continue;
-    }
-    out[k] = stripSafeSportWeightAndBodyCompFields(v, options);
-  }
-  return out;
-}
-function sanitizeTelemetryForCleanRoom(rawSummary, options) {
-  if (!rawSummary || typeof rawSummary !== "object") return {};
-  let clone = { ...rawSummary };
-  let strippedCount = 0;
-  for (const key of [
-    "recentWorkouts",
-    "recentActivities",
-    "activities",
-    "workouts",
-    "completedActivities"
-  ]) {
-    const rawList = clone[key];
-    if (Array.isArray(rawList)) {
-      const before = rawList.length;
-      const requirePositive = Boolean(
-        options?.requireFirstPartyProvenance || key === "recentWorkouts"
-      );
-      const filtered = rawList.filter(
-        (item) => requirePositive ? hasVerifiedCleanRoomProvenance(item) : !isStravaOriginRecord(item)
-      );
-      clone[key] = filtered;
-      strippedCount += before - filtered.length;
-    }
-  }
-  delete clone.stravaSegments;
-  delete clone.stravaKudos;
-  delete clone.stravaAthleteId;
-  delete clone.segmentEfforts;
-  if (options?.forceZeroWeight || clone.safeSportHideWeight || clone.isMinorU18 || clone.enforceZeroWeight) {
-    clone = stripSafeSportWeightAndBodyCompFields(clone);
-    clone.safeSportHideWeight = true;
-    clone.zeroWeightEnforced = true;
-  }
-  clone.cleanRoomPolicy = "FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY";
-  clone.stravaRecordsFiltered = strippedCount;
-  return clone;
+  return results;
 }
 
 // src/utils/teamPalette.ts
@@ -10139,6 +10049,928 @@ function doesCoachOwnAthlete(params) {
     return true;
   }
   return false;
+}
+
+// src/physiology/fieldEventsEngine.ts
+var FIELD_EVENT_CATALOG = [
+  {
+    code: "LJ",
+    label: "Long Jump",
+    shortLabel: "LJ",
+    eventGroup: "JUMPS",
+    mode: "HORIZONTAL"
+  },
+  {
+    code: "TJ",
+    label: "Triple Jump",
+    shortLabel: "TJ",
+    eventGroup: "JUMPS",
+    mode: "HORIZONTAL"
+  },
+  {
+    code: "HJ",
+    label: "High Jump",
+    shortLabel: "HJ",
+    eventGroup: "JUMPS",
+    mode: "VERTICAL",
+    barStepMeters: 0.0508
+    // 2 in
+  },
+  {
+    code: "PV",
+    label: "Pole Vault",
+    shortLabel: "PV",
+    eventGroup: "POLE_VAULT",
+    mode: "VERTICAL",
+    barStepMeters: 0.1524
+    // 6 in
+  },
+  {
+    code: "SP",
+    label: "Shot Put",
+    shortLabel: "Shot Put",
+    eventGroup: "THROWS",
+    mode: "THROW",
+    defaultImplementSpec: "12 lb (HS Boys) / 4 kg (HS Girls)",
+    implementPresets: ["12 lb (HS Boys)", "4 kg (HS Girls / Women)", "16 lb (College Men)", "10 lb (Heavy Ball)"]
+  },
+  {
+    code: "DISCUS",
+    label: "Discus Throw",
+    shortLabel: "Discus",
+    eventGroup: "THROWS",
+    mode: "THROW",
+    defaultImplementSpec: "1.6 kg (HS Boys) / 1.0 kg (HS Girls)",
+    implementPresets: ["1.6 kg (HS Boys)", "1.0 kg (Girls / Women)", "2.0 kg (College Men)", "1.75 kg (Heavy)"]
+  },
+  {
+    code: "JAVELIN",
+    label: "Javelin Throw",
+    shortLabel: "Javelin",
+    eventGroup: "THROWS",
+    mode: "THROW",
+    defaultImplementSpec: "800g (Boys/Men) / 600g (Girls/Women)",
+    implementPresets: ["800g (Boys / Men)", "600g (Girls / Women)", "700g (Trainer)"]
+  },
+  {
+    code: "HAMMER",
+    label: "Hammer Throw",
+    shortLabel: "Hammer",
+    eventGroup: "THROWS",
+    mode: "THROW",
+    defaultImplementSpec: "12 lb / 16 lb / 4 kg",
+    implementPresets: ["12 lb (HS Boys)", "4 kg (Girls / Women)", "16 lb (College Men)"]
+  },
+  {
+    code: "PENT",
+    label: "Pentathlon",
+    shortLabel: "Pent",
+    eventGroup: "MULTI",
+    mode: "MULTI"
+  },
+  {
+    code: "HEPT",
+    label: "Heptathlon",
+    shortLabel: "Hept",
+    eventGroup: "MULTI",
+    mode: "MULTI"
+  },
+  {
+    code: "DEC",
+    label: "Decathlon",
+    shortLabel: "Dec",
+    eventGroup: "MULTI",
+    mode: "MULTI"
+  }
+];
+function getFieldEventSpec(code) {
+  return FIELD_EVENT_CATALOG.find((c) => c.code === code) || FIELD_EVENT_CATALOG[0];
+}
+function formatFieldMarkImperial(meters) {
+  if (!Number.isFinite(meters) || meters <= 0) return "\u2014";
+  const totalInches = meters / 0.0254;
+  let feet = Math.floor(totalInches / 12);
+  let inches = Math.round((totalInches - feet * 12) * 4) / 4;
+  if (inches >= 12) {
+    feet += 1;
+    inches = 0;
+  }
+  const inchStr = Number.isInteger(inches) ? String(inches) : inches.toFixed(2).replace(/0$/, "");
+  return `${feet}' ${inchStr}"`;
+}
+function formatFieldMarkDual(meters) {
+  if (!Number.isFinite(meters) || meters <= 0) return "\u2014";
+  return `${formatFieldMarkImperial(meters)} (${meters.toFixed(2)}m)`;
+}
+function evaluateVerticalFlightAthlete(attempts) {
+  let bestClearedHeightMeters = null;
+  let consecutiveMisses = 0;
+  let isEliminated = false;
+  const heightOrder = [];
+  const heightBuckets = /* @__PURE__ */ new Map();
+  const summaryTokens = [];
+  let totalMissesAll = 0;
+  for (const a of attempts || []) {
+    const symbol = a.outcome === "CLEAR" ? "O" : a.outcome === "MISS" ? "X" : "-";
+    const h = a.barHeightMeters ?? a.markMeters;
+    summaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
+    if (typeof h === "number" && Number.isFinite(h) && h > 0) {
+      const hKey = h.toFixed(3);
+      let bucket = heightBuckets.get(hKey);
+      if (!bucket) {
+        bucket = { heightMeters: Number(h.toFixed(3)), tokens: [], misses: 0 };
+        heightBuckets.set(hKey, bucket);
+        heightOrder.push(hKey);
+      }
+      bucket.tokens.push(symbol);
+      if (symbol === "X") {
+        bucket.misses += 1;
+      }
+    }
+    if (symbol === "X") {
+      totalMissesAll += 1;
+    }
+    if (isEliminated) {
+      continue;
+    }
+    if (a.outcome === "CLEAR") {
+      consecutiveMisses = 0;
+      if (typeof h === "number" && Number.isFinite(h) && h > 0) {
+        const rounded = Number(h.toFixed(3));
+        if (bestClearedHeightMeters === null || rounded > bestClearedHeightMeters) {
+          bestClearedHeightMeters = rounded;
+        }
+      }
+    } else if (a.outcome === "MISS") {
+      consecutiveMisses += 1;
+      if (consecutiveMisses >= 3) {
+        isEliminated = true;
+      }
+    }
+  }
+  let missesAtClearingHeight = null;
+  let totalMisses = 0;
+  if (bestClearedHeightMeters !== null) {
+    const clearKey = bestClearedHeightMeters.toFixed(3);
+    missesAtClearingHeight = heightBuckets.get(clearKey)?.misses ?? 0;
+    for (const bucket of heightBuckets.values()) {
+      if (bucket.heightMeters <= bestClearedHeightMeters + 5e-4) {
+        totalMisses += bucket.misses;
+      }
+    }
+  } else {
+    totalMisses = totalMissesAll;
+  }
+  const heightMarks = heightOrder.map((key) => {
+    const b = heightBuckets.get(key);
+    return {
+      heightMeters: b.heightMeters,
+      tokens: b.tokens,
+      summary: b.tokens.join("")
+    };
+  });
+  return {
+    bestClearedHeightMeters,
+    missesAtClearingHeight,
+    totalMisses,
+    totalMissesAll,
+    consecutiveMisses,
+    isEliminated,
+    isNoHeight: isEliminated && bestClearedHeightMeters === null,
+    heightMarks,
+    verticalSeriesSummary: summaryTokens.join(" ")
+  };
+}
+function summarizeFieldSeries(eventCode, attempts, rpe) {
+  const spec = getFieldEventSpec(eventCode);
+  let bestMarkMeters = null;
+  let bestWindLegalMeters = null;
+  let bestMarkWindMps;
+  let isWindAidedBest = false;
+  let legalCount = 0;
+  let foulOrMissCount = 0;
+  const barSummaryTokens = [];
+  for (const a of attempts) {
+    if (a.outcome === "FOUL" || a.outcome === "MISS") {
+      foulOrMissCount += 1;
+    } else if (a.outcome === "MARK" || a.outcome === "CLEAR") {
+      legalCount += 1;
+      const candidateRaw = spec.mode === "VERTICAL" ? a.barHeightMeters ?? a.markMeters ?? 0 : a.markMeters ?? a.barHeightMeters ?? 0;
+      if (candidateRaw > 0) {
+        const candidate = Number(candidateRaw.toFixed(3));
+        const hasWind = typeof a.windMps === "number" && Number.isFinite(a.windMps);
+        const attemptWind = hasWind ? Number(a.windMps.toFixed(2)) : void 0;
+        const attemptWindAided = hasWind && a.windMps > 2;
+        if (bestMarkMeters === null || candidate > bestMarkMeters) {
+          bestMarkMeters = candidate;
+          bestMarkWindMps = attemptWind;
+          isWindAidedBest = attemptWindAided;
+        } else if (candidate === bestMarkMeters && isWindAidedBest && !attemptWindAided) {
+          bestMarkWindMps = attemptWind;
+          isWindAidedBest = false;
+        }
+        if (!attemptWindAided && (bestWindLegalMeters === null || candidate > bestWindLegalMeters)) {
+          bestWindLegalMeters = candidate;
+        }
+      }
+    }
+    if (spec.mode === "VERTICAL") {
+      const symbol = a.outcome === "CLEAR" ? "O" : a.outcome === "MISS" ? "X" : "-";
+      const h = a.barHeightMeters ?? a.markMeters;
+      barSummaryTokens.push(h ? `${h.toFixed(2)}:${symbol}` : symbol);
+    }
+  }
+  let verticalEval = null;
+  if (spec.mode === "VERTICAL") {
+    verticalEval = evaluateVerticalFlightAthlete(attempts);
+    bestMarkMeters = verticalEval.bestClearedHeightMeters;
+    bestWindLegalMeters = verticalEval.bestClearedHeightMeters;
+  }
+  const totalContacts = attempts.filter((a) => a.outcome !== "PASS").length;
+  const basePerContact = spec.mode === "HORIZONTAL" ? 4.2 : spec.mode === "VERTICAL" ? 3.8 : spec.mode === "THROW" ? 2.2 : 5;
+  const effectiveRpe = Number.isFinite(rpe) && (rpe ?? 0) > 0 ? Number(rpe) : 6.5;
+  const estimatedLoadTss = Math.max(
+    18,
+    Math.min(115, Math.round(14 + totalContacts * basePerContact * (0.75 + effectiveRpe * 0.05)))
+  );
+  return {
+    bestMarkMeters,
+    bestWindLegalMeters,
+    ...bestMarkWindMps !== void 0 ? { bestMarkWindMps } : {},
+    isWindAidedBest,
+    legalCount,
+    foulOrMissCount,
+    totalContacts,
+    verticalSeriesSummary: barSummaryTokens.join(" "),
+    estimatedLoadTss,
+    ...verticalEval ? {
+      isNoHeight: verticalEval.isNoHeight,
+      ...verticalEval.missesAtClearingHeight !== null ? { missesAtClearingHeight: verticalEval.missesAtClearingHeight } : {},
+      totalVerticalMisses: verticalEval.totalMisses,
+      isEliminated: verticalEval.isEliminated
+    } : {}
+  };
+}
+function formatPublicSafeSportDisplayName(params) {
+  const isProtectedMinor = Boolean(
+    params.isMinorU18 || params.orgType === "HIGH_SCHOOL"
+  );
+  const abbreviateUnconsentedMinor = Boolean(
+    !params.externalSource && isProtectedMinor && params.parentConsentStatus !== "ACKNOWLEDGED"
+  );
+  if (!abbreviateUnconsentedMinor) {
+    return params.invitedName;
+  }
+  const parts = String(params.invitedName || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+  }
+  return parts[0] || "Athlete";
+}
+function extractFieldLogPrEvaluation(log) {
+  const spec = getFieldEventSpec(log.eventCode);
+  if (spec.mode === "MULTI") {
+    const pts = typeof log.multiPoints === "number" && Number.isFinite(log.multiPoints) && log.multiPoints > 0 ? Math.round(log.multiPoints) : void 0;
+    return { isWindAidedOverall: false, multiPoints: pts };
+  }
+  let windLegalMeters;
+  let windLegalWindMps;
+  let overallMeters;
+  let overallWindMps;
+  let isWindAidedOverall = false;
+  if (Array.isArray(log.attempts) && log.attempts.length > 0) {
+    for (const a of log.attempts) {
+      if (a.outcome !== "MARK" && a.outcome !== "CLEAR") continue;
+      const rawMark = spec.mode === "VERTICAL" ? a.barHeightMeters ?? a.markMeters ?? 0 : a.markMeters ?? a.barHeightMeters ?? 0;
+      if (!Number.isFinite(rawMark) || rawMark <= 0) continue;
+      const roundedMark = Number(rawMark.toFixed(3));
+      const hasWind = typeof a.windMps === "number" && Number.isFinite(a.windMps);
+      const windVal = hasWind ? Number(a.windMps.toFixed(2)) : void 0;
+      const windAided = hasWind && a.windMps > 2;
+      if (overallMeters === void 0 || roundedMark > overallMeters) {
+        overallMeters = roundedMark;
+        overallWindMps = windVal;
+        isWindAidedOverall = windAided;
+      } else if (roundedMark === overallMeters && isWindAidedOverall && !windAided) {
+        overallWindMps = windVal;
+        isWindAidedOverall = false;
+      }
+      if (!windAided && (windLegalMeters === void 0 || roundedMark > windLegalMeters)) {
+        windLegalMeters = roundedMark;
+        windLegalWindMps = windVal;
+      }
+    }
+  }
+  if (windLegalMeters === void 0 && typeof log.bestWindLegalMeters === "number" && log.bestWindLegalMeters > 0) {
+    windLegalMeters = Number(log.bestWindLegalMeters.toFixed(3));
+    if (!log.isWindAidedBest && typeof log.bestMarkWindMps === "number") {
+      windLegalWindMps = Number(log.bestMarkWindMps.toFixed(2));
+    }
+  }
+  if (overallMeters === void 0 && typeof log.bestMarkMeters === "number" && log.bestMarkMeters > 0) {
+    overallMeters = Number(log.bestMarkMeters.toFixed(3));
+    overallWindMps = typeof log.bestMarkWindMps === "number" ? Number(log.bestMarkWindMps.toFixed(2)) : void 0;
+    isWindAidedOverall = Boolean(
+      log.isWindAidedBest || typeof log.bestMarkWindMps === "number" && log.bestMarkWindMps > 2
+    );
+    if (!isWindAidedOverall && windLegalMeters === void 0) {
+      windLegalMeters = overallMeters;
+      windLegalWindMps = overallWindMps;
+    }
+  }
+  return {
+    windLegalMeters,
+    windLegalWindMps,
+    overallMeters,
+    overallWindMps,
+    isWindAidedOverall
+  };
+}
+function buildPublicFieldLeaderboardFromLogs(params) {
+  const athleteByMemId = /* @__PURE__ */ new Map();
+  for (const m of params.memberships || []) {
+    if (m.status === "REVOKED" || m.role !== "ATHLETE") continue;
+    athleteByMemId.set(m.membershipId, {
+      mem: m,
+      displayName: formatPublicSafeSportDisplayName({
+        invitedName: m.invitedName,
+        externalSource: m.externalSource,
+        isMinorU18: m.isMinorU18,
+        parentConsentStatus: m.parentConsentStatus,
+        orgType: params.orgType
+      })
+    });
+  }
+  const bestLegalByKey = /* @__PURE__ */ new Map();
+  const bestAidedByKey = /* @__PURE__ */ new Map();
+  for (const log of params.fieldLogs || []) {
+    if (!log || log.isCompetition !== true) continue;
+    if (!log.membershipId || !athleteByMemId.has(log.membershipId)) continue;
+    const evalRes = extractFieldLogPrEvaluation(log);
+    const key = `${log.membershipId}|${log.eventCode}`;
+    const spec = getFieldEventSpec(log.eventCode);
+    if (spec.mode === "MULTI") {
+      if (!evalRes.multiPoints) continue;
+      const existing = bestLegalByKey.get(key);
+      if (!existing || (existing.multiPoints ?? 0) < evalRes.multiPoints) {
+        bestLegalByKey.set(key, {
+          log,
+          multiPoints: evalRes.multiPoints,
+          isWindAided: false
+        });
+      }
+      continue;
+    }
+    if (evalRes.windLegalMeters !== void 0 && evalRes.windLegalMeters > 0) {
+      const existing = bestLegalByKey.get(key);
+      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.windLegalMeters) {
+        bestLegalByKey.set(key, {
+          log,
+          bestMarkMeters: evalRes.windLegalMeters,
+          windMps: evalRes.windLegalWindMps,
+          isWindAided: false
+        });
+      }
+    } else if (evalRes.overallMeters !== void 0 && evalRes.overallMeters > 0) {
+      const existing = bestAidedByKey.get(key);
+      if (!existing || (existing.bestMarkMeters ?? 0) < evalRes.overallMeters) {
+        bestAidedByKey.set(key, {
+          log,
+          bestMarkMeters: evalRes.overallMeters,
+          windMps: evalRes.overallWindMps,
+          isWindAided: evalRes.isWindAidedOverall
+        });
+      }
+    }
+  }
+  const allKeys = /* @__PURE__ */ new Set([...bestLegalByKey.keys(), ...bestAidedByKey.keys()]);
+  const eventOrder = new Map(
+    FIELD_EVENT_CATALOG.map((spec, idx) => [spec.code, idx])
+  );
+  const fieldPrsByMembershipId = /* @__PURE__ */ new Map();
+  const fieldLeaderboard = [];
+  for (const key of allKeys) {
+    const chosen = bestLegalByKey.get(key) || bestAidedByKey.get(key);
+    if (!chosen || !chosen.log.membershipId) continue;
+    const athRef = athleteByMemId.get(chosen.log.membershipId);
+    if (!athRef) continue;
+    const spec = getFieldEventSpec(chosen.log.eventCode);
+    const displayMark = spec.mode === "MULTI" && typeof chosen.multiPoints === "number" ? `${chosen.multiPoints.toLocaleString()} pts` : typeof chosen.bestMarkMeters === "number" ? formatFieldMarkDual(chosen.bestMarkMeters) : "";
+    if (!displayMark) continue;
+    const item = {
+      id: chosen.log.id,
+      membershipId: athRef.mem.membershipId,
+      displayName: athRef.displayName,
+      ...athRef.mem.genderDivision ? { genderDivision: athRef.mem.genderDivision } : {},
+      ...athRef.mem.graduationYear ? { graduationYear: athRef.mem.graduationYear } : {},
+      ...athRef.mem.squadGroup ? { squadGroup: athRef.mem.squadGroup } : {},
+      eventCode: chosen.log.eventCode,
+      eventLabel: spec.label,
+      ...typeof chosen.bestMarkMeters === "number" ? { bestMarkMeters: chosen.bestMarkMeters } : {},
+      displayMark,
+      ...typeof chosen.windMps === "number" ? { windMps: chosen.windMps } : {},
+      ...chosen.isWindAided ? { isWindAided: true } : {},
+      ...typeof chosen.multiPoints === "number" ? { multiPoints: chosen.multiPoints } : {},
+      ...chosen.log.meetOrPracticeTitle ? { meetName: chosen.log.meetOrPracticeTitle } : {},
+      date: chosen.log.date
+    };
+    fieldLeaderboard.push(item);
+    const list = fieldPrsByMembershipId.get(athRef.mem.membershipId) || [];
+    list.push(item);
+    fieldPrsByMembershipId.set(athRef.mem.membershipId, list);
+  }
+  const sortPrs = (a, b) => {
+    const orderDiff = (eventOrder.get(a.eventCode) ?? 99) - (eventOrder.get(b.eventCode) ?? 99);
+    if (orderDiff !== 0) return orderDiff;
+    const scoreA = a.multiPoints ?? a.bestMarkMeters ?? 0;
+    const scoreB = b.multiPoints ?? b.bestMarkMeters ?? 0;
+    if (scoreB !== scoreA) return scoreB - scoreA;
+    return a.displayName.localeCompare(b.displayName);
+  };
+  fieldLeaderboard.sort(sortPrs);
+  for (const list of fieldPrsByMembershipId.values()) {
+    list.sort(sortPrs);
+  }
+  return { fieldPrsByMembershipId, fieldLeaderboard };
+}
+var DECATHLON_MEN_COEFFS = {
+  "100m": { type: "TRACK", a: 25.4347, b: 18, c: 1.81 },
+  LJ: { type: "FIELD_CM", a: 0.14354, b: 220, c: 1.4 },
+  SP: { type: "FIELD_M", a: 51.39, b: 1.5, c: 1.05 },
+  HJ: { type: "FIELD_CM", a: 0.8465, b: 75, c: 1.42 },
+  "400m": { type: "TRACK", a: 1.53775, b: 82, c: 1.81 },
+  "110mH": { type: "TRACK", a: 5.74352, b: 28.5, c: 1.92 },
+  DISCUS: { type: "FIELD_M", a: 12.91, b: 4, c: 1.1 },
+  PV: { type: "FIELD_CM", a: 0.2797, b: 100, c: 1.35 },
+  JAVELIN: { type: "FIELD_M", a: 10.14, b: 7, c: 1.08 },
+  "1500m": { type: "TRACK", a: 0.03768, b: 480, c: 1.85 }
+};
+var HEPTATHLON_WOMEN_COEFFS = {
+  "100mH": { type: "TRACK", a: 9.23076, b: 26.7, c: 1.835 },
+  HJ: { type: "FIELD_CM", a: 1.84523, b: 75, c: 1.348 },
+  SP: { type: "FIELD_M", a: 56.0211, b: 1.5, c: 1.05 },
+  "200m": { type: "TRACK", a: 4.99087, b: 42.5, c: 1.81 },
+  LJ: { type: "FIELD_CM", a: 0.188807, b: 210, c: 1.41 },
+  JAVELIN: { type: "FIELD_M", a: 15.9803, b: 3.8, c: 1.04 },
+  "800m": { type: "TRACK", a: 0.11193, b: 254, c: 1.88 }
+};
+var PENTATHLON_WOMEN_COEFFS = {
+  "60mH": { type: "TRACK", a: 20.0479, b: 17, c: 1.835 },
+  HJ: HEPTATHLON_WOMEN_COEFFS.HJ,
+  SP: HEPTATHLON_WOMEN_COEFFS.SP,
+  LJ: HEPTATHLON_WOMEN_COEFFS.LJ,
+  "800m": HEPTATHLON_WOMEN_COEFFS["800m"]
+};
+var PENTATHLON_MEN_COEFFS = {
+  LJ: DECATHLON_MEN_COEFFS.LJ,
+  JAVELIN: DECATHLON_MEN_COEFFS.JAVELIN,
+  "200m": { type: "TRACK", a: 5.8425, b: 38, c: 1.81 },
+  DISCUS: DECATHLON_MEN_COEFFS.DISCUS,
+  "1500m": DECATHLON_MEN_COEFFS["1500m"]
+};
+
+// src/utils/athleticNetAndTfrrsEngine.ts
+var ICONIC_COURSE_PATTERNS = [
+  { pattern: /crystal\s*springs/i, distanceMeters: 4748, eventLabel: "2.95 mi XC (Crystal Springs)" },
+  { pattern: /montgomery\s*hill/i, distanceMeters: 4410, eventLabel: "2.74 mi XC (Montgomery Hill)" },
+  { pattern: /toro\s*park/i, distanceMeters: 4828, eventLabel: "3.0 mi XC (Toro Park)" },
+  { pattern: /mt\.?\s*sac/i, distanceMeters: 4715, eventLabel: "2.93 mi XC (Mt. SAC)" },
+  { pattern: /woodward\s*park/i, distanceMeters: 5e3, eventLabel: "XC 5K (Woodward Park)" },
+  { pattern: /baylands/i, distanceMeters: 5e3, eventLabel: "XC 5K (Baylands)" },
+  { pattern: /hellyer/i, distanceMeters: 4828, eventLabel: "3.0 mi XC (Hellyer)" },
+  { pattern: /half\s*moon\s*bay/i, distanceMeters: 3862, eventLabel: "2.4 mi XC (Half Moon Bay)" },
+  { pattern: /central\s*park|lynnbrook|fremont\s*high/i, distanceMeters: 3380, eventLabel: "2.1 mi XC" }
+];
+function normalizeWebcalUrl(rawUrl) {
+  const trimmed = String(rawUrl || "").trim();
+  if (!trimmed) return "";
+  if (/^webcals:\/\//i.test(trimmed)) {
+    return trimmed.replace(/^webcals:\/\//i, "https://");
+  }
+  if (/^webcal:\/\//i.test(trimmed)) {
+    return trimmed.replace(/^webcal:\/\//i, "https://");
+  }
+  return trimmed;
+}
+function normalizeAthleticSportSlug(rawSegment) {
+  const s = (rawSegment || "").toLowerCase();
+  if (s.includes("indoor")) return "track-and-field-indoor";
+  if (s.includes("track") || s.includes("tf")) return "track-and-field-outdoor";
+  return "xc";
+}
+function titleCaseSlug(slug) {
+  return slug.replace(/[_-]+/g, " ").trim().split(/\s+/).filter(Boolean).map((w) => {
+    if (w.toLowerCase() === "st") return "St.";
+    if (w.length <= 2 && w === w.toUpperCase()) return w;
+    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+  }).join(" ");
+}
+function parseExternalTeamUrl(rawUrl) {
+  const cleaned = String(rawUrl || "").trim();
+  if (!cleaned) return null;
+  let parsed;
+  try {
+    parsed = new URL(/^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`);
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (host === "athletic.net" || host.endsWith(".athletic.net")) {
+    const modernMatch = parsed.pathname.match(
+      /^\/(?:photos\/)?team\/(\d{2,10})(?:\/([a-z0-9-]+))?/i
+    );
+    const schoolIdParam = parsed.searchParams.get("SchoolID");
+    const schoolId = modernMatch?.[1] || (schoolIdParam && /^\d{2,10}$/.test(schoolIdParam) ? schoolIdParam : "");
+    if (!schoolId) return null;
+    const legacySport = /trackandfield/i.test(parsed.pathname) ? "track-and-field-outdoor" : "xc";
+    const sportSlug = normalizeAthleticSportSlug(modernMatch?.[2] || legacySport);
+    const canonicalUrl = `https://www.athletic.net/team/${schoolId}/${sportSlug}`;
+    const knownSchoolName = schoolId === "1073" ? "Willow Glen High School" : void 0;
+    return {
+      platform: "ATHLETIC_NET",
+      canonicalUrl,
+      athleticNetSchoolId: schoolId,
+      athleticNetSportSlug: sportSlug,
+      orgTypeHint: "HIGH_SCHOOL",
+      ...knownSchoolName ? { inferredTeamName: knownSchoolName } : {}
+    };
+  }
+  if (host === "tfrrs.org" || host.endsWith(".tfrrs.org")) {
+    const teamMatch = parsed.pathname.match(
+      /^\/teams\/(?:(xc|tf)\/)?([A-Za-z0-9_-]+?)(?:\.html?)?$/i
+    );
+    const tfrrsCode = teamMatch?.[2] || parsed.pathname.replace(/[^A-Za-z0-9_-]/g, "");
+    const codeParts = tfrrsCode.split("_");
+    const genderRaw = (codeParts[2] || "").toLowerCase();
+    const genderHint = genderRaw === "m" ? "M" : genderRaw === "f" ? "F" : void 0;
+    const slugName = codeParts.length >= 4 ? titleCaseSlug(codeParts.slice(3).join(" ")) : void 0;
+    const isCollege = tfrrsCode.toLowerCase().includes("_college_");
+    return {
+      platform: "TFRRS",
+      canonicalUrl: parsed.toString(),
+      tfrrsTeamCode: tfrrsCode || void 0,
+      genderHint,
+      orgTypeHint: isCollege ? "COLLEGIATE" : "HIGH_SCHOOL",
+      ...slugName ? { inferredTeamName: slugName } : {}
+    };
+  }
+  return null;
+}
+function resolveRaceEventDistance(rawText, fallbackMeters = 5e3) {
+  const s = String(rawText || "").trim();
+  const isIndoor = /\bindoor\b|200m\s*banked|flat\s*200/i.test(s);
+  const trackSurface = isIndoor ? "INDOOR_BANKED_200M" : "OUTDOOR_400M";
+  for (const preset of ICONIC_COURSE_PATTERNS) {
+    if (preset.pattern.test(s)) {
+      return {
+        eventLabel: preset.eventLabel,
+        distanceMeters: preset.distanceMeters,
+        trackType: "XC_COURSE",
+        isCrossCountry: true
+      };
+    }
+  }
+  const mileMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/i);
+  if (mileMatch) {
+    const miles = parseFloat(mileMatch[1]);
+    if (Number.isFinite(miles) && miles > 0) {
+      const meters = Math.round(miles * 1609.344);
+      if (Math.abs(miles - 1) < 0.02 && !/\bxc\b|cross\s*country/i.test(s)) {
+        return { eventLabel: "1 Mile", distanceMeters: 1609, trackType: trackSurface, isCrossCountry: false };
+      }
+      if (Math.abs(miles - 2) < 0.03 && /\btrack\b|outdoor|indoor/i.test(s)) {
+        return { eventLabel: "2 Mile", distanceMeters: 3219, trackType: trackSurface, isCrossCountry: false };
+      }
+      const isXc = /\bxc\b|cross|invitational|opener|classic|park|hill|springs|league|bval|ccs/i.test(s) || miles >= 1.9;
+      return {
+        eventLabel: isXc ? `${miles.toFixed(miles % 1 === 0 ? 1 : 2)} mi XC` : `${miles} mi`,
+        distanceMeters: meters,
+        trackType: isXc ? "XC_COURSE" : "ROAD",
+        isCrossCountry: isXc
+      };
+    }
+  }
+  const kMatch = s.match(/(\d+(?:\.\d+)?)\s*k\b/i);
+  if (kMatch) {
+    const km = parseFloat(kMatch[1]);
+    if (Number.isFinite(km) && km > 0) {
+      const meters = Math.round(km * 1e3);
+      const isXc = !/\broad\b|\btrack\b/i.test(s);
+      return {
+        eventLabel: isXc ? `XC ${km}K` : `Road ${km}K`,
+        distanceMeters: meters,
+        trackType: isXc ? "XC_COURSE" : "ROAD",
+        isCrossCountry: isXc
+      };
+    }
+  }
+  const hurdleMatch = s.match(/(?<![\d.])(\d{2,3})\s*m\s*(?:h|hurdles?)\b/i);
+  if (hurdleMatch) {
+    const meters = parseInt(hurdleMatch[1], 10);
+    if (Number.isFinite(meters) && meters >= 50 && meters <= 400) {
+      return {
+        eventLabel: `${meters}mH`,
+        distanceMeters: meters,
+        trackType: trackSurface,
+        isCrossCountry: false
+      };
+    }
+  }
+  const meterMatch = s.match(/(?<![\d.])(\d{2,5}(?:,\d{3})?)\s*m(?:eters?)?\b/i);
+  if (meterMatch) {
+    const meters = parseInt(meterMatch[1].replace(/,/g, ""), 10);
+    if (Number.isFinite(meters) && meters >= 50) {
+      const isXc = /\bxc\b|cross\s*country|varsity|frosh|jv\b/i.test(s) && meters >= 3e3;
+      const eventLabel = isXc && meters === 5e3 ? "XC 5K" : `${meters}m`;
+      return {
+        eventLabel,
+        distanceMeters: meters,
+        trackType: isXc ? "XC_COURSE" : trackSurface,
+        isCrossCountry: isXc
+      };
+    }
+  }
+  const isFallbackXc = fallbackMeters >= 3e3;
+  return {
+    eventLabel: isFallbackXc ? fallbackMeters === 4748 ? "2.95 mi XC" : fallbackMeters === 4410 ? "2.74 mi XC" : `XC ${(fallbackMeters / 1e3).toFixed(fallbackMeters % 1e3 === 0 ? 0 : 1)}K` : `${fallbackMeters}m`,
+    distanceMeters: fallbackMeters,
+    trackType: isFallbackXc ? "XC_COURSE" : trackSurface,
+    isCrossCountry: isFallbackXc
+  };
+}
+function unescapeIcsValue(val) {
+  return val.replace(/\\n/gi, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\").trim();
+}
+function parseIcsDateAndTime(rawValue) {
+  const clean = rawValue.trim();
+  const dateOnly = clean.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (dateOnly) {
+    return { date: `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}` };
+  }
+  const dateTimeMatch = clean.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
+  if (dateTimeMatch) {
+    return {
+      date: `${dateTimeMatch[1]}-${dateTimeMatch[2]}-${dateTimeMatch[3]}`,
+      scheduledTime: `${dateTimeMatch[4]}:${dateTimeMatch[5]}`
+    };
+  }
+  return null;
+}
+function inferVenueCategoryFromMeetText(text) {
+  if (/track|oval|stadium|relay|twilight|invite.*1600/i.test(text)) return "TRACK";
+  if (/road|half\s*marathon|10k\s*road|turkey\s*trot/i.test(text)) return "ROAD_CAMPUS";
+  return "XC_COURSE";
+}
+function parseIcsCalendarToMeets(icsText, externalSource = "ATHLETIC_NET") {
+  const unfolded = String(icsText || "").replace(/\r?\n[ \t]/g, "");
+  const lines = unfolded.split(/\r?\n/);
+  const meets = [];
+  let inEvent = false;
+  let summary = "";
+  let dtstart = "";
+  let location = "";
+  let description = "";
+  const flushEvent = () => {
+    if (!summary || !dtstart) return;
+    const parsedDt = parseIcsDateAndTime(dtstart);
+    if (!parsedDt) return;
+    const dist = resolveRaceEventDistance(`${summary} ${location} ${description}`, 5e3);
+    meets.push({
+      date: parsedDt.date,
+      name: summary.slice(0, 100),
+      ...location ? { locationName: location.slice(0, 120) } : {},
+      locationCategory: inferVenueCategoryFromMeetText(`${summary} ${location}`),
+      ...parsedDt.scheduledTime ? { scheduledTime: parsedDt.scheduledTime } : {},
+      distanceMeters: dist.distanceMeters,
+      ...description ? { description: description.slice(0, 260) } : {},
+      externalSource
+    });
+  };
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line === "BEGIN:VEVENT") {
+      inEvent = true;
+      summary = "";
+      dtstart = "";
+      location = "";
+      description = "";
+      continue;
+    }
+    if (line === "END:VEVENT") {
+      flushEvent();
+      inEvent = false;
+      continue;
+    }
+    if (!inEvent) continue;
+    const colonIdx = line.indexOf(":");
+    if (colonIdx <= 0) continue;
+    const rawKey = line.slice(0, colonIdx).split(";")[0].toUpperCase();
+    const rawVal = unescapeIcsValue(line.slice(colonIdx + 1));
+    if (rawKey === "SUMMARY") summary = rawVal;
+    else if (rawKey === "DTSTART") dtstart = rawVal;
+    else if (rawKey === "LOCATION") location = rawVal;
+    else if (rawKey === "DESCRIPTION") description = rawVal;
+  }
+  return meets.sort((a, b) => a.date.localeCompare(b.date));
+}
+function normalizeAthleteMatchKey(name) {
+  const s = String(name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const commaParts = s.split(",").map((p) => p.trim()).filter(Boolean);
+  const reordered = commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : s;
+  return reordered.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function buildExternalFieldEventLogRecord(params) {
+  const { row, teamId, membershipId, athleteName, nowIso, idSuffix } = params;
+  const eventCode = row.fieldEventCode || "LJ";
+  const spec = getFieldEventSpec(eventCode);
+  const attempts = row.isNoMarkOrFoul ? [
+    {
+      attemptNumber: 1,
+      outcome: spec.mode === "VERTICAL" ? "MISS" : "FOUL",
+      ...typeof row.windMps === "number" ? { windMps: row.windMps } : {},
+      note: `${row.displayFieldMark || "NM"} (${row.meetName})`
+    }
+  ] : typeof row.fieldMarkMeters === "number" && row.fieldMarkMeters > 0 ? [
+    {
+      attemptNumber: 1,
+      outcome: spec.mode === "VERTICAL" ? "CLEAR" : "MARK",
+      ...spec.mode === "VERTICAL" ? { barHeightMeters: row.fieldMarkMeters } : { markMeters: row.fieldMarkMeters },
+      ...typeof row.windMps === "number" ? { windMps: row.windMps } : {},
+      note: row.displayFieldMark || formatFieldMarkDual(row.fieldMarkMeters)
+    }
+  ] : [];
+  const summary = summarizeFieldSeries(eventCode, attempts);
+  const placeNum = row.placeFinish ? parseInt(row.placeFinish.replace(/\D/g, ""), 10) : NaN;
+  const isWindAided = Boolean(row.isWindAided || typeof row.windMps === "number" && row.windMps > 2);
+  const bestWindLegalMeters = typeof row.fieldMarkMeters === "number" && row.fieldMarkMeters > 0 && !isWindAided ? row.fieldMarkMeters : void 0;
+  return {
+    id: `ext-field-${row.date}-${eventCode.toLowerCase()}-${idSuffix || Math.random().toString(36).slice(2, 8)}`,
+    ...teamId ? { teamId } : {},
+    ...membershipId ? { membershipId } : {},
+    athleteName: athleteName || row.athleteName,
+    date: row.date,
+    eventCode,
+    eventGroup: spec.eventGroup,
+    isCompetition: true,
+    meetOrPracticeTitle: row.meetName,
+    attempts,
+    ...summary.bestMarkMeters !== null ? { bestMarkMeters: summary.bestMarkMeters } : {},
+    ...bestWindLegalMeters !== void 0 ? { bestWindLegalMeters } : {},
+    ...typeof row.windMps === "number" ? { bestMarkWindMps: row.windMps } : {},
+    ...isWindAided ? { isWindAidedBest: true } : {},
+    ...row.isNoMarkOrFoul ? { isNoHeight: true } : {},
+    ...Number.isFinite(placeNum) && placeNum > 0 ? { placeRank: placeNum } : {},
+    createdAt: nowIso || (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+function isDuplicateExternalFieldLog(existing, candidate) {
+  if (existing.date !== candidate.date || existing.eventCode !== candidate.eventCode) {
+    return false;
+  }
+  const sameAthlete = candidate.membershipId && existing.membershipId ? existing.membershipId === candidate.membershipId : normalizeAthleteMatchKey(existing.athleteName) === normalizeAthleteMatchKey(candidate.athleteName);
+  if (!sameAthlete) return false;
+  if (candidate.isNoHeight || existing.isNoHeight) {
+    return Boolean(candidate.isNoHeight) === Boolean(existing.isNoHeight);
+  }
+  if (typeof candidate.bestMarkMeters === "number" && typeof existing.bestMarkMeters === "number") {
+    return Math.abs(existing.bestMarkMeters - candidate.bestMarkMeters) < 5e-3;
+  }
+  return existing.bestMarkMeters === candidate.bestMarkMeters;
+}
+
+// server/teamStoreCore.ts
+import crypto7 from "crypto";
+
+// server/cleanRoomFirewall.ts
+var FIRST_PARTY_HARDWARE_TOKENS = [
+  "garmin",
+  "fit",
+  "wahoo",
+  "coros",
+  "suunto",
+  "polar",
+  "apple_watch",
+  "apple watch",
+  "intervals"
+];
+var ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS = [
+  ...FIRST_PARTY_HARDWARE_TOKENS,
+  "apple",
+  "thresh_stopwatch",
+  "thresh stopwatch",
+  "stopwatch",
+  "manual",
+  "official_race",
+  "official race",
+  "official fat"
+];
+function isStravaOriginRecord(item) {
+  if (!item || typeof item !== "object") return false;
+  const obj = item;
+  const src = String(
+    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
+  ).toLowerCase();
+  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
+  const hasFirstPartyHardware = badges.some(
+    (b) => FIRST_PARTY_HARDWARE_TOKENS.some((tok) => b.includes(tok))
+  );
+  if (Boolean(obj.stravaId) && !hasFirstPartyHardware) return true;
+  if (src.includes("strava") && !hasFirstPartyHardware) return true;
+  if (badges.includes("strava") && !hasFirstPartyHardware) return true;
+  return false;
+}
+function hasVerifiedCleanRoomProvenance(item) {
+  if (!item || typeof item !== "object") return false;
+  if (isStravaOriginRecord(item)) return false;
+  const obj = item;
+  const badges = Array.isArray(obj.sourceBadges) ? obj.sourceBadges.map((b) => String(b).toLowerCase()) : [];
+  if (badges.some(
+    (b) => ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => b.includes(tok))
+  )) {
+    return true;
+  }
+  const src = String(
+    obj.source || obj.ingestionSource || obj.externalSource || obj.id || ""
+  ).toLowerCase();
+  return ALLOWED_CLEAN_ROOM_PROVENANCE_TOKENS.some((tok) => src.includes(tok));
+}
+var SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS = /* @__PURE__ */ new Set([
+  "weightkg",
+  "weightlbs",
+  "weight",
+  "bmi",
+  "bodymassindex",
+  "bodyfatpct",
+  "bodyfat",
+  "leanbodymass",
+  "wattsperkg",
+  "avgwattsperkg",
+  "targetwkg",
+  "wkg",
+  "wperkg"
+]);
+function stripSafeSportWeightAndBodyCompFields(input, options) {
+  if (input === null || input === void 0 || typeof input !== "object") {
+    return input;
+  }
+  if (Array.isArray(input)) {
+    return input.map(
+      (item) => stripSafeSportWeightAndBodyCompFields(item, options)
+    );
+  }
+  const record = input;
+  const isWellnessDayRecord = "hrvRMSSD" in record || "restingHR" in record;
+  const out = {};
+  for (const [k, v] of Object.entries(record)) {
+    const lowerKey = k.toLowerCase();
+    if (lowerKey === "weightkg" && options?.maskWellnessWeightKgZero && isWellnessDayRecord) {
+      out[k] = 0;
+      continue;
+    }
+    if (SAFESPORT_WEIGHT_AND_BODY_COMP_KEYS.has(lowerKey)) {
+      continue;
+    }
+    out[k] = stripSafeSportWeightAndBodyCompFields(v, options);
+  }
+  return out;
+}
+function sanitizeTelemetryForCleanRoom(rawSummary, options) {
+  if (!rawSummary || typeof rawSummary !== "object") return {};
+  let clone = { ...rawSummary };
+  let strippedCount = 0;
+  for (const key of [
+    "recentWorkouts",
+    "recentActivities",
+    "activities",
+    "workouts",
+    "completedActivities"
+  ]) {
+    const rawList = clone[key];
+    if (Array.isArray(rawList)) {
+      const before = rawList.length;
+      const requirePositive = Boolean(
+        options?.requireFirstPartyProvenance || key === "recentWorkouts"
+      );
+      const filtered = rawList.filter(
+        (item) => requirePositive ? hasVerifiedCleanRoomProvenance(item) : !isStravaOriginRecord(item)
+      );
+      clone[key] = filtered;
+      strippedCount += before - filtered.length;
+    }
+  }
+  delete clone.stravaSegments;
+  delete clone.stravaKudos;
+  delete clone.stravaAthleteId;
+  delete clone.segmentEfforts;
+  if (options?.forceZeroWeight || clone.safeSportHideWeight || clone.isMinorU18 || clone.enforceZeroWeight) {
+    clone = stripSafeSportWeightAndBodyCompFields(clone);
+    clone.safeSportHideWeight = true;
+    clone.zeroWeightEnforced = true;
+  }
+  clone.cleanRoomPolicy = "FIRST_PARTY_GARMIN_FIT_WELLNESS_ONLY";
+  clone.stravaRecordsFiltered = strippedCount;
+  return clone;
 }
 
 // src/utils/raceTimingBadge.ts
@@ -11289,6 +12121,354 @@ async function verifyEmailOtpCode(rawEmail, rawCode, preferredSid, options) {
   };
 }
 
+// server/teamWorkoutAndGovernanceService.ts
+import crypto10 from "crypto";
+
+// server/athleteArchiveHelper.ts
+async function archiveCoachActivitiesForMember(member, activities) {
+  if (!Array.isArray(activities) || activities.length === 0) return;
+  const targetVaultKeys = /* @__PURE__ */ new Set();
+  let resolvedUserId = member.userId?.trim();
+  if (!resolvedUserId && member.invitedEmail) {
+    const matchedUser = await getUserByEmail(member.invitedEmail).catch(() => null);
+    if (matchedUser?.id) resolvedUserId = matchedUser.id;
+  }
+  if (resolvedUserId?.startsWith("usr_")) {
+    const cleanUsr = resolvedUserId.replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanUsr) targetVaultKeys.add(`athlete_state_user_${cleanUsr}`);
+  }
+  if (member.stravaAthleteId) {
+    const cleanStrava = String(member.stravaAthleteId).trim().replace(/[^0-9a-zA-Z_-]/g, "");
+    if (cleanStrava) targetVaultKeys.add(`athlete_state_strava_${cleanStrava}`);
+  }
+  if (member.userSid) {
+    const cleanSid = String(member.userSid).trim().replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 32);
+    if (cleanSid) targetVaultKeys.add(`athlete_state_sid_${cleanSid}`);
+  }
+  if (targetVaultKeys.size === 0) return;
+  const compactIncoming = activities.map((act) => ({
+    ...act,
+    streams: void 0
+  }));
+  for (const vaultKey of targetVaultKeys) {
+    await withVaultLock(vaultKey, async () => {
+      const existing = await loadTenantVaultAsync(
+        vaultKey,
+        null
+      );
+      const prevArchived = Array.isArray(existing?.coachArchivedActivities) ? existing.coachArchivedActivities : [];
+      const mergedMap = /* @__PURE__ */ new Map();
+      for (const item of [...compactIncoming, ...prevArchived]) {
+        if (item?.id && !mergedMap.has(item.id)) {
+          mergedMap.set(item.id, item);
+        }
+      }
+      const nextArchived = Array.from(mergedMap.values()).sort((a, b) => String(b.startDateLocal || "").localeCompare(String(a.startDateLocal || ""))).slice(0, 150);
+      const sanitized = sanitizeAthleteCloudState(
+        { coachArchivedActivities: nextArchived },
+        existing
+      );
+      await saveTenantVaultAsync(vaultKey, sanitized);
+    });
+  }
+}
+
+// src/physiology/safeSportPatternWatchEngine.ts
+var DAY_MS = 864e5;
+var mean = (vals) => vals.length === 0 ? 0 : vals.reduce((acc, v) => acc + v, 0) / vals.length;
+function isHardSession(act) {
+  const name = (act.name || "").toLowerCase();
+  const hasWorkIntervals = Boolean(act.intervals && act.intervals.some((i) => i.type === "WORK"));
+  const highRpe = (act.quickLog?.rpe ?? 0) >= 7;
+  const highLoad = (act.trainingLoad ?? 0) >= 65;
+  return act.subType === "Track" || Boolean(act.officialRaceData) || hasWorkIntervals || highRpe || highLoad || /\b(track|intervals?|tempo|threshold|race|meets?|repeats?|vo2|fartlek|time trial|5000m|3200m|1600m|800m)\b|\d+\s*[x×]\s*\d+/i.test(
+    name
+  );
+}
+function isEasySubmaximalRun(act) {
+  if (act.sportCategory !== "Running") return false;
+  if ((act.movingTimeSecs || 0) < 1200 || (act.distanceMeters || 0) < 2e3) return false;
+  if (!(act.avgHr > 90)) return false;
+  if (isHardSession(act)) return false;
+  return true;
+}
+function extractActivityEf(act) {
+  if (act.sportCategory !== "Running") return null;
+  if ((act.movingTimeSecs || 0) < 1200 || !(act.avgHr > 90)) return null;
+  if (typeof act.efficiencyFactor === "number" && act.efficiencyFactor > 0.3) {
+    return act.efficiencyFactor;
+  }
+  if (act.distanceMeters > 1500 && act.movingTimeSecs > 0) {
+    const speedMpm = act.distanceMeters / (act.movingTimeSecs / 60);
+    return Number((speedMpm / act.avgHr).toFixed(3));
+  }
+  return null;
+}
+function extractHrr60Samples(act) {
+  const samples = [];
+  if (act.streams?.time && act.streams?.heartrate && act.intervals?.length) {
+    const times = act.streams.time;
+    const hrs = act.streams.heartrate;
+    for (const iv of act.intervals) {
+      if (iv.type !== "WORK") continue;
+      const workEnd = iv.startTimeSecs + iv.durationSecs;
+      const targetT = workEnd + 60;
+      let startHr = null;
+      let end60Hr = null;
+      for (let i = 0; i < times.length; i++) {
+        if (startHr === null && times[i] >= workEnd) {
+          startHr = hrs[i];
+        }
+        if (times[i] >= targetT) {
+          end60Hr = hrs[i];
+          break;
+        }
+      }
+      if (startHr !== null && end60Hr !== null && startHr > 110 && startHr > end60Hr) {
+        samples.push(Math.round(startHr - end60Hr));
+      }
+    }
+    if (samples.length > 0) return samples;
+  }
+  if (act.intervals && act.intervals.length >= 2) {
+    for (let i = 0; i < act.intervals.length - 1; i++) {
+      const cur = act.intervals[i];
+      const next = act.intervals[i + 1];
+      if (cur.type === "WORK" && next.type === "RECOVERY" && next.durationSecs >= 45) {
+        const peak = cur.maxHr ?? cur.avgHr;
+        if (peak && next.avgHr && peak > 120 && peak > next.avgHr) {
+          samples.push(Math.round(peak - next.avgHr));
+        }
+      }
+    }
+  }
+  return samples;
+}
+function evaluateSafeSportPatternWatch(params) {
+  const {
+    activities = [],
+    wellnessDays = [],
+    checkIn,
+    isMinorU18 = false,
+    hasParentGuardianCc = false,
+    hasAthleticTrainer = false,
+    referenceDateIso
+  } = params;
+  const refDateStr = (referenceDateIso || getLocalDateIso()).slice(0, 10);
+  const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
+  const datedActivities = activities.map((act) => {
+    const d = (act.startDateLocal || "").slice(0, 10);
+    const ms = Date.parse(`${d}T12:00:00Z`);
+    const ageDays = Number.isFinite(ms) ? (refMs - ms) / DAY_MS : Infinity;
+    return { act, ageDays };
+  }).filter((entry) => entry.ageDays >= 0 && entry.ageDays <= 56);
+  const has56dHistory = datedActivities.some((entry) => entry.ageDays > 28);
+  const windowBaselineDays = has56dHistory ? 56 : 28;
+  const recentActs = datedActivities.filter((e) => e.ageDays <= 14).map((e) => e.act);
+  const baselineActs = datedActivities.filter((e) => e.ageDays > 14 && e.ageDays <= 56).map((e) => e.act);
+  const signals = [];
+  const recentEasy = recentActs.filter(isEasySubmaximalRun);
+  const baselineEasy = baselineActs.filter(isEasySubmaximalRun);
+  let deltaEasyHrBpm = null;
+  if (recentEasy.length >= 1 && baselineEasy.length >= 1) {
+    const baseHr = mean(baselineEasy.map((a) => a.avgHr));
+    const recHr = mean(recentEasy.map((a) => a.avgHr));
+    deltaEasyHrBpm = Number((recHr - baseHr).toFixed(1));
+    if (deltaEasyHrBpm >= 8) {
+      signals.push({
+        signalId: "EASY_HR_DRIFT_ELEVATED",
+        severity: deltaEasyHrBpm >= 11 ? "ACTION_REQUIRED" : "WATCH",
+        title: "Submaximal Easy-Run HR Drift",
+        metricValue: `${Math.round(recHr)} bpm`,
+        baselineValue: `${Math.round(baseHr)} bpm`,
+        deltaDisplay: `+${deltaEasyHrBpm.toFixed(1)} bpm`,
+        guidance: "Sustained upward HR drift at easy aerobic pace is a classic early cardiovascular marker of low energy availability or iron depletion."
+      });
+    }
+  }
+  const recentHard = recentActs.filter((a) => a.sportCategory === "Running" && isHardSession(a) && a.maxHr > 120);
+  const baselineHard = baselineActs.filter((a) => a.sportCategory === "Running" && isHardSession(a) && a.maxHr > 120);
+  const sortedWellness = [...wellnessDays].sort((a, b) => a.date.localeCompare(b.date));
+  const latestWellness = sortedWellness[sortedWellness.length - 1];
+  const highStrainContext = (latestWellness ? latestWellness.ctl - latestWellness.atl <= -10 : false) || checkIn?.energyFeel === "FLAT" || recentHard.some((a) => (a.quickLog?.rpe ?? 0) >= 7 || (a.trainingLoad ?? 0) >= 65);
+  let chronotropicBluntingDetected = false;
+  if (recentHard.length >= 1 && baselineHard.length >= 1) {
+    const baseMaxHr = mean(baselineHard.map((a) => a.maxHr));
+    const recMaxHr = mean(recentHard.map((a) => a.maxHr));
+    const dropBpm = Number((baseMaxHr - recMaxHr).toFixed(1));
+    if (dropBpm >= 6 && (highStrainContext || dropBpm >= 8)) {
+      chronotropicBluntingDetected = true;
+      signals.push({
+        signalId: "CHRONOTROPIC_BLUNTING",
+        severity: dropBpm >= 10 ? "ACTION_REQUIRED" : "WATCH",
+        title: "Chronotropic Blunting on Quality Efforts",
+        metricValue: `${Math.round(recMaxHr)} bpm peak`,
+        baselineValue: `${Math.round(baseMaxHr)} bpm peak`,
+        deltaDisplay: `-${dropBpm.toFixed(1)} bpm`,
+        guidance: "Suppressed max HR during track or hard efforts under elevated training load warrants reduced anaerobic volume and medical review."
+      });
+    }
+  }
+  const recentEfVals = recentActs.map(extractActivityEf).filter((v) => v !== null);
+  const baseEfVals = baselineActs.map(extractActivityEf).filter((v) => v !== null);
+  let deltaEfficiencyFactorPct = null;
+  if (recentEfVals.length >= 1 && baseEfVals.length >= 1) {
+    const baseEf = mean(baseEfVals);
+    const recEf = mean(recentEfVals);
+    deltaEfficiencyFactorPct = Number(((recEf - baseEf) / Math.max(0.1, baseEf) * 100).toFixed(1));
+    if (deltaEfficiencyFactorPct <= -6) {
+      signals.push({
+        signalId: "EFFICIENCY_FACTOR_DECAY",
+        severity: deltaEfficiencyFactorPct <= -9 ? "ACTION_REQUIRED" : "WATCH",
+        title: "Aerobic Efficiency Factor (EF) Drop",
+        metricValue: `${recEf.toFixed(2)}`,
+        baselineValue: `${baseEf.toFixed(2)}`,
+        deltaDisplay: `${deltaEfficiencyFactorPct.toFixed(1)}%`,
+        guidance: "14-day speed-to-HR efficiency fell >= 6% beneath baseline. Prioritize sleep, carbohydrate refueling around sessions, and reduced density."
+      });
+    }
+  }
+  const recentHrr60 = recentActs.flatMap(extractHrr60Samples);
+  const baseHrr60 = baselineActs.flatMap(extractHrr60Samples);
+  let deltaHrr60Bpm = null;
+  if (recentHrr60.length >= 1 && baseHrr60.length >= 1) {
+    const baseHrr = mean(baseHrr60);
+    const recHrr = mean(recentHrr60);
+    deltaHrr60Bpm = Number((recHrr - baseHrr).toFixed(1));
+    if (deltaHrr60Bpm <= -6) {
+      signals.push({
+        signalId: "HRR60_PARASYMPATHETIC_DROP",
+        severity: deltaHrr60Bpm <= -10 ? "ACTION_REQUIRED" : "WATCH",
+        title: "60s Heart-Rate Recovery (HRR60) Blunted",
+        metricValue: `${Math.round(recHrr)} bpm drop`,
+        baselineValue: `${Math.round(baseHrr)} bpm drop`,
+        deltaDisplay: `${deltaHrr60Bpm.toFixed(1)} bpm`,
+        guidance: "Post-interval 60s parasympathetic rebound slowed >= 6 bpm. Swap next spiked session for low-impact aerobic recovery."
+      });
+    }
+  }
+  let ferritinStatus = "UNKNOWN";
+  if (typeof checkIn?.ferritinNgMl === "number" && Number.isFinite(checkIn.ferritinNgMl)) {
+    const f = checkIn.ferritinNgMl;
+    if (f < 30) {
+      ferritinStatus = "DEPLETED_UNDER_30";
+      signals.push({
+        signalId: "SERUM_FERRITIN_LOW",
+        severity: "ACTION_REQUIRED",
+        title: "Serum Ferritin Depleted (< 30 ng/mL)",
+        metricValue: `${f.toFixed(0)} ng/mL`,
+        baselineValue: ">= 50 ng/mL target",
+        deltaDisplay: `${Math.round(f - 50)} ng/mL`,
+        guidance: "Low endurance ferritin reserve (< 30 ng/mL) may limit aerobic recovery and oxygen transport. Coaching readiness indicator only (not a medical diagnosis) \u2014 consult a sports physician before iron supplementation."
+      });
+    } else if (f < 50) {
+      ferritinStatus = "SUBOPTIMAL_30_50";
+      signals.push({
+        signalId: "SERUM_FERRITIN_LOW",
+        severity: "WATCH",
+        title: "Serum Ferritin Borderline (30\u201349 ng/mL)",
+        metricValue: `${f.toFixed(0)} ng/mL`,
+        baselineValue: ">= 50 ng/mL target",
+        deltaDisplay: `${Math.round(f - 50)} ng/mL`,
+        guidance: "Borderline iron stores for endurance runners. Discuss dietary heme-iron intake and physician lab follow-up."
+      });
+    } else {
+      ferritinStatus = "OPTIMAL";
+    }
+  }
+  const kneeScore = checkIn?.kneeGrowthPlateSoreness ?? 0;
+  const heelScore = checkIn?.heelApophysisSoreness ?? 0;
+  const maxPhvScore = Math.max(kneeScore, heelScore);
+  const phvGrowthPlateFlag = maxPhvScore >= 1;
+  if (phvGrowthPlateFlag) {
+    const site = kneeScore >= heelScore ? "Tibial Tuberosity (Knee)" : "Calcaneal Apophysis (Heel)";
+    signals.push({
+      signalId: "PHV_GROWTH_PLATE_SORENESS",
+      severity: maxPhvScore >= 2 ? "ACTION_REQUIRED" : "WATCH",
+      title: `PHV Growth-Plate Traction Watch (${site})`,
+      metricValue: `${maxPhvScore}/3`,
+      baselineValue: "0/3 pain-free",
+      deltaDisplay: `+${maxPhvScore}`,
+      guidance: maxPhvScore >= 2 ? "PROTECT GROWTH PLATE: Pause plyometrics, hurdles, and spikes immediately; route to Athletic Trainer / Aqua Jog." : "Early apophyseal traction sensitivity. Eliminate track spikes & hard downhill/bounding work this week."
+    });
+  }
+  const hasActionRequired = signals.some((s) => s.severity === "ACTION_REQUIRED");
+  const medicalWatchCluster = signals.length >= 2 && (ferritinStatus !== "UNKNOWN" && ferritinStatus !== "OPTIMAL" ? true : deltaEasyHrBpm !== null && deltaEasyHrBpm >= 8 && deltaEfficiencyFactorPct !== null && deltaEfficiencyFactorPct <= -6);
+  const trafficLight = hasActionRequired || medicalWatchCluster || maxPhvScore >= 2 || ferritinStatus === "DEPLETED_UNDER_30" ? "RED_MEDICAL_REVIEW" : signals.length >= 1 ? "AMBER_WATCH" : "GREEN_CLEAR";
+  const authorizedRecipients = ["ATHLETE_SELF"];
+  if (isMinorU18 || hasParentGuardianCc) {
+    authorizedRecipients.push("PARENT_GUARDIAN_CC");
+  }
+  if (hasAthleticTrainer || trafficLight === "RED_MEDICAL_REVIEW") {
+    authorizedRecipients.push("ATHLETIC_TRAINER_MEDICAL");
+  }
+  let headline = "Autonomic, Aerobic Efficiency & Growth-Plate Markers Clear";
+  let athleteGuidance = "14-day cardiac efficiency, recovery HR, and growth-plate status sit cleanly inside your personal baseline (zero weight tracking).";
+  let coachSafeSummaryLabel = "Clear \u2014 Normal Training Progression";
+  if (trafficLight === "RED_MEDICAL_REVIEW") {
+    headline = "Medical / AT Review Recommended \xB7 Non-Weight Biomarker Shift";
+    athleteGuidance = "Multiple non-weight endurance & tissue signals shifted beneath baseline. Pause high-density spiked work and coordinate privately with your healthcare provider / Athletic Trainer.";
+    coachSafeSummaryLabel = "AT / Medical Review & Load Modification Recommended (Zero-Weight Private Signal)";
+  } else if (trafficLight === "AMBER_WATCH") {
+    headline = "Early Non-Weight Pattern Watch \xB7 Monitor Recovery & Fueling";
+    athleteGuidance = "One early cardiac, iron, or growth-plate signal stepped outside baseline. Emphasize 8.5h+ sleep, post-run carbohydrate/protein intake, and daily trainers.";
+    coachSafeSummaryLabel = "Early Watch \u2014 Prioritize Recovery & Trainers Only (Zero-Weight Private Signal)";
+  }
+  const medicalRoutingSummary = isMinorU18 ? `Private U18 Route: Athlete Self${hasParentGuardianCc ? " + Parent/Guardian CC" : ""}${authorizedRecipients.includes("ATHLETIC_TRAINER_MEDICAL") ? " + Certified Athletic Trainer" : ""} (weight, BMI & W/kg strictly excluded).` : authorizedRecipients.includes("ATHLETIC_TRAINER_MEDICAL") ? "Private Athlete + Athletic Trainer / Medical Staff (weight, BMI & W/kg strictly excluded)." : "Private Athlete Only (solo adult \u2014 weight, BMI & W/kg strictly excluded).";
+  return {
+    evaluatedAtIso: (/* @__PURE__ */ new Date()).toISOString(),
+    windowRecentDays: 14,
+    windowBaselineDays,
+    trafficLight,
+    zeroWeightCompliant: true,
+    isMinorU18,
+    deltaEasyHrBpm,
+    chronotropicBluntingDetected,
+    deltaEfficiencyFactorPct,
+    deltaHrr60Bpm,
+    ferritinStatus,
+    phvGrowthPlateFlag,
+    signals,
+    headline,
+    athleteGuidance,
+    medicalRoutingSummary,
+    authorizedRecipients,
+    coachSafeSummaryLabel
+  };
+}
+
+// src/physiology/injuryHubEngine.ts
+var ALL_INJURY_BODY_REGIONS = [
+  "SHIN",
+  "ACHILLES",
+  "ANKLE",
+  "FOOT",
+  "KNEE",
+  "HAMSTRING",
+  "QUAD",
+  "GROIN",
+  "HIP",
+  "BACK",
+  "SHOULDER",
+  "ELBOW",
+  "OTHER"
+];
+var VALID_PAIN_AREA_SET = new Set(
+  ALL_INJURY_BODY_REGIONS
+);
+function normalizePainArea(raw) {
+  if (typeof raw !== "string") return void 0;
+  const upper = raw.trim().toUpperCase();
+  return VALID_PAIN_AREA_SET.has(upper) ? upper : void 0;
+}
+function stripClinicalNotesForRole(cases, role) {
+  if (role === "ATHLETIC_TRAINER") return cases;
+  return cases.map((c) => {
+    const { privateClinicalNotes: _drop, ...coachSafe } = c;
+    return coachSafe;
+  });
+}
+
 // server/pushNotificationService.ts
 import crypto9 from "crypto";
 import { generateVAPIDKeys, sendNotification } from "web-push";
@@ -11681,2013 +12861,6 @@ Open in MeetReady: ${deepLink}`;
   };
 }
 
-// server/athleticSyncService.ts
-import crypto14 from "crypto";
-
-// server/teamCalendarIcs.ts
-function normalizeIcsTimezone(tz) {
-  const clean = String(tz || "").trim();
-  if (clean && /^[A-Za-z_+-]+(?:\/[A-Za-z0-9_+-]+)+$/.test(clean) && clean.length <= 64) {
-    return clean;
-  }
-  return "America/Los_Angeles";
-}
-function escapeIcsText(raw) {
-  return String(raw || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,").trim();
-}
-function foldIcsLine(line) {
-  if (line.length <= 75) return line;
-  const chunks = [line.slice(0, 75)];
-  let idx = 75;
-  while (idx < line.length) {
-    chunks.push(` ${line.slice(idx, idx + 74)}`);
-    idx += 74;
-  }
-  return chunks.join("\r\n");
-}
-function formatIcsUtcTimestamp(date) {
-  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
-}
-function nextIcsDateYmd(isoDate) {
-  const parsed = /* @__PURE__ */ new Date(`${isoDate.slice(0, 10)}T12:00:00Z`);
-  if (Number.isNaN(parsed.getTime())) {
-    return isoDate.slice(0, 10).replace(/-/g, "");
-  }
-  parsed.setUTCDate(parsed.getUTCDate() + 1);
-  return parsed.toISOString().slice(0, 10).replace(/-/g, "");
-}
-function parseHmTime(raw) {
-  const clean = String(raw || "").trim();
-  if (!clean) return null;
-  const match24 = clean.match(/^(\d{1,2}):(\d{2})$/);
-  if (match24) {
-    const h = Number(match24[1]);
-    const m = Number(match24[2]);
-    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return { hour: h, minute: m };
-  }
-  const match12 = clean.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
-  if (match12) {
-    let h = Number(match12[1]);
-    const m = Number(match12[2]);
-    const ap = match12[3].toLowerCase();
-    if (h < 1 || h > 12 || m < 0 || m > 59) return null;
-    if (ap === "pm" && h < 12) h += 12;
-    if (ap === "am" && h === 12) h = 0;
-    return { hour: h, minute: m };
-  }
-  return null;
-}
-function formatIcsLocalDateTime(dateIso, hour, minute, addMinutes = 0) {
-  const [y, mo, d] = dateIso.slice(0, 10).split("-").map(Number);
-  const dt = new Date(Date.UTC(y || 2026, (mo || 1) - 1, d || 1, hour, minute + addMinutes, 0));
-  const yy = String(dt.getUTCFullYear()).padStart(4, "0");
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
-  const dd = String(dt.getUTCDate()).padStart(2, "0");
-  const hh = String(dt.getUTCHours()).padStart(2, "0");
-  const mi = String(dt.getUTCMinutes()).padStart(2, "0");
-  return `${yy}${mm}${dd}T${hh}${mi}00`;
-}
-function resolveSequence(ev) {
-  if (typeof ev.sequence === "number" && Number.isFinite(ev.sequence) && ev.sequence >= 0) {
-    return Math.min(2e9, Math.round(ev.sequence));
-  }
-  if (ev.updatedAt) {
-    const ms = Date.parse(ev.updatedAt);
-    if (Number.isFinite(ms)) {
-      return Math.max(1, Math.min(2e9, Math.floor((ms - 17e11) / 1e3)));
-    }
-  }
-  return ev.meetDelayMinutes && ev.meetDelayMinutes > 0 ? 1 : 0;
-}
-function buildTimedTeamCalendarIcs(params) {
-  const tz = normalizeIcsTimezone(params.timezone);
-  const dtStamp = formatIcsUtcTimestamp(/* @__PURE__ */ new Date());
-  const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
-  const safeSlug = params.slug ? params.slug.replace(/[^a-zA-Z0-9_-]/g, "") : "";
-  const hubUrl = safeSlug ? `${cleanOrigin}/team/${safeSlug}` : "";
-  const calTitle = `${params.teamName} ${params.calNameSuffix || "Schedule"}`.trim();
-  const seenIds = /* @__PURE__ */ new Set();
-  const uniqueEvents = (params.events || []).filter((ev) => {
-    if (!ev?.uid || !/^\d{4}-\d{2}-\d{2}$/.test((ev.date || "").slice(0, 10))) return false;
-    if (seenIds.has(ev.uid)) return false;
-    seenIds.add(ev.uid);
-    return true;
-  }).sort((a, b) => a.date.localeCompare(b.date));
-  const lines = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    `PRODID:${params.prodId || "-//MeetReady//Team Calendar//EN"}`,
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    `X-WR-CALNAME:${escapeIcsText(calTitle)}`,
-    `X-WR-TIMEZONE:${tz}`,
-    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
-    "X-PUBLISHED-TTL:PT6H"
-  ];
-  for (const ev of uniqueEvents) {
-    const cleanDate = ev.date.slice(0, 10);
-    const uidSafe = String(ev.uid).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80);
-    const startHm = parseHmTime(ev.startTime);
-    const endHm = parseHmTime(ev.endTime);
-    const parsedUpdatedMs = ev.updatedAt ? Date.parse(ev.updatedAt) : Number.NaN;
-    const lastMod = Number.isFinite(parsedUpdatedMs) ? formatIcsUtcTimestamp(new Date(parsedUpdatedMs)) : dtStamp;
-    const sequence = resolveSequence(ev);
-    const safeLiveUrl = ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl.trim()) ? ev.liveResultsUrl.trim() : "";
-    const eventUrl = safeLiveUrl || hubUrl;
-    const delayLabel = typeof ev.meetDelayMinutes === "number" && ev.meetDelayMinutes > 0 ? `Delay: +${Math.round(ev.meetDelayMinutes)}m` : "";
-    const busLabel = ev.busDepartureTime ? `Bus departure: ${formatPracticeTime12h(ev.busDepartureTime)}` : "";
-    const descParts = [
-      ev.startTime ? `Start: ${formatPracticeTime12h(ev.startTime)}` : "",
-      delayLabel,
-      busLabel,
-      ev.description || "",
-      safeLiveUrl ? `Live Results: ${safeLiveUrl}` : "",
-      hubUrl ? `Team Hub: ${hubUrl}` : ""
-    ].filter(Boolean);
-    let dtStartLine;
-    let dtEndLine;
-    if (startHm) {
-      dtStartLine = `DTSTART;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, startHm.hour, startHm.minute)}`;
-      dtEndLine = endHm ? `DTEND;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, endHm.hour, endHm.minute)}` : `DTEND;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, startHm.hour, startHm.minute, 90)}`;
-    } else {
-      dtStartLine = `DTSTART;VALUE=DATE:${cleanDate.replace(/-/g, "")}`;
-      dtEndLine = `DTEND;VALUE=DATE:${nextIcsDateYmd(cleanDate)}`;
-    }
-    lines.push(
-      "BEGIN:VEVENT",
-      `UID:meetready-${uidSafe}@meetready.app`,
-      `DTSTAMP:${dtStamp}`,
-      `LAST-MODIFIED:${lastMod}`,
-      `SEQUENCE:${sequence}`,
-      dtStartLine,
-      dtEndLine,
-      `SUMMARY:${escapeIcsText(`${params.shortName} \xB7 ${ev.title}`)}`,
-      ...ev.locationName ? [`LOCATION:${escapeIcsText(ev.locationName)}`] : [],
-      ...eventUrl ? [`URL:${eventUrl}`] : [],
-      ...descParts.length > 0 ? [`DESCRIPTION:${escapeIcsText(descParts.join(" \xB7 "))}`] : [],
-      "END:VEVENT"
-    );
-  }
-  lines.push("END:VCALENDAR");
-  return `${lines.map(foldIcsLine).join("\r\n")}\r
-`;
-}
-
-// server/teamEventsService.ts
-import crypto10 from "crypto";
-var VALID_EVENT_TYPES = /* @__PURE__ */ new Set([
-  "PRACTICE",
-  "MEET",
-  "BUS_TRAVEL",
-  "TEAM_MEETING"
-]);
-var VALID_VISIBILITY_SCOPES = /* @__PURE__ */ new Set([
-  "TEAM_AND_FAMILIES_ONLY",
-  "PUBLIC_HUB",
-  "STAFF_ONLY"
-]);
-var VALID_RSVP_STATUSES = /* @__PURE__ */ new Set([
-  "GOING",
-  "OUT",
-  "LATE",
-  "MEET_CONFLICT",
-  "UNDECIDED"
-]);
-var VALID_TRAVEL_MODES = /* @__PURE__ */ new Set([
-  "TEAM_BUS",
-  "PARENT_PICKUP",
-  "SELF_TRAVEL"
-]);
-var VALID_ALBUM_PROVIDERS = /* @__PURE__ */ new Set([
-  "GOOGLE_PHOTOS",
-  "APPLE_ICLOUD",
-  "SMUGMUG",
-  "SHUTTERFLY",
-  "HUDL",
-  "OTHER"
-]);
-function teamEventsVaultKey(teamId) {
-  return `team_events_${sanitizeTenantId(teamId)}`;
-}
-function teamRsvpsVaultKey(teamId) {
-  return `team_rsvps_${sanitizeTenantId(teamId)}`;
-}
-function computeRsvpCounts(rsvps) {
-  const counts = {
-    going: 0,
-    out: 0,
-    late: 0,
-    conflict: 0,
-    undecided: 0
-  };
-  for (const r of rsvps) {
-    if (r.status === "GOING") counts.going += 1;
-    else if (r.status === "OUT") counts.out += 1;
-    else if (r.status === "LATE") counts.late += 1;
-    else if (r.status === "MEET_CONFLICT") counts.conflict += 1;
-    else counts.undecided += 1;
-  }
-  return counts;
-}
-function sanitizeCuratedAlbumLinks(raw, authorName, nowIso) {
-  if (!Array.isArray(raw)) return { links: [] };
-  const links = [];
-  for (const entry of raw.slice(0, 5)) {
-    if (!entry || typeof entry !== "object") continue;
-    const item = entry;
-    const rawUrl = String(item.url || "").trim();
-    if (!rawUrl) continue;
-    if (!isSafeHttpsUrl(rawUrl)) {
-      return {
-        links: [],
-        error: "Album links must use https:// URLs."
-      };
-    }
-    const label = String(item.label || "Meet Photo Album").trim().slice(0, 80) || "Meet Photo Album";
-    const rawProvider = String(item.provider || "").trim().toUpperCase();
-    const visibility = item.visibility === "PUBLIC_HUB" ? "PUBLIC_HUB" : "TEAM_AND_FAMILIES_ONLY";
-    links.push({
-      id: String(item.id || `alb_${crypto10.randomBytes(4).toString("hex")}`).trim(),
-      label,
-      url: rawUrl,
-      ...VALID_ALBUM_PROVIDERS.has(rawProvider) ? { provider: rawProvider } : {},
-      visibility,
-      addedByName: String(item.addedByName || authorName).trim().slice(0, 60) || authorName,
-      addedAt: String(item.addedAt || nowIso)
-    });
-  }
-  return { links };
-}
-async function loadStoredEvents(teamId) {
-  const pgEvents = await listTeamEventsPostgresAsync(teamId);
-  if (pgEvents !== null) return pgEvents;
-  return loadTenantVaultAsync(teamEventsVaultKey(teamId), []);
-}
-async function loadStoredRsvps(teamId) {
-  const pgRows = await listTeamEventRsvpsPostgresAsync(teamId);
-  if (pgRows !== null) {
-    return pgRows.map((r) => ({
-      eventId: r.event_id,
-      membershipId: r.membership_id,
-      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
-      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
-      ...r.note ? { note: r.note } : {},
-      updatedByRole: r.updated_by_role,
-      updatedAt: r.updated_at
-    }));
-  }
-  return loadTenantVaultAsync(teamRsvpsVaultKey(teamId), []);
-}
-function projectSyntheticEventsFromTeamDoc(params) {
-  const byId = /* @__PURE__ */ new Map();
-  const matchedBroadcastIds = /* @__PURE__ */ new Set();
-  const matchedPacketIds = /* @__PURE__ */ new Set();
-  for (const ev of params.storedEvents) {
-    byId.set(ev.eventId, ev);
-    if (ev.broadcastId) matchedBroadcastIds.add(ev.broadcastId);
-    if (ev.packetId) matchedPacketIds.add(ev.packetId);
-  }
-  for (const pkt of params.meetDayPackets || []) {
-    if (matchedPacketIds.has(pkt.packetId)) continue;
-    const syntheticId = pkt.eventId || `pkt_${pkt.packetId}`;
-    if (byId.has(syntheticId)) continue;
-    const liveUrl = pkt.liveResultsUrl || pkt.athleticLiveUrl;
-    byId.set(syntheticId, {
-      eventId: syntheticId,
-      teamId: params.teamId,
-      eventType: "MEET",
-      title: pkt.meetTitle,
-      date: pkt.meetDate,
-      ...typeof pkt.meetDelayMinutes === "number" ? { meetDelayMinutes: pkt.meetDelayMinutes } : {},
-      ...liveUrl && isSafeHttpsUrl(liveUrl) ? { liveResultsUrl: liveUrl } : {},
-      ...pkt.liveResultsLabel ? { liveResultsLabel: pkt.liveResultsLabel } : {},
-      ...pkt.curatedAlbumLinks?.length ? { curatedAlbumLinks: pkt.curatedAlbumLinks } : {},
-      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
-      packetId: pkt.packetId,
-      createdAt: pkt.updatedAt,
-      updatedAt: pkt.updatedAt
-    });
-  }
-  for (const bc of params.broadcastWorkouts || []) {
-    if (matchedBroadcastIds.has(bc.broadcastId)) continue;
-    const syntheticId = bc.eventId || `bc_${bc.broadcastId}`;
-    if (byId.has(syntheticId)) continue;
-    if (!bc.isOfficialMeet && !bc.scheduledTime) continue;
-    byId.set(syntheticId, {
-      eventId: syntheticId,
-      teamId: params.teamId,
-      eventType: bc.isOfficialMeet ? "MEET" : "PRACTICE",
-      title: bc.name,
-      date: bc.date,
-      ...bc.scheduledTime ? { startTime: bc.scheduledTime } : {},
-      ...bc.locationName ? { locationName: bc.locationName } : {},
-      ...bc.liveResultsUrl && isSafeHttpsUrl(bc.liveResultsUrl) ? { liveResultsUrl: bc.liveResultsUrl } : {},
-      ...bc.liveResultsLabel ? { liveResultsLabel: bc.liveResultsLabel } : {},
-      ...bc.curatedAlbumLinks?.length ? { curatedAlbumLinks: bc.curatedAlbumLinks } : {},
-      ...bc.targetEventGroups?.length ? { targetEventGroups: bc.targetEventGroups } : {},
-      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
-      broadcastId: bc.broadcastId,
-      createdAt: bc.createdAt,
-      updatedAt: bc.createdAt
-    });
-  }
-  return Array.from(byId.values()).sort((a, b) => a.date.localeCompare(b.date));
-}
-async function listTeamEventsForCaller(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem) {
-    return { ok: false, status: 403, error: "Team membership required." };
-  }
-  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
-  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
-  const [storedEvents, storedRsvps] = await Promise.all([
-    loadStoredEvents(params.teamId),
-    loadStoredRsvps(params.teamId)
-  ]);
-  const allEvents = projectSyntheticEventsFromTeamDoc({
-    teamId: params.teamId,
-    storedEvents,
-    broadcastWorkouts: doc.broadcastWorkouts,
-    meetDayPackets: doc.meetDayPackets
-  }).filter((ev) => isStaff || ev.visibilityScope !== "STAFF_ONLY");
-  const rsvpsGrouped = /* @__PURE__ */ new Map();
-  for (const rsvp of storedRsvps) {
-    const arr = rsvpsGrouped.get(rsvp.eventId) || [];
-    arr.push(rsvp);
-    rsvpsGrouped.set(rsvp.eventId, arr);
-  }
-  const rsvpCountsByEventId = {};
-  const rsvpsByEventId = {};
-  const myRsvps = [];
-  for (const ev of allEvents) {
-    const list = rsvpsGrouped.get(ev.eventId) || [];
-    rsvpCountsByEventId[ev.eventId] = computeRsvpCounts(list);
-    if (isStaff) {
-      rsvpsByEventId[ev.eventId] = list;
-    }
-    for (const rsvp of list) {
-      const isOwn = rsvp.membershipId === callerMem.membershipId;
-      const isChild = Boolean(linkedChildIds && linkedChildIds.has(rsvp.membershipId));
-      if (isOwn || isChild) {
-        myRsvps.push(rsvp);
-      }
-    }
-  }
-  return {
-    ok: true,
-    payload: {
-      events: allEvents,
-      rsvpCountsByEventId,
-      myRsvps,
-      ...isStaff ? { rsvpsByEventId } : {}
-    }
-  };
-}
-async function upsertTeamEvent(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
-    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
-  }
-  const cleanDate = String(params.input.date || "").trim().slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
-    return { ok: false, status: 400, error: "Valid YYYY-MM-DD event date required." };
-  }
-  const cleanTitle = String(params.input.title || "").trim().slice(0, 140);
-  if (!cleanTitle) {
-    return { ok: false, status: 400, error: "Event title is required." };
-  }
-  const rawType = String(params.input.eventType || "PRACTICE").trim().toUpperCase();
-  const eventType = VALID_EVENT_TYPES.has(rawType) ? rawType : "PRACTICE";
-  const rawVis = String(params.input.visibilityScope || "TEAM_AND_FAMILIES_ONLY").trim().toUpperCase();
-  const visibilityScope = VALID_VISIBILITY_SCOPES.has(rawVis) ? rawVis : "TEAM_AND_FAMILIES_ONLY";
-  const liveResultsUrl = String(params.input.liveResultsUrl || "").trim();
-  if (liveResultsUrl && !isSafeHttpsUrl(liveResultsUrl)) {
-    return { ok: false, status: 400, error: "Live timing link must use an https:// URL." };
-  }
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const albumValidation = sanitizeCuratedAlbumLinks(
-    params.input.curatedAlbumLinks,
-    callerMem.invitedName,
-    nowIso
-  );
-  if (albumValidation.error) {
-    return { ok: false, status: 400, error: albumValidation.error };
-  }
-  const hasPublicAlbum = albumValidation.links.some((l) => l.visibility === "PUBLIC_HUB");
-  const photoReleaseOptOutNames = hasPublicAlbum ? doc.memberships.filter((m) => m.role === "ATHLETE" && m.status !== "REVOKED" && m.photoReleaseOptOut).map((m) => m.invitedName) : [];
-  const targetEventGroups = Array.isArray(params.input.targetEventGroups) ? sanitizeTargetEventGroups(
-    params.input.targetEventGroups.map((g) => String(g))
-  ) || [] : [];
-  const eventId = String(params.input.eventId || "").trim().slice(0, 80) || `ev_${crypto10.randomBytes(6).toString("hex")}`;
-  const safeDelay = typeof params.input.meetDelayMinutes === "number" && Number.isFinite(params.input.meetDelayMinutes) ? Math.max(0, Math.min(240, Math.round(params.input.meetDelayMinutes))) : void 0;
-  const existingPg = await listTeamEventsPostgresAsync(params.teamId);
-  let createdAt = nowIso;
-  if (existingPg) {
-    const prev = existingPg.find((e) => e.eventId === eventId);
-    if (prev?.createdAt) createdAt = prev.createdAt;
-  }
-  const nextEvent = {
-    eventId,
-    teamId: params.teamId,
-    eventType,
-    title: cleanTitle,
-    date: cleanDate,
-    ...typeof params.input.startTime === "string" && params.input.startTime.trim() ? { startTime: params.input.startTime.trim().slice(0, 16) } : {},
-    ...typeof params.input.endTime === "string" && params.input.endTime.trim() ? { endTime: params.input.endTime.trim().slice(0, 16) } : {},
-    ...typeof params.input.timezone === "string" && params.input.timezone.trim() ? { timezone: params.input.timezone.trim().slice(0, 64) } : {},
-    ...typeof params.input.locationName === "string" && params.input.locationName.trim() ? { locationName: params.input.locationName.trim().slice(0, 120) } : {},
-    ...typeof params.input.venueId === "string" && params.input.venueId.trim() ? { venueId: params.input.venueId.trim().slice(0, 64) } : {},
-    ...typeof params.input.busDepartureTime === "string" && params.input.busDepartureTime.trim() ? { busDepartureTime: params.input.busDepartureTime.trim().slice(0, 24) } : {},
-    ...typeof params.input.busReturnTime === "string" && params.input.busReturnTime.trim() ? { busReturnTime: params.input.busReturnTime.trim().slice(0, 24) } : {},
-    ...safeDelay !== void 0 ? { meetDelayMinutes: safeDelay } : {},
-    ...liveResultsUrl ? { liveResultsUrl } : {},
-    ...typeof params.input.liveResultsLabel === "string" && params.input.liveResultsLabel.trim() ? { liveResultsLabel: params.input.liveResultsLabel.trim().slice(0, 60) } : {},
-    ...albumValidation.links.length > 0 ? { curatedAlbumLinks: albumValidation.links } : {},
-    ...targetEventGroups.length > 0 ? { targetEventGroups } : {},
-    visibilityScope,
-    ...typeof params.input.broadcastId === "string" && params.input.broadcastId.trim() ? { broadcastId: params.input.broadcastId.trim().slice(0, 80) } : {},
-    ...typeof params.input.packetId === "string" && params.input.packetId.trim() ? { packetId: params.input.packetId.trim().slice(0, 80) } : {},
-    ...typeof params.input.notes === "string" && params.input.notes.trim() ? { notes: params.input.notes.trim().slice(0, 500) } : {},
-    createdAt,
-    updatedAt: nowIso
-  };
-  const savedToPg = await upsertTeamEventPostgresAsync({
-    teamId: params.teamId,
-    eventId,
-    dateIso: cleanDate,
-    eventType,
-    eventPayload: nextEvent
-  });
-  if (savedToPg === null) {
-    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
-      const existingList = await loadTenantVaultAsync(
-        teamEventsVaultKey(params.teamId),
-        []
-      );
-      const prev = existingList.find((e) => e.eventId === eventId);
-      if (prev?.createdAt) {
-        nextEvent.createdAt = prev.createdAt;
-      }
-      const nextList = [
-        ...existingList.filter((e) => e.eventId !== eventId),
-        nextEvent
-      ].sort((a, b) => a.date.localeCompare(b.date));
-      await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextList);
-    });
-  }
-  await appendAuditLogAsync({
-    teamId: params.teamId,
-    actorSid: params.callerSid,
-    action: "TEAM_EVENT_UPSERTED",
-    targetId: eventId,
-    metadata: { eventType, date: cleanDate, visibilityScope }
-  });
-  return {
-    ok: true,
-    event: nextEvent,
-    ...photoReleaseOptOutNames.length > 0 ? { photoReleaseOptOutNames } : {}
-  };
-}
-async function deleteTeamEvent(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
-    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
-  }
-  const cleanEventId = String(params.eventId || "").trim();
-  if (!cleanEventId) return { ok: false, status: 400, error: "Event ID required." };
-  const deletedPg = await deleteTeamEventPostgresAsync(params.teamId, cleanEventId);
-  let deleted = Boolean(deletedPg);
-  if (deletedPg === null) {
-    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
-      const events = await loadTenantVaultAsync(
-        teamEventsVaultKey(params.teamId),
-        []
-      );
-      const nextEvents = events.filter((e) => e.eventId !== cleanEventId);
-      deleted = nextEvents.length !== events.length;
-      if (deleted) {
-        await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextEvents);
-      }
-    });
-    if (deleted) {
-      await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
-        const rsvps = await loadTenantVaultAsync(
-          teamRsvpsVaultKey(params.teamId),
-          []
-        );
-        const filtered = rsvps.filter((r) => r.eventId !== cleanEventId);
-        if (filtered.length !== rsvps.length) {
-          await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), filtered);
-        }
-      });
-    }
-  }
-  return { ok: true, deleted };
-}
-async function submitTeamEventRsvp(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc) return { ok: false, status: 404, error: "Team not found." };
-  const callerMem = doc.memberships.find(
-    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-  );
-  if (!callerMem) {
-    return { ok: false, status: 403, error: "Team membership required." };
-  }
-  const cleanEventId = String(params.eventId || "").trim();
-  if (!cleanEventId) {
-    return { ok: false, status: 400, error: "Event ID required." };
-  }
-  const cleanStatus = String(params.status || "").trim().toUpperCase();
-  if (!VALID_RSVP_STATUSES.has(cleanStatus)) {
-    return { ok: false, status: 400, error: "Invalid RSVP status." };
-  }
-  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
-  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
-  let targetMembershipId = String(params.membershipId || "").trim();
-  if (!targetMembershipId) {
-    if (callerMem.role === "PARENT_FOLLOWER") {
-      const firstChild = linkedChildIds ? Array.from(linkedChildIds)[0] : "";
-      if (!firstChild) {
-        return {
-          ok: false,
-          status: 403,
-          error: "No linked student-athlete found for this guardian account."
-        };
-      }
-      targetMembershipId = firstChild;
-    } else {
-      targetMembershipId = callerMem.membershipId;
-    }
-  }
-  const targetMem = doc.memberships.find(
-    (m) => m.membershipId === targetMembershipId && m.status !== "REVOKED"
-  );
-  if (!targetMem) {
-    return { ok: false, status: 404, error: "Target athlete membership not found." };
-  }
-  if (!isStaff) {
-    if (callerMem.role === "PARENT_FOLLOWER") {
-      if (!linkedChildIds || !linkedChildIds.has(targetMembershipId)) {
-        return {
-          ok: false,
-          status: 403,
-          error: "Guardians may only submit RSVPs for their linked student-athletes."
-        };
-      }
-    } else if (targetMembershipId !== callerMem.membershipId) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Athletes may only submit RSVPs for themselves."
-      };
-    }
-  }
-  const rawTravel = typeof params.travelMode === "string" ? params.travelMode.trim().toUpperCase() : void 0;
-  const travelMode = rawTravel && VALID_TRAVEL_MODES.has(rawTravel) ? rawTravel : void 0;
-  const note = typeof params.note === "string" && params.note.trim() ? params.note.trim().slice(0, 140) : void 0;
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  const nextRsvp = {
-    eventId: cleanEventId,
-    membershipId: targetMembershipId,
-    status: cleanStatus,
-    ...travelMode ? { travelMode } : {},
-    ...note ? { note } : {},
-    updatedByRole: callerMem.role,
-    updatedAt: nowIso
-  };
-  const savedToPg = await upsertTeamEventRsvpPostgresAsync({
-    teamId: params.teamId,
-    eventId: cleanEventId,
-    membershipId: targetMembershipId,
-    status: cleanStatus,
-    travelMode,
-    note,
-    updatedByRole: callerMem.role,
-    updatedBySid: params.callerSid,
-    updatedAt: nowIso
-  });
-  let eventRsvps = [];
-  if (savedToPg !== null) {
-    const pgRows = await listTeamEventRsvpsPostgresAsync(params.teamId, cleanEventId);
-    eventRsvps = (pgRows || []).map((r) => ({
-      eventId: r.event_id,
-      membershipId: r.membership_id,
-      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
-      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
-      ...r.note ? { note: r.note } : {},
-      updatedByRole: r.updated_by_role,
-      updatedAt: r.updated_at
-    }));
-  } else {
-    await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
-      const existingList = await loadTenantVaultAsync(
-        teamRsvpsVaultKey(params.teamId),
-        []
-      );
-      const nextList = [
-        ...existingList.filter(
-          (r) => !(r.eventId === cleanEventId && r.membershipId === targetMembershipId)
-        ),
-        nextRsvp
-      ];
-      await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), nextList);
-      eventRsvps = nextList.filter((r) => r.eventId === cleanEventId);
-    });
-  }
-  return {
-    ok: true,
-    rsvp: nextRsvp,
-    counts: computeRsvpCounts(eventRsvps)
-  };
-}
-async function loadPublicHubTeamEventsForTeamDoc(doc) {
-  const storedEvents = await loadStoredEvents(doc.brand.teamId);
-  return storedEvents.filter((ev) => ev.visibilityScope === "PUBLIC_HUB").map((ev) => ({
-    ...ev,
-    ...ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl) ? { liveResultsUrl: ev.liveResultsUrl } : { liveResultsUrl: void 0 },
-    ...Array.isArray(ev.curatedAlbumLinks) ? {
-      curatedAlbumLinks: ev.curatedAlbumLinks.filter(
-        (a) => a.visibility === "PUBLIC_HUB" && isSafeHttpsUrl(a.url)
-      )
-    } : {}
-  }));
-}
-function buildCalendarFeedUrls(params) {
-  const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
-  const feedUrl = `${cleanOrigin}/api/teams/${encodeURIComponent(params.teamId)}/calendar-feed/${encodeURIComponent(params.token)}.ics`;
-  const webcalUrl = feedUrl.replace(/^https?:\/\//i, "webcal://");
-  const googleCalendarUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(feedUrl)}`;
-  return { feedUrl, webcalUrl, googleCalendarUrl };
-}
-async function getOrMintPrivateCalendarMeta(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem) {
-      return { ok: false, status: 403, error: "Team membership required." };
-    }
-    let rawToken = doc.calendarFeedTokenPlain;
-    if (!rawToken || !doc.calendarFeedTokenHash) {
-      rawToken = crypto10.randomBytes(24).toString("hex");
-      doc.calendarFeedTokenPlain = rawToken;
-      doc.calendarFeedTokenHash = hashToken(rawToken);
-      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-      await saveTeamDocRaw(params.teamId, doc);
-    }
-    const urls = buildCalendarFeedUrls({
-      teamId: params.teamId,
-      token: rawToken,
-      originUrl: params.originUrl
-    });
-    return {
-      ok: true,
-      ...urls,
-      canRotate: canProgramWorkoutsRole(callerMem.role) || canManageTeamGovernanceRole(callerMem.role)
-    };
-  });
-}
-async function rotatePrivateCalendarToken(params) {
-  const outcome = await withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && !canManageTeamGovernanceRole(callerMem.role)) {
-      return { ok: false, status: 403, error: "Coach or team admin permissions required." };
-    }
-    const rawToken = crypto10.randomBytes(24).toString("hex");
-    doc.calendarFeedTokenPlain = rawToken;
-    doc.calendarFeedTokenHash = hashToken(rawToken);
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    const urls = buildCalendarFeedUrls({
-      teamId: params.teamId,
-      token: rawToken,
-      originUrl: params.originUrl
-    });
-    return {
-      ok: true,
-      ...urls,
-      canRotate: true
-    };
-  });
-  if (outcome.ok) {
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "CALENDAR_FEED_TOKEN_ROTATED",
-      targetId: params.teamId
-    });
-  }
-  return outcome;
-}
-async function getPrivateTeamCalendarIcsByToken(params) {
-  const cleanToken = String(params.token || "").trim().replace(/\.ics$/i, "");
-  if (!cleanToken || !/^[a-f0-9]{24,96}$/i.test(cleanToken)) {
-    return { ok: false, status: 404, error: "Calendar feed not found." };
-  }
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !doc.calendarFeedTokenHash) {
-    return { ok: false, status: 404, error: "Calendar feed not found." };
-  }
-  const incomingHash = hashToken(cleanToken);
-  if (!timingSafeStringEqual(incomingHash, doc.calendarFeedTokenHash)) {
-    return { ok: false, status: 404, error: "Calendar feed link invalidated or rotated." };
-  }
-  const storedEvents = await loadStoredEvents(params.teamId);
-  const visibleEvents = projectSyntheticEventsFromTeamDoc({
-    teamId: params.teamId,
-    storedEvents,
-    broadcastWorkouts: doc.broadcastWorkouts,
-    meetDayPackets: doc.meetDayPackets
-  }).filter((ev) => ev.visibilityScope !== "STAFF_ONLY");
-  const mappedEvents = visibleEvents.map((ev) => ({
-    uid: ev.eventId,
-    title: ev.title,
-    date: ev.date,
-    startTime: ev.startTime,
-    endTime: ev.endTime,
-    locationName: ev.locationName,
-    description: ev.notes,
-    busDepartureTime: ev.busDepartureTime,
-    meetDelayMinutes: ev.meetDelayMinutes,
-    liveResultsUrl: ev.liveResultsUrl,
-    updatedAt: ev.updatedAt
-  }));
-  const coveredBroadcastIds = new Set(
-    visibleEvents.map((ev) => ev.broadcastId).filter((id) => Boolean(id))
-  );
-  for (const bc of doc.broadcastWorkouts || []) {
-    if (coveredBroadcastIds.has(bc.broadcastId)) continue;
-    if (Array.isArray(bc.targetMembershipIds) && bc.targetMembershipIds.length > 0) continue;
-    mappedEvents.push({
-      uid: `bc-${bc.broadcastId}`,
-      title: bc.name,
-      date: bc.date,
-      startTime: bc.scheduledTime,
-      locationName: bc.locationName,
-      description: bc.description,
-      liveResultsUrl: bc.liveResultsUrl,
-      updatedAt: bc.createdAt
-    });
-  }
-  const icsBody = buildTimedTeamCalendarIcs({
-    teamName: doc.brand.name,
-    shortName: doc.brand.shortName,
-    slug: doc.brand.slug,
-    timezone: doc.brand.timezone,
-    originUrl: params.originUrl,
-    calNameSuffix: "Team Schedule",
-    prodId: "-//MeetReady//Private Team Calendar//EN",
-    events: mappedEvents
-  });
-  return {
-    ok: true,
-    icsBody,
-    slug: doc.brand.slug
-  };
-}
-
-// src/utils/officialRaceSynthesizer.ts
-var OFFICIAL_RACE_EVENTS = [
-  {
-    label: "60m",
-    distanceMeters: 60,
-    defaultSplitMeters: 60,
-    defaultLapCount: 1,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "100m",
-    distanceMeters: 100,
-    defaultSplitMeters: 100,
-    defaultLapCount: 1,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "200m",
-    distanceMeters: 200,
-    defaultSplitMeters: 200,
-    defaultLapCount: 1,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "100mH",
-    distanceMeters: 100,
-    defaultSplitMeters: 100,
-    defaultLapCount: 1,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "110mH",
-    distanceMeters: 110,
-    defaultSplitMeters: 100,
-    defaultLapCount: 1,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "300mH",
-    distanceMeters: 300,
-    defaultSplitMeters: 200,
-    defaultLapCount: 2,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "400mH",
-    distanceMeters: 400,
-    defaultSplitMeters: 200,
-    defaultLapCount: 2,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "400m",
-    distanceMeters: 400,
-    defaultSplitMeters: 200,
-    defaultLapCount: 2,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "800m",
-    distanceMeters: 800,
-    defaultSplitMeters: 400,
-    defaultLapCount: 2,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "1500m",
-    distanceMeters: 1500,
-    defaultSplitMeters: 400,
-    defaultLapCount: 4,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "1600m",
-    distanceMeters: 1600,
-    defaultSplitMeters: 400,
-    defaultLapCount: 4,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "1 Mile",
-    distanceMeters: 1609.34,
-    defaultSplitMeters: 400,
-    defaultLapCount: 4,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "3000m",
-    distanceMeters: 3e3,
-    defaultSplitMeters: 400,
-    defaultLapCount: 8,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "3200m",
-    distanceMeters: 3200,
-    defaultSplitMeters: 400,
-    defaultLapCount: 8,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "5000m",
-    distanceMeters: 5e3,
-    defaultSplitMeters: 1e3,
-    defaultLapCount: 5,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "10000m",
-    distanceMeters: 1e4,
-    defaultSplitMeters: 1e3,
-    defaultLapCount: 10,
-    category: "TRACK",
-    typicalSubType: "Track"
-  },
-  {
-    label: "XC 5K",
-    distanceMeters: 5e3,
-    defaultSplitMeters: 1e3,
-    defaultLapCount: 5,
-    category: "XC",
-    typicalSubType: "Cross Country"
-  },
-  {
-    label: "Road 5K",
-    distanceMeters: 5e3,
-    defaultSplitMeters: 1e3,
-    defaultLapCount: 5,
-    category: "ROAD",
-    typicalSubType: "Road"
-  },
-  {
-    label: "Half Marathon",
-    distanceMeters: 21097.5,
-    defaultSplitMeters: 1e3,
-    defaultLapCount: 5,
-    category: "ROAD",
-    typicalSubType: "Road"
-  }
-];
-function formatFatTime(seconds, forceHundredths = true) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00.00";
-  const totalHundredths = Math.round(seconds * 100);
-  const hundredths = totalHundredths % 100;
-  const wholeSecsTotal = Math.floor(totalHundredths / 100);
-  const hours = Math.floor(wholeSecsTotal / 3600);
-  const mins = Math.floor(wholeSecsTotal % 3600 / 60);
-  const secs = wholeSecsTotal % 60;
-  const hStr = hundredths.toString().padStart(2, "0");
-  if (hours > 0) {
-    return `${hours}:${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}${forceHundredths ? `.${hStr}` : ""}`;
-  }
-  if (mins === 0) {
-    return `${secs}.${hStr}`;
-  }
-  return `${mins}:${secs.toString().padStart(2, "0")}${forceHundredths || hundredths > 0 ? `.${hStr}` : ""}`;
-}
-function parseFatTimeString(raw) {
-  const cleaned = String(raw || "").trim().replace(/[a-zA-Z]+$/g, "").trim();
-  if (!cleaned) return 0;
-  const parts = cleaned.split(":").map((p) => p.trim());
-  if (parts.length === 1) {
-    const val = parseFloat(parts[0]);
-    return Number.isFinite(val) && val > 0 ? Number(val.toFixed(2)) : 0;
-  }
-  if (parts.length === 2) {
-    const mins = parseInt(parts[0], 10);
-    const secs = parseFloat(parts[1]);
-    if (!Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
-    return Number((mins * 60 + secs).toFixed(2));
-  }
-  if (parts.length === 3) {
-    const hrs = parseInt(parts[0], 10);
-    const mins = parseInt(parts[1], 10);
-    const secs = parseFloat(parts[2]);
-    if (!Number.isFinite(hrs) || !Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
-    return Number((hrs * 3600 + mins * 60 + secs).toFixed(2));
-  }
-  return 0;
-}
-function computeJackDanielsVdot(distanceMeters, timeSecs) {
-  if (!distanceMeters || !timeSecs || timeSecs <= 0) return 55;
-  const timeMins = timeSecs / 60;
-  const velocityMetersPerMin = distanceMeters / timeMins;
-  const vo2Cost = -4.6 + 0.182258 * velocityMetersPerMin + 104e-6 * velocityMetersPerMin * velocityMetersPerMin;
-  const pctVo2Max = 0.8 + 0.1894393 * Math.exp(-0.012778 * timeMins) + 0.2989558 * Math.exp(-0.1932605 * timeMins);
-  const rawVdot = vo2Cost / Math.max(0.55, pctVo2Max);
-  return Number(Math.max(32, Math.min(88, rawVdot)).toFixed(1));
-}
-function computeOfficialRaceTrainingLoad(distanceMeters, fatTimeSecs, includeWarmupCooldown) {
-  let raceEffortTss = 45;
-  if (distanceMeters <= 120) {
-    raceEffortTss = 18;
-  } else if (distanceMeters <= 250) {
-    raceEffortTss = 24;
-  } else if (distanceMeters <= 350) {
-    raceEffortTss = 30;
-  } else if (distanceMeters <= 450) {
-    raceEffortTss = 34;
-  } else if (distanceMeters <= 900) {
-    raceEffortTss = 44;
-  } else if (distanceMeters <= 1700) {
-    raceEffortTss = 54;
-  } else if (distanceMeters <= 3400) {
-    raceEffortTss = 68;
-  } else if (distanceMeters <= 5200) {
-    raceEffortTss = 84;
-  } else if (distanceMeters <= 10500) {
-    raceEffortTss = 108;
-  } else {
-    raceEffortTss = Math.round(Math.min(185, fatTimeSecs / 3600 * 112));
-  }
-  const warmupCooldownTss = includeWarmupCooldown ? 32 : 0;
-  return raceEffortTss + warmupCooldownTss;
-}
-function generateDefaultLapSplits(eventDistanceMeters, fatTimeSecs, splitDistanceMeters = 400) {
-  if (!fatTimeSecs || fatTimeSecs <= 0) return [];
-  const numLaps = Math.max(1, Math.round(eventDistanceMeters / splitDistanceMeters));
-  if (numLaps <= 1) return [Number(fatTimeSecs.toFixed(2))];
-  const avgLap = fatTimeSecs / numLaps;
-  const weights = [];
-  for (let i = 0; i < numLaps; i++) {
-    if (i === 0) weights.push(0.988);
-    else if (i === numLaps - 1) weights.push(0.984);
-    else weights.push(1 + 0.014);
-  }
-  const weightSum = weights.reduce((s, w) => s + w, 0);
-  const rawSplits = weights.map(
-    (w) => Number((w / weightSum * fatTimeSecs).toFixed(2))
-  );
-  const sumExceptLast = rawSplits.slice(0, -1).reduce((s, v) => s + v, 0);
-  rawSplits[rawSplits.length - 1] = Number(Math.max(1, fatTimeSecs - sumExceptLast).toFixed(2));
-  return rawSplits;
-}
-function synthesizeOfficialRaceActivity(candidate, athleteLthr = 172, athleteMaxHr = 192) {
-  const splitMeters = candidate.lapSplitDistanceMeters || (candidate.eventDistanceMeters <= 400 ? 200 : candidate.eventDistanceMeters >= 5e3 ? 1e3 : 400);
-  const hasCandidateSplits = Boolean(candidate.lapSplitsSecs && candidate.lapSplitsSecs.length > 0);
-  const splits = hasCandidateSplits ? candidate.lapSplitsSecs : candidate.preserveEmptySplits ? [] : generateDefaultLapSplits(candidate.eventDistanceMeters, candidate.fatTimeSecs, splitMeters);
-  const splitsEstimated = candidate.splitsEstimated !== void 0 ? candidate.splitsEstimated : !hasCandidateSplits;
-  const vdot = computeJackDanielsVdot(candidate.eventDistanceMeters, candidate.fatTimeSecs);
-  const trainingLoad = computeOfficialRaceTrainingLoad(
-    candidate.eventDistanceMeters,
-    candidate.fatTimeSecs,
-    candidate.includeWarmupCooldown
-  );
-  const totalSecs = Math.max(5, Math.round(candidate.fatTimeSecs));
-  const timeStream = [];
-  const distanceStream = [];
-  const velocityStream = [];
-  const hrStream = [];
-  const cadenceStream = [];
-  const intervals = [];
-  let elapsedSecsCursor = 0;
-  let elapsedDistCursor = 0;
-  splits.forEach((lapSecs, idx) => {
-    const lapDist = idx === splits.length - 1 ? Math.max(10, candidate.eventDistanceMeters - elapsedDistCursor) : splitMeters;
-    const lapSpeedMps = lapDist / Math.max(0.5, lapSecs);
-    const lapPaceSecsKm = Math.round(1e3 / Math.max(0.5, lapSpeedMps));
-    const lapDurationInt = Math.max(1, Math.round(lapSecs));
-    const lapStartHr = idx === 0 ? Math.round(athleteLthr * 0.92) : Math.min(athleteMaxHr, Math.round(athleteLthr * 1.01 + idx * 2.5));
-    const lapEndHr = Math.min(
-      athleteMaxHr,
-      Math.round(athleteLthr * 1.03 + (idx + 1) * 3)
-    );
-    for (let s = 0; s < lapDurationInt; s++) {
-      const t = elapsedSecsCursor + s;
-      const frac = s / Math.max(1, lapDurationInt);
-      timeStream.push(t);
-      distanceStream.push(Number((elapsedDistCursor + frac * lapDist).toFixed(1)));
-      velocityStream.push(Number((lapSpeedMps * (0.99 + 0.02 * Math.sin(s * 0.4))).toFixed(2)));
-      hrStream.push(Math.round(lapStartHr + frac * (lapEndHr - lapStartHr)));
-      cadenceStream.push(
-        candidate.eventDistanceMeters <= 1650 ? 194 + (idx === splits.length - 1 ? 6 : 0) : 186
-      );
-    }
-    intervals.push({
-      id: `lap-${idx + 1}`,
-      type: "WORK",
-      label: `Lap ${idx + 1} (${Math.round(lapDist)}m): ${formatFatTime(lapSecs)}`,
-      startTimeSecs: Math.round(elapsedSecsCursor),
-      durationSecs: Number(lapSecs.toFixed(2)),
-      distanceMeters: Math.round(lapDist),
-      avgPaceSecsPerKm: lapPaceSecsKm,
-      gapPaceSecsPerKm: lapPaceSecsKm,
-      avgHr: Math.round((lapStartHr + lapEndHr) / 2),
-      maxHr: lapEndHr,
-      avgCadence: candidate.eventDistanceMeters <= 1650 ? 196 : 186,
-      zone: candidate.eventDistanceMeters <= 1650 ? 6 : 5
-    });
-    elapsedSecsCursor += lapSecs;
-    elapsedDistCursor += lapDist;
-  });
-  const streams = {
-    time: timeStream,
-    distance: distanceStream,
-    velocitySmooth: velocityStream,
-    heartrate: hrStream,
-    cadence: cadenceStream
-  };
-  const avgPaceSecsPerKm = Math.round(candidate.fatTimeSecs / candidate.eventDistanceMeters * 1e3);
-  const firstHalfSplits = splits.slice(0, Math.ceil(splits.length / 2));
-  const secondHalfSplits = splits.slice(Math.ceil(splits.length / 2));
-  const firstHalfAvg = firstHalfSplits.length > 0 ? firstHalfSplits.reduce((s, v) => s + v, 0) / firstHalfSplits.length : 0;
-  const secondHalfAvg = secondHalfSplits.length > 0 ? secondHalfSplits.reduce((s, v) => s + v, 0) / secondHalfSplits.length : firstHalfAvg;
-  const splitFadePct = firstHalfAvg > 0 ? Number(((secondHalfAvg - firstHalfAvg) / firstHalfAvg * 100).toFixed(1)) : 0;
-  const warmupSecs = candidate.includeWarmupCooldown ? 2100 : 0;
-  const z1Secs = candidate.includeWarmupCooldown ? 900 : 0;
-  const z2Secs = candidate.includeWarmupCooldown ? 1200 : 0;
-  const raceSecs = Math.round(candidate.fatTimeSecs);
-  const zoneSecsHr = candidate.eventDistanceMeters <= 1700 ? [z1Secs, z2Secs, 0, Math.round(raceSecs * 0.15), Math.round(raceSecs * 0.35), Math.round(raceSecs * 0.35), Math.round(raceSecs * 0.15)] : [z1Secs, z2Secs, 0, Math.round(raceSecs * 0.3), Math.round(raceSecs * 0.55), Math.round(raceSecs * 0.15), 0];
-  const isIndoorTrack = candidate.trackType === "INDOOR_BANKED_200M" || candidate.trackType === "INDOOR_FLAT_200M";
-  const subType = candidate.trackType === "XC_COURSE" ? "Cross Country" : candidate.trackType === "ROAD" ? "Road" : "Track";
-  const officialRaceData = {
-    platform: candidate.platform,
-    meetName: candidate.meetName,
-    eventLabel: candidate.eventLabel,
-    eventDistanceMeters: candidate.eventDistanceMeters,
-    fatTimeSecs: candidate.fatTimeSecs,
-    displayFatTime: candidate.displayFatTime || formatFatTime(candidate.fatTimeSecs),
-    trackType: candidate.trackType,
-    placeFinish: candidate.placeFinish,
-    windReading: candidate.windReading,
-    lapSplitDistanceMeters: splitMeters,
-    lapSplitsSecs: splits,
-    ...splitsEstimated ? { splitsEstimated: true } : {},
-    vdotScore: vdot,
-    includeWarmupCooldown: candidate.includeWarmupCooldown,
-    sourceUrl: candidate.sourceUrl
-  };
-  return {
-    id: candidate.id || `official-race-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-    startDateLocal: candidate.startDateLocalIso || `${candidate.date.slice(0, 10)}T10:30:00`,
-    name: `${candidate.eventLabel} Official Race (${officialRaceData.displayFatTime}) \u2014 ${candidate.meetName}`,
-    sportCategory: "Running",
-    environment: isIndoorTrack ? "INDOOR" : "OUTDOOR",
-    subType,
-    movingTimeSecs: Math.round(candidate.fatTimeSecs) + warmupSecs,
-    distanceMeters: candidate.eventDistanceMeters + (candidate.includeWarmupCooldown ? 5600 : 0),
-    elevationGainMeters: candidate.trackType === "XC_COURSE" ? 85 : 0,
-    trainingLoad,
-    avgHr: Math.round(athleteLthr * 1.02),
-    maxHr: athleteMaxHr,
-    avgCadence: candidate.eventDistanceMeters <= 1650 ? 196 : 186,
-    avgPaceSecsPerKm,
-    gapPaceSecsPerKm: avgPaceSecsPerKm,
-    aerobicDecouplingPct: splitFadePct,
-    efficiencyFactor: Number((1e3 / avgPaceSecsPerKm * 60 / (athleteLthr * 1.02)).toFixed(2)),
-    firstHalfEf: 1.58,
-    secondHalfEf: 1.56,
-    deviceName: `Watchless FAT Timing (${candidate.platform})`,
-    zoneSecs: {
-      hr: zoneSecsHr,
-      pace: zoneSecsHr
-    },
-    stravaPrCount: 1,
-    segmentEfforts: [],
-    intervals,
-    streams,
-    officialRaceData,
-    sourceBadges: [candidate.platform]
-  };
-}
-var MONTH_NAME_MAP = {
-  jan: "01",
-  january: "01",
-  feb: "02",
-  february: "02",
-  mar: "03",
-  march: "03",
-  apr: "04",
-  april: "04",
-  may: "05",
-  jun: "06",
-  june: "06",
-  jul: "07",
-  july: "07",
-  aug: "08",
-  august: "08",
-  sep: "09",
-  sept: "09",
-  september: "09",
-  oct: "10",
-  october: "10",
-  nov: "11",
-  november: "11",
-  dec: "12",
-  december: "12"
-};
-function normalizeRaceEventToken(rawToken) {
-  const clean = rawToken.toLowerCase().replace(/,/g, "").replace(/\s+/g, " ").trim();
-  if (/^60\s*(?:m|meters?)$/.test(clean)) return "60m";
-  if (/^100\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "100mH";
-  if (/^110\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "110mH";
-  if (/^300\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "300mH";
-  if (/^400\s*(?:m|meters?)\s*(?:h|hurdles?)$/.test(clean)) return "400mH";
-  if (/^100\s*(?:m|meters?)$/.test(clean)) return "100m";
-  if (/^200\s*(?:m|meters?)$/.test(clean)) return "200m";
-  if (/^400\s*(?:m|meters?)$/.test(clean)) return "400m";
-  if (/^800\s*(?:m|meters?)$/.test(clean)) return "800m";
-  if (/^1500\s*(?:m|meters?)$/.test(clean)) return "1500m";
-  if (/^1600\s*(?:m|meters?)$/.test(clean)) return "1600m";
-  if (/^(?:1\s*)?mile$/.test(clean)) return "1 Mile";
-  if (/^3000\s*(?:m|meters?|s|sc|m\s*steeple(?:chase)?)$/.test(clean)) return "3000m";
-  if (/^3200\s*(?:m|meters?)$/.test(clean)) return "3200m";
-  if (/^5000\s*(?:m|meters?)$/.test(clean)) return "5000m";
-  if (/^10000\s*(?:m|meters?)$/.test(clean)) return "10000m";
-  if (/^xc\s*5k$/.test(clean)) return "XC 5K";
-  if (/^road\s*5k$/.test(clean)) return "Road 5K";
-  if (/^5k$/.test(clean)) return "XC 5K";
-  if (/half\s*marathon/.test(clean)) return "Half Marathon";
-  return rawToken;
-}
-function parseOfficialResultsTextDeterministically(rawText, defaultUrl) {
-  const lines = String(rawText || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 5);
-  const detectedPlatformFromUrl = defaultUrl ? /tfrrs/i.test(defaultUrl) ? "TFRRS" : /milesplit/i.test(defaultUrl) ? "MileSplit" : /runsignup/i.test(defaultUrl) ? "RunSignup" : "Athletic.net" : "Athletic.net";
-  const results = [];
-  const seenKeys = /* @__PURE__ */ new Set();
-  const todayIso = getLocalDateIso();
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (/^athletic\.net\s*\/?\s*tfrrs/i.test(line) || /^date\s*\|\s*meet/i.test(line)) {
-      continue;
-    }
-    const eventMatch = line.match(
-      /\b(100\s*(?:meters?|m)\s*(?:h|hurdles?)|110\s*(?:meters?|m)\s*(?:h|hurdles?)|300\s*(?:meters?|m)\s*(?:h|hurdles?)|400\s*(?:meters?|m)\s*(?:h|hurdles?)|60\s*(?:meters?|m)|100\s*(?:meters?|m)|200\s*(?:meters?|m)|400\s*(?:meters?|m)|800\s*(?:meters?|m)|1500\s*(?:meters?|m)|1600\s*(?:meters?|m)|1\s*Mile|Mile|3000\s*(?:m\s*steeple(?:chase)?|meters?|sc|s|m)|3200\s*(?:meters?|m)|5000\s*(?:meters?|m)|10,?000\s*(?:meters?|m)|XC\s*5K|Road\s*5K|5K|Half\s*Marathon)\b/i
-    );
-    const timeMatch = line.match(
-      /\b(\d{1,2}:\d{2}(?:\.\d{1,2})?[a-zA-Z]?|[1-6]\d\.\d{2}[a-zA-Z]?|[6-9]\.\d{2}[a-zA-Z]?)\b/
-    );
-    if (!eventMatch || !timeMatch) continue;
-    const canonicalEventLabel = normalizeRaceEventToken(eventMatch[1]);
-    const matchedDef = OFFICIAL_RACE_EVENTS.find(
-      (d) => d.label.toLowerCase() === canonicalEventLabel.toLowerCase()
-    ) || OFFICIAL_RACE_EVENTS[1];
-    if (!matchedDef) continue;
-    const fatTimeSecs = parseFatTimeString(timeMatch[1]);
-    if (fatTimeSecs <= 5) continue;
-    const isoDateMatch = line.match(/\b(20\d{2}-\d{2}-\d{2})\b/);
-    const slashDateMatch = line.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
-    const monthDateMatch = line.match(
-      /\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})\b/i
-    );
-    let dateStr = todayIso;
-    if (isoDateMatch) {
-      dateStr = isoDateMatch[1];
-    } else if (slashDateMatch) {
-      const m = slashDateMatch[1].padStart(2, "0");
-      const d = slashDateMatch[2].padStart(2, "0");
-      dateStr = `${slashDateMatch[3]}-${m}-${d}`;
-    } else if (monthDateMatch) {
-      const m = MONTH_NAME_MAP[monthDateMatch[1].toLowerCase()] || "01";
-      const d = monthDateMatch[2].padStart(2, "0");
-      dateStr = `${monthDateMatch[3]}-${m}-${d}`;
-    }
-    const dedupeKey = `${matchedDef.label}|${fatTimeSecs.toFixed(2)}|${dateStr}`;
-    if (seenKeys.has(dedupeKey)) continue;
-    seenKeys.add(dedupeKey);
-    let lapSplitsSecs = [];
-    const splitsMatch = line.match(/splits?\s*:\s*([0-9.,\s:]+)/i);
-    if (splitsMatch) {
-      lapSplitsSecs = splitsMatch[1].split(/[,\s]+/).map((s) => parseFatTimeString(s)).filter((n) => n > 4 && n < 600);
-    }
-    const hasExplicitSplits = lapSplitsSecs.length > 0;
-    if (!hasExplicitSplits) {
-      lapSplitsSecs = generateDefaultLapSplits(
-        matchedDef.distanceMeters,
-        fatTimeSecs,
-        matchedDef.defaultSplitMeters
-      );
-    }
-    const platform = /tfrrs/i.test(line) ? "TFRRS" : /milesplit/i.test(line) ? "MileSplit" : /runsignup/i.test(line) ? "RunSignup" : /athletic\.net/i.test(line) ? "Athletic.net" : detectedPlatformFromUrl;
-    const trackType = /banked/i.test(line) ? "INDOOR_BANKED_200M" : /indoor/i.test(line) ? "INDOOR_FLAT_200M" : /xc|cross country/i.test(line) || matchedDef.category === "XC" ? "XC_COURSE" : matchedDef.category === "ROAD" ? "ROAD" : "OUTDOOR_400M";
-    const placeMatch = line.match(/\b(\d+(?:st|nd|rd|th)(?:\s*\([^)]+\))?)\b/i);
-    const placeFinish = placeMatch ? placeMatch[1] : "Official Finisher";
-    const pipeParts = line.split("|").map((p) => p.trim());
-    const colParts = pipeParts.length >= 2 ? pipeParts : line.split(/\t|\s{2,}/).map((p) => p.trim());
-    let meetName = "Official Track & Field Invitational";
-    if (colParts.length >= 2) {
-      const candidateMeet = colParts.find(
-        (p) => p.length > 3 && !p.match(/^20\d{2}-\d{2}-\d{2}$/) && !p.match(/^\d{1,2}\/\d{1,2}\/20\d{2}$/) && !p.match(/^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)/i) && !p.match(/^(400|800|1500|1600|1\s*Mile|3000|3200|5000|10,?000)\s*(?:meters?|m|s|sc)?$|^XC\s*5K$|^5K$/i) && !p.match(/^\d{1,2}:\d{2}/) && !p.match(/^\d+(?:st|nd|rd|th)\b/i) && !p.match(/splits?:/i)
-      );
-      if (candidateMeet) meetName = candidateMeet;
-    }
-    results.push({
-      id: `parsed-race-${Date.now()}-${i}`,
-      date: dateStr,
-      meetName,
-      eventLabel: matchedDef.label,
-      eventDistanceMeters: matchedDef.distanceMeters,
-      fatTimeSecs,
-      displayFatTime: formatFatTime(fatTimeSecs),
-      platform,
-      trackType,
-      placeFinish,
-      lapSplitDistanceMeters: matchedDef.defaultSplitMeters,
-      lapSplitsSecs,
-      splitsEstimated: !hasExplicitSplits,
-      includeWarmupCooldown: false,
-      sourceUrl: defaultUrl
-    });
-  }
-  return results;
-}
-
-// src/utils/athleticNetAndTfrrsEngine.ts
-var ICONIC_COURSE_PATTERNS = [
-  { pattern: /crystal\s*springs/i, distanceMeters: 4748, eventLabel: "2.95 mi XC (Crystal Springs)" },
-  { pattern: /montgomery\s*hill/i, distanceMeters: 4410, eventLabel: "2.74 mi XC (Montgomery Hill)" },
-  { pattern: /toro\s*park/i, distanceMeters: 4828, eventLabel: "3.0 mi XC (Toro Park)" },
-  { pattern: /mt\.?\s*sac/i, distanceMeters: 4715, eventLabel: "2.93 mi XC (Mt. SAC)" },
-  { pattern: /woodward\s*park/i, distanceMeters: 5e3, eventLabel: "XC 5K (Woodward Park)" },
-  { pattern: /baylands/i, distanceMeters: 5e3, eventLabel: "XC 5K (Baylands)" },
-  { pattern: /hellyer/i, distanceMeters: 4828, eventLabel: "3.0 mi XC (Hellyer)" },
-  { pattern: /half\s*moon\s*bay/i, distanceMeters: 3862, eventLabel: "2.4 mi XC (Half Moon Bay)" },
-  { pattern: /central\s*park|lynnbrook|fremont\s*high/i, distanceMeters: 3380, eventLabel: "2.1 mi XC" }
-];
-function normalizeWebcalUrl(rawUrl) {
-  const trimmed = String(rawUrl || "").trim();
-  if (!trimmed) return "";
-  if (/^webcals:\/\//i.test(trimmed)) {
-    return trimmed.replace(/^webcals:\/\//i, "https://");
-  }
-  if (/^webcal:\/\//i.test(trimmed)) {
-    return trimmed.replace(/^webcal:\/\//i, "https://");
-  }
-  return trimmed;
-}
-function normalizeAthleticSportSlug(rawSegment) {
-  const s = (rawSegment || "").toLowerCase();
-  if (s.includes("indoor")) return "track-and-field-indoor";
-  if (s.includes("track") || s.includes("tf")) return "track-and-field-outdoor";
-  return "xc";
-}
-function titleCaseSlug(slug) {
-  return slug.replace(/[_-]+/g, " ").trim().split(/\s+/).filter(Boolean).map((w) => {
-    if (w.toLowerCase() === "st") return "St.";
-    if (w.length <= 2 && w === w.toUpperCase()) return w;
-    return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
-  }).join(" ");
-}
-function parseExternalTeamUrl(rawUrl) {
-  const cleaned = String(rawUrl || "").trim();
-  if (!cleaned) return null;
-  let parsed;
-  try {
-    parsed = new URL(/^https?:\/\//i.test(cleaned) ? cleaned : `https://${cleaned}`);
-  } catch {
-    return null;
-  }
-  const host = parsed.hostname.toLowerCase();
-  if (host === "athletic.net" || host.endsWith(".athletic.net")) {
-    const modernMatch = parsed.pathname.match(
-      /^\/(?:photos\/)?team\/(\d{2,10})(?:\/([a-z0-9-]+))?/i
-    );
-    const schoolIdParam = parsed.searchParams.get("SchoolID");
-    const schoolId = modernMatch?.[1] || (schoolIdParam && /^\d{2,10}$/.test(schoolIdParam) ? schoolIdParam : "");
-    if (!schoolId) return null;
-    const legacySport = /trackandfield/i.test(parsed.pathname) ? "track-and-field-outdoor" : "xc";
-    const sportSlug = normalizeAthleticSportSlug(modernMatch?.[2] || legacySport);
-    const canonicalUrl = `https://www.athletic.net/team/${schoolId}/${sportSlug}`;
-    const knownSchoolName = schoolId === "1073" ? "Willow Glen High School" : void 0;
-    return {
-      platform: "ATHLETIC_NET",
-      canonicalUrl,
-      athleticNetSchoolId: schoolId,
-      athleticNetSportSlug: sportSlug,
-      orgTypeHint: "HIGH_SCHOOL",
-      ...knownSchoolName ? { inferredTeamName: knownSchoolName } : {}
-    };
-  }
-  if (host === "tfrrs.org" || host.endsWith(".tfrrs.org")) {
-    const teamMatch = parsed.pathname.match(
-      /^\/teams\/(?:(xc|tf)\/)?([A-Za-z0-9_-]+?)(?:\.html?)?$/i
-    );
-    const tfrrsCode = teamMatch?.[2] || parsed.pathname.replace(/[^A-Za-z0-9_-]/g, "");
-    const codeParts = tfrrsCode.split("_");
-    const genderRaw = (codeParts[2] || "").toLowerCase();
-    const genderHint = genderRaw === "m" ? "M" : genderRaw === "f" ? "F" : void 0;
-    const slugName = codeParts.length >= 4 ? titleCaseSlug(codeParts.slice(3).join(" ")) : void 0;
-    const isCollege = tfrrsCode.toLowerCase().includes("_college_");
-    return {
-      platform: "TFRRS",
-      canonicalUrl: parsed.toString(),
-      tfrrsTeamCode: tfrrsCode || void 0,
-      genderHint,
-      orgTypeHint: isCollege ? "COLLEGIATE" : "HIGH_SCHOOL",
-      ...slugName ? { inferredTeamName: slugName } : {}
-    };
-  }
-  return null;
-}
-function resolveRaceEventDistance(rawText, fallbackMeters = 5e3) {
-  const s = String(rawText || "").trim();
-  const isIndoor = /\bindoor\b|200m\s*banked|flat\s*200/i.test(s);
-  const trackSurface = isIndoor ? "INDOOR_BANKED_200M" : "OUTDOOR_400M";
-  for (const preset of ICONIC_COURSE_PATTERNS) {
-    if (preset.pattern.test(s)) {
-      return {
-        eventLabel: preset.eventLabel,
-        distanceMeters: preset.distanceMeters,
-        trackType: "XC_COURSE",
-        isCrossCountry: true
-      };
-    }
-  }
-  const mileMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/i);
-  if (mileMatch) {
-    const miles = parseFloat(mileMatch[1]);
-    if (Number.isFinite(miles) && miles > 0) {
-      const meters = Math.round(miles * 1609.344);
-      if (Math.abs(miles - 1) < 0.02 && !/\bxc\b|cross\s*country/i.test(s)) {
-        return { eventLabel: "1 Mile", distanceMeters: 1609, trackType: trackSurface, isCrossCountry: false };
-      }
-      if (Math.abs(miles - 2) < 0.03 && /\btrack\b|outdoor|indoor/i.test(s)) {
-        return { eventLabel: "2 Mile", distanceMeters: 3219, trackType: trackSurface, isCrossCountry: false };
-      }
-      const isXc = /\bxc\b|cross|invitational|opener|classic|park|hill|springs|league|bval|ccs/i.test(s) || miles >= 1.9;
-      return {
-        eventLabel: isXc ? `${miles.toFixed(miles % 1 === 0 ? 1 : 2)} mi XC` : `${miles} mi`,
-        distanceMeters: meters,
-        trackType: isXc ? "XC_COURSE" : "ROAD",
-        isCrossCountry: isXc
-      };
-    }
-  }
-  const kMatch = s.match(/(\d+(?:\.\d+)?)\s*k\b/i);
-  if (kMatch) {
-    const km = parseFloat(kMatch[1]);
-    if (Number.isFinite(km) && km > 0) {
-      const meters = Math.round(km * 1e3);
-      const isXc = !/\broad\b|\btrack\b/i.test(s);
-      return {
-        eventLabel: isXc ? `XC ${km}K` : `Road ${km}K`,
-        distanceMeters: meters,
-        trackType: isXc ? "XC_COURSE" : "ROAD",
-        isCrossCountry: isXc
-      };
-    }
-  }
-  const hurdleMatch = s.match(/(?<![\d.])(\d{2,3})\s*m\s*(?:h|hurdles?)\b/i);
-  if (hurdleMatch) {
-    const meters = parseInt(hurdleMatch[1], 10);
-    if (Number.isFinite(meters) && meters >= 50 && meters <= 400) {
-      return {
-        eventLabel: `${meters}mH`,
-        distanceMeters: meters,
-        trackType: trackSurface,
-        isCrossCountry: false
-      };
-    }
-  }
-  const meterMatch = s.match(/(?<![\d.])(\d{2,5}(?:,\d{3})?)\s*m(?:eters?)?\b/i);
-  if (meterMatch) {
-    const meters = parseInt(meterMatch[1].replace(/,/g, ""), 10);
-    if (Number.isFinite(meters) && meters >= 50) {
-      const isXc = /\bxc\b|cross\s*country|varsity|frosh|jv\b/i.test(s) && meters >= 3e3;
-      const eventLabel = isXc && meters === 5e3 ? "XC 5K" : `${meters}m`;
-      return {
-        eventLabel,
-        distanceMeters: meters,
-        trackType: isXc ? "XC_COURSE" : trackSurface,
-        isCrossCountry: isXc
-      };
-    }
-  }
-  const isFallbackXc = fallbackMeters >= 3e3;
-  return {
-    eventLabel: isFallbackXc ? fallbackMeters === 4748 ? "2.95 mi XC" : fallbackMeters === 4410 ? "2.74 mi XC" : `XC ${(fallbackMeters / 1e3).toFixed(fallbackMeters % 1e3 === 0 ? 0 : 1)}K` : `${fallbackMeters}m`,
-    distanceMeters: fallbackMeters,
-    trackType: isFallbackXc ? "XC_COURSE" : trackSurface,
-    isCrossCountry: isFallbackXc
-  };
-}
-function unescapeIcsValue(val) {
-  return val.replace(/\\n/gi, "\n").replace(/\\,/g, ",").replace(/\\;/g, ";").replace(/\\\\/g, "\\").trim();
-}
-function parseIcsDateAndTime(rawValue) {
-  const clean = rawValue.trim();
-  const dateOnly = clean.match(/^(\d{4})(\d{2})(\d{2})$/);
-  if (dateOnly) {
-    return { date: `${dateOnly[1]}-${dateOnly[2]}-${dateOnly[3]}` };
-  }
-  const dateTimeMatch = clean.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/);
-  if (dateTimeMatch) {
-    return {
-      date: `${dateTimeMatch[1]}-${dateTimeMatch[2]}-${dateTimeMatch[3]}`,
-      scheduledTime: `${dateTimeMatch[4]}:${dateTimeMatch[5]}`
-    };
-  }
-  return null;
-}
-function inferVenueCategoryFromMeetText(text) {
-  if (/track|oval|stadium|relay|twilight|invite.*1600/i.test(text)) return "TRACK";
-  if (/road|half\s*marathon|10k\s*road|turkey\s*trot/i.test(text)) return "ROAD_CAMPUS";
-  return "XC_COURSE";
-}
-function parseIcsCalendarToMeets(icsText, externalSource = "ATHLETIC_NET") {
-  const unfolded = String(icsText || "").replace(/\r?\n[ \t]/g, "");
-  const lines = unfolded.split(/\r?\n/);
-  const meets = [];
-  let inEvent = false;
-  let summary = "";
-  let dtstart = "";
-  let location = "";
-  let description = "";
-  const flushEvent = () => {
-    if (!summary || !dtstart) return;
-    const parsedDt = parseIcsDateAndTime(dtstart);
-    if (!parsedDt) return;
-    const dist = resolveRaceEventDistance(`${summary} ${location} ${description}`, 5e3);
-    meets.push({
-      date: parsedDt.date,
-      name: summary.slice(0, 100),
-      ...location ? { locationName: location.slice(0, 120) } : {},
-      locationCategory: inferVenueCategoryFromMeetText(`${summary} ${location}`),
-      ...parsedDt.scheduledTime ? { scheduledTime: parsedDt.scheduledTime } : {},
-      distanceMeters: dist.distanceMeters,
-      ...description ? { description: description.slice(0, 260) } : {},
-      externalSource
-    });
-  };
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    if (line === "BEGIN:VEVENT") {
-      inEvent = true;
-      summary = "";
-      dtstart = "";
-      location = "";
-      description = "";
-      continue;
-    }
-    if (line === "END:VEVENT") {
-      flushEvent();
-      inEvent = false;
-      continue;
-    }
-    if (!inEvent) continue;
-    const colonIdx = line.indexOf(":");
-    if (colonIdx <= 0) continue;
-    const rawKey = line.slice(0, colonIdx).split(";")[0].toUpperCase();
-    const rawVal = unescapeIcsValue(line.slice(colonIdx + 1));
-    if (rawKey === "SUMMARY") summary = rawVal;
-    else if (rawKey === "DTSTART") dtstart = rawVal;
-    else if (rawKey === "LOCATION") location = rawVal;
-    else if (rawKey === "DESCRIPTION") description = rawVal;
-  }
-  return meets.sort((a, b) => a.date.localeCompare(b.date));
-}
-function normalizeAthleteMatchKey(name) {
-  const s = String(name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
-  const commaParts = s.split(",").map((p) => p.trim()).filter(Boolean);
-  const reordered = commaParts.length === 2 ? `${commaParts[1]} ${commaParts[0]}` : s;
-  return reordered.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-function buildExternalFieldEventLogRecord(params) {
-  const { row, teamId, membershipId, athleteName, nowIso, idSuffix } = params;
-  const eventCode = row.fieldEventCode || "LJ";
-  const spec = getFieldEventSpec(eventCode);
-  const attempts = row.isNoMarkOrFoul ? [
-    {
-      attemptNumber: 1,
-      outcome: spec.mode === "VERTICAL" ? "MISS" : "FOUL",
-      ...typeof row.windMps === "number" ? { windMps: row.windMps } : {},
-      note: `${row.displayFieldMark || "NM"} (${row.meetName})`
-    }
-  ] : typeof row.fieldMarkMeters === "number" && row.fieldMarkMeters > 0 ? [
-    {
-      attemptNumber: 1,
-      outcome: spec.mode === "VERTICAL" ? "CLEAR" : "MARK",
-      ...spec.mode === "VERTICAL" ? { barHeightMeters: row.fieldMarkMeters } : { markMeters: row.fieldMarkMeters },
-      ...typeof row.windMps === "number" ? { windMps: row.windMps } : {},
-      note: row.displayFieldMark || formatFieldMarkDual(row.fieldMarkMeters)
-    }
-  ] : [];
-  const summary = summarizeFieldSeries(eventCode, attempts);
-  const placeNum = row.placeFinish ? parseInt(row.placeFinish.replace(/\D/g, ""), 10) : NaN;
-  const isWindAided = Boolean(row.isWindAided || typeof row.windMps === "number" && row.windMps > 2);
-  const bestWindLegalMeters = typeof row.fieldMarkMeters === "number" && row.fieldMarkMeters > 0 && !isWindAided ? row.fieldMarkMeters : void 0;
-  return {
-    id: `ext-field-${row.date}-${eventCode.toLowerCase()}-${idSuffix || Math.random().toString(36).slice(2, 8)}`,
-    ...teamId ? { teamId } : {},
-    ...membershipId ? { membershipId } : {},
-    athleteName: athleteName || row.athleteName,
-    date: row.date,
-    eventCode,
-    eventGroup: spec.eventGroup,
-    isCompetition: true,
-    meetOrPracticeTitle: row.meetName,
-    attempts,
-    ...summary.bestMarkMeters !== null ? { bestMarkMeters: summary.bestMarkMeters } : {},
-    ...bestWindLegalMeters !== void 0 ? { bestWindLegalMeters } : {},
-    ...typeof row.windMps === "number" ? { bestMarkWindMps: row.windMps } : {},
-    ...isWindAided ? { isWindAidedBest: true } : {},
-    ...row.isNoMarkOrFoul ? { isNoHeight: true } : {},
-    ...Number.isFinite(placeNum) && placeNum > 0 ? { placeRank: placeNum } : {},
-    createdAt: nowIso || (/* @__PURE__ */ new Date()).toISOString()
-  };
-}
-function isDuplicateExternalFieldLog(existing, candidate) {
-  if (existing.date !== candidate.date || existing.eventCode !== candidate.eventCode) {
-    return false;
-  }
-  const sameAthlete = candidate.membershipId && existing.membershipId ? existing.membershipId === candidate.membershipId : normalizeAthleteMatchKey(existing.athleteName) === normalizeAthleteMatchKey(candidate.athleteName);
-  if (!sameAthlete) return false;
-  if (candidate.isNoHeight || existing.isNoHeight) {
-    return Boolean(candidate.isNoHeight) === Boolean(existing.isNoHeight);
-  }
-  if (typeof candidate.bestMarkMeters === "number" && typeof existing.bestMarkMeters === "number") {
-    return Math.abs(existing.bestMarkMeters - candidate.bestMarkMeters) < 5e-3;
-  }
-  return existing.bestMarkMeters === candidate.bestMarkMeters;
-}
-
-// server/athleteArchiveHelper.ts
-async function archiveCoachActivitiesForMember(member, activities) {
-  if (!Array.isArray(activities) || activities.length === 0) return;
-  const targetVaultKeys = /* @__PURE__ */ new Set();
-  let resolvedUserId = member.userId?.trim();
-  if (!resolvedUserId && member.invitedEmail) {
-    const matchedUser = await getUserByEmail(member.invitedEmail).catch(() => null);
-    if (matchedUser?.id) resolvedUserId = matchedUser.id;
-  }
-  if (resolvedUserId?.startsWith("usr_")) {
-    const cleanUsr = resolvedUserId.replace(/[^0-9a-zA-Z_-]/g, "");
-    if (cleanUsr) targetVaultKeys.add(`athlete_state_user_${cleanUsr}`);
-  }
-  if (member.stravaAthleteId) {
-    const cleanStrava = String(member.stravaAthleteId).trim().replace(/[^0-9a-zA-Z_-]/g, "");
-    if (cleanStrava) targetVaultKeys.add(`athlete_state_strava_${cleanStrava}`);
-  }
-  if (member.userSid) {
-    const cleanSid = String(member.userSid).trim().replace(/[^0-9a-zA-Z_-]/g, "").slice(0, 32);
-    if (cleanSid) targetVaultKeys.add(`athlete_state_sid_${cleanSid}`);
-  }
-  if (targetVaultKeys.size === 0) return;
-  const compactIncoming = activities.map((act) => ({
-    ...act,
-    streams: void 0
-  }));
-  for (const vaultKey of targetVaultKeys) {
-    await withVaultLock(vaultKey, async () => {
-      const existing = await loadTenantVaultAsync(
-        vaultKey,
-        null
-      );
-      const prevArchived = Array.isArray(existing?.coachArchivedActivities) ? existing.coachArchivedActivities : [];
-      const mergedMap = /* @__PURE__ */ new Map();
-      for (const item of [...compactIncoming, ...prevArchived]) {
-        if (item?.id && !mergedMap.has(item.id)) {
-          mergedMap.set(item.id, item);
-        }
-      }
-      const nextArchived = Array.from(mergedMap.values()).sort((a, b) => String(b.startDateLocal || "").localeCompare(String(a.startDateLocal || ""))).slice(0, 150);
-      const sanitized = sanitizeAthleteCloudState(
-        { coachArchivedActivities: nextArchived },
-        existing
-      );
-      await saveTenantVaultAsync(vaultKey, sanitized);
-    });
-  }
-}
-
-// server/athleticFieldSyncHelper.ts
-import crypto11 from "node:crypto";
-function applyParsedExternalFieldMarksToDoc(params) {
-  const baseLogs = Array.isArray(params.existingLogs) ? [...params.existingLogs] : Array.isArray(params.doc.fieldMarkLogs) ? [...params.doc.fieldMarkLogs] : [];
-  const mergedLogs = [...baseLogs];
-  const addedRecords = [];
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  for (const item of params.matchedFieldItems || []) {
-    const row = item?.row;
-    if (!row || !row.isFieldEvent) continue;
-    const normName = normalizeAthleteMatchKey(row.athleteName);
-    const fallbackMem = !item.mem && !item.membershipId ? (params.doc.memberships || []).find(
-      (m) => m.status !== "REVOKED" && m.role !== "PARENT_FOLLOWER" && (row.externalAthleteId && m.externalAthleteId === row.externalAthleteId || Boolean(normName) && normalizeAthleteMatchKey(m.invitedName) === normName)
-    ) : void 0;
-    const membershipId = item.mem?.membershipId || item.membershipId || fallbackMem?.membershipId;
-    const athleteName = item.mem?.invitedName || item.matchedAthleteName || item.athleteName || fallbackMem?.invitedName || row.athleteName;
-    const eventCode = row.fieldEventCode || "LJ";
-    const candidate = buildExternalFieldEventLogRecord({
-      row,
-      teamId: params.doc.brand.teamId,
-      membershipId,
-      athleteName,
-      nowIso,
-      idSuffix: crypto11.randomBytes(4).toString("hex")
-    });
-    const isDup = mergedLogs.some(
-      (existing) => isDuplicateExternalFieldLog(existing, candidate)
-    );
-    if (isDup) continue;
-    if (fallbackMem && !fallbackMem.eventGroup) {
-      fallbackMem.eventGroup = getFieldEventSpec(eventCode).eventGroup;
-    }
-    mergedLogs.unshift(candidate);
-    addedRecords.push(candidate);
-  }
-  params.doc.fieldMarkLogs = mergedLogs;
-  params.doc.fieldMarkLogsTotalCount = mergedLogs.length;
-  return {
-    addedRecords,
-    mergedLogs,
-    addedCount: addedRecords.length
-  };
-}
-
-// server/teamService.ts
-import crypto13 from "crypto";
-
-// server/teamWorkoutAndGovernanceService.ts
-import crypto12 from "crypto";
-
-// src/physiology/safeSportPatternWatchEngine.ts
-var DAY_MS = 864e5;
-var mean = (vals) => vals.length === 0 ? 0 : vals.reduce((acc, v) => acc + v, 0) / vals.length;
-function isHardSession(act) {
-  const name = (act.name || "").toLowerCase();
-  const hasWorkIntervals = Boolean(act.intervals && act.intervals.some((i) => i.type === "WORK"));
-  const highRpe = (act.quickLog?.rpe ?? 0) >= 7;
-  const highLoad = (act.trainingLoad ?? 0) >= 65;
-  return act.subType === "Track" || Boolean(act.officialRaceData) || hasWorkIntervals || highRpe || highLoad || /\b(track|intervals?|tempo|threshold|race|meets?|repeats?|vo2|fartlek|time trial|5000m|3200m|1600m|800m)\b|\d+\s*[x×]\s*\d+/i.test(
-    name
-  );
-}
-function isEasySubmaximalRun(act) {
-  if (act.sportCategory !== "Running") return false;
-  if ((act.movingTimeSecs || 0) < 1200 || (act.distanceMeters || 0) < 2e3) return false;
-  if (!(act.avgHr > 90)) return false;
-  if (isHardSession(act)) return false;
-  return true;
-}
-function extractActivityEf(act) {
-  if (act.sportCategory !== "Running") return null;
-  if ((act.movingTimeSecs || 0) < 1200 || !(act.avgHr > 90)) return null;
-  if (typeof act.efficiencyFactor === "number" && act.efficiencyFactor > 0.3) {
-    return act.efficiencyFactor;
-  }
-  if (act.distanceMeters > 1500 && act.movingTimeSecs > 0) {
-    const speedMpm = act.distanceMeters / (act.movingTimeSecs / 60);
-    return Number((speedMpm / act.avgHr).toFixed(3));
-  }
-  return null;
-}
-function extractHrr60Samples(act) {
-  const samples = [];
-  if (act.streams?.time && act.streams?.heartrate && act.intervals?.length) {
-    const times = act.streams.time;
-    const hrs = act.streams.heartrate;
-    for (const iv of act.intervals) {
-      if (iv.type !== "WORK") continue;
-      const workEnd = iv.startTimeSecs + iv.durationSecs;
-      const targetT = workEnd + 60;
-      let startHr = null;
-      let end60Hr = null;
-      for (let i = 0; i < times.length; i++) {
-        if (startHr === null && times[i] >= workEnd) {
-          startHr = hrs[i];
-        }
-        if (times[i] >= targetT) {
-          end60Hr = hrs[i];
-          break;
-        }
-      }
-      if (startHr !== null && end60Hr !== null && startHr > 110 && startHr > end60Hr) {
-        samples.push(Math.round(startHr - end60Hr));
-      }
-    }
-    if (samples.length > 0) return samples;
-  }
-  if (act.intervals && act.intervals.length >= 2) {
-    for (let i = 0; i < act.intervals.length - 1; i++) {
-      const cur = act.intervals[i];
-      const next = act.intervals[i + 1];
-      if (cur.type === "WORK" && next.type === "RECOVERY" && next.durationSecs >= 45) {
-        const peak = cur.maxHr ?? cur.avgHr;
-        if (peak && next.avgHr && peak > 120 && peak > next.avgHr) {
-          samples.push(Math.round(peak - next.avgHr));
-        }
-      }
-    }
-  }
-  return samples;
-}
-function evaluateSafeSportPatternWatch(params) {
-  const {
-    activities = [],
-    wellnessDays = [],
-    checkIn,
-    isMinorU18 = false,
-    hasParentGuardianCc = false,
-    hasAthleticTrainer = false,
-    referenceDateIso
-  } = params;
-  const refDateStr = (referenceDateIso || getLocalDateIso()).slice(0, 10);
-  const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
-  const datedActivities = activities.map((act) => {
-    const d = (act.startDateLocal || "").slice(0, 10);
-    const ms = Date.parse(`${d}T12:00:00Z`);
-    const ageDays = Number.isFinite(ms) ? (refMs - ms) / DAY_MS : Infinity;
-    return { act, ageDays };
-  }).filter((entry) => entry.ageDays >= 0 && entry.ageDays <= 56);
-  const has56dHistory = datedActivities.some((entry) => entry.ageDays > 28);
-  const windowBaselineDays = has56dHistory ? 56 : 28;
-  const recentActs = datedActivities.filter((e) => e.ageDays <= 14).map((e) => e.act);
-  const baselineActs = datedActivities.filter((e) => e.ageDays > 14 && e.ageDays <= 56).map((e) => e.act);
-  const signals = [];
-  const recentEasy = recentActs.filter(isEasySubmaximalRun);
-  const baselineEasy = baselineActs.filter(isEasySubmaximalRun);
-  let deltaEasyHrBpm = null;
-  if (recentEasy.length >= 1 && baselineEasy.length >= 1) {
-    const baseHr = mean(baselineEasy.map((a) => a.avgHr));
-    const recHr = mean(recentEasy.map((a) => a.avgHr));
-    deltaEasyHrBpm = Number((recHr - baseHr).toFixed(1));
-    if (deltaEasyHrBpm >= 8) {
-      signals.push({
-        signalId: "EASY_HR_DRIFT_ELEVATED",
-        severity: deltaEasyHrBpm >= 11 ? "ACTION_REQUIRED" : "WATCH",
-        title: "Submaximal Easy-Run HR Drift",
-        metricValue: `${Math.round(recHr)} bpm`,
-        baselineValue: `${Math.round(baseHr)} bpm`,
-        deltaDisplay: `+${deltaEasyHrBpm.toFixed(1)} bpm`,
-        guidance: "Sustained upward HR drift at easy aerobic pace is a classic early cardiovascular marker of low energy availability or iron depletion."
-      });
-    }
-  }
-  const recentHard = recentActs.filter((a) => a.sportCategory === "Running" && isHardSession(a) && a.maxHr > 120);
-  const baselineHard = baselineActs.filter((a) => a.sportCategory === "Running" && isHardSession(a) && a.maxHr > 120);
-  const sortedWellness = [...wellnessDays].sort((a, b) => a.date.localeCompare(b.date));
-  const latestWellness = sortedWellness[sortedWellness.length - 1];
-  const highStrainContext = (latestWellness ? latestWellness.ctl - latestWellness.atl <= -10 : false) || checkIn?.energyFeel === "FLAT" || recentHard.some((a) => (a.quickLog?.rpe ?? 0) >= 7 || (a.trainingLoad ?? 0) >= 65);
-  let chronotropicBluntingDetected = false;
-  if (recentHard.length >= 1 && baselineHard.length >= 1) {
-    const baseMaxHr = mean(baselineHard.map((a) => a.maxHr));
-    const recMaxHr = mean(recentHard.map((a) => a.maxHr));
-    const dropBpm = Number((baseMaxHr - recMaxHr).toFixed(1));
-    if (dropBpm >= 6 && (highStrainContext || dropBpm >= 8)) {
-      chronotropicBluntingDetected = true;
-      signals.push({
-        signalId: "CHRONOTROPIC_BLUNTING",
-        severity: dropBpm >= 10 ? "ACTION_REQUIRED" : "WATCH",
-        title: "Chronotropic Blunting on Quality Efforts",
-        metricValue: `${Math.round(recMaxHr)} bpm peak`,
-        baselineValue: `${Math.round(baseMaxHr)} bpm peak`,
-        deltaDisplay: `-${dropBpm.toFixed(1)} bpm`,
-        guidance: "Suppressed max HR during track or hard efforts under elevated training load warrants reduced anaerobic volume and medical review."
-      });
-    }
-  }
-  const recentEfVals = recentActs.map(extractActivityEf).filter((v) => v !== null);
-  const baseEfVals = baselineActs.map(extractActivityEf).filter((v) => v !== null);
-  let deltaEfficiencyFactorPct = null;
-  if (recentEfVals.length >= 1 && baseEfVals.length >= 1) {
-    const baseEf = mean(baseEfVals);
-    const recEf = mean(recentEfVals);
-    deltaEfficiencyFactorPct = Number(((recEf - baseEf) / Math.max(0.1, baseEf) * 100).toFixed(1));
-    if (deltaEfficiencyFactorPct <= -6) {
-      signals.push({
-        signalId: "EFFICIENCY_FACTOR_DECAY",
-        severity: deltaEfficiencyFactorPct <= -9 ? "ACTION_REQUIRED" : "WATCH",
-        title: "Aerobic Efficiency Factor (EF) Drop",
-        metricValue: `${recEf.toFixed(2)}`,
-        baselineValue: `${baseEf.toFixed(2)}`,
-        deltaDisplay: `${deltaEfficiencyFactorPct.toFixed(1)}%`,
-        guidance: "14-day speed-to-HR efficiency fell >= 6% beneath baseline. Prioritize sleep, carbohydrate refueling around sessions, and reduced density."
-      });
-    }
-  }
-  const recentHrr60 = recentActs.flatMap(extractHrr60Samples);
-  const baseHrr60 = baselineActs.flatMap(extractHrr60Samples);
-  let deltaHrr60Bpm = null;
-  if (recentHrr60.length >= 1 && baseHrr60.length >= 1) {
-    const baseHrr = mean(baseHrr60);
-    const recHrr = mean(recentHrr60);
-    deltaHrr60Bpm = Number((recHrr - baseHrr).toFixed(1));
-    if (deltaHrr60Bpm <= -6) {
-      signals.push({
-        signalId: "HRR60_PARASYMPATHETIC_DROP",
-        severity: deltaHrr60Bpm <= -10 ? "ACTION_REQUIRED" : "WATCH",
-        title: "60s Heart-Rate Recovery (HRR60) Blunted",
-        metricValue: `${Math.round(recHrr)} bpm drop`,
-        baselineValue: `${Math.round(baseHrr)} bpm drop`,
-        deltaDisplay: `${deltaHrr60Bpm.toFixed(1)} bpm`,
-        guidance: "Post-interval 60s parasympathetic rebound slowed >= 6 bpm. Swap next spiked session for low-impact aerobic recovery."
-      });
-    }
-  }
-  let ferritinStatus = "UNKNOWN";
-  if (typeof checkIn?.ferritinNgMl === "number" && Number.isFinite(checkIn.ferritinNgMl)) {
-    const f = checkIn.ferritinNgMl;
-    if (f < 30) {
-      ferritinStatus = "DEPLETED_UNDER_30";
-      signals.push({
-        signalId: "SERUM_FERRITIN_LOW",
-        severity: "ACTION_REQUIRED",
-        title: "Serum Ferritin Depleted (< 30 ng/mL)",
-        metricValue: `${f.toFixed(0)} ng/mL`,
-        baselineValue: ">= 50 ng/mL target",
-        deltaDisplay: `${Math.round(f - 50)} ng/mL`,
-        guidance: "Low endurance ferritin reserve (< 30 ng/mL) may limit aerobic recovery and oxygen transport. Coaching readiness indicator only (not a medical diagnosis) \u2014 consult a sports physician before iron supplementation."
-      });
-    } else if (f < 50) {
-      ferritinStatus = "SUBOPTIMAL_30_50";
-      signals.push({
-        signalId: "SERUM_FERRITIN_LOW",
-        severity: "WATCH",
-        title: "Serum Ferritin Borderline (30\u201349 ng/mL)",
-        metricValue: `${f.toFixed(0)} ng/mL`,
-        baselineValue: ">= 50 ng/mL target",
-        deltaDisplay: `${Math.round(f - 50)} ng/mL`,
-        guidance: "Borderline iron stores for endurance runners. Discuss dietary heme-iron intake and physician lab follow-up."
-      });
-    } else {
-      ferritinStatus = "OPTIMAL";
-    }
-  }
-  const kneeScore = checkIn?.kneeGrowthPlateSoreness ?? 0;
-  const heelScore = checkIn?.heelApophysisSoreness ?? 0;
-  const maxPhvScore = Math.max(kneeScore, heelScore);
-  const phvGrowthPlateFlag = maxPhvScore >= 1;
-  if (phvGrowthPlateFlag) {
-    const site = kneeScore >= heelScore ? "Tibial Tuberosity (Knee)" : "Calcaneal Apophysis (Heel)";
-    signals.push({
-      signalId: "PHV_GROWTH_PLATE_SORENESS",
-      severity: maxPhvScore >= 2 ? "ACTION_REQUIRED" : "WATCH",
-      title: `PHV Growth-Plate Traction Watch (${site})`,
-      metricValue: `${maxPhvScore}/3`,
-      baselineValue: "0/3 pain-free",
-      deltaDisplay: `+${maxPhvScore}`,
-      guidance: maxPhvScore >= 2 ? "PROTECT GROWTH PLATE: Pause plyometrics, hurdles, and spikes immediately; route to Athletic Trainer / Aqua Jog." : "Early apophyseal traction sensitivity. Eliminate track spikes & hard downhill/bounding work this week."
-    });
-  }
-  const hasActionRequired = signals.some((s) => s.severity === "ACTION_REQUIRED");
-  const medicalWatchCluster = signals.length >= 2 && (ferritinStatus !== "UNKNOWN" && ferritinStatus !== "OPTIMAL" ? true : deltaEasyHrBpm !== null && deltaEasyHrBpm >= 8 && deltaEfficiencyFactorPct !== null && deltaEfficiencyFactorPct <= -6);
-  const trafficLight = hasActionRequired || medicalWatchCluster || maxPhvScore >= 2 || ferritinStatus === "DEPLETED_UNDER_30" ? "RED_MEDICAL_REVIEW" : signals.length >= 1 ? "AMBER_WATCH" : "GREEN_CLEAR";
-  const authorizedRecipients = ["ATHLETE_SELF"];
-  if (isMinorU18 || hasParentGuardianCc) {
-    authorizedRecipients.push("PARENT_GUARDIAN_CC");
-  }
-  if (hasAthleticTrainer || trafficLight === "RED_MEDICAL_REVIEW") {
-    authorizedRecipients.push("ATHLETIC_TRAINER_MEDICAL");
-  }
-  let headline = "Autonomic, Aerobic Efficiency & Growth-Plate Markers Clear";
-  let athleteGuidance = "14-day cardiac efficiency, recovery HR, and growth-plate status sit cleanly inside your personal baseline (zero weight tracking).";
-  let coachSafeSummaryLabel = "Clear \u2014 Normal Training Progression";
-  if (trafficLight === "RED_MEDICAL_REVIEW") {
-    headline = "Medical / AT Review Recommended \xB7 Non-Weight Biomarker Shift";
-    athleteGuidance = "Multiple non-weight endurance & tissue signals shifted beneath baseline. Pause high-density spiked work and coordinate privately with your healthcare provider / Athletic Trainer.";
-    coachSafeSummaryLabel = "AT / Medical Review & Load Modification Recommended (Zero-Weight Private Signal)";
-  } else if (trafficLight === "AMBER_WATCH") {
-    headline = "Early Non-Weight Pattern Watch \xB7 Monitor Recovery & Fueling";
-    athleteGuidance = "One early cardiac, iron, or growth-plate signal stepped outside baseline. Emphasize 8.5h+ sleep, post-run carbohydrate/protein intake, and daily trainers.";
-    coachSafeSummaryLabel = "Early Watch \u2014 Prioritize Recovery & Trainers Only (Zero-Weight Private Signal)";
-  }
-  const medicalRoutingSummary = isMinorU18 ? `Private U18 Route: Athlete Self${hasParentGuardianCc ? " + Parent/Guardian CC" : ""}${authorizedRecipients.includes("ATHLETIC_TRAINER_MEDICAL") ? " + Certified Athletic Trainer" : ""} (weight, BMI & W/kg strictly excluded).` : authorizedRecipients.includes("ATHLETIC_TRAINER_MEDICAL") ? "Private Athlete + Athletic Trainer / Medical Staff (weight, BMI & W/kg strictly excluded)." : "Private Athlete Only (solo adult \u2014 weight, BMI & W/kg strictly excluded).";
-  return {
-    evaluatedAtIso: (/* @__PURE__ */ new Date()).toISOString(),
-    windowRecentDays: 14,
-    windowBaselineDays,
-    trafficLight,
-    zeroWeightCompliant: true,
-    isMinorU18,
-    deltaEasyHrBpm,
-    chronotropicBluntingDetected,
-    deltaEfficiencyFactorPct,
-    deltaHrr60Bpm,
-    ferritinStatus,
-    phvGrowthPlateFlag,
-    signals,
-    headline,
-    athleteGuidance,
-    medicalRoutingSummary,
-    authorizedRecipients,
-    coachSafeSummaryLabel
-  };
-}
-
-// src/physiology/injuryHubEngine.ts
-var ALL_INJURY_BODY_REGIONS = [
-  "SHIN",
-  "ACHILLES",
-  "ANKLE",
-  "FOOT",
-  "KNEE",
-  "HAMSTRING",
-  "QUAD",
-  "GROIN",
-  "HIP",
-  "BACK",
-  "SHOULDER",
-  "ELBOW",
-  "OTHER"
-];
-var VALID_PAIN_AREA_SET = new Set(
-  ALL_INJURY_BODY_REGIONS
-);
-function normalizePainArea(raw) {
-  if (typeof raw !== "string") return void 0;
-  const upper = raw.trim().toUpperCase();
-  return VALID_PAIN_AREA_SET.has(upper) ? upper : void 0;
-}
-function stripClinicalNotesForRole(cases, role) {
-  if (role === "ATHLETIC_TRAINER") return cases;
-  return cases.map((c) => {
-    const { privateClinicalNotes: _drop, ...coachSafe } = c;
-    return coachSafe;
-  });
-}
-
 // server/teamWorkoutAndGovernanceService.ts
 async function updateTeamMemberEventGroup(params) {
   return withTeamRowLock(params.teamId, async () => {
@@ -13784,7 +12957,7 @@ async function broadcastWorkoutToTeamSquad(params) {
     const locationCategory = sanitizePracticeVenueCategory(params.locationCategory);
     const meetingNotes = params.meetingNotes ? String(params.meetingNotes).trim().slice(0, 240) : void 0;
     const workout = {
-      broadcastId: `bw_${crypto12.randomBytes(6).toString("hex")}`,
+      broadcastId: `bw_${crypto10.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup,
       ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -13855,7 +13028,7 @@ async function broadcastWorkoutBatchToTeamSquad(params) {
       const locationCategory = sanitizePracticeVenueCategory(w.locationCategory);
       const meetingNotes = w.meetingNotes ? String(w.meetingNotes).trim().slice(0, 240) : void 0;
       return {
-        broadcastId: `bw_${crypto12.randomBytes(6).toString("hex")}`,
+        broadcastId: `bw_${crypto10.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         targetSquadGroup,
         ...cleanEventGroups && cleanEventGroups.length > 0 ? { targetEventGroups: cleanEventGroups } : {},
@@ -14273,7 +13446,7 @@ Team: ${doc.brand.name}`
             deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
           }
           const alertRecord = {
-            id: `gsa_${crypto12.randomBytes(6).toString("hex")}`,
+            id: `gsa_${crypto10.randomBytes(6).toString("hex")}`,
             teamId: doc.brand.teamId,
             targetMembershipId: mem.membershipId,
             athleteName: mem.invitedName,
@@ -14342,7 +13515,7 @@ Team: ${doc.brand.name}`
       deliveryStatus = sendRes.delivered ? "SENT" : "LOCAL_LOGGED";
     }
     const alertRecord = {
-      id: `gsa_${crypto12.randomBytes(6).toString("hex")}`,
+      id: `gsa_${crypto10.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: target.membershipId,
       athleteName: target.invitedName,
@@ -14404,9 +13577,9 @@ async function saveTeamWorkoutLibraryTemplate(params) {
     }
     const validCat = params.template.category === "TRACK" || params.template.category === "XC_TEMPO" || params.template.category === "ROAD" || params.template.category === "CYCLING" || params.template.category === "SWIMMING" || params.template.category === "TRIATHLON" || params.template.category === "RECOVERY" ? params.template.category : "TRACK";
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto12.randomBytes(6).toString("hex")}`;
+    const id = params.template.id ? String(params.template.id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) : `wlib_${crypto10.randomBytes(6).toString("hex")}`;
     const record = {
-      id: id || `wlib_${crypto12.randomBytes(6).toString("hex")}`,
+      id: id || `wlib_${crypto10.randomBytes(6).toString("hex")}`,
       name: cleanName,
       category: validCat,
       sportCategory: params.template.sportCategory || "Running",
@@ -14522,7 +13695,7 @@ async function postTeamWorkoutComment(params) {
       targetIsProtectedMinor || doc.brand.enableParentGuardianCc && targetMem.parentGuardianEmail
     );
     const comment = {
-      id: `cmt_${crypto12.randomBytes(6).toString("hex")}`,
+      id: `cmt_${crypto10.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetMembershipId: targetMem.membershipId,
       targetAthleteName: targetMem.invitedName,
@@ -14744,13 +13917,13 @@ async function createTeamForCoach(params) {
   const cleanShort = String(params.shortName || "").trim().slice(0, 22) || cleanName.split(/\s+/).slice(0, 2).join(" ").toUpperCase().slice(0, 14);
   let slug = slugifyTeamName(cleanName);
   if (dir.bySlug[slug]) {
-    slug = `${slug}-${crypto13.randomInt(10, 99)}`;
+    slug = `${slug}-${crypto11.randomInt(10, 99)}`;
   }
   let joinCode = generateTeamJoinCode(cleanShort);
   if (dir.byJoinCode[joinCode]) {
-    joinCode = generateTeamJoinCode(cleanShort, crypto13.randomInt(10, 99));
+    joinCode = generateTeamJoinCode(cleanShort, crypto11.randomInt(10, 99));
   }
-  const teamId = `tm_${crypto13.randomBytes(8).toString("hex")}`;
+  const teamId = `tm_${crypto11.randomBytes(8).toString("hex")}`;
   const nowIso = (/* @__PURE__ */ new Date()).toISOString();
   const defaultSafeSportShield = typeof params.defaultSafeSportShield === "boolean" ? params.defaultSafeSportShield : orgDefaults.defaultSafeSportShield;
   const enableParentGuardianCc = typeof params.enableParentGuardianCc === "boolean" ? params.enableParentGuardianCc : orgDefaults.enableParentGuardianCc;
@@ -14781,7 +13954,7 @@ async function createTeamForCoach(params) {
   const cleanCoachEventGroups = sanitizeTargetEventGroups(params.coachEventGroups);
   const coachAttribution = sanitizeCoachAttribution(params.attribution);
   const coachMembership = {
-    membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
     teamId,
     userSid: params.callerSid,
     role: "HEAD_COACH",
@@ -14935,8 +14108,8 @@ async function bulkCreateAndSendInvites(params) {
       )) {
         continue;
       }
-      const rawToken = crypto13.randomBytes(12).toString("base64url");
-      const membershipId = `mem_${crypto13.randomBytes(6).toString("hex")}`;
+      const rawToken = crypto11.randomBytes(12).toString("base64url");
+      const membershipId = `mem_${crypto11.randomBytes(6).toString("hex")}`;
       const emailParam = cleanEmail ? `&email=${encodeURIComponent(cleanEmail)}` : "";
       const magicJoinUrl = `${cleanOrigin}/join/${latestDoc.brand.slug}?t=${rawToken}${emailParam}`;
       const parentCc = latestDoc.brand.enableParentGuardianCc && row.parentGuardianEmail ? row.parentGuardianEmail.trim().toLowerCase() : void 0;
@@ -15061,7 +14234,7 @@ async function resendPendingTeamInvites(params) {
         continue;
       }
       if (!m.rawInviteToken) {
-        m.rawInviteToken = crypto13.randomBytes(12).toString("base64url");
+        m.rawInviteToken = crypto11.randomBytes(12).toString("base64url");
         m.inviteTokenHash = hashToken(m.rawInviteToken);
         tokensUpdated = true;
       }
@@ -15304,7 +14477,7 @@ async function claimTeamJoinInvite(params) {
     const resolvedSharingTier = isStaffInvite ? "FULL_STREAMS" : isDeferredMinorParentEmail ? "LOAD_ONLY" : params.sharingTier || "SUMMARY_ONLY";
     if (!mem) {
       mem = {
-        membershipId: `mem_${crypto13.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto11.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         stravaAthleteId: cleanStravaId,
@@ -15378,7 +14551,7 @@ async function claimTeamJoinInvite(params) {
     if (mem.isMinorU18 && mem.parentGuardianEmail) {
       let rawConsentToken = "";
       if (!mem.parentConsentTokenHash) {
-        rawConsentToken = crypto13.randomBytes(16).toString("base64url");
+        rawConsentToken = crypto11.randomBytes(16).toString("base64url");
         mem.parentConsentTokenHash = hashToken(rawConsentToken);
         mem.parentConsentToken = void 0;
       }
@@ -15525,6 +14698,2071 @@ async function acknowledgeParentConsent(token) {
   return { ok: false, error: "Invalid or expired parent consent link." };
 }
 
+// server/routers/team/emailOtpRouter.ts
+var emailOtpRouter = express3.Router();
+var OTP_RATE_WINDOW_MS = 10 * 60 * 1e3;
+emailOtpRouter.post("/api/auth/email/send-otp", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const clientIp = getClientRateLimitIp(req);
+    const ipRate = await checkDistributedRateLimitAsync(
+      `otp_send_ip:${clientIp}`,
+      10,
+      OTP_RATE_WINDOW_MS
+    );
+    const emailRate = email ? await checkDistributedRateLimitAsync(`otp_send_em:${email}`, 5, OTP_RATE_WINDOW_MS) : { allowed: true, retryAfterSecs: 0 };
+    if (!ipRate.allowed || !emailRate.allowed) {
+      res.status(429).json({
+        ok: false,
+        error: "Too many verification code requests. Please wait a few minutes and try again.",
+        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs)
+      });
+      return;
+    }
+    const result = await requestEmailOtpCode(email, {
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear
+    });
+    if (!result.ok) {
+      res.status(result.statusCode || 400).json({ ok: false, error: result.error || "Unable to send OTP." });
+      return;
+    }
+    res.json({
+      ok: true,
+      deliveryStatus: result.deliveryStatus,
+      resendConfigured: isResendConfigured(),
+      ...!isProductionDeployment() && result.devPreviewCode ? { devPreviewCode: result.devPreviewCode } : {}
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to send verification code."
+    });
+  }
+});
+emailOtpRouter.post("/api/auth/email/verify-otp", async (req, res) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    const code = String(req.body?.code || "").trim();
+    const clientIp = getClientRateLimitIp(req);
+    const ipRate = await checkDistributedRateLimitAsync(
+      `otp_verify_ip:${clientIp}`,
+      20,
+      OTP_RATE_WINDOW_MS
+    );
+    const emailRate = email ? await checkDistributedRateLimitAsync(`otp_verify_em:${email}`, 10, OTP_RATE_WINDOW_MS) : { allowed: true, retryAfterSecs: 0 };
+    if (!ipRate.allowed || !emailRate.allowed) {
+      res.status(429).json({
+        ok: false,
+        error: "Too many verification attempts. Please wait a few minutes and try again.",
+        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs)
+      });
+      return;
+    }
+    const currentClaims = getVerifiedSessionClaims(req);
+    const verifiedPreferredSid = currentClaims && isCanonicalAuthenticatedClaims(currentClaims) ? currentClaims.sid : void 0;
+    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid, {
+      birthMonthYear: req.body?.birthMonthYear,
+      birthYear: req.body?.birthYear
+    });
+    if (!result.ok || !result.sid) {
+      res.status(result.statusCode || 400).json({ ok: false, error: result.error || "Invalid code." });
+      return;
+    }
+    setSessionCookie(
+      req,
+      res,
+      result.userId || `usr_${result.sid}`,
+      result.sid,
+      "verified"
+    );
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const teams = await listTeamsForUser(result.sid, originUrl);
+    res.json({
+      ok: true,
+      email: result.email,
+      displayName: result.displayName,
+      teams
+    });
+  } catch (err) {
+    res.status(500).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Verification failed."
+    });
+  }
+});
+
+// server/routers/team/timingRouter.ts
+import express4 from "express";
+
+// server/teamTimingDelegationService.ts
+import crypto12 from "crypto";
+var TIMING_PASS_INDEX_KEY = "timing_pass_index_v1";
+var PASS_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+var VALID_STATIONS = /* @__PURE__ */ new Set([
+  "START_FINISH",
+  "200M_MARK",
+  "100M_MARK",
+  "RELAY_ZONE",
+  "CUSTOM"
+]);
+var DELEGATED_STATION_LABELS = {
+  START_FINISH: "Start / Finish",
+  "200M_MARK": "200m Mark",
+  "100M_MARK": "100m Mark",
+  RELAY_ZONE: "Relay Zone",
+  CUSTOM: "Custom Mark"
+};
+var RELAY_EVENT_SPECS = {
+  "4x100m": { distanceMeters: 400, splitMeters: 100, lapCount: 4 },
+  "4x200m": { distanceMeters: 800, splitMeters: 200, lapCount: 4 },
+  "4x400m": { distanceMeters: 1600, splitMeters: 400, lapCount: 4 },
+  "4x800m": { distanceMeters: 3200, splitMeters: 400, lapCount: 4 },
+  dmr: { distanceMeters: 4e3, splitMeters: 400, lapCount: 4 }
+};
+function sanitizeText(raw, maxLen) {
+  return String(raw ?? "").replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]").replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, maxLen);
+}
+function abbreviatePublicRunnerName(fullName) {
+  const parts = sanitizeText(fullName, 64).split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+  }
+  return parts[0] || "Runner";
+}
+function generatePassCode() {
+  const bytes = crypto12.randomBytes(8);
+  let out = "";
+  for (let i = 0; i < 8; i++) {
+    out += PASS_CODE_ALPHABET[bytes[i] % PASS_CODE_ALPHABET.length];
+  }
+  return out;
+}
+function hashTimingPassPin(sessionId, pin) {
+  return hashToken(`timing_pin_v1:${sessionId}:${pin}`);
+}
+function verifyTimingPassPin(sessionId, pinHash, candidatePin) {
+  const expected = hashTimingPassPin(sessionId, candidatePin);
+  const a = Buffer.from(pinHash, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  if (a.length !== b.length) return false;
+  return crypto12.timingSafeEqual(a, b);
+}
+function resolveEventDefaults(eventCode) {
+  const clean = sanitizeText(eventCode, 32) || "1600m";
+  const relayMatch = RELAY_EVENT_SPECS[clean.toLowerCase()];
+  if (relayMatch) {
+    return {
+      eventLabel: clean,
+      distanceMeters: relayMatch.distanceMeters,
+      splitMeters: relayMatch.splitMeters,
+      lapCount: relayMatch.lapCount
+    };
+  }
+  const official = OFFICIAL_RACE_EVENTS.find(
+    (e) => e.label.toLowerCase() === clean.toLowerCase()
+  );
+  if (official) {
+    return {
+      eventLabel: official.label,
+      distanceMeters: official.distanceMeters,
+      splitMeters: official.defaultSplitMeters,
+      lapCount: official.defaultLapCount
+    };
+  }
+  const numericMeters = Number(clean.replace(/[^0-9]/g, ""));
+  const dist = Number.isFinite(numericMeters) && numericMeters >= 50 && numericMeters <= 5e4 ? numericMeters : 1600;
+  const splitMeters = dist <= 60 ? 60 : dist <= 120 ? 100 : dist <= 400 ? 200 : dist >= 5e3 ? 1e3 : 400;
+  return {
+    eventLabel: clean,
+    distanceMeters: dist,
+    splitMeters,
+    lapCount: Math.max(1, Math.round(dist / splitMeters))
+  };
+}
+function snapLapSplitMeters(rawMeters) {
+  const options = [60, 100, 200, 400, 1e3];
+  return options.reduce(
+    (best, cur) => Math.abs(cur - rawMeters) < Math.abs(best - rawMeters) ? cur : best
+  );
+}
+function resolveDefaultMidnightExpiryIso(meetDate) {
+  const match = meetDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return new Date(Date.now() + 18 * 36e5).toISOString();
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const endOfMeetDayMs = Date.UTC(year, month - 1, day + 1, 7, 59, 59, 999);
+  const nowPlusEightHrs = Date.now() + 8 * 36e5;
+  const maxBounded = Date.now() + 72 * 36e5;
+  return new Date(Math.min(maxBounded, Math.max(endOfMeetDayMs, nowPlusEightHrs))).toISOString();
+}
+async function upsertPassDirectoryEntry(passCode, entry) {
+  await withVaultLock(TIMING_PASS_INDEX_KEY, async () => {
+    const idx = await loadTenantVaultAsync(TIMING_PASS_INDEX_KEY, {
+      byPassCode: {}
+    });
+    const nextByCode = { ...idx.byPassCode || {} };
+    nextByCode[passCode.toUpperCase()] = entry;
+    const keys = Object.keys(nextByCode);
+    if (keys.length > 1500) {
+      const nowMs = Date.now();
+      for (const k of keys) {
+        const parsed = Date.parse(nextByCode[k].expiresAt);
+        if (Number.isFinite(parsed) && parsed < nowMs - 48 * 36e5) {
+          delete nextByCode[k];
+        }
+      }
+    }
+    await saveTenantVaultAsync(TIMING_PASS_INDEX_KEY, { byPassCode: nextByCode });
+  });
+}
+async function findTeamIdForPassCode(passCode) {
+  const cleanCode = sanitizeText(passCode, 24).toUpperCase();
+  if (!cleanCode) return null;
+  const idx = await loadTenantVaultAsync(TIMING_PASS_INDEX_KEY, {
+    byPassCode: {}
+  });
+  const hit = idx.byPassCode?.[cleanCode];
+  if (hit?.teamId) return hit.teamId;
+  const dir = await loadDirectory();
+  for (const tid of dir.allTeamIds || []) {
+    const doc = await loadTeamDocRaw(tid);
+    if (doc?.delegatedTimingSessions?.some((s) => s.passCode.toUpperCase() === cleanCode)) {
+      return tid;
+    }
+  }
+  return null;
+}
+function isSessionExpiredOrRevoked(session, nowMs = Date.now()) {
+  if (session.revokedAt) return true;
+  if (session.expiresAt) {
+    const expMs = Date.parse(session.expiresAt);
+    if (Number.isFinite(expMs) && nowMs > expMs) return true;
+  }
+  return false;
+}
+async function createDelegatedTimingSession(params) {
+  const cleanPinRaw = typeof params.pin === "string" ? params.pin.trim() : typeof params.pin === "number" ? String(params.pin).trim() : "";
+  if (cleanPinRaw && !/^\d{4}$/.test(cleanPinRaw)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: "Optional timing pass PIN must be exactly 4 numeric digits."
+    };
+  }
+  const rawDate = sanitizeText(params.meetDate, 10);
+  const meetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+  let resolvedExpiresAt = resolveDefaultMidnightExpiryIso(meetDate);
+  if (typeof params.expiresAt === "string" && params.expiresAt.trim()) {
+    const parsedExp = Date.parse(params.expiresAt.trim());
+    if (!Number.isFinite(parsedExp)) {
+      return { ok: false, statusCode: 400, error: "Invalid expiresAt timestamp." };
+    }
+    resolvedExpiresAt = new Date(parsedExp).toISOString();
+  }
+  const rawStation = String(params.stationType || "START_FINISH").trim().toUpperCase();
+  const stationType = VALID_STATIONS.has(rawStation) ? rawStation : "START_FINISH";
+  const stationLabel = sanitizeText(params.stationLabel, 48) || DELEGATED_STATION_LABELS[stationType];
+  const eventCode = sanitizeText(params.eventCode, 32) || "1600m";
+  const eventDefaults = resolveEventDefaults(eventCode);
+  const eventLabel = sanitizeText(params.eventLabel, 48) || eventDefaults.eventLabel;
+  const rawSplitMeters = Number(params.targetSplitMeters);
+  const targetSplitMeters = Number.isFinite(rawSplitMeters) && rawSplitMeters >= 30 && rawSplitMeters <= 5e3 ? Math.round(rawSplitMeters) : eventDefaults.splitMeters;
+  const rawLapCount = Number(params.targetLapCount);
+  const targetLapCount = Number.isFinite(rawLapCount) && rawLapCount >= 1 && rawLapCount <= 50 ? Math.round(rawLapCount) : eventDefaults.lapCount;
+  const splitPlanLabel = sanitizeText(params.splitPlanLabel, 48) || `${targetLapCount} \xD7 ${targetSplitMeters}m`;
+  const meetTitle = sanitizeText(params.meetTitle, 120) || "Track Meet";
+  const heatLabel = sanitizeText(params.heatLabel, 40) || void 0;
+  const result = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, statusCode: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: "Head Coach or Assistant Coach permissions required to delegate timing."
+      };
+    }
+    let assignedMembershipId;
+    let assignedDelegateName;
+    const requestedAssigneeId = sanitizeText(params.assignedMembershipId, 64);
+    if (requestedAssigneeId) {
+      const assigneeMem = doc.memberships.find(
+        (m) => m.membershipId === requestedAssigneeId && m.status !== "REVOKED" && m.status !== "ALUMNI"
+      );
+      if (!assigneeMem) {
+        return {
+          ok: false,
+          statusCode: 404,
+          error: "Assigned teammate membership not found on active roster."
+        };
+      }
+      assignedMembershipId = assigneeMem.membershipId;
+      assignedDelegateName = assigneeMem.invitedName;
+    }
+    const rawRunners = Array.isArray(params.runners) ? params.runners : [];
+    const runners = [];
+    const seenKeys = /* @__PURE__ */ new Set();
+    for (let i = 0; i < Math.min(24, rawRunners.length); i++) {
+      const item = rawRunners[i];
+      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+      const obj = item;
+      const reqMemId = sanitizeText(obj.membershipId, 64);
+      const matchedMem = reqMemId ? doc.memberships.find(
+        (m) => m.membershipId === reqMemId && m.status !== "REVOKED" && m.status !== "ALUMNI"
+      ) : void 0;
+      const displayName = matchedMem?.invitedName || sanitizeText(obj.displayName || obj.athleteName, 64);
+      if (!displayName) continue;
+      const rawCandidateKey = sanitizeText(obj.entryKey, 48).replace(/[^a-zA-Z0-9_-]/g, "");
+      const containsMemberId = Boolean(matchedMem && rawCandidateKey.includes(matchedMem.membershipId)) || rawCandidateKey.startsWith("mem_") || rawCandidateKey.startsWith("mem-");
+      let entryKey = rawCandidateKey && !containsMemberId ? rawCandidateKey : `r_${i + 1}`;
+      if (seenKeys.has(entryKey)) {
+        entryKey = `${entryKey}_${i + 1}`;
+      }
+      seenKeys.add(entryKey);
+      const hipOrLane = sanitizeText(obj.hipOrLane, 12) || void 0;
+      const rawTargetSplit = Number(obj.targetSplitSecs);
+      const targetSplitSecs = Number.isFinite(rawTargetSplit) && rawTargetSplit > 0 && rawTargetSplit < 3600 ? Number(rawTargetSplit.toFixed(2)) : void 0;
+      const isWalkOn = !matchedMem && Boolean(obj.isWalkOn);
+      runners.push({
+        entryKey,
+        ...matchedMem ? { membershipId: matchedMem.membershipId } : {},
+        displayName,
+        ...hipOrLane ? { hipOrLane } : {},
+        ...targetSplitSecs !== void 0 ? { targetSplitSecs } : {},
+        ...isWalkOn ? { isWalkOn: true } : {}
+      });
+    }
+    const sessionId = `dts_${crypto12.randomBytes(6).toString("hex")}`;
+    const existingCodes = new Set(
+      (doc.delegatedTimingSessions || []).map((s) => s.passCode.toUpperCase())
+    );
+    let passCode = generatePassCode();
+    while (existingCodes.has(passCode)) {
+      passCode = generatePassCode();
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const internalRecord = {
+      sessionId,
+      teamId: params.teamId,
+      passCode,
+      meetTitle,
+      meetDate,
+      eventCode,
+      eventLabel,
+      ...heatLabel ? { heatLabel } : {},
+      stationType,
+      stationLabel,
+      splitPlanLabel,
+      targetSplitMeters,
+      targetLapCount,
+      runners,
+      ...assignedMembershipId ? { assignedMembershipId, assignedDelegateName } : {},
+      createdBySid: params.callerSid,
+      createdByName: callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
+      expiresAt: resolvedExpiresAt,
+      ...cleanPinRaw ? {
+        pinRequired: true,
+        pinHash: hashTimingPassPin(sessionId, cleanPinRaw)
+      } : { pinRequired: false },
+      createdAt: nowIso
+    };
+    const prevSessions = Array.isArray(doc.delegatedTimingSessions) ? doc.delegatedTimingSessions : [];
+    doc.delegatedTimingSessions = [internalRecord, ...prevSessions].slice(0, 80);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "DELEGATED_TIMING_SESSION_CREATED",
+      targetId: sessionId,
+      metadata: {
+        passCode,
+        eventLabel,
+        stationType,
+        runnerCount: runners.length,
+        pinRequired: Boolean(cleanPinRaw),
+        assignedMembershipId: assignedMembershipId || null
+      }
+    });
+    const { pinHash: _dropPinHash, ...publicSession } = internalRecord;
+    const cleanOrigin = params.originUrl.replace(/\/+$/, "");
+    return {
+      ok: true,
+      statusCode: 200,
+      session: publicSession,
+      passUrl: `${cleanOrigin}/time/${encodeURIComponent(passCode)}`,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      expiresAt: resolvedExpiresAt
+    };
+  });
+  if (result.ok && result.session) {
+    await upsertPassDirectoryEntry(result.session.passCode, {
+      teamId: params.teamId,
+      sessionId: result.session.sessionId,
+      expiresAt: result.session.expiresAt
+    });
+  }
+  return result;
+}
+async function revokeDelegatedTimingSession(params) {
+  const cleanSessionId = sanitizeText(params.sessionId, 64);
+  if (!cleanSessionId) {
+    return { ok: false, statusCode: 400, error: "Session ID is required." };
+  }
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, statusCode: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: "Coach permissions required to revoke timing passes."
+      };
+    }
+    const sessions = Array.isArray(doc.delegatedTimingSessions) ? doc.delegatedTimingSessions : [];
+    const target = sessions.find((s) => s.sessionId === cleanSessionId);
+    if (!target) {
+      return { ok: false, statusCode: 404, error: "Timing pass session not found." };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    target.revokedAt = nowIso;
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "DELEGATED_TIMING_SESSION_REVOKED",
+      targetId: cleanSessionId,
+      metadata: { passCode: target.passCode }
+    });
+    return {
+      ok: true,
+      statusCode: 200,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function getPublicDelegatedTimingPass(params) {
+  const cleanCode = sanitizeText(params.passCode, 24).toUpperCase();
+  if (!cleanCode) {
+    return { found: false, statusCode: 404 };
+  }
+  const teamId = await findTeamIdForPassCode(cleanCode);
+  if (!teamId) {
+    return { found: false, statusCode: 404 };
+  }
+  const doc = await loadTeamDocRaw(teamId);
+  if (!doc) {
+    return { found: false, statusCode: 404 };
+  }
+  const session = (doc.delegatedTimingSessions || []).find(
+    (s) => s.passCode.toUpperCase() === cleanCode
+  );
+  if (!session) {
+    return { found: false, statusCode: 404 };
+  }
+  if (isSessionExpiredOrRevoked(session)) {
+    return {
+      found: true,
+      expiredOrRevoked: true,
+      teamShortName: doc.brand.shortName,
+      teamName: doc.brand.name,
+      statusCode: 410,
+      error: session.revokedAt ? "This timing pass was revoked by the coach." : "This timing pass has expired."
+    };
+  }
+  const pinRequired = Boolean(session.pinRequired && session.pinHash);
+  const candidatePin = sanitizeText(params.pin, 12);
+  if (pinRequired) {
+    const pinVerified = Boolean(candidatePin) && /^\d{4}$/.test(candidatePin) && verifyTimingPassPin(session.sessionId, session.pinHash, candidatePin);
+    if (!pinVerified) {
+      return {
+        found: true,
+        pinRequired: true,
+        pinVerified: false,
+        teamShortName: doc.brand.shortName,
+        teamName: doc.brand.name,
+        statusCode: candidatePin ? 403 : 200,
+        ...candidatePin ? { error: "Incorrect 4-digit timing pass PIN." } : {}
+      };
+    }
+  }
+  const safeRunners = (session.runners || []).map((r) => ({
+    entryKey: r.entryKey,
+    displayName: abbreviatePublicRunnerName(r.displayName),
+    ...r.hipOrLane ? { hipOrLane: r.hipOrLane } : {},
+    ...typeof r.targetSplitSecs === "number" ? { targetSplitSecs: r.targetSplitSecs } : {},
+    ...r.isWalkOn ? { isWalkOn: true } : {}
+  }));
+  return {
+    found: true,
+    expiredOrRevoked: false,
+    pinRequired,
+    pinVerified: true,
+    teamShortName: doc.brand.shortName,
+    teamName: doc.brand.name,
+    statusCode: 200,
+    session: {
+      sessionId: session.sessionId,
+      teamId: session.teamId,
+      passCode: session.passCode,
+      meetTitle: session.meetTitle,
+      meetDate: session.meetDate,
+      eventCode: session.eventCode,
+      eventLabel: session.eventLabel,
+      ...session.heatLabel ? { heatLabel: session.heatLabel } : {},
+      stationType: session.stationType,
+      stationLabel: session.stationLabel,
+      splitPlanLabel: session.splitPlanLabel,
+      targetSplitMeters: session.targetSplitMeters,
+      targetLapCount: session.targetLapCount,
+      runners: safeRunners,
+      expiresAt: session.expiresAt
+    }
+  };
+}
+function sanitizeSubmissionEntries(rawEntries, sessionRunners) {
+  if (!Array.isArray(rawEntries)) return [];
+  const sessionRunnerByKey = new Map(sessionRunners.map((r) => [r.entryKey, r]));
+  const out = [];
+  for (let i = 0; i < Math.min(40, rawEntries.length); i++) {
+    const raw = rawEntries[i];
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const obj = raw;
+    const entryKey = sanitizeText(obj.entryKey, 64).replace(/[^a-zA-Z0-9_-]/g, "");
+    if (!entryKey) continue;
+    const rawTimestamps = Array.isArray(obj.rawLapTimestampsSecs) ? obj.rawLapTimestampsSecs.slice(0, 100).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 0 && n <= 86400).map((n) => Number(n.toFixed(2))) : [];
+    const rawSplits = Array.isArray(obj.lapSplitsSecs) ? obj.lapSplitsSecs.slice(0, 100).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0 && n <= 86400).map((n) => Number(n.toFixed(2))) : [];
+    const totalNum = Number(obj.totalSecs);
+    const derivedTotal = Number.isFinite(totalNum) && totalNum > 0 && totalNum <= 86400 ? Number(totalNum.toFixed(2)) : rawSplits.length > 0 ? Number(rawSplits.reduce((s, v) => s + v, 0).toFixed(2)) : 0;
+    if (derivedTotal <= 0) continue;
+    const finalSplits = rawSplits.length > 0 ? rawSplits : [derivedTotal];
+    const finalTimestamps = rawTimestamps.length > 0 ? rawTimestamps : [derivedTotal];
+    const matchedSessionRunner = sessionRunnerByKey.get(entryKey);
+    const isWalkOn = !matchedSessionRunner || Boolean(matchedSessionRunner.isWalkOn);
+    const athleteName = matchedSessionRunner ? matchedSessionRunner.displayName : sanitizeText(obj.athleteName, 64) || `Walk-On ${i + 1}`;
+    out.push({
+      entryKey,
+      ...matchedSessionRunner?.membershipId ? { membershipId: matchedSessionRunner.membershipId } : {},
+      athleteName,
+      ...matchedSessionRunner?.hipOrLane ? { hipOrLane: matchedSessionRunner.hipOrLane } : sanitizeText(obj.hipOrLane, 12) ? { hipOrLane: sanitizeText(obj.hipOrLane, 12) } : {},
+      totalSecs: derivedTotal,
+      lapSplitsSecs: finalSplits,
+      rawLapTimestampsSecs: finalTimestamps,
+      ...isWalkOn ? { isWalkOn: true } : {}
+    });
+  }
+  return out;
+}
+async function submitDelegatedSplits(params) {
+  const cleanCode = sanitizeText(params.passCode, 24).toUpperCase();
+  if (!cleanCode) {
+    return { ok: false, statusCode: 400, error: "Timing pass code is required." };
+  }
+  const teamId = await findTeamIdForPassCode(cleanCode);
+  if (!teamId) {
+    return { ok: false, statusCode: 404, error: "Timing pass not found." };
+  }
+  return withTeamRowLock(teamId, async () => {
+    const doc = await loadTeamDocRaw(teamId);
+    if (!doc) {
+      return { ok: false, statusCode: 404, error: "Team not found." };
+    }
+    const session = (doc.delegatedTimingSessions || []).find(
+      (s) => s.passCode.toUpperCase() === cleanCode
+    );
+    if (!session) {
+      return { ok: false, statusCode: 404, error: "Timing pass not found." };
+    }
+    const authMember = params.callerSid ? doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    ) : void 0;
+    const isStaffMember = Boolean(authMember && canProgramWorkoutsRole(authMember.role));
+    if (session.revokedAt) {
+      return {
+        ok: false,
+        statusCode: 410,
+        error: "This timing pass has been revoked by the coach."
+      };
+    }
+    if (!isStaffMember && isSessionExpiredOrRevoked(session)) {
+      return {
+        ok: false,
+        statusCode: 410,
+        error: "This timing pass has expired."
+      };
+    }
+    if (session.pinRequired && session.pinHash && !authMember) {
+      const candidatePin = sanitizeText(params.pin, 12);
+      if (!candidatePin || !/^\d{4}$/.test(candidatePin) || !verifyTimingPassPin(session.sessionId, session.pinHash, candidatePin)) {
+        return {
+          ok: false,
+          statusCode: 403,
+          error: "Valid 4-digit timing pass PIN is required to submit splits."
+        };
+      }
+    }
+    const cleanClientSubmissionId = sanitizeText(params.clientSubmissionId, 96).replace(/[^a-zA-Z0-9_.:-]/g, "") || `dsub_cli_${crypto12.randomBytes(8).toString("hex")}`;
+    const existingList = Array.isArray(doc.pendingTimingSubmissions) ? doc.pendingTimingSubmissions : [];
+    const existingDuplicate = existingList.find(
+      (sub) => sub.sessionId === session.sessionId && sub.clientSubmissionId === cleanClientSubmissionId
+    );
+    if (existingDuplicate) {
+      return {
+        ok: true,
+        statusCode: 200,
+        deduplicated: true,
+        submission: existingDuplicate,
+        ...authMember && params.originUrl ? { team: projectTeamSummaryForCaller(doc, authMember.userSid, params.originUrl) } : {}
+      };
+    }
+    const cleanEntries = sanitizeSubmissionEntries(params.entries, session.runners || []);
+    if (cleanEntries.length === 0) {
+      return {
+        ok: false,
+        statusCode: 400,
+        error: "At least one runner split entry is required."
+      };
+    }
+    const capturedByName = sanitizeText(params.capturedByName, 64) || authMember?.invitedName || session.assignedDelegateName || "Trackside Helper";
+    const rawGunMs = Number(params.gunStartEpochMs);
+    const gunStartEpochMs = Number.isFinite(rawGunMs) && rawGunMs > 0 ? Math.round(rawGunMs) : void 0;
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const submission = {
+      submissionId: `dsub_${crypto12.randomBytes(6).toString("hex")}`,
+      sessionId: session.sessionId,
+      teamId,
+      clientSubmissionId: cleanClientSubmissionId,
+      meetTitle: session.meetTitle,
+      meetDate: session.meetDate,
+      eventCode: session.eventCode,
+      eventLabel: session.eventLabel,
+      ...session.heatLabel ? { heatLabel: session.heatLabel } : {},
+      stationType: session.stationType,
+      capturedByName,
+      ...authMember ? { capturedByMembershipId: authMember.membershipId } : {},
+      ...gunStartEpochMs !== void 0 ? { gunStartEpochMs } : {},
+      submittedAt: nowIso,
+      entries: cleanEntries,
+      reviewStatus: "PENDING_COACH_APPROVAL"
+    };
+    const nextSubmissions = [submission, ...existingList];
+    const pendingItems = nextSubmissions.filter(
+      (s) => s.reviewStatus === "PENDING_COACH_APPROVAL"
+    );
+    const reviewedItems = nextSubmissions.filter(
+      (s) => s.reviewStatus !== "PENDING_COACH_APPROVAL"
+    );
+    doc.pendingTimingSubmissions = [...pendingItems, ...reviewedItems].slice(0, 200);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(teamId, doc);
+    await appendAuditLogAsync({
+      teamId,
+      actorSid: params.callerSid || `pass:${session.passCode}`,
+      action: "DELEGATED_SPLITS_SUBMITTED",
+      targetId: submission.submissionId,
+      metadata: {
+        sessionId: session.sessionId,
+        stationType: session.stationType,
+        entryCount: cleanEntries.length,
+        authenticated: Boolean(authMember)
+      }
+    });
+    return {
+      ok: true,
+      statusCode: 201,
+      deduplicated: false,
+      submission,
+      ...authMember && params.originUrl ? { team: projectTeamSummaryForCaller(doc, authMember.userSid, params.originUrl) } : {}
+    };
+  });
+}
+function doesActivityMatchDelegatedRace(act, submission) {
+  const race = act.officialRaceData;
+  if (!race) return false;
+  const sameDate = String(act.startDateLocal || "").slice(0, 10) === submission.meetDate;
+  const sameEvent = String(race.eventLabel || "").trim().toLowerCase() === submission.eventLabel.trim().toLowerCase();
+  const sameMeet = String(race.meetName || "").trim().toLowerCase() === submission.meetTitle.trim().toLowerCase();
+  return sameDate && sameEvent && sameMeet;
+}
+function attachCaptureNonDestructively(existingAct, capture, enforceHideWeight) {
+  const prevRace = existingAct.officialRaceData;
+  const prevCaptures = Array.isArray(prevRace.handSplitCaptures) ? prevRace.handSplitCaptures : [];
+  const alreadyHasCapture = Boolean(
+    capture.submissionId && prevCaptures.some((c) => c.submissionId === capture.submissionId)
+  );
+  const nextCaptures = alreadyHasCapture ? prevCaptures : [...prevCaptures, capture];
+  const prevBadges = Array.isArray(existingAct.sourceBadges) ? existingAct.sourceBadges : [];
+  const nextBadges = prevBadges.includes("Delegated Hand-Timed") ? prevBadges : [...prevBadges, "Delegated Hand-Timed"];
+  const updated = {
+    ...existingAct,
+    sourceBadges: nextBadges,
+    officialRaceData: {
+      ...prevRace,
+      handSplitCaptures: nextCaptures
+    }
+  };
+  return enforceHideWeight ? stripSafeSportWeightAndBodyCompFields([updated], { maskWellnessWeightKgZero: true })[0] : updated;
+}
+async function reviewDelegatedSplitSubmission(params) {
+  const cleanSubmissionId = sanitizeText(params.submissionId, 64);
+  const rawAction = String(params.action || "").trim().toUpperCase();
+  const statusMap = {
+    APPROVE: "APPROVED",
+    ARCHIVE_BACKUP: "BACKUP_ARCHIVED",
+    DISCARD: "DISCARDED"
+  };
+  const nextStatus = statusMap[rawAction];
+  if (!cleanSubmissionId || !nextStatus) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: "Valid submissionId and action (APPROVE | ARCHIVE_BACKUP | DISCARD) required."
+    };
+  }
+  const archiveQueue = [];
+  const pushQueue = [];
+  const outcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) {
+      return { ok: false, statusCode: 404, error: "Team not found." };
+    }
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: "Head Coach or Assistant Coach permissions required to review splits."
+      };
+    }
+    const submissions = Array.isArray(doc.pendingTimingSubmissions) ? doc.pendingTimingSubmissions : [];
+    const targetSub = submissions.find((s) => s.submissionId === cleanSubmissionId);
+    if (!targetSub) {
+      return { ok: false, statusCode: 404, error: "Split submission not found." };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const reviewerName = callerMem.invitedName || doc.brand.coachDisplayName || "Coach";
+    if (targetSub.reviewStatus === "APPROVED" && nextStatus === "APPROVED") {
+      return {
+        ok: true,
+        statusCode: 200,
+        submission: targetSub,
+        team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+      };
+    }
+    targetSub.reviewStatus = nextStatus;
+    targetSub.reviewedAt = nowIso;
+    targetSub.reviewedByName = reviewerName;
+    if (nextStatus === "APPROVED") {
+      const linkedSession = (doc.delegatedTimingSessions || []).find(
+        (s) => s.sessionId === targetSub.sessionId
+      );
+      const eventInfo = resolveEventDefaults(targetSub.eventCode || targetSub.eventLabel);
+      const splitMeters = snapLapSplitMeters(
+        linkedSession?.targetSplitMeters || eventInfo.splitMeters
+      );
+      for (const entry of targetSub.entries) {
+        if (!entry.membershipId) continue;
+        const mem = doc.memberships.find(
+          (m) => m.membershipId === entry.membershipId && m.status !== "REVOKED"
+        );
+        if (!mem) continue;
+        const enforceHideWeight = Boolean(doc.brand.defaultSafeSportShield || mem.isMinorU18);
+        const captureSummary = {
+          submissionId: targetSub.submissionId,
+          capturedByName: targetSub.capturedByName,
+          stationType: targetSub.stationType,
+          totalSecs: entry.totalSecs,
+          lapSplitsSecs: entry.lapSplitsSecs,
+          capturedAt: targetSub.submittedAt
+        };
+        const prevRecorded = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
+        const existingIdx = prevRecorded.findIndex(
+          (a) => doesActivityMatchDelegatedRace(a, targetSub)
+        );
+        let attachedActivity;
+        if (existingIdx >= 0) {
+          attachedActivity = attachCaptureNonDestructively(
+            prevRecorded[existingIdx],
+            captureSummary,
+            enforceHideWeight
+          );
+          const nextRecorded = [...prevRecorded];
+          nextRecorded[existingIdx] = attachedActivity;
+          mem.coachRecordedActivities = nextRecorded.slice(0, 50);
+        } else {
+          const raceId = `stopwatch-delegated-race-${targetSub.submissionId}-${mem.membershipId}`;
+          const baseRace = synthesizeOfficialRaceActivity({
+            id: raceId,
+            date: targetSub.meetDate,
+            startDateLocalIso: `${targetSub.meetDate}T10:30:00`,
+            meetName: targetSub.meetTitle,
+            eventLabel: targetSub.eventLabel,
+            eventDistanceMeters: eventInfo.distanceMeters,
+            fatTimeSecs: entry.totalSecs,
+            displayFatTime: formatFatTime(entry.totalSecs),
+            platform: "MeetReady Stopwatch",
+            trackType: targetSub.eventLabel === "XC 5K" ? "XC_COURSE" : "OUTDOOR_400M",
+            lapSplitDistanceMeters: splitMeters,
+            lapSplitsSecs: entry.lapSplitsSecs,
+            includeWarmupCooldown: false
+          });
+          const rawActivity = {
+            ...baseRace,
+            name: `${targetSub.eventLabel} Hand-Timed (${formatFatTime(entry.totalSecs)}) \u2014 ${targetSub.meetTitle}`,
+            deviceName: `MeetReady Delegated Stopwatch (${DELEGATED_STATION_LABELS[targetSub.stationType]})`,
+            sourceBadges: ["Delegated Hand-Timed"],
+            officialRaceData: {
+              ...baseRace.officialRaceData,
+              platform: "MeetReady Stopwatch",
+              timingMethod: "HAND",
+              splitContext: "HAND_CONVERTED",
+              handTimedTotalSecs: Number(entry.totalSecs.toFixed(2)),
+              capturedByName: targetSub.capturedByName,
+              timingStation: targetSub.stationType,
+              handSplitCaptures: [captureSummary]
+            },
+            stopwatchFusionMeta: {
+              stopwatchActivityId: raceId,
+              lapSplitsSecs: entry.lapSplitsSecs,
+              repDistanceMeters: splitMeters,
+              restDurationSecs: 0,
+              fusedWithWearableStreams: false
+            }
+          };
+          const cleanList = sanitizeTelemetryForCleanRoom({ activities: [rawActivity] }).activities || [];
+          const safeAct = enforceHideWeight ? stripSafeSportWeightAndBodyCompFields(cleanList, { maskWellnessWeightKgZero: true })[0] : cleanList[0];
+          if (!safeAct) continue;
+          attachedActivity = safeAct;
+          mem.coachRecordedActivities = [
+            attachedActivity,
+            ...prevRecorded.filter((a) => a.id !== attachedActivity.id)
+          ].slice(0, 50);
+        }
+        archiveQueue.push({ member: { ...mem }, activity: attachedActivity });
+        const baseSnap = mem.liveSnapshot || {
+          updatedAt: nowIso,
+          hasConnectedWatch: false,
+          verdictLabel: "Delegated Track Mark",
+          readinessScore: 80,
+          ctl: 0,
+          atl: 0,
+          tsb: 0,
+          acuteLoad7d: 0,
+          lowAerobicPct: 80,
+          highAerobicPct: 15,
+          neuromuscularPct: 5,
+          caraHours7d: 0,
+          safeSportHideWeight: enforceHideWeight,
+          sharingTier: mem.sharingTier || "SUMMARY_ONLY",
+          activities: []
+        };
+        const prevSnapActs = Array.isArray(baseSnap.activities) ? baseSnap.activities : [];
+        const snapMatchIdx = prevSnapActs.findIndex(
+          (a) => a.id === attachedActivity.id || doesActivityMatchDelegatedRace(a, targetSub)
+        );
+        const nextSnapActs = snapMatchIdx >= 0 ? prevSnapActs.map((a, idx) => idx === snapMatchIdx ? attachedActivity : a) : [attachedActivity, ...prevSnapActs];
+        mem.liveSnapshot = {
+          ...baseSnap,
+          updatedAt: nowIso,
+          safeSportHideWeight: baseSnap.safeSportHideWeight || enforceHideWeight,
+          activities: nextSnapActs.slice(0, 30)
+        };
+        const recipientSet = /* @__PURE__ */ new Set();
+        if (mem.userSid && mem.userSid !== params.callerSid) {
+          recipientSet.add(mem.userSid);
+        }
+        const guardianEmailLower = mem.parentGuardianEmail?.trim().toLowerCase();
+        if (guardianEmailLower) {
+          for (const candidate of doc.memberships) {
+            if (candidate.status !== "REVOKED" && candidate.status !== "ALUMNI" && candidate.role === "PARENT_FOLLOWER" && candidate.userSid && candidate.userSid !== params.callerSid && candidate.invitedEmail?.trim().toLowerCase() === guardianEmailLower) {
+              recipientSet.add(candidate.userSid);
+            }
+          }
+        }
+        if (recipientSet.size > 0) {
+          pushQueue.push({
+            recipientSids: Array.from(recipientSet),
+            teamId: doc.brand.teamId,
+            teamShortName: doc.brand.shortName || doc.brand.name || "MeetReady",
+            eventLabel: targetSub.eventLabel,
+            meetTitle: targetSub.meetTitle,
+            isMinorTarget: Boolean(
+              mem.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield
+            ),
+            quietHoursStart: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+            quietHoursEnd: doc.messagingPolicy?.quietHoursEndHour ?? 6
+          });
+        }
+      }
+    }
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "DELEGATED_SPLITS_REVIEWED",
+      targetId: cleanSubmissionId,
+      metadata: {
+        action: rawAction,
+        reviewStatus: nextStatus,
+        entryCount: targetSub.entries.length
+      }
+    });
+    return {
+      ok: true,
+      statusCode: 200,
+      submission: targetSub,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+  for (const item of archiveQueue) {
+    await archiveCoachActivitiesForMember(item.member, [item.activity]).catch(() => void 0);
+  }
+  for (const item of pushQueue) {
+    const body = item.isMinorTarget ? "New coach-approved hand-timed split ready \u2014 tap to open in MeetReady." : `${item.eventLabel} hand-timed split approved for ${item.meetTitle} \u2014 tap to view in MeetReady.`;
+    await dispatchPushPayloadToUsers({
+      recipientSids: item.recipientSids,
+      payload: {
+        title: `MeetReady \xB7 ${item.teamShortName}`,
+        body,
+        url: `/?tab=FITNESS&teamId=${encodeURIComponent(item.teamId)}`,
+        tag: `thresh-split-${item.teamId}`,
+        isEmergency: false
+      },
+      isQuietHours: isWithinQuietHours(
+        params.clientLocalHour,
+        item.quietHoursStart,
+        item.quietHoursEnd
+      )
+    }).catch(() => void 0);
+  }
+  return outcome;
+}
+
+// server/routers/team/timingRouter.ts
+var timingRouter = express4.Router();
+timingRouter.get("/api/teams/public/timing-pass/:passCode", async (req, res) => {
+  try {
+    const passCode = String(req.params.passCode || "").trim().toUpperCase();
+    const clientIp = getClientRateLimitIp(req);
+    const lookupLimit = await checkDistributedRateLimitAsync(
+      `timing_pass_get:${clientIp}:${passCode}`,
+      40,
+      6e4
+    );
+    if (!lookupLimit.allowed) {
+      res.status(429).json({
+        found: false,
+        error: "Too many timing pass lookups. Please wait a moment.",
+        retryAfterSecs: lookupLimit.retryAfterSecs
+      });
+      return;
+    }
+    const headerPin = req.headers["x-timing-pin"];
+    const rawPin = typeof headerPin === "string" ? headerPin.trim() : typeof req.query.pin === "string" ? req.query.pin.trim() : void 0;
+    if (rawPin) {
+      const pinLimit = await checkDistributedRateLimitAsync(
+        `timing_pin_try:${clientIp}:${passCode}`,
+        8,
+        10 * 6e4
+      );
+      if (!pinLimit.allowed) {
+        res.status(429).json({
+          found: true,
+          pinRequired: true,
+          pinVerified: false,
+          error: "Too many PIN attempts. Ask the coach for a fresh pass or try again shortly.",
+          retryAfterSecs: pinLimit.retryAfterSecs
+        });
+        return;
+      }
+    }
+    const payload = await getPublicDelegatedTimingPass({ passCode, pin: rawPin });
+    const { statusCode, ...body } = payload;
+    res.status(statusCode).json(body);
+  } catch (err) {
+    res.status(500).json({
+      found: false,
+      error: err instanceof Error ? err.message : "Failed to load timing pass."
+    });
+  }
+});
+timingRouter.post(
+  "/api/teams/public/timing-pass/:passCode/submissions",
+  async (req, res) => {
+    try {
+      const passCode = String(req.params.passCode || "").trim().toUpperCase();
+      const clientIp = getClientRateLimitIp(req);
+      const subLimit = await checkDistributedRateLimitAsync(
+        `timing_sub:${clientIp}:${passCode}`,
+        20,
+        6e4
+      );
+      if (!subLimit.allowed) {
+        res.status(429).json({
+          ok: false,
+          error: "Too many split submissions. Please wait a moment before retrying.",
+          retryAfterSecs: subLimit.retryAfterSecs
+        });
+        return;
+      }
+      const headerPin = req.headers["x-timing-pin"];
+      const pin = typeof headerPin === "string" ? headerPin.trim() : typeof req.body?.pin === "string" ? req.body.pin.trim() : void 0;
+      if (pin) {
+        const pinLimit = await checkDistributedRateLimitAsync(
+          `timing_pin_try:${clientIp}:${passCode}`,
+          8,
+          10 * 6e4
+        );
+        if (!pinLimit.allowed) {
+          res.status(429).json({
+            ok: false,
+            error: "Too many PIN attempts. Please wait a few minutes.",
+            retryAfterSecs: pinLimit.retryAfterSecs
+          });
+          return;
+        }
+      }
+      const claims = getVerifiedSessionClaims(req);
+      const callerSid = claims?.sid && isCanonicalAuthenticatedClaims(claims) ? claims.sid : void 0;
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const outcome = await submitDelegatedSplits({
+        passCode,
+        pin,
+        callerSid,
+        clientSubmissionId: req.body?.clientSubmissionId,
+        capturedByName: req.body?.capturedByName,
+        gunStartEpochMs: req.body?.gunStartEpochMs,
+        entries: req.body?.entries,
+        originUrl
+      });
+      if (!outcome.ok) {
+        res.status(outcome.statusCode).json({
+          ok: false,
+          error: outcome.error || "Failed to submit splits."
+        });
+        return;
+      }
+      const teams = callerSid ? await listTeamsForUser(callerSid, originUrl) : void 0;
+      res.status(outcome.statusCode).json({
+        ok: true,
+        deduplicated: Boolean(outcome.deduplicated),
+        submission: outcome.submission,
+        ...outcome.team ? { team: outcome.team } : {},
+        ...teams ? { teams } : {}
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to submit splits."
+      });
+    }
+  }
+);
+timingRouter.post("/api/teams/:teamId/stopwatch-activities", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const updated = await recordCoachStopwatchActivities({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      entries
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to save stopwatch activities."
+    });
+  }
+});
+timingRouter.post("/api/teams/:teamId/timing-sessions", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const body = req.body || {};
+    const outcome = await createDelegatedTimingSession({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      meetTitle: body.meetTitle,
+      meetDate: body.meetDate,
+      eventCode: body.eventCode,
+      eventLabel: body.eventLabel,
+      heatLabel: body.heatLabel,
+      stationType: body.stationType,
+      stationLabel: body.stationLabel,
+      splitPlanLabel: body.splitPlanLabel,
+      targetSplitMeters: body.targetSplitMeters,
+      targetLapCount: body.targetLapCount,
+      runners: body.runners,
+      assignedMembershipId: body.assignedMembershipId,
+      pin: body.pin,
+      expiresAt: body.expiresAt
+    });
+    if (!outcome.ok || !outcome.session) {
+      res.status(outcome.statusCode || 400).json({
+        ok: false,
+        error: outcome.error || "Failed to create delegated timing session."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      session: outcome.session,
+      passUrl: outcome.passUrl,
+      team: outcome.team,
+      teams
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to create delegated timing session."
+    });
+  }
+});
+timingRouter.delete(
+  "/api/teams/:teamId/timing-sessions/:sessionId",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const outcome = await revokeDelegatedTimingSession({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        sessionId: String(req.params.sessionId || ""),
+        originUrl
+      });
+      if (!outcome.ok) {
+        res.status(outcome.statusCode || 400).json({
+          ok: false,
+          error: outcome.error || "Failed to revoke timing session."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({
+        ok: true,
+        team: outcome.team,
+        teams
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to revoke timing session."
+      });
+    }
+  }
+);
+timingRouter.post(
+  "/api/teams/:teamId/timing-submissions/:submissionId/review",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const outcome = await reviewDelegatedSplitSubmission({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        submissionId: String(req.params.submissionId || ""),
+        action: req.body?.action,
+        originUrl
+      });
+      if (!outcome.ok) {
+        res.status(outcome.statusCode || 400).json({
+          ok: false,
+          error: outcome.error || "Failed to review delegated split submission."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({
+        ok: true,
+        submission: outcome.submission,
+        team: outcome.team,
+        teams
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to review delegated split submission."
+      });
+    }
+  }
+);
+
+// server/routers/team/rosterAndLifecycleRouter.ts
+import express5 from "express";
+
+// server/teamFieldAndDailyOpsService.ts
+import crypto16 from "crypto";
+
+// server/athleticSyncService.ts
+import crypto15 from "crypto";
+
+// server/teamCalendarIcs.ts
+function normalizeIcsTimezone(tz) {
+  const clean = String(tz || "").trim();
+  if (clean && /^[A-Za-z_+-]+(?:\/[A-Za-z0-9_+-]+)+$/.test(clean) && clean.length <= 64) {
+    return clean;
+  }
+  return "America/Los_Angeles";
+}
+function escapeIcsText(raw) {
+  return String(raw || "").replace(/\\/g, "\\\\").replace(/\r?\n/g, "\\n").replace(/;/g, "\\;").replace(/,/g, "\\,").trim();
+}
+function foldIcsLine(line) {
+  if (line.length <= 75) return line;
+  const chunks = [line.slice(0, 75)];
+  let idx = 75;
+  while (idx < line.length) {
+    chunks.push(` ${line.slice(idx, idx + 74)}`);
+    idx += 74;
+  }
+  return chunks.join("\r\n");
+}
+function formatIcsUtcTimestamp(date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+function nextIcsDateYmd(isoDate) {
+  const parsed = /* @__PURE__ */ new Date(`${isoDate.slice(0, 10)}T12:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) {
+    return isoDate.slice(0, 10).replace(/-/g, "");
+  }
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10).replace(/-/g, "");
+}
+function parseHmTime(raw) {
+  const clean = String(raw || "").trim();
+  if (!clean) return null;
+  const match24 = clean.match(/^(\d{1,2}):(\d{2})$/);
+  if (match24) {
+    const h = Number(match24[1]);
+    const m = Number(match24[2]);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) return { hour: h, minute: m };
+  }
+  const match12 = clean.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (match12) {
+    let h = Number(match12[1]);
+    const m = Number(match12[2]);
+    const ap = match12[3].toLowerCase();
+    if (h < 1 || h > 12 || m < 0 || m > 59) return null;
+    if (ap === "pm" && h < 12) h += 12;
+    if (ap === "am" && h === 12) h = 0;
+    return { hour: h, minute: m };
+  }
+  return null;
+}
+function formatIcsLocalDateTime(dateIso, hour, minute, addMinutes = 0) {
+  const [y, mo, d] = dateIso.slice(0, 10).split("-").map(Number);
+  const dt = new Date(Date.UTC(y || 2026, (mo || 1) - 1, d || 1, hour, minute + addMinutes, 0));
+  const yy = String(dt.getUTCFullYear()).padStart(4, "0");
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  const hh = String(dt.getUTCHours()).padStart(2, "0");
+  const mi = String(dt.getUTCMinutes()).padStart(2, "0");
+  return `${yy}${mm}${dd}T${hh}${mi}00`;
+}
+function resolveSequence(ev) {
+  if (typeof ev.sequence === "number" && Number.isFinite(ev.sequence) && ev.sequence >= 0) {
+    return Math.min(2e9, Math.round(ev.sequence));
+  }
+  if (ev.updatedAt) {
+    const ms = Date.parse(ev.updatedAt);
+    if (Number.isFinite(ms)) {
+      return Math.max(1, Math.min(2e9, Math.floor((ms - 17e11) / 1e3)));
+    }
+  }
+  return ev.meetDelayMinutes && ev.meetDelayMinutes > 0 ? 1 : 0;
+}
+function buildTimedTeamCalendarIcs(params) {
+  const tz = normalizeIcsTimezone(params.timezone);
+  const dtStamp = formatIcsUtcTimestamp(/* @__PURE__ */ new Date());
+  const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
+  const safeSlug = params.slug ? params.slug.replace(/[^a-zA-Z0-9_-]/g, "") : "";
+  const hubUrl = safeSlug ? `${cleanOrigin}/team/${safeSlug}` : "";
+  const calTitle = `${params.teamName} ${params.calNameSuffix || "Schedule"}`.trim();
+  const seenIds = /* @__PURE__ */ new Set();
+  const uniqueEvents = (params.events || []).filter((ev) => {
+    if (!ev?.uid || !/^\d{4}-\d{2}-\d{2}$/.test((ev.date || "").slice(0, 10))) return false;
+    if (seenIds.has(ev.uid)) return false;
+    seenIds.add(ev.uid);
+    return true;
+  }).sort((a, b) => a.date.localeCompare(b.date));
+  const lines = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    `PRODID:${params.prodId || "-//MeetReady//Team Calendar//EN"}`,
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escapeIcsText(calTitle)}`,
+    `X-WR-TIMEZONE:${tz}`,
+    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
+    "X-PUBLISHED-TTL:PT6H"
+  ];
+  for (const ev of uniqueEvents) {
+    const cleanDate = ev.date.slice(0, 10);
+    const uidSafe = String(ev.uid).replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 80);
+    const startHm = parseHmTime(ev.startTime);
+    const endHm = parseHmTime(ev.endTime);
+    const parsedUpdatedMs = ev.updatedAt ? Date.parse(ev.updatedAt) : Number.NaN;
+    const lastMod = Number.isFinite(parsedUpdatedMs) ? formatIcsUtcTimestamp(new Date(parsedUpdatedMs)) : dtStamp;
+    const sequence = resolveSequence(ev);
+    const safeLiveUrl = ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl.trim()) ? ev.liveResultsUrl.trim() : "";
+    const eventUrl = safeLiveUrl || hubUrl;
+    const delayLabel = typeof ev.meetDelayMinutes === "number" && ev.meetDelayMinutes > 0 ? `Delay: +${Math.round(ev.meetDelayMinutes)}m` : "";
+    const busLabel = ev.busDepartureTime ? `Bus departure: ${formatPracticeTime12h(ev.busDepartureTime)}` : "";
+    const descParts = [
+      ev.startTime ? `Start: ${formatPracticeTime12h(ev.startTime)}` : "",
+      delayLabel,
+      busLabel,
+      ev.description || "",
+      safeLiveUrl ? `Live Results: ${safeLiveUrl}` : "",
+      hubUrl ? `Team Hub: ${hubUrl}` : ""
+    ].filter(Boolean);
+    let dtStartLine;
+    let dtEndLine;
+    if (startHm) {
+      dtStartLine = `DTSTART;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, startHm.hour, startHm.minute)}`;
+      dtEndLine = endHm ? `DTEND;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, endHm.hour, endHm.minute)}` : `DTEND;TZID=${tz}:${formatIcsLocalDateTime(cleanDate, startHm.hour, startHm.minute, 90)}`;
+    } else {
+      dtStartLine = `DTSTART;VALUE=DATE:${cleanDate.replace(/-/g, "")}`;
+      dtEndLine = `DTEND;VALUE=DATE:${nextIcsDateYmd(cleanDate)}`;
+    }
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:meetready-${uidSafe}@meetready.app`,
+      `DTSTAMP:${dtStamp}`,
+      `LAST-MODIFIED:${lastMod}`,
+      `SEQUENCE:${sequence}`,
+      dtStartLine,
+      dtEndLine,
+      `SUMMARY:${escapeIcsText(`${params.shortName} \xB7 ${ev.title}`)}`,
+      ...ev.locationName ? [`LOCATION:${escapeIcsText(ev.locationName)}`] : [],
+      ...eventUrl ? [`URL:${eventUrl}`] : [],
+      ...descParts.length > 0 ? [`DESCRIPTION:${escapeIcsText(descParts.join(" \xB7 "))}`] : [],
+      "END:VEVENT"
+    );
+  }
+  lines.push("END:VCALENDAR");
+  return `${lines.map(foldIcsLine).join("\r\n")}\r
+`;
+}
+
+// server/teamEventsService.ts
+import crypto13 from "crypto";
+var VALID_EVENT_TYPES = /* @__PURE__ */ new Set([
+  "PRACTICE",
+  "MEET",
+  "BUS_TRAVEL",
+  "TEAM_MEETING"
+]);
+var VALID_VISIBILITY_SCOPES = /* @__PURE__ */ new Set([
+  "TEAM_AND_FAMILIES_ONLY",
+  "PUBLIC_HUB",
+  "STAFF_ONLY"
+]);
+var VALID_RSVP_STATUSES = /* @__PURE__ */ new Set([
+  "GOING",
+  "OUT",
+  "LATE",
+  "MEET_CONFLICT",
+  "UNDECIDED"
+]);
+var VALID_TRAVEL_MODES = /* @__PURE__ */ new Set([
+  "TEAM_BUS",
+  "PARENT_PICKUP",
+  "SELF_TRAVEL"
+]);
+var VALID_ALBUM_PROVIDERS = /* @__PURE__ */ new Set([
+  "GOOGLE_PHOTOS",
+  "APPLE_ICLOUD",
+  "SMUGMUG",
+  "SHUTTERFLY",
+  "HUDL",
+  "OTHER"
+]);
+function teamEventsVaultKey(teamId) {
+  return `team_events_${sanitizeTenantId(teamId)}`;
+}
+function teamRsvpsVaultKey(teamId) {
+  return `team_rsvps_${sanitizeTenantId(teamId)}`;
+}
+function computeRsvpCounts(rsvps) {
+  const counts = {
+    going: 0,
+    out: 0,
+    late: 0,
+    conflict: 0,
+    undecided: 0
+  };
+  for (const r of rsvps) {
+    if (r.status === "GOING") counts.going += 1;
+    else if (r.status === "OUT") counts.out += 1;
+    else if (r.status === "LATE") counts.late += 1;
+    else if (r.status === "MEET_CONFLICT") counts.conflict += 1;
+    else counts.undecided += 1;
+  }
+  return counts;
+}
+function sanitizeCuratedAlbumLinks(raw, authorName, nowIso) {
+  if (!Array.isArray(raw)) return { links: [] };
+  const links = [];
+  for (const entry of raw.slice(0, 5)) {
+    if (!entry || typeof entry !== "object") continue;
+    const item = entry;
+    const rawUrl = String(item.url || "").trim();
+    if (!rawUrl) continue;
+    if (!isSafeHttpsUrl(rawUrl)) {
+      return {
+        links: [],
+        error: "Album links must use https:// URLs."
+      };
+    }
+    const label = String(item.label || "Meet Photo Album").trim().slice(0, 80) || "Meet Photo Album";
+    const rawProvider = String(item.provider || "").trim().toUpperCase();
+    const visibility = item.visibility === "PUBLIC_HUB" ? "PUBLIC_HUB" : "TEAM_AND_FAMILIES_ONLY";
+    links.push({
+      id: String(item.id || `alb_${crypto13.randomBytes(4).toString("hex")}`).trim(),
+      label,
+      url: rawUrl,
+      ...VALID_ALBUM_PROVIDERS.has(rawProvider) ? { provider: rawProvider } : {},
+      visibility,
+      addedByName: String(item.addedByName || authorName).trim().slice(0, 60) || authorName,
+      addedAt: String(item.addedAt || nowIso)
+    });
+  }
+  return { links };
+}
+async function loadStoredEvents(teamId) {
+  const pgEvents = await listTeamEventsPostgresAsync(teamId);
+  if (pgEvents !== null) return pgEvents;
+  return loadTenantVaultAsync(teamEventsVaultKey(teamId), []);
+}
+async function loadStoredRsvps(teamId) {
+  const pgRows = await listTeamEventRsvpsPostgresAsync(teamId);
+  if (pgRows !== null) {
+    return pgRows.map((r) => ({
+      eventId: r.event_id,
+      membershipId: r.membership_id,
+      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
+      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
+      ...r.note ? { note: r.note } : {},
+      updatedByRole: r.updated_by_role,
+      updatedAt: r.updated_at
+    }));
+  }
+  return loadTenantVaultAsync(teamRsvpsVaultKey(teamId), []);
+}
+function projectSyntheticEventsFromTeamDoc(params) {
+  const byId = /* @__PURE__ */ new Map();
+  const matchedBroadcastIds = /* @__PURE__ */ new Set();
+  const matchedPacketIds = /* @__PURE__ */ new Set();
+  for (const ev of params.storedEvents) {
+    byId.set(ev.eventId, ev);
+    if (ev.broadcastId) matchedBroadcastIds.add(ev.broadcastId);
+    if (ev.packetId) matchedPacketIds.add(ev.packetId);
+  }
+  for (const pkt of params.meetDayPackets || []) {
+    if (matchedPacketIds.has(pkt.packetId)) continue;
+    const syntheticId = pkt.eventId || `pkt_${pkt.packetId}`;
+    if (byId.has(syntheticId)) continue;
+    const liveUrl = pkt.liveResultsUrl || pkt.athleticLiveUrl;
+    byId.set(syntheticId, {
+      eventId: syntheticId,
+      teamId: params.teamId,
+      eventType: "MEET",
+      title: pkt.meetTitle,
+      date: pkt.meetDate,
+      ...typeof pkt.meetDelayMinutes === "number" ? { meetDelayMinutes: pkt.meetDelayMinutes } : {},
+      ...liveUrl && isSafeHttpsUrl(liveUrl) ? { liveResultsUrl: liveUrl } : {},
+      ...pkt.liveResultsLabel ? { liveResultsLabel: pkt.liveResultsLabel } : {},
+      ...pkt.curatedAlbumLinks?.length ? { curatedAlbumLinks: pkt.curatedAlbumLinks } : {},
+      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
+      packetId: pkt.packetId,
+      createdAt: pkt.updatedAt,
+      updatedAt: pkt.updatedAt
+    });
+  }
+  for (const bc of params.broadcastWorkouts || []) {
+    if (matchedBroadcastIds.has(bc.broadcastId)) continue;
+    const syntheticId = bc.eventId || `bc_${bc.broadcastId}`;
+    if (byId.has(syntheticId)) continue;
+    if (!bc.isOfficialMeet && !bc.scheduledTime) continue;
+    byId.set(syntheticId, {
+      eventId: syntheticId,
+      teamId: params.teamId,
+      eventType: bc.isOfficialMeet ? "MEET" : "PRACTICE",
+      title: bc.name,
+      date: bc.date,
+      ...bc.scheduledTime ? { startTime: bc.scheduledTime } : {},
+      ...bc.locationName ? { locationName: bc.locationName } : {},
+      ...bc.liveResultsUrl && isSafeHttpsUrl(bc.liveResultsUrl) ? { liveResultsUrl: bc.liveResultsUrl } : {},
+      ...bc.liveResultsLabel ? { liveResultsLabel: bc.liveResultsLabel } : {},
+      ...bc.curatedAlbumLinks?.length ? { curatedAlbumLinks: bc.curatedAlbumLinks } : {},
+      ...bc.targetEventGroups?.length ? { targetEventGroups: bc.targetEventGroups } : {},
+      visibilityScope: "TEAM_AND_FAMILIES_ONLY",
+      broadcastId: bc.broadcastId,
+      createdAt: bc.createdAt,
+      updatedAt: bc.createdAt
+    });
+  }
+  return Array.from(byId.values()).sort((a, b) => a.date.localeCompare(b.date));
+}
+async function listTeamEventsForCaller(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem) {
+    return { ok: false, status: 403, error: "Team membership required." };
+  }
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
+  const [storedEvents, storedRsvps] = await Promise.all([
+    loadStoredEvents(params.teamId),
+    loadStoredRsvps(params.teamId)
+  ]);
+  const allEvents = projectSyntheticEventsFromTeamDoc({
+    teamId: params.teamId,
+    storedEvents,
+    broadcastWorkouts: doc.broadcastWorkouts,
+    meetDayPackets: doc.meetDayPackets
+  }).filter((ev) => isStaff || ev.visibilityScope !== "STAFF_ONLY");
+  const rsvpsGrouped = /* @__PURE__ */ new Map();
+  for (const rsvp of storedRsvps) {
+    const arr = rsvpsGrouped.get(rsvp.eventId) || [];
+    arr.push(rsvp);
+    rsvpsGrouped.set(rsvp.eventId, arr);
+  }
+  const rsvpCountsByEventId = {};
+  const rsvpsByEventId = {};
+  const myRsvps = [];
+  for (const ev of allEvents) {
+    const list = rsvpsGrouped.get(ev.eventId) || [];
+    rsvpCountsByEventId[ev.eventId] = computeRsvpCounts(list);
+    if (isStaff) {
+      rsvpsByEventId[ev.eventId] = list;
+    }
+    for (const rsvp of list) {
+      const isOwn = rsvp.membershipId === callerMem.membershipId;
+      const isChild = Boolean(linkedChildIds && linkedChildIds.has(rsvp.membershipId));
+      if (isOwn || isChild) {
+        myRsvps.push(rsvp);
+      }
+    }
+  }
+  return {
+    ok: true,
+    payload: {
+      events: allEvents,
+      rsvpCountsByEventId,
+      myRsvps,
+      ...isStaff ? { rsvpsByEventId } : {}
+    }
+  };
+}
+async function upsertTeamEvent(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
+  }
+  const cleanDate = String(params.input.date || "").trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    return { ok: false, status: 400, error: "Valid YYYY-MM-DD event date required." };
+  }
+  const cleanTitle = String(params.input.title || "").trim().slice(0, 140);
+  if (!cleanTitle) {
+    return { ok: false, status: 400, error: "Event title is required." };
+  }
+  const rawType = String(params.input.eventType || "PRACTICE").trim().toUpperCase();
+  const eventType = VALID_EVENT_TYPES.has(rawType) ? rawType : "PRACTICE";
+  const rawVis = String(params.input.visibilityScope || "TEAM_AND_FAMILIES_ONLY").trim().toUpperCase();
+  const visibilityScope = VALID_VISIBILITY_SCOPES.has(rawVis) ? rawVis : "TEAM_AND_FAMILIES_ONLY";
+  const liveResultsUrl = String(params.input.liveResultsUrl || "").trim();
+  if (liveResultsUrl && !isSafeHttpsUrl(liveResultsUrl)) {
+    return { ok: false, status: 400, error: "Live timing link must use an https:// URL." };
+  }
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const albumValidation = sanitizeCuratedAlbumLinks(
+    params.input.curatedAlbumLinks,
+    callerMem.invitedName,
+    nowIso
+  );
+  if (albumValidation.error) {
+    return { ok: false, status: 400, error: albumValidation.error };
+  }
+  const hasPublicAlbum = albumValidation.links.some((l) => l.visibility === "PUBLIC_HUB");
+  const photoReleaseOptOutNames = hasPublicAlbum ? doc.memberships.filter((m) => m.role === "ATHLETE" && m.status !== "REVOKED" && m.photoReleaseOptOut).map((m) => m.invitedName) : [];
+  const targetEventGroups = Array.isArray(params.input.targetEventGroups) ? sanitizeTargetEventGroups(
+    params.input.targetEventGroups.map((g) => String(g))
+  ) || [] : [];
+  const eventId = String(params.input.eventId || "").trim().slice(0, 80) || `ev_${crypto13.randomBytes(6).toString("hex")}`;
+  const safeDelay = typeof params.input.meetDelayMinutes === "number" && Number.isFinite(params.input.meetDelayMinutes) ? Math.max(0, Math.min(240, Math.round(params.input.meetDelayMinutes))) : void 0;
+  const existingPg = await listTeamEventsPostgresAsync(params.teamId);
+  let createdAt = nowIso;
+  if (existingPg) {
+    const prev = existingPg.find((e) => e.eventId === eventId);
+    if (prev?.createdAt) createdAt = prev.createdAt;
+  }
+  const nextEvent = {
+    eventId,
+    teamId: params.teamId,
+    eventType,
+    title: cleanTitle,
+    date: cleanDate,
+    ...typeof params.input.startTime === "string" && params.input.startTime.trim() ? { startTime: params.input.startTime.trim().slice(0, 16) } : {},
+    ...typeof params.input.endTime === "string" && params.input.endTime.trim() ? { endTime: params.input.endTime.trim().slice(0, 16) } : {},
+    ...typeof params.input.timezone === "string" && params.input.timezone.trim() ? { timezone: params.input.timezone.trim().slice(0, 64) } : {},
+    ...typeof params.input.locationName === "string" && params.input.locationName.trim() ? { locationName: params.input.locationName.trim().slice(0, 120) } : {},
+    ...typeof params.input.venueId === "string" && params.input.venueId.trim() ? { venueId: params.input.venueId.trim().slice(0, 64) } : {},
+    ...typeof params.input.busDepartureTime === "string" && params.input.busDepartureTime.trim() ? { busDepartureTime: params.input.busDepartureTime.trim().slice(0, 24) } : {},
+    ...typeof params.input.busReturnTime === "string" && params.input.busReturnTime.trim() ? { busReturnTime: params.input.busReturnTime.trim().slice(0, 24) } : {},
+    ...safeDelay !== void 0 ? { meetDelayMinutes: safeDelay } : {},
+    ...liveResultsUrl ? { liveResultsUrl } : {},
+    ...typeof params.input.liveResultsLabel === "string" && params.input.liveResultsLabel.trim() ? { liveResultsLabel: params.input.liveResultsLabel.trim().slice(0, 60) } : {},
+    ...albumValidation.links.length > 0 ? { curatedAlbumLinks: albumValidation.links } : {},
+    ...targetEventGroups.length > 0 ? { targetEventGroups } : {},
+    visibilityScope,
+    ...typeof params.input.broadcastId === "string" && params.input.broadcastId.trim() ? { broadcastId: params.input.broadcastId.trim().slice(0, 80) } : {},
+    ...typeof params.input.packetId === "string" && params.input.packetId.trim() ? { packetId: params.input.packetId.trim().slice(0, 80) } : {},
+    ...typeof params.input.notes === "string" && params.input.notes.trim() ? { notes: params.input.notes.trim().slice(0, 500) } : {},
+    createdAt,
+    updatedAt: nowIso
+  };
+  const savedToPg = await upsertTeamEventPostgresAsync({
+    teamId: params.teamId,
+    eventId,
+    dateIso: cleanDate,
+    eventType,
+    eventPayload: nextEvent
+  });
+  if (savedToPg === null) {
+    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
+      const existingList = await loadTenantVaultAsync(
+        teamEventsVaultKey(params.teamId),
+        []
+      );
+      const prev = existingList.find((e) => e.eventId === eventId);
+      if (prev?.createdAt) {
+        nextEvent.createdAt = prev.createdAt;
+      }
+      const nextList = [
+        ...existingList.filter((e) => e.eventId !== eventId),
+        nextEvent
+      ].sort((a, b) => a.date.localeCompare(b.date));
+      await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextList);
+    });
+  }
+  await appendAuditLogAsync({
+    teamId: params.teamId,
+    actorSid: params.callerSid,
+    action: "TEAM_EVENT_UPSERTED",
+    targetId: eventId,
+    metadata: { eventType, date: cleanDate, visibilityScope }
+  });
+  return {
+    ok: true,
+    event: nextEvent,
+    ...photoReleaseOptOutNames.length > 0 ? { photoReleaseOptOutNames } : {}
+  };
+}
+async function deleteTeamEvent(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem || !canViewSafeguardingMedicalRole(callerMem.role)) {
+    return { ok: false, status: 403, error: "Coach or team staff permissions required." };
+  }
+  const cleanEventId = String(params.eventId || "").trim();
+  if (!cleanEventId) return { ok: false, status: 400, error: "Event ID required." };
+  const deletedPg = await deleteTeamEventPostgresAsync(params.teamId, cleanEventId);
+  let deleted = Boolean(deletedPg);
+  if (deletedPg === null) {
+    await withVaultLock(`events_${sanitizeTenantId(params.teamId)}`, async () => {
+      const events = await loadTenantVaultAsync(
+        teamEventsVaultKey(params.teamId),
+        []
+      );
+      const nextEvents = events.filter((e) => e.eventId !== cleanEventId);
+      deleted = nextEvents.length !== events.length;
+      if (deleted) {
+        await saveTenantVaultAsync(teamEventsVaultKey(params.teamId), nextEvents);
+      }
+    });
+    if (deleted) {
+      await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
+        const rsvps = await loadTenantVaultAsync(
+          teamRsvpsVaultKey(params.teamId),
+          []
+        );
+        const filtered = rsvps.filter((r) => r.eventId !== cleanEventId);
+        if (filtered.length !== rsvps.length) {
+          await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), filtered);
+        }
+      });
+    }
+  }
+  return { ok: true, deleted };
+}
+async function submitTeamEventRsvp(params) {
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc) return { ok: false, status: 404, error: "Team not found." };
+  const callerMem = doc.memberships.find(
+    (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+  );
+  if (!callerMem) {
+    return { ok: false, status: 403, error: "Team membership required." };
+  }
+  const cleanEventId = String(params.eventId || "").trim();
+  if (!cleanEventId) {
+    return { ok: false, status: 400, error: "Event ID required." };
+  }
+  const cleanStatus = String(params.status || "").trim().toUpperCase();
+  if (!VALID_RSVP_STATUSES.has(cleanStatus)) {
+    return { ok: false, status: 400, error: "Invalid RSVP status." };
+  }
+  const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+  const linkedChildIds = resolveLinkedChildMembershipIds(doc.memberships, callerMem);
+  let targetMembershipId = String(params.membershipId || "").trim();
+  if (!targetMembershipId) {
+    if (callerMem.role === "PARENT_FOLLOWER") {
+      const firstChild = linkedChildIds ? Array.from(linkedChildIds)[0] : "";
+      if (!firstChild) {
+        return {
+          ok: false,
+          status: 403,
+          error: "No linked student-athlete found for this guardian account."
+        };
+      }
+      targetMembershipId = firstChild;
+    } else {
+      targetMembershipId = callerMem.membershipId;
+    }
+  }
+  const targetMem = doc.memberships.find(
+    (m) => m.membershipId === targetMembershipId && m.status !== "REVOKED"
+  );
+  if (!targetMem) {
+    return { ok: false, status: 404, error: "Target athlete membership not found." };
+  }
+  if (!isStaff) {
+    if (callerMem.role === "PARENT_FOLLOWER") {
+      if (!linkedChildIds || !linkedChildIds.has(targetMembershipId)) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Guardians may only submit RSVPs for their linked student-athletes."
+        };
+      }
+    } else if (targetMembershipId !== callerMem.membershipId) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Athletes may only submit RSVPs for themselves."
+      };
+    }
+  }
+  const rawTravel = typeof params.travelMode === "string" ? params.travelMode.trim().toUpperCase() : void 0;
+  const travelMode = rawTravel && VALID_TRAVEL_MODES.has(rawTravel) ? rawTravel : void 0;
+  const note = typeof params.note === "string" && params.note.trim() ? params.note.trim().slice(0, 140) : void 0;
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  const nextRsvp = {
+    eventId: cleanEventId,
+    membershipId: targetMembershipId,
+    status: cleanStatus,
+    ...travelMode ? { travelMode } : {},
+    ...note ? { note } : {},
+    updatedByRole: callerMem.role,
+    updatedAt: nowIso
+  };
+  const savedToPg = await upsertTeamEventRsvpPostgresAsync({
+    teamId: params.teamId,
+    eventId: cleanEventId,
+    membershipId: targetMembershipId,
+    status: cleanStatus,
+    travelMode,
+    note,
+    updatedByRole: callerMem.role,
+    updatedBySid: params.callerSid,
+    updatedAt: nowIso
+  });
+  let eventRsvps = [];
+  if (savedToPg !== null) {
+    const pgRows = await listTeamEventRsvpsPostgresAsync(params.teamId, cleanEventId);
+    eventRsvps = (pgRows || []).map((r) => ({
+      eventId: r.event_id,
+      membershipId: r.membership_id,
+      status: VALID_RSVP_STATUSES.has(r.status) ? r.status : "UNDECIDED",
+      ...r.travel_mode && VALID_TRAVEL_MODES.has(r.travel_mode) ? { travelMode: r.travel_mode } : {},
+      ...r.note ? { note: r.note } : {},
+      updatedByRole: r.updated_by_role,
+      updatedAt: r.updated_at
+    }));
+  } else {
+    await withVaultLock(`rsvps_${sanitizeTenantId(params.teamId)}`, async () => {
+      const existingList = await loadTenantVaultAsync(
+        teamRsvpsVaultKey(params.teamId),
+        []
+      );
+      const nextList = [
+        ...existingList.filter(
+          (r) => !(r.eventId === cleanEventId && r.membershipId === targetMembershipId)
+        ),
+        nextRsvp
+      ];
+      await saveTenantVaultAsync(teamRsvpsVaultKey(params.teamId), nextList);
+      eventRsvps = nextList.filter((r) => r.eventId === cleanEventId);
+    });
+  }
+  return {
+    ok: true,
+    rsvp: nextRsvp,
+    counts: computeRsvpCounts(eventRsvps)
+  };
+}
+async function loadPublicHubTeamEventsForTeamDoc(doc) {
+  const storedEvents = await loadStoredEvents(doc.brand.teamId);
+  return storedEvents.filter((ev) => ev.visibilityScope === "PUBLIC_HUB").map((ev) => ({
+    ...ev,
+    ...ev.liveResultsUrl && isSafeHttpsUrl(ev.liveResultsUrl) ? { liveResultsUrl: ev.liveResultsUrl } : { liveResultsUrl: void 0 },
+    ...Array.isArray(ev.curatedAlbumLinks) ? {
+      curatedAlbumLinks: ev.curatedAlbumLinks.filter(
+        (a) => a.visibility === "PUBLIC_HUB" && isSafeHttpsUrl(a.url)
+      )
+    } : {}
+  }));
+}
+function buildCalendarFeedUrls(params) {
+  const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
+  const feedUrl = `${cleanOrigin}/api/teams/${encodeURIComponent(params.teamId)}/calendar-feed/${encodeURIComponent(params.token)}.ics`;
+  const webcalUrl = feedUrl.replace(/^https?:\/\//i, "webcal://");
+  const googleCalendarUrl = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(feedUrl)}`;
+  return { feedUrl, webcalUrl, googleCalendarUrl };
+}
+async function getOrMintPrivateCalendarMeta(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: "Team membership required." };
+    }
+    let rawToken = doc.calendarFeedTokenPlain;
+    if (!rawToken || !doc.calendarFeedTokenHash) {
+      rawToken = crypto13.randomBytes(24).toString("hex");
+      doc.calendarFeedTokenPlain = rawToken;
+      doc.calendarFeedTokenHash = hashToken(rawToken);
+      doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      await saveTeamDocRaw(params.teamId, doc);
+    }
+    const urls = buildCalendarFeedUrls({
+      teamId: params.teamId,
+      token: rawToken,
+      originUrl: params.originUrl
+    });
+    return {
+      ok: true,
+      ...urls,
+      canRotate: canProgramWorkoutsRole(callerMem.role) || canManageTeamGovernanceRole(callerMem.role)
+    };
+  });
+}
+async function rotatePrivateCalendarToken(params) {
+  const outcome = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && !canManageTeamGovernanceRole(callerMem.role)) {
+      return { ok: false, status: 403, error: "Coach or team admin permissions required." };
+    }
+    const rawToken = crypto13.randomBytes(24).toString("hex");
+    doc.calendarFeedTokenPlain = rawToken;
+    doc.calendarFeedTokenHash = hashToken(rawToken);
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    const urls = buildCalendarFeedUrls({
+      teamId: params.teamId,
+      token: rawToken,
+      originUrl: params.originUrl
+    });
+    return {
+      ok: true,
+      ...urls,
+      canRotate: true
+    };
+  });
+  if (outcome.ok) {
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "CALENDAR_FEED_TOKEN_ROTATED",
+      targetId: params.teamId
+    });
+  }
+  return outcome;
+}
+async function getPrivateTeamCalendarIcsByToken(params) {
+  const cleanToken = String(params.token || "").trim().replace(/\.ics$/i, "");
+  if (!cleanToken || !/^[a-f0-9]{24,96}$/i.test(cleanToken)) {
+    return { ok: false, status: 404, error: "Calendar feed not found." };
+  }
+  const doc = await loadTeamDocRaw(params.teamId);
+  if (!doc || !doc.calendarFeedTokenHash) {
+    return { ok: false, status: 404, error: "Calendar feed not found." };
+  }
+  const incomingHash = hashToken(cleanToken);
+  if (!timingSafeStringEqual(incomingHash, doc.calendarFeedTokenHash)) {
+    return { ok: false, status: 404, error: "Calendar feed link invalidated or rotated." };
+  }
+  const storedEvents = await loadStoredEvents(params.teamId);
+  const visibleEvents = projectSyntheticEventsFromTeamDoc({
+    teamId: params.teamId,
+    storedEvents,
+    broadcastWorkouts: doc.broadcastWorkouts,
+    meetDayPackets: doc.meetDayPackets
+  }).filter((ev) => ev.visibilityScope !== "STAFF_ONLY");
+  const mappedEvents = visibleEvents.map((ev) => ({
+    uid: ev.eventId,
+    title: ev.title,
+    date: ev.date,
+    startTime: ev.startTime,
+    endTime: ev.endTime,
+    locationName: ev.locationName,
+    description: ev.notes,
+    busDepartureTime: ev.busDepartureTime,
+    meetDelayMinutes: ev.meetDelayMinutes,
+    liveResultsUrl: ev.liveResultsUrl,
+    updatedAt: ev.updatedAt
+  }));
+  const coveredBroadcastIds = new Set(
+    visibleEvents.map((ev) => ev.broadcastId).filter((id) => Boolean(id))
+  );
+  for (const bc of doc.broadcastWorkouts || []) {
+    if (coveredBroadcastIds.has(bc.broadcastId)) continue;
+    if (Array.isArray(bc.targetMembershipIds) && bc.targetMembershipIds.length > 0) continue;
+    mappedEvents.push({
+      uid: `bc-${bc.broadcastId}`,
+      title: bc.name,
+      date: bc.date,
+      startTime: bc.scheduledTime,
+      locationName: bc.locationName,
+      description: bc.description,
+      liveResultsUrl: bc.liveResultsUrl,
+      updatedAt: bc.createdAt
+    });
+  }
+  const icsBody = buildTimedTeamCalendarIcs({
+    teamName: doc.brand.name,
+    shortName: doc.brand.shortName,
+    slug: doc.brand.slug,
+    timezone: doc.brand.timezone,
+    originUrl: params.originUrl,
+    calNameSuffix: "Team Schedule",
+    prodId: "-//MeetReady//Private Team Calendar//EN",
+    events: mappedEvents
+  });
+  return {
+    ok: true,
+    icsBody,
+    slug: doc.brand.slug
+  };
+}
+
+// server/athleticFieldSyncHelper.ts
+import crypto14 from "node:crypto";
+function applyParsedExternalFieldMarksToDoc(params) {
+  const baseLogs = Array.isArray(params.existingLogs) ? [...params.existingLogs] : Array.isArray(params.doc.fieldMarkLogs) ? [...params.doc.fieldMarkLogs] : [];
+  const mergedLogs = [...baseLogs];
+  const addedRecords = [];
+  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+  for (const item of params.matchedFieldItems || []) {
+    const row = item?.row;
+    if (!row || !row.isFieldEvent) continue;
+    const normName = normalizeAthleteMatchKey(row.athleteName);
+    const fallbackMem = !item.mem && !item.membershipId ? (params.doc.memberships || []).find(
+      (m) => m.status !== "REVOKED" && m.role !== "PARENT_FOLLOWER" && (row.externalAthleteId && m.externalAthleteId === row.externalAthleteId || Boolean(normName) && normalizeAthleteMatchKey(m.invitedName) === normName)
+    ) : void 0;
+    const membershipId = item.mem?.membershipId || item.membershipId || fallbackMem?.membershipId;
+    const athleteName = item.mem?.invitedName || item.matchedAthleteName || item.athleteName || fallbackMem?.invitedName || row.athleteName;
+    const eventCode = row.fieldEventCode || "LJ";
+    const candidate = buildExternalFieldEventLogRecord({
+      row,
+      teamId: params.doc.brand.teamId,
+      membershipId,
+      athleteName,
+      nowIso,
+      idSuffix: crypto14.randomBytes(4).toString("hex")
+    });
+    const isDup = mergedLogs.some(
+      (existing) => isDuplicateExternalFieldLog(existing, candidate)
+    );
+    if (isDup) continue;
+    if (fallbackMem && !fallbackMem.eventGroup) {
+      fallbackMem.eventGroup = getFieldEventSpec(eventCode).eventGroup;
+    }
+    mergedLogs.unshift(candidate);
+    addedRecords.push(candidate);
+  }
+  params.doc.fieldMarkLogs = mergedLogs;
+  params.doc.fieldMarkLogsTotalCount = mergedLogs.length;
+  return {
+    addedRecords,
+    mergedLogs,
+    addedCount: addedRecords.length
+  };
+}
+
 // server/athleticSyncService.ts
 function assertCoachMembership(doc, callerSid) {
   const mem = doc.memberships.find(
@@ -15554,7 +16792,7 @@ function upsertMeetEventsOnDoc(doc, meets, sourceLabel) {
     const estDist = meet.distanceMeters || 5e3;
     const estLoad = computeOfficialRaceTrainingLoad(estDist, estDist >= 4e3 ? 1100 : 300, true);
     additions.push({
-      broadcastId: `meet_${crypto14.randomBytes(6).toString("hex")}`,
+      broadcastId: `meet_${crypto15.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       targetSquadGroup: "ALL",
       date: cleanDate,
@@ -15763,10 +17001,10 @@ function findOrCreateExternalMembership(doc, candidate) {
     candidate.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL"
   );
   const orgDefaults = getOrgTypeSafeguardingDefaults(doc.brand.orgType);
-  const rawToken = crypto14.randomBytes(12).toString("base64url");
+  const rawToken = crypto15.randomBytes(12).toString("base64url");
   const resolvedCreatedGroup = candidate.eventGroup || inferEventGroupFromSeedMark(candidate.seedMarkOrFtp);
   const createdMem = {
-    membershipId: `mem_${crypto14.randomBytes(6).toString("hex")}`,
+    membershipId: `mem_${crypto15.randomBytes(6).toString("hex")}`,
     teamId: doc.brand.teamId,
     role: "ATHLETE",
     squadGroup: candidate.squadGroup || orgDefaults.defaultSquads[0] || "Varsity",
@@ -15783,7 +17021,7 @@ function findOrCreateExternalMembership(doc, candidate) {
     status: "INVITED",
     emailDeliveryStatus: "READY_MANUAL_LINK",
     rawInviteToken: rawToken,
-    inviteTokenHash: crypto14.createHash("sha256").update(rawToken).digest("hex"),
+    inviteTokenHash: crypto15.createHash("sha256").update(rawToken).digest("hex"),
     invitedAt: nowIso,
     liveSnapshot: {
       updatedAt: nowIso,
@@ -15852,7 +17090,7 @@ async function applyExternalTeamSyncBatch(params) {
       }
       const existingActs = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
       const activity = synthesizeOfficialRaceActivity({
-        id: `ext-meet-${crypto14.randomBytes(5).toString("hex")}`,
+        id: `ext-meet-${crypto15.randomBytes(5).toString("hex")}`,
         date: row.date,
         meetName: row.meetName,
         eventLabel: row.eventLabel,
@@ -16190,7 +17428,7 @@ async function followTeamAsParentOrFan(params) {
     if (!mem) {
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       mem = {
-        membershipId: `mem_${crypto14.randomBytes(6).toString("hex")}`,
+        membershipId: `mem_${crypto15.randomBytes(6).toString("hex")}`,
         teamId: doc.brand.teamId,
         userSid: params.callerSid,
         role: "PARENT_FOLLOWER",
@@ -16271,8 +17509,8 @@ async function subscribeParentEmailToPublicHub(params) {
       error: "Team Hub not found or public parent updates are disabled."
     };
   }
-  const rawConfirmToken = crypto14.randomBytes(24).toString("base64url");
-  const rawUnsubToken = crypto14.randomBytes(24).toString("base64url");
+  const rawConfirmToken = crypto15.randomBytes(24).toString("base64url");
+  const rawUnsubToken = crypto15.randomBytes(24).toString("base64url");
   const confirmHash = hashToken(rawConfirmToken);
   const unsubHash = hashToken(rawUnsubToken);
   const vaultKey = parentEmailSubsVaultKey(doc.brand.teamId);
@@ -16287,7 +17525,7 @@ async function subscribeParentEmailToPublicHub(params) {
       return { alreadyConfirmed: true };
     }
     const updatedRecord = {
-      id: existing?.id || `psub_${crypto14.randomBytes(6).toString("hex")}`,
+      id: existing?.id || `psub_${crypto15.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       email: cleanEmail,
       status: "PENDING",
@@ -16494,7 +17732,7 @@ async function dispatchParentHubAnnouncementEmails(params) {
     const confirmed = records.filter((r) => r.status === "CONFIRMED").slice(0, 500);
     if (confirmed.length === 0) return;
     for (const rec of confirmed) {
-      const rawUnsubToken = crypto14.randomBytes(24).toString("base64url");
+      const rawUnsubToken = crypto15.randomBytes(24).toString("base64url");
       rec.unsubscribeTokenHashes = [
         hashToken(rawUnsubToken),
         ...rec.unsubscribeTokenHashes || []
@@ -16915,7 +18153,7 @@ async function postTeamAnnouncement(params) {
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const targetGroups = sanitizeTargetEventGroups(params.targetEventGroups);
     const announcement = {
-      id: `ann_${crypto15.randomBytes(6).toString("hex")}`,
+      id: `ann_${crypto16.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       title: cleanTitle,
       body: cleanBody,
@@ -17167,7 +18405,7 @@ async function recordTeamFieldMarks(params) {
       const flightName = typeof rawEntry.flightName === "string" && rawEntry.flightName.trim() ? rawEntry.flightName.trim().slice(0, 48) : void 0;
       const placeRank = typeof rawEntry.placeRank === "number" && Number.isFinite(rawEntry.placeRank) && rawEntry.placeRank >= 1 ? Math.round(rawEntry.placeRank) : void 0;
       const advancedToFinals = typeof rawEntry.advancedToFinals === "boolean" ? rawEntry.advancedToFinals : void 0;
-      const recordId = `fld_${crypto15.randomBytes(6).toString("hex")}`;
+      const recordId = `fld_${crypto16.randomBytes(6).toString("hex")}`;
       const record = {
         id: recordId,
         teamId: doc.brand.teamId,
@@ -17356,7 +18594,7 @@ async function inviteTeamCoachingStaff(params) {
       doc.memberships,
       params.assignedAthleteMembershipIds
     );
-    const rawInviteToken = crypto15.randomBytes(16).toString("base64url");
+    const rawInviteToken = crypto16.randomBytes(16).toString("base64url");
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const cleanOrigin = (params.originUrl || "https://meetready.app").replace(/\/+$/, "");
     const inviteUrl = `${cleanOrigin}/join/${doc.brand.slug}?t=${rawInviteToken}`;
@@ -17372,7 +18610,7 @@ async function inviteTeamCoachingStaff(params) {
       emailStatus = sendRes.status;
     }
     const newMem = {
-      membershipId: `mem_coach_${crypto15.randomBytes(6).toString("hex")}`,
+      membershipId: `mem_coach_${crypto16.randomBytes(6).toString("hex")}`,
       teamId: doc.brand.teamId,
       role,
       squadGroup: "Coaching Staff",
@@ -17414,517 +18652,6 @@ async function inviteTeamCoachingStaff(params) {
       inviteUrl,
       emailStatus,
       team: summary
-    };
-  });
-}
-
-// server/teamMessagingService.ts
-import crypto16 from "crypto";
-function escapeHtml3(raw) {
-  return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function defaultPolicyForDoc(doc) {
-  return {
-    athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
-    parentRepliesEnabled: doc.messagingPolicy?.parentRepliesEnabled ?? true,
-    enablePushEmailFallback: doc.messagingPolicy?.enablePushEmailFallback ?? true,
-    quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
-    quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
-    requireGuardianCcForMinors: Boolean(
-      doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
-    )
-  };
-}
-function isWithinQuietHours2(hour, startHour, endHour) {
-  if (typeof hour !== "number" || !Number.isFinite(hour) || hour < 0 || hour > 23) return false;
-  if (startHour === endHour) return false;
-  if (startHour > endHour) {
-    return hour >= startHour || hour < endHour;
-  }
-  return hour >= startHour && hour < endHour;
-}
-var ALLOWED_CHANNEL_SCOPES = /* @__PURE__ */ new Set([
-  "ALL_TEAM",
-  "EVENT_GROUP",
-  "PARENTS_ONLY",
-  "CUSTOM_SUBGROUP",
-  "DIRECT_TRANSPARENT",
-  "COACHES_STAFF"
-]);
-async function postTeamMessage(params) {
-  if (!ALLOWED_CHANNEL_SCOPES.has(params.channelScope)) {
-    return { ok: false, status: 400, error: "Invalid team message channel scope." };
-  }
-  let pendingGuardianEmail = null;
-  let pendingPushPayload = null;
-  const lockedResult = await withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-    );
-    if (!callerMem) {
-      return { ok: false, status: 403, error: "Active team membership is required to send messages." };
-    }
-    const cleanBody = String(params.body || "").trim().slice(0, 800);
-    if (!cleanBody) {
-      return { ok: false, status: 400, error: "Message body is required." };
-    }
-    const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
-    const isParentFollower = callerMem.role === "PARENT_FOLLOWER";
-    const effectiveEmergencyOverride = isStaff && params.isEmergencyOverride === true;
-    const policy = defaultPolicyForDoc(doc);
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    if (params.channelScope === "COACHES_STAFF" && !isStaff) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff."
-      };
-    }
-    if (params.channelScope === "PARENTS_ONLY" && callerMem.role === "ATHLETE") {
-      return {
-        ok: false,
-        status: 403,
-        error: "Athletes cannot post to or view the Parents Only channel."
-      };
-    }
-    if (params.channelScope === "PARENTS_ONLY" && isParentFollower && policy.parentRepliesEnabled === false) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Parent replies in Parents Only are currently set to coach-announcements-only."
-      };
-    }
-    if (isParentFollower && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP" || params.channelScope === "COACHES_STAFF")) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Parents may use Parents Only, linked sub-groups, or transparent Direct threads with coaching staff."
-      };
-    }
-    if (callerMem.role === "ATHLETE" && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP") && !policy.athleteRepliesEnabled) {
-      return {
-        ok: false,
-        status: 403,
-        error: "This team channel is currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
-      };
-    }
-    let channelId = "team:all";
-    let resolvedEventGroup;
-    let customSubgroupId;
-    let customSubgroupName;
-    let targetMembershipId;
-    let targetAthleteName;
-    let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
-    if (params.channelScope === "COACHES_STAFF") {
-      channelId = "staff:only";
-      guardianCcApplied = false;
-    } else if (params.channelScope === "PARENTS_ONLY") {
-      channelId = "parents";
-      guardianCcApplied = true;
-    } else if (params.channelScope === "CUSTOM_SUBGROUP") {
-      const requestedId = String(params.customSubgroupId || "").trim();
-      const subgroup = (doc.customSubgroups || []).find((sg) => sg.id === requestedId);
-      if (!subgroup) {
-        return {
-          ok: false,
-          status: 404,
-          error: "Select a valid team sub-group."
-        };
-      }
-      const isDirectMember = subgroup.memberIds.includes(callerMem.membershipId);
-      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
-      const isLinkedParentMember = isParentFollower && subgroup.includeLinkedParents !== false && Boolean(callerParentEmail) && doc.memberships.some(
-        (child) => subgroup.memberIds.includes(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === callerParentEmail
-      );
-      if (!isStaff && !isDirectMember && !isLinkedParentMember) {
-        return {
-          ok: false,
-          status: 403,
-          error: "You are not assigned to this team sub-group."
-        };
-      }
-      if (callerMem.role === "ATHLETE" && !policy.athleteRepliesEnabled) {
-        return {
-          ok: false,
-          status: 403,
-          error: "Athlete replies are currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
-        };
-      }
-      if (isParentFollower && policy.parentRepliesEnabled === false) {
-        return {
-          ok: false,
-          status: 403,
-          error: "Parent replies are currently set to coach announcements only."
-        };
-      }
-      const hasMinorInSubgroup = doc.memberships.some(
-        (m) => subgroup.memberIds.includes(m.membershipId) && (m.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL")
-      );
-      channelId = `subgroup:${subgroup.id}`;
-      customSubgroupId = subgroup.id;
-      customSubgroupName = subgroup.name;
-      guardianCcApplied = Boolean(hasMinorInSubgroup || subgroup.includeLinkedParents !== false);
-    } else if (params.channelScope === "EVENT_GROUP") {
-      resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
-      channelId = `group:${resolvedEventGroup}`;
-    } else if (params.channelScope === "DIRECT_TRANSPARENT") {
-      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
-      if (isParentFollower && !callerParentEmail) {
-        return {
-          ok: false,
-          status: 403,
-          error: "Parents may only message coaches in the transparent thread of their linked child athlete."
-        };
-      }
-      const targetMem = callerMem.role === "ATHLETE" ? callerMem : doc.memberships.find(
-        (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED" && m.role === "ATHLETE"
-      );
-      if (!targetMem) {
-        return {
-          ok: false,
-          status: 404,
-          error: "Select a valid athlete on the roster for a transparent SafeSport message."
-        };
-      }
-      if (isParentFollower) {
-        const targetParentEmail = targetMem.parentGuardianEmail?.trim().toLowerCase();
-        if (!callerParentEmail || !targetParentEmail || callerParentEmail !== targetParentEmail) {
-          return {
-            ok: false,
-            status: 403,
-            error: "Parents may only message coaches in the transparent thread of their linked child athlete."
-          };
-        }
-      }
-      const ageResolved = resolveAthleteAgeTier({
-        birthMonthYear: targetMem.birthMonthYear,
-        birthYear: targetMem.birthYear,
-        orgType: doc.brand.orgType,
-        graduationYear: targetMem.graduationYear
-      });
-      const targetIsProtectedMinor = Boolean(
-        (ageResolved.ageTier === "UNKNOWN" ? targetMem.isMinorU18 : ageResolved.isMinorU18) || doc.brand.orgType === "HIGH_SCHOOL"
-      );
-      if ((targetIsProtectedMinor || policy.requireGuardianCcForMinors) && (params.privateDirectToMinor === true || params.guardianCc === false)) {
-        return {
-          ok: false,
-          status: 403,
-          error: "SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian CC and coaching staff oversight are mandatory."
-        };
-      }
-      channelId = `dm:${targetMem.membershipId}`;
-      targetMembershipId = targetMem.membershipId;
-      targetAthleteName = targetMem.invitedName;
-      guardianCcApplied = Boolean(
-        targetIsProtectedMinor || doc.brand.enableParentGuardianCc || targetMem.parentGuardianEmail
-      );
-      if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
-        pendingGuardianEmail = {
-          to: targetMem.parentGuardianEmail,
-          subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
-          html: `<p><strong>${escapeHtml3(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml3(callerMem.role)}) sent a team message to ${escapeHtml3(targetMem.invitedName)}:</p><blockquote>${escapeHtml3(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
-          text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`
-        };
-      }
-    }
-    const quietHoursActive = isWithinQuietHours2(
-      params.clientLocalHour,
-      policy.quietHoursStartHour,
-      policy.quietHoursEndHour
-    );
-    const record = {
-      id: `msg_${crypto16.randomBytes(6).toString("hex")}`,
-      teamId: doc.brand.teamId,
-      channelId,
-      channelScope: params.channelScope,
-      ...resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {},
-      ...customSubgroupId ? { customSubgroupId } : {},
-      ...customSubgroupName ? { customSubgroupName } : {},
-      ...targetMembershipId ? { targetMembershipId } : {},
-      ...targetAthleteName ? { targetAthleteName } : {},
-      senderSid: params.callerSid,
-      senderMembershipId: callerMem.membershipId,
-      senderName: callerMem.invitedName || doc.brand.coachDisplayName,
-      senderRole: callerMem.role,
-      body: cleanBody,
-      createdAt: nowIso,
-      guardianCcApplied,
-      ...pendingGuardianEmail ? { guardianEmailNotified: false } : {},
-      secondAdultVisible: true,
-      ...quietHoursActive && !effectiveEmergencyOverride ? { sentDuringQuietHours: true } : {},
-      ...effectiveEmergencyOverride ? { isEmergencyOverride: true } : {},
-      acknowledgedByMembershipIds: [callerMem.membershipId]
-    };
-    doc.teamMessages = [record, ...doc.teamMessages || []].slice(0, 500);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    pendingPushPayload = {
-      teamId: params.teamId,
-      senderSid: params.callerSid,
-      senderName: record.senderName,
-      kind: "TEAM_MESSAGE",
-      channelScope: params.channelScope,
-      eventGroup: resolvedEventGroup,
-      customSubgroupId,
-      targetMembershipId,
-      bodyText: cleanBody,
-      clientLocalHour: params.clientLocalHour,
-      isEmergency: effectiveEmergencyOverride,
-      originUrl: params.originUrl,
-      ...pendingGuardianEmail ? { excludeFallbackEmails: [pendingGuardianEmail.to] } : {}
-    };
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "TEAM_MESSAGE_SENT",
-      targetId: targetMembershipId || channelId,
-      metadata: {
-        channelScope: params.channelScope,
-        ...customSubgroupId ? { customSubgroupId } : {},
-        guardianCcApplied,
-        secondAdultVisible: true,
-        sentDuringQuietHours: Boolean(record.sentDuringQuietHours),
-        isEmergencyOverride: Boolean(record.isEmergencyOverride)
-      }
-    });
-    return {
-      ok: true,
-      message: record,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-  if (!lockedResult.ok) {
-    return lockedResult;
-  }
-  const emailToSend = pendingGuardianEmail;
-  const pushToSend = pendingPushPayload;
-  const [emailOutcome, pushOutcome] = await Promise.allSettled([
-    emailToSend ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "guardian-dm-email") : Promise.resolve(null),
-    pushToSend ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "team-message-push") : Promise.resolve(null)
-  ]);
-  const emailDelivered = Boolean(emailToSend) && emailOutcome.status === "fulfilled" && emailOutcome.value !== null && emailOutcome.value.delivered === true;
-  const pushEmailFallbackCount = pushOutcome.status === "fulfilled" && pushOutcome.value !== null ? pushOutcome.value.emailFallbackCount || 0 : 0;
-  if (emailDelivered || pushEmailFallbackCount > 0) {
-    const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
-      const freshDoc = await loadTeamDocRaw(params.teamId);
-      if (!freshDoc) return null;
-      const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
-      if (targetMsg) {
-        if (emailDelivered) targetMsg.guardianEmailNotified = true;
-        if (pushEmailFallbackCount > 0) targetMsg.emailFallbackCount = pushEmailFallbackCount;
-        freshDoc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-        await saveTeamDocRaw(params.teamId, freshDoc);
-      }
-      return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
-    });
-    if (emailDelivered) lockedResult.message.guardianEmailNotified = true;
-    if (pushEmailFallbackCount > 0) {
-      lockedResult.message.emailFallbackCount = pushEmailFallbackCount;
-    }
-    if (refreshedTeam) {
-      lockedResult.team = refreshedTeam;
-    }
-  }
-  return {
-    ...lockedResult,
-    ...pushEmailFallbackCount > 0 ? { emailFallbackCount: pushEmailFallbackCount } : {}
-  };
-}
-async function acknowledgeTeamMessage(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
-    if (!projected) return { ok: false, status: 403, error: "Membership required." };
-    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
-    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
-    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
-    if (!target) return { ok: false, status: 404, error: "Message not found." };
-    const existingAcks = new Set(target.acknowledgedByMembershipIds || []);
-    existingAcks.add(projected.myMembershipId);
-    target.acknowledgedByMembershipIds = Array.from(existingAcks);
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function flagTeamMessageForReview(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
-    if (!projected) return { ok: false, status: 403, error: "Membership required." };
-    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
-    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
-    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
-    if (!target) return { ok: false, status: 404, error: "Message not found." };
-    const cleanReason = String(params.reason || "Flagged for athletic administrator review").trim().slice(0, 200);
-    target.flaggedForAdminReview = true;
-    target.flaggedReason = cleanReason;
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "TEAM_MESSAGE_FLAGGED",
-      targetId: target.id,
-      metadata: {
-        channelId: target.channelId,
-        reason: cleanReason
-      }
-    });
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function updateTeamMessagingPolicy(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
-      return {
-        ok: false,
-        status: 403,
-        error: "Only Head Coaches or Athletic Admins may change team messaging rules."
-      };
-    }
-    const current = defaultPolicyForDoc(doc);
-    doc.messagingPolicy = {
-      athleteRepliesEnabled: typeof params.athleteRepliesEnabled === "boolean" ? params.athleteRepliesEnabled : current.athleteRepliesEnabled,
-      parentRepliesEnabled: typeof params.parentRepliesEnabled === "boolean" ? params.parentRepliesEnabled : current.parentRepliesEnabled ?? true,
-      enablePushEmailFallback: typeof params.enablePushEmailFallback === "boolean" ? params.enablePushEmailFallback : current.enablePushEmailFallback ?? true,
-      quietHoursStartHour: typeof params.quietHoursStartHour === "number" && params.quietHoursStartHour >= 0 && params.quietHoursStartHour <= 23 ? Math.round(params.quietHoursStartHour) : current.quietHoursStartHour,
-      quietHoursEndHour: typeof params.quietHoursEndHour === "number" && params.quietHoursEndHour >= 0 && params.quietHoursEndHour <= 23 ? Math.round(params.quietHoursEndHour) : current.quietHoursEndHour,
-      requireGuardianCcForMinors: Boolean(
-        doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || current.requireGuardianCcForMinors
-      )
-    };
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "TEAM_MESSAGING_POLICY_UPDATED",
-      targetId: params.teamId,
-      metadata: doc.messagingPolicy
-    });
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function upsertTeamCustomSubgroup(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
-      return {
-        ok: false,
-        status: 403,
-        error: "Coaching or Athletic Admin permissions are required to manage team sub-groups."
-      };
-    }
-    const cleanName = String(params.name || "").trim().slice(0, 48);
-    if (cleanName.length < 2) {
-      return { ok: false, status: 400, error: "Sub-group name must be at least 2 characters." };
-    }
-    const activeMemberSet = new Set(
-      doc.memberships.filter((m) => m.status !== "REVOKED" && m.status !== "ALUMNI").map((m) => m.membershipId)
-    );
-    const validMemberIds = Array.from(
-      new Set(
-        (Array.isArray(params.memberIds) ? params.memberIds : []).map((id) => String(id || "").trim()).filter((id) => activeMemberSet.has(id))
-      )
-    );
-    const existingList = doc.customSubgroups || [];
-    const targetId = params.subgroupId ? String(params.subgroupId).trim() : "";
-    const existingIdx = targetId ? existingList.findIndex((g) => g.id === targetId) : -1;
-    if (existingIdx < 0 && existingList.length >= 20) {
-      return {
-        ok: false,
-        status: 400,
-        error: "Maximum of 20 custom sub-groups per team reached."
-      };
-    }
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const cleanDesc = params.description ? String(params.description).trim().slice(0, 140) : void 0;
-    const saved = {
-      id: existingIdx >= 0 ? existingList[existingIdx].id : `sgrp_${crypto16.randomBytes(5).toString("hex")}`,
-      name: cleanName,
-      ...cleanDesc ? { description: cleanDesc } : {},
-      memberIds: validMemberIds,
-      includeLinkedParents: params.includeLinkedParents !== false,
-      createdByMembershipId: existingIdx >= 0 ? existingList[existingIdx].createdByMembershipId : callerMem.membershipId,
-      createdByName: existingIdx >= 0 ? existingList[existingIdx].createdByName : callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
-      createdAt: existingIdx >= 0 ? existingList[existingIdx].createdAt : nowIso
-    };
-    const nextList = existingIdx >= 0 ? existingList.map((g, i) => i === existingIdx ? saved : g) : [saved, ...existingList];
-    doc.customSubgroups = nextList;
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "CUSTOM_SUBGROUP_SAVED",
-      targetId: saved.id,
-      metadata: {
-        name: saved.name,
-        memberCount: saved.memberIds.length,
-        includeLinkedParents: saved.includeLinkedParents
-      }
-    });
-    return {
-      ok: true,
-      subgroup: saved,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function deleteTeamCustomSubgroup(params) {
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) return { ok: false, status: 404, error: "Team not found." };
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
-      return {
-        ok: false,
-        status: 403,
-        error: "Coaching or Athletic Admin permissions are required to delete sub-groups."
-      };
-    }
-    const beforeCount = (doc.customSubgroups || []).length;
-    doc.customSubgroups = (doc.customSubgroups || []).filter((g) => g.id !== params.subgroupId);
-    if (doc.customSubgroups.length === beforeCount) {
-      return { ok: false, status: 404, error: "Sub-group not found." };
-    }
-    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "CUSTOM_SUBGROUP_DELETED",
-      targetId: params.subgroupId,
-      metadata: {}
-    });
-    return {
-      ok: true,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
     };
   });
 }
@@ -18655,964 +19382,9 @@ async function issueOrResendParentConsentLink(params) {
   };
 }
 
-// server/teamTimingDelegationService.ts
-import crypto18 from "crypto";
-var TIMING_PASS_INDEX_KEY = "timing_pass_index_v1";
-var PASS_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-var VALID_STATIONS = /* @__PURE__ */ new Set([
-  "START_FINISH",
-  "200M_MARK",
-  "100M_MARK",
-  "RELAY_ZONE",
-  "CUSTOM"
-]);
-var DELEGATED_STATION_LABELS = {
-  START_FINISH: "Start / Finish",
-  "200M_MARK": "200m Mark",
-  "100M_MARK": "100m Mark",
-  RELAY_ZONE: "Relay Zone",
-  CUSTOM: "Custom Mark"
-};
-var RELAY_EVENT_SPECS = {
-  "4x100m": { distanceMeters: 400, splitMeters: 100, lapCount: 4 },
-  "4x200m": { distanceMeters: 800, splitMeters: 200, lapCount: 4 },
-  "4x400m": { distanceMeters: 1600, splitMeters: 400, lapCount: 4 },
-  "4x800m": { distanceMeters: 3200, splitMeters: 400, lapCount: 4 },
-  dmr: { distanceMeters: 4e3, splitMeters: 400, lapCount: 4 }
-};
-function sanitizeText(raw, maxLen) {
-  return String(raw ?? "").replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted]").replace(/[\u0000-\u001F\u007F]/g, "").trim().slice(0, maxLen);
-}
-function abbreviatePublicRunnerName(fullName) {
-  const parts = sanitizeText(fullName, 64).split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
-  }
-  return parts[0] || "Runner";
-}
-function generatePassCode() {
-  const bytes = crypto18.randomBytes(8);
-  let out = "";
-  for (let i = 0; i < 8; i++) {
-    out += PASS_CODE_ALPHABET[bytes[i] % PASS_CODE_ALPHABET.length];
-  }
-  return out;
-}
-function hashTimingPassPin(sessionId, pin) {
-  return hashToken(`timing_pin_v1:${sessionId}:${pin}`);
-}
-function verifyTimingPassPin(sessionId, pinHash, candidatePin) {
-  const expected = hashTimingPassPin(sessionId, candidatePin);
-  const a = Buffer.from(pinHash, "utf8");
-  const b = Buffer.from(expected, "utf8");
-  if (a.length !== b.length) return false;
-  return crypto18.timingSafeEqual(a, b);
-}
-function resolveEventDefaults(eventCode) {
-  const clean = sanitizeText(eventCode, 32) || "1600m";
-  const relayMatch = RELAY_EVENT_SPECS[clean.toLowerCase()];
-  if (relayMatch) {
-    return {
-      eventLabel: clean,
-      distanceMeters: relayMatch.distanceMeters,
-      splitMeters: relayMatch.splitMeters,
-      lapCount: relayMatch.lapCount
-    };
-  }
-  const official = OFFICIAL_RACE_EVENTS.find(
-    (e) => e.label.toLowerCase() === clean.toLowerCase()
-  );
-  if (official) {
-    return {
-      eventLabel: official.label,
-      distanceMeters: official.distanceMeters,
-      splitMeters: official.defaultSplitMeters,
-      lapCount: official.defaultLapCount
-    };
-  }
-  const numericMeters = Number(clean.replace(/[^0-9]/g, ""));
-  const dist = Number.isFinite(numericMeters) && numericMeters >= 50 && numericMeters <= 5e4 ? numericMeters : 1600;
-  const splitMeters = dist <= 60 ? 60 : dist <= 120 ? 100 : dist <= 400 ? 200 : dist >= 5e3 ? 1e3 : 400;
-  return {
-    eventLabel: clean,
-    distanceMeters: dist,
-    splitMeters,
-    lapCount: Math.max(1, Math.round(dist / splitMeters))
-  };
-}
-function snapLapSplitMeters(rawMeters) {
-  const options = [60, 100, 200, 400, 1e3];
-  return options.reduce(
-    (best, cur) => Math.abs(cur - rawMeters) < Math.abs(best - rawMeters) ? cur : best
-  );
-}
-function resolveDefaultMidnightExpiryIso(meetDate) {
-  const match = meetDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) {
-    return new Date(Date.now() + 18 * 36e5).toISOString();
-  }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const endOfMeetDayMs = Date.UTC(year, month - 1, day + 1, 7, 59, 59, 999);
-  const nowPlusEightHrs = Date.now() + 8 * 36e5;
-  const maxBounded = Date.now() + 72 * 36e5;
-  return new Date(Math.min(maxBounded, Math.max(endOfMeetDayMs, nowPlusEightHrs))).toISOString();
-}
-async function upsertPassDirectoryEntry(passCode, entry) {
-  await withVaultLock(TIMING_PASS_INDEX_KEY, async () => {
-    const idx = await loadTenantVaultAsync(TIMING_PASS_INDEX_KEY, {
-      byPassCode: {}
-    });
-    const nextByCode = { ...idx.byPassCode || {} };
-    nextByCode[passCode.toUpperCase()] = entry;
-    const keys = Object.keys(nextByCode);
-    if (keys.length > 1500) {
-      const nowMs = Date.now();
-      for (const k of keys) {
-        const parsed = Date.parse(nextByCode[k].expiresAt);
-        if (Number.isFinite(parsed) && parsed < nowMs - 48 * 36e5) {
-          delete nextByCode[k];
-        }
-      }
-    }
-    await saveTenantVaultAsync(TIMING_PASS_INDEX_KEY, { byPassCode: nextByCode });
-  });
-}
-async function findTeamIdForPassCode(passCode) {
-  const cleanCode = sanitizeText(passCode, 24).toUpperCase();
-  if (!cleanCode) return null;
-  const idx = await loadTenantVaultAsync(TIMING_PASS_INDEX_KEY, {
-    byPassCode: {}
-  });
-  const hit = idx.byPassCode?.[cleanCode];
-  if (hit?.teamId) return hit.teamId;
-  const dir = await loadDirectory();
-  for (const tid of dir.allTeamIds || []) {
-    const doc = await loadTeamDocRaw(tid);
-    if (doc?.delegatedTimingSessions?.some((s) => s.passCode.toUpperCase() === cleanCode)) {
-      return tid;
-    }
-  }
-  return null;
-}
-function isSessionExpiredOrRevoked(session, nowMs = Date.now()) {
-  if (session.revokedAt) return true;
-  if (session.expiresAt) {
-    const expMs = Date.parse(session.expiresAt);
-    if (Number.isFinite(expMs) && nowMs > expMs) return true;
-  }
-  return false;
-}
-async function createDelegatedTimingSession(params) {
-  const cleanPinRaw = typeof params.pin === "string" ? params.pin.trim() : typeof params.pin === "number" ? String(params.pin).trim() : "";
-  if (cleanPinRaw && !/^\d{4}$/.test(cleanPinRaw)) {
-    return {
-      ok: false,
-      statusCode: 400,
-      error: "Optional timing pass PIN must be exactly 4 numeric digits."
-    };
-  }
-  const rawDate = sanitizeText(params.meetDate, 10);
-  const meetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  let resolvedExpiresAt = resolveDefaultMidnightExpiryIso(meetDate);
-  if (typeof params.expiresAt === "string" && params.expiresAt.trim()) {
-    const parsedExp = Date.parse(params.expiresAt.trim());
-    if (!Number.isFinite(parsedExp)) {
-      return { ok: false, statusCode: 400, error: "Invalid expiresAt timestamp." };
-    }
-    resolvedExpiresAt = new Date(parsedExp).toISOString();
-  }
-  const rawStation = String(params.stationType || "START_FINISH").trim().toUpperCase();
-  const stationType = VALID_STATIONS.has(rawStation) ? rawStation : "START_FINISH";
-  const stationLabel = sanitizeText(params.stationLabel, 48) || DELEGATED_STATION_LABELS[stationType];
-  const eventCode = sanitizeText(params.eventCode, 32) || "1600m";
-  const eventDefaults = resolveEventDefaults(eventCode);
-  const eventLabel = sanitizeText(params.eventLabel, 48) || eventDefaults.eventLabel;
-  const rawSplitMeters = Number(params.targetSplitMeters);
-  const targetSplitMeters = Number.isFinite(rawSplitMeters) && rawSplitMeters >= 30 && rawSplitMeters <= 5e3 ? Math.round(rawSplitMeters) : eventDefaults.splitMeters;
-  const rawLapCount = Number(params.targetLapCount);
-  const targetLapCount = Number.isFinite(rawLapCount) && rawLapCount >= 1 && rawLapCount <= 50 ? Math.round(rawLapCount) : eventDefaults.lapCount;
-  const splitPlanLabel = sanitizeText(params.splitPlanLabel, 48) || `${targetLapCount} \xD7 ${targetSplitMeters}m`;
-  const meetTitle = sanitizeText(params.meetTitle, 120) || "Track Meet";
-  const heatLabel = sanitizeText(params.heatLabel, 40) || void 0;
-  const result = await withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) {
-      return { ok: false, statusCode: 404, error: "Team not found." };
-    }
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
-      return {
-        ok: false,
-        statusCode: 403,
-        error: "Head Coach or Assistant Coach permissions required to delegate timing."
-      };
-    }
-    let assignedMembershipId;
-    let assignedDelegateName;
-    const requestedAssigneeId = sanitizeText(params.assignedMembershipId, 64);
-    if (requestedAssigneeId) {
-      const assigneeMem = doc.memberships.find(
-        (m) => m.membershipId === requestedAssigneeId && m.status !== "REVOKED" && m.status !== "ALUMNI"
-      );
-      if (!assigneeMem) {
-        return {
-          ok: false,
-          statusCode: 404,
-          error: "Assigned teammate membership not found on active roster."
-        };
-      }
-      assignedMembershipId = assigneeMem.membershipId;
-      assignedDelegateName = assigneeMem.invitedName;
-    }
-    const rawRunners = Array.isArray(params.runners) ? params.runners : [];
-    const runners = [];
-    const seenKeys = /* @__PURE__ */ new Set();
-    for (let i = 0; i < Math.min(24, rawRunners.length); i++) {
-      const item = rawRunners[i];
-      if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-      const obj = item;
-      const reqMemId = sanitizeText(obj.membershipId, 64);
-      const matchedMem = reqMemId ? doc.memberships.find(
-        (m) => m.membershipId === reqMemId && m.status !== "REVOKED" && m.status !== "ALUMNI"
-      ) : void 0;
-      const displayName = matchedMem?.invitedName || sanitizeText(obj.displayName || obj.athleteName, 64);
-      if (!displayName) continue;
-      const rawCandidateKey = sanitizeText(obj.entryKey, 48).replace(/[^a-zA-Z0-9_-]/g, "");
-      const containsMemberId = Boolean(matchedMem && rawCandidateKey.includes(matchedMem.membershipId)) || rawCandidateKey.startsWith("mem_") || rawCandidateKey.startsWith("mem-");
-      let entryKey = rawCandidateKey && !containsMemberId ? rawCandidateKey : `r_${i + 1}`;
-      if (seenKeys.has(entryKey)) {
-        entryKey = `${entryKey}_${i + 1}`;
-      }
-      seenKeys.add(entryKey);
-      const hipOrLane = sanitizeText(obj.hipOrLane, 12) || void 0;
-      const rawTargetSplit = Number(obj.targetSplitSecs);
-      const targetSplitSecs = Number.isFinite(rawTargetSplit) && rawTargetSplit > 0 && rawTargetSplit < 3600 ? Number(rawTargetSplit.toFixed(2)) : void 0;
-      const isWalkOn = !matchedMem && Boolean(obj.isWalkOn);
-      runners.push({
-        entryKey,
-        ...matchedMem ? { membershipId: matchedMem.membershipId } : {},
-        displayName,
-        ...hipOrLane ? { hipOrLane } : {},
-        ...targetSplitSecs !== void 0 ? { targetSplitSecs } : {},
-        ...isWalkOn ? { isWalkOn: true } : {}
-      });
-    }
-    const sessionId = `dts_${crypto18.randomBytes(6).toString("hex")}`;
-    const existingCodes = new Set(
-      (doc.delegatedTimingSessions || []).map((s) => s.passCode.toUpperCase())
-    );
-    let passCode = generatePassCode();
-    while (existingCodes.has(passCode)) {
-      passCode = generatePassCode();
-    }
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const internalRecord = {
-      sessionId,
-      teamId: params.teamId,
-      passCode,
-      meetTitle,
-      meetDate,
-      eventCode,
-      eventLabel,
-      ...heatLabel ? { heatLabel } : {},
-      stationType,
-      stationLabel,
-      splitPlanLabel,
-      targetSplitMeters,
-      targetLapCount,
-      runners,
-      ...assignedMembershipId ? { assignedMembershipId, assignedDelegateName } : {},
-      createdBySid: params.callerSid,
-      createdByName: callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
-      expiresAt: resolvedExpiresAt,
-      ...cleanPinRaw ? {
-        pinRequired: true,
-        pinHash: hashTimingPassPin(sessionId, cleanPinRaw)
-      } : { pinRequired: false },
-      createdAt: nowIso
-    };
-    const prevSessions = Array.isArray(doc.delegatedTimingSessions) ? doc.delegatedTimingSessions : [];
-    doc.delegatedTimingSessions = [internalRecord, ...prevSessions].slice(0, 80);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "DELEGATED_TIMING_SESSION_CREATED",
-      targetId: sessionId,
-      metadata: {
-        passCode,
-        eventLabel,
-        stationType,
-        runnerCount: runners.length,
-        pinRequired: Boolean(cleanPinRaw),
-        assignedMembershipId: assignedMembershipId || null
-      }
-    });
-    const { pinHash: _dropPinHash, ...publicSession } = internalRecord;
-    const cleanOrigin = params.originUrl.replace(/\/+$/, "");
-    return {
-      ok: true,
-      statusCode: 200,
-      session: publicSession,
-      passUrl: `${cleanOrigin}/time/${encodeURIComponent(passCode)}`,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-      expiresAt: resolvedExpiresAt
-    };
-  });
-  if (result.ok && result.session) {
-    await upsertPassDirectoryEntry(result.session.passCode, {
-      teamId: params.teamId,
-      sessionId: result.session.sessionId,
-      expiresAt: result.session.expiresAt
-    });
-  }
-  return result;
-}
-async function revokeDelegatedTimingSession(params) {
-  const cleanSessionId = sanitizeText(params.sessionId, 64);
-  if (!cleanSessionId) {
-    return { ok: false, statusCode: 400, error: "Session ID is required." };
-  }
-  return withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) {
-      return { ok: false, statusCode: 404, error: "Team not found." };
-    }
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
-      return {
-        ok: false,
-        statusCode: 403,
-        error: "Coach permissions required to revoke timing passes."
-      };
-    }
-    const sessions = Array.isArray(doc.delegatedTimingSessions) ? doc.delegatedTimingSessions : [];
-    const target = sessions.find((s) => s.sessionId === cleanSessionId);
-    if (!target) {
-      return { ok: false, statusCode: 404, error: "Timing pass session not found." };
-    }
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    target.revokedAt = nowIso;
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "DELEGATED_TIMING_SESSION_REVOKED",
-      targetId: cleanSessionId,
-      metadata: { passCode: target.passCode }
-    });
-    return {
-      ok: true,
-      statusCode: 200,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-}
-async function getPublicDelegatedTimingPass(params) {
-  const cleanCode = sanitizeText(params.passCode, 24).toUpperCase();
-  if (!cleanCode) {
-    return { found: false, statusCode: 404 };
-  }
-  const teamId = await findTeamIdForPassCode(cleanCode);
-  if (!teamId) {
-    return { found: false, statusCode: 404 };
-  }
-  const doc = await loadTeamDocRaw(teamId);
-  if (!doc) {
-    return { found: false, statusCode: 404 };
-  }
-  const session = (doc.delegatedTimingSessions || []).find(
-    (s) => s.passCode.toUpperCase() === cleanCode
-  );
-  if (!session) {
-    return { found: false, statusCode: 404 };
-  }
-  if (isSessionExpiredOrRevoked(session)) {
-    return {
-      found: true,
-      expiredOrRevoked: true,
-      teamShortName: doc.brand.shortName,
-      teamName: doc.brand.name,
-      statusCode: 410,
-      error: session.revokedAt ? "This timing pass was revoked by the coach." : "This timing pass has expired."
-    };
-  }
-  const pinRequired = Boolean(session.pinRequired && session.pinHash);
-  const candidatePin = sanitizeText(params.pin, 12);
-  if (pinRequired) {
-    const pinVerified = Boolean(candidatePin) && /^\d{4}$/.test(candidatePin) && verifyTimingPassPin(session.sessionId, session.pinHash, candidatePin);
-    if (!pinVerified) {
-      return {
-        found: true,
-        pinRequired: true,
-        pinVerified: false,
-        teamShortName: doc.brand.shortName,
-        teamName: doc.brand.name,
-        statusCode: candidatePin ? 403 : 200,
-        ...candidatePin ? { error: "Incorrect 4-digit timing pass PIN." } : {}
-      };
-    }
-  }
-  const safeRunners = (session.runners || []).map((r) => ({
-    entryKey: r.entryKey,
-    displayName: abbreviatePublicRunnerName(r.displayName),
-    ...r.hipOrLane ? { hipOrLane: r.hipOrLane } : {},
-    ...typeof r.targetSplitSecs === "number" ? { targetSplitSecs: r.targetSplitSecs } : {},
-    ...r.isWalkOn ? { isWalkOn: true } : {}
-  }));
-  return {
-    found: true,
-    expiredOrRevoked: false,
-    pinRequired,
-    pinVerified: true,
-    teamShortName: doc.brand.shortName,
-    teamName: doc.brand.name,
-    statusCode: 200,
-    session: {
-      sessionId: session.sessionId,
-      teamId: session.teamId,
-      passCode: session.passCode,
-      meetTitle: session.meetTitle,
-      meetDate: session.meetDate,
-      eventCode: session.eventCode,
-      eventLabel: session.eventLabel,
-      ...session.heatLabel ? { heatLabel: session.heatLabel } : {},
-      stationType: session.stationType,
-      stationLabel: session.stationLabel,
-      splitPlanLabel: session.splitPlanLabel,
-      targetSplitMeters: session.targetSplitMeters,
-      targetLapCount: session.targetLapCount,
-      runners: safeRunners,
-      expiresAt: session.expiresAt
-    }
-  };
-}
-function sanitizeSubmissionEntries(rawEntries, sessionRunners) {
-  if (!Array.isArray(rawEntries)) return [];
-  const sessionRunnerByKey = new Map(sessionRunners.map((r) => [r.entryKey, r]));
-  const out = [];
-  for (let i = 0; i < Math.min(40, rawEntries.length); i++) {
-    const raw = rawEntries[i];
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-    const obj = raw;
-    const entryKey = sanitizeText(obj.entryKey, 64).replace(/[^a-zA-Z0-9_-]/g, "");
-    if (!entryKey) continue;
-    const rawTimestamps = Array.isArray(obj.rawLapTimestampsSecs) ? obj.rawLapTimestampsSecs.slice(0, 100).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n >= 0 && n <= 86400).map((n) => Number(n.toFixed(2))) : [];
-    const rawSplits = Array.isArray(obj.lapSplitsSecs) ? obj.lapSplitsSecs.slice(0, 100).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0 && n <= 86400).map((n) => Number(n.toFixed(2))) : [];
-    const totalNum = Number(obj.totalSecs);
-    const derivedTotal = Number.isFinite(totalNum) && totalNum > 0 && totalNum <= 86400 ? Number(totalNum.toFixed(2)) : rawSplits.length > 0 ? Number(rawSplits.reduce((s, v) => s + v, 0).toFixed(2)) : 0;
-    if (derivedTotal <= 0) continue;
-    const finalSplits = rawSplits.length > 0 ? rawSplits : [derivedTotal];
-    const finalTimestamps = rawTimestamps.length > 0 ? rawTimestamps : [derivedTotal];
-    const matchedSessionRunner = sessionRunnerByKey.get(entryKey);
-    const isWalkOn = !matchedSessionRunner || Boolean(matchedSessionRunner.isWalkOn);
-    const athleteName = matchedSessionRunner ? matchedSessionRunner.displayName : sanitizeText(obj.athleteName, 64) || `Walk-On ${i + 1}`;
-    out.push({
-      entryKey,
-      ...matchedSessionRunner?.membershipId ? { membershipId: matchedSessionRunner.membershipId } : {},
-      athleteName,
-      ...matchedSessionRunner?.hipOrLane ? { hipOrLane: matchedSessionRunner.hipOrLane } : sanitizeText(obj.hipOrLane, 12) ? { hipOrLane: sanitizeText(obj.hipOrLane, 12) } : {},
-      totalSecs: derivedTotal,
-      lapSplitsSecs: finalSplits,
-      rawLapTimestampsSecs: finalTimestamps,
-      ...isWalkOn ? { isWalkOn: true } : {}
-    });
-  }
-  return out;
-}
-async function submitDelegatedSplits(params) {
-  const cleanCode = sanitizeText(params.passCode, 24).toUpperCase();
-  if (!cleanCode) {
-    return { ok: false, statusCode: 400, error: "Timing pass code is required." };
-  }
-  const teamId = await findTeamIdForPassCode(cleanCode);
-  if (!teamId) {
-    return { ok: false, statusCode: 404, error: "Timing pass not found." };
-  }
-  return withTeamRowLock(teamId, async () => {
-    const doc = await loadTeamDocRaw(teamId);
-    if (!doc) {
-      return { ok: false, statusCode: 404, error: "Team not found." };
-    }
-    const session = (doc.delegatedTimingSessions || []).find(
-      (s) => s.passCode.toUpperCase() === cleanCode
-    );
-    if (!session) {
-      return { ok: false, statusCode: 404, error: "Timing pass not found." };
-    }
-    const authMember = params.callerSid ? doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-    ) : void 0;
-    const isStaffMember = Boolean(authMember && canProgramWorkoutsRole(authMember.role));
-    if (session.revokedAt) {
-      return {
-        ok: false,
-        statusCode: 410,
-        error: "This timing pass has been revoked by the coach."
-      };
-    }
-    if (!isStaffMember && isSessionExpiredOrRevoked(session)) {
-      return {
-        ok: false,
-        statusCode: 410,
-        error: "This timing pass has expired."
-      };
-    }
-    if (session.pinRequired && session.pinHash && !authMember) {
-      const candidatePin = sanitizeText(params.pin, 12);
-      if (!candidatePin || !/^\d{4}$/.test(candidatePin) || !verifyTimingPassPin(session.sessionId, session.pinHash, candidatePin)) {
-        return {
-          ok: false,
-          statusCode: 403,
-          error: "Valid 4-digit timing pass PIN is required to submit splits."
-        };
-      }
-    }
-    const cleanClientSubmissionId = sanitizeText(params.clientSubmissionId, 96).replace(/[^a-zA-Z0-9_.:-]/g, "") || `dsub_cli_${crypto18.randomBytes(8).toString("hex")}`;
-    const existingList = Array.isArray(doc.pendingTimingSubmissions) ? doc.pendingTimingSubmissions : [];
-    const existingDuplicate = existingList.find(
-      (sub) => sub.sessionId === session.sessionId && sub.clientSubmissionId === cleanClientSubmissionId
-    );
-    if (existingDuplicate) {
-      return {
-        ok: true,
-        statusCode: 200,
-        deduplicated: true,
-        submission: existingDuplicate,
-        ...authMember && params.originUrl ? { team: projectTeamSummaryForCaller(doc, authMember.userSid, params.originUrl) } : {}
-      };
-    }
-    const cleanEntries = sanitizeSubmissionEntries(params.entries, session.runners || []);
-    if (cleanEntries.length === 0) {
-      return {
-        ok: false,
-        statusCode: 400,
-        error: "At least one runner split entry is required."
-      };
-    }
-    const capturedByName = sanitizeText(params.capturedByName, 64) || authMember?.invitedName || session.assignedDelegateName || "Trackside Helper";
-    const rawGunMs = Number(params.gunStartEpochMs);
-    const gunStartEpochMs = Number.isFinite(rawGunMs) && rawGunMs > 0 ? Math.round(rawGunMs) : void 0;
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const submission = {
-      submissionId: `dsub_${crypto18.randomBytes(6).toString("hex")}`,
-      sessionId: session.sessionId,
-      teamId,
-      clientSubmissionId: cleanClientSubmissionId,
-      meetTitle: session.meetTitle,
-      meetDate: session.meetDate,
-      eventCode: session.eventCode,
-      eventLabel: session.eventLabel,
-      ...session.heatLabel ? { heatLabel: session.heatLabel } : {},
-      stationType: session.stationType,
-      capturedByName,
-      ...authMember ? { capturedByMembershipId: authMember.membershipId } : {},
-      ...gunStartEpochMs !== void 0 ? { gunStartEpochMs } : {},
-      submittedAt: nowIso,
-      entries: cleanEntries,
-      reviewStatus: "PENDING_COACH_APPROVAL"
-    };
-    const nextSubmissions = [submission, ...existingList];
-    const pendingItems = nextSubmissions.filter(
-      (s) => s.reviewStatus === "PENDING_COACH_APPROVAL"
-    );
-    const reviewedItems = nextSubmissions.filter(
-      (s) => s.reviewStatus !== "PENDING_COACH_APPROVAL"
-    );
-    doc.pendingTimingSubmissions = [...pendingItems, ...reviewedItems].slice(0, 200);
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(teamId, doc);
-    await appendAuditLogAsync({
-      teamId,
-      actorSid: params.callerSid || `pass:${session.passCode}`,
-      action: "DELEGATED_SPLITS_SUBMITTED",
-      targetId: submission.submissionId,
-      metadata: {
-        sessionId: session.sessionId,
-        stationType: session.stationType,
-        entryCount: cleanEntries.length,
-        authenticated: Boolean(authMember)
-      }
-    });
-    return {
-      ok: true,
-      statusCode: 201,
-      deduplicated: false,
-      submission,
-      ...authMember && params.originUrl ? { team: projectTeamSummaryForCaller(doc, authMember.userSid, params.originUrl) } : {}
-    };
-  });
-}
-function doesActivityMatchDelegatedRace(act, submission) {
-  const race = act.officialRaceData;
-  if (!race) return false;
-  const sameDate = String(act.startDateLocal || "").slice(0, 10) === submission.meetDate;
-  const sameEvent = String(race.eventLabel || "").trim().toLowerCase() === submission.eventLabel.trim().toLowerCase();
-  const sameMeet = String(race.meetName || "").trim().toLowerCase() === submission.meetTitle.trim().toLowerCase();
-  return sameDate && sameEvent && sameMeet;
-}
-function attachCaptureNonDestructively(existingAct, capture, enforceHideWeight) {
-  const prevRace = existingAct.officialRaceData;
-  const prevCaptures = Array.isArray(prevRace.handSplitCaptures) ? prevRace.handSplitCaptures : [];
-  const alreadyHasCapture = Boolean(
-    capture.submissionId && prevCaptures.some((c) => c.submissionId === capture.submissionId)
-  );
-  const nextCaptures = alreadyHasCapture ? prevCaptures : [...prevCaptures, capture];
-  const prevBadges = Array.isArray(existingAct.sourceBadges) ? existingAct.sourceBadges : [];
-  const nextBadges = prevBadges.includes("Delegated Hand-Timed") ? prevBadges : [...prevBadges, "Delegated Hand-Timed"];
-  const updated = {
-    ...existingAct,
-    sourceBadges: nextBadges,
-    officialRaceData: {
-      ...prevRace,
-      handSplitCaptures: nextCaptures
-    }
-  };
-  return enforceHideWeight ? stripSafeSportWeightAndBodyCompFields([updated], { maskWellnessWeightKgZero: true })[0] : updated;
-}
-async function reviewDelegatedSplitSubmission(params) {
-  const cleanSubmissionId = sanitizeText(params.submissionId, 64);
-  const rawAction = String(params.action || "").trim().toUpperCase();
-  const statusMap = {
-    APPROVE: "APPROVED",
-    ARCHIVE_BACKUP: "BACKUP_ARCHIVED",
-    DISCARD: "DISCARDED"
-  };
-  const nextStatus = statusMap[rawAction];
-  if (!cleanSubmissionId || !nextStatus) {
-    return {
-      ok: false,
-      statusCode: 400,
-      error: "Valid submissionId and action (APPROVE | ARCHIVE_BACKUP | DISCARD) required."
-    };
-  }
-  const archiveQueue = [];
-  const pushQueue = [];
-  const outcome = await withTeamRowLock(params.teamId, async () => {
-    const doc = await loadTeamDocRaw(params.teamId);
-    if (!doc) {
-      return { ok: false, statusCode: 404, error: "Team not found." };
-    }
-    const callerMem = doc.memberships.find(
-      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
-    );
-    if (!callerMem || !canProgramWorkoutsRole(callerMem.role)) {
-      return {
-        ok: false,
-        statusCode: 403,
-        error: "Head Coach or Assistant Coach permissions required to review splits."
-      };
-    }
-    const submissions = Array.isArray(doc.pendingTimingSubmissions) ? doc.pendingTimingSubmissions : [];
-    const targetSub = submissions.find((s) => s.submissionId === cleanSubmissionId);
-    if (!targetSub) {
-      return { ok: false, statusCode: 404, error: "Split submission not found." };
-    }
-    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-    const reviewerName = callerMem.invitedName || doc.brand.coachDisplayName || "Coach";
-    if (targetSub.reviewStatus === "APPROVED" && nextStatus === "APPROVED") {
-      return {
-        ok: true,
-        statusCode: 200,
-        submission: targetSub,
-        team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-      };
-    }
-    targetSub.reviewStatus = nextStatus;
-    targetSub.reviewedAt = nowIso;
-    targetSub.reviewedByName = reviewerName;
-    if (nextStatus === "APPROVED") {
-      const linkedSession = (doc.delegatedTimingSessions || []).find(
-        (s) => s.sessionId === targetSub.sessionId
-      );
-      const eventInfo = resolveEventDefaults(targetSub.eventCode || targetSub.eventLabel);
-      const splitMeters = snapLapSplitMeters(
-        linkedSession?.targetSplitMeters || eventInfo.splitMeters
-      );
-      for (const entry of targetSub.entries) {
-        if (!entry.membershipId) continue;
-        const mem = doc.memberships.find(
-          (m) => m.membershipId === entry.membershipId && m.status !== "REVOKED"
-        );
-        if (!mem) continue;
-        const enforceHideWeight = Boolean(doc.brand.defaultSafeSportShield || mem.isMinorU18);
-        const captureSummary = {
-          submissionId: targetSub.submissionId,
-          capturedByName: targetSub.capturedByName,
-          stationType: targetSub.stationType,
-          totalSecs: entry.totalSecs,
-          lapSplitsSecs: entry.lapSplitsSecs,
-          capturedAt: targetSub.submittedAt
-        };
-        const prevRecorded = Array.isArray(mem.coachRecordedActivities) ? mem.coachRecordedActivities : [];
-        const existingIdx = prevRecorded.findIndex(
-          (a) => doesActivityMatchDelegatedRace(a, targetSub)
-        );
-        let attachedActivity;
-        if (existingIdx >= 0) {
-          attachedActivity = attachCaptureNonDestructively(
-            prevRecorded[existingIdx],
-            captureSummary,
-            enforceHideWeight
-          );
-          const nextRecorded = [...prevRecorded];
-          nextRecorded[existingIdx] = attachedActivity;
-          mem.coachRecordedActivities = nextRecorded.slice(0, 50);
-        } else {
-          const raceId = `stopwatch-delegated-race-${targetSub.submissionId}-${mem.membershipId}`;
-          const baseRace = synthesizeOfficialRaceActivity({
-            id: raceId,
-            date: targetSub.meetDate,
-            startDateLocalIso: `${targetSub.meetDate}T10:30:00`,
-            meetName: targetSub.meetTitle,
-            eventLabel: targetSub.eventLabel,
-            eventDistanceMeters: eventInfo.distanceMeters,
-            fatTimeSecs: entry.totalSecs,
-            displayFatTime: formatFatTime(entry.totalSecs),
-            platform: "MeetReady Stopwatch",
-            trackType: targetSub.eventLabel === "XC 5K" ? "XC_COURSE" : "OUTDOOR_400M",
-            lapSplitDistanceMeters: splitMeters,
-            lapSplitsSecs: entry.lapSplitsSecs,
-            includeWarmupCooldown: false
-          });
-          const rawActivity = {
-            ...baseRace,
-            name: `${targetSub.eventLabel} Hand-Timed (${formatFatTime(entry.totalSecs)}) \u2014 ${targetSub.meetTitle}`,
-            deviceName: `MeetReady Delegated Stopwatch (${DELEGATED_STATION_LABELS[targetSub.stationType]})`,
-            sourceBadges: ["Delegated Hand-Timed"],
-            officialRaceData: {
-              ...baseRace.officialRaceData,
-              platform: "MeetReady Stopwatch",
-              timingMethod: "HAND",
-              splitContext: "HAND_CONVERTED",
-              handTimedTotalSecs: Number(entry.totalSecs.toFixed(2)),
-              capturedByName: targetSub.capturedByName,
-              timingStation: targetSub.stationType,
-              handSplitCaptures: [captureSummary]
-            },
-            stopwatchFusionMeta: {
-              stopwatchActivityId: raceId,
-              lapSplitsSecs: entry.lapSplitsSecs,
-              repDistanceMeters: splitMeters,
-              restDurationSecs: 0,
-              fusedWithWearableStreams: false
-            }
-          };
-          const cleanList = sanitizeTelemetryForCleanRoom({ activities: [rawActivity] }).activities || [];
-          const safeAct = enforceHideWeight ? stripSafeSportWeightAndBodyCompFields(cleanList, { maskWellnessWeightKgZero: true })[0] : cleanList[0];
-          if (!safeAct) continue;
-          attachedActivity = safeAct;
-          mem.coachRecordedActivities = [
-            attachedActivity,
-            ...prevRecorded.filter((a) => a.id !== attachedActivity.id)
-          ].slice(0, 50);
-        }
-        archiveQueue.push({ member: { ...mem }, activity: attachedActivity });
-        const baseSnap = mem.liveSnapshot || {
-          updatedAt: nowIso,
-          hasConnectedWatch: false,
-          verdictLabel: "Delegated Track Mark",
-          readinessScore: 80,
-          ctl: 0,
-          atl: 0,
-          tsb: 0,
-          acuteLoad7d: 0,
-          lowAerobicPct: 80,
-          highAerobicPct: 15,
-          neuromuscularPct: 5,
-          caraHours7d: 0,
-          safeSportHideWeight: enforceHideWeight,
-          sharingTier: mem.sharingTier || "SUMMARY_ONLY",
-          activities: []
-        };
-        const prevSnapActs = Array.isArray(baseSnap.activities) ? baseSnap.activities : [];
-        const snapMatchIdx = prevSnapActs.findIndex(
-          (a) => a.id === attachedActivity.id || doesActivityMatchDelegatedRace(a, targetSub)
-        );
-        const nextSnapActs = snapMatchIdx >= 0 ? prevSnapActs.map((a, idx) => idx === snapMatchIdx ? attachedActivity : a) : [attachedActivity, ...prevSnapActs];
-        mem.liveSnapshot = {
-          ...baseSnap,
-          updatedAt: nowIso,
-          safeSportHideWeight: baseSnap.safeSportHideWeight || enforceHideWeight,
-          activities: nextSnapActs.slice(0, 30)
-        };
-        const recipientSet = /* @__PURE__ */ new Set();
-        if (mem.userSid && mem.userSid !== params.callerSid) {
-          recipientSet.add(mem.userSid);
-        }
-        const guardianEmailLower = mem.parentGuardianEmail?.trim().toLowerCase();
-        if (guardianEmailLower) {
-          for (const candidate of doc.memberships) {
-            if (candidate.status !== "REVOKED" && candidate.status !== "ALUMNI" && candidate.role === "PARENT_FOLLOWER" && candidate.userSid && candidate.userSid !== params.callerSid && candidate.invitedEmail?.trim().toLowerCase() === guardianEmailLower) {
-              recipientSet.add(candidate.userSid);
-            }
-          }
-        }
-        if (recipientSet.size > 0) {
-          pushQueue.push({
-            recipientSids: Array.from(recipientSet),
-            teamId: doc.brand.teamId,
-            teamShortName: doc.brand.shortName || doc.brand.name || "MeetReady",
-            eventLabel: targetSub.eventLabel,
-            meetTitle: targetSub.meetTitle,
-            isMinorTarget: Boolean(
-              mem.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield
-            ),
-            quietHoursStart: doc.messagingPolicy?.quietHoursStartHour ?? 21,
-            quietHoursEnd: doc.messagingPolicy?.quietHoursEndHour ?? 6
-          });
-        }
-      }
-    }
-    doc.updatedAt = nowIso;
-    await saveTeamDocRaw(params.teamId, doc);
-    await appendAuditLogAsync({
-      teamId: params.teamId,
-      actorSid: params.callerSid,
-      action: "DELEGATED_SPLITS_REVIEWED",
-      targetId: cleanSubmissionId,
-      metadata: {
-        action: rawAction,
-        reviewStatus: nextStatus,
-        entryCount: targetSub.entries.length
-      }
-    });
-    return {
-      ok: true,
-      statusCode: 200,
-      submission: targetSub,
-      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
-    };
-  });
-  for (const item of archiveQueue) {
-    await archiveCoachActivitiesForMember(item.member, [item.activity]).catch(() => void 0);
-  }
-  for (const item of pushQueue) {
-    const body = item.isMinorTarget ? "New coach-approved hand-timed split ready \u2014 tap to open in MeetReady." : `${item.eventLabel} hand-timed split approved for ${item.meetTitle} \u2014 tap to view in MeetReady.`;
-    await dispatchPushPayloadToUsers({
-      recipientSids: item.recipientSids,
-      payload: {
-        title: `MeetReady \xB7 ${item.teamShortName}`,
-        body,
-        url: `/?tab=FITNESS&teamId=${encodeURIComponent(item.teamId)}`,
-        tag: `thresh-split-${item.teamId}`,
-        isEmergency: false
-      },
-      isQuietHours: isWithinQuietHours(
-        params.clientLocalHour,
-        item.quietHoursStart,
-        item.quietHoursEnd
-      )
-    }).catch(() => void 0);
-  }
-  return outcome;
-}
-
-// server/routers/teamRouter.ts
-var teamRouter = express3.Router();
-var OTP_RATE_WINDOW_MS = 10 * 60 * 1e3;
-function resolveRequestOrigin(req) {
-  return resolveTrustedRequestOrigin(req);
-}
-teamRouter.post("/api/auth/email/send-otp", async (req, res) => {
-  try {
-    const email = String(req.body?.email || "").trim().toLowerCase();
-    const clientIp = getClientRateLimitIp(req);
-    const ipRate = await checkDistributedRateLimitAsync(
-      `otp_send_ip:${clientIp}`,
-      10,
-      OTP_RATE_WINDOW_MS
-    );
-    const emailRate = email ? await checkDistributedRateLimitAsync(`otp_send_em:${email}`, 5, OTP_RATE_WINDOW_MS) : { allowed: true, retryAfterSecs: 0 };
-    if (!ipRate.allowed || !emailRate.allowed) {
-      res.status(429).json({
-        ok: false,
-        error: "Too many verification code requests. Please wait a few minutes and try again.",
-        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs)
-      });
-      return;
-    }
-    const result = await requestEmailOtpCode(email, {
-      birthMonthYear: req.body?.birthMonthYear,
-      birthYear: req.body?.birthYear
-    });
-    if (!result.ok) {
-      res.status(result.statusCode || 400).json({ ok: false, error: result.error || "Unable to send OTP." });
-      return;
-    }
-    res.json({
-      ok: true,
-      deliveryStatus: result.deliveryStatus,
-      resendConfigured: isResendConfigured(),
-      ...!isProductionDeployment() && result.devPreviewCode ? { devPreviewCode: result.devPreviewCode } : {}
-    });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to send verification code."
-    });
-  }
-});
-teamRouter.post("/api/auth/email/verify-otp", async (req, res) => {
-  try {
-    const email = String(req.body?.email || "").trim().toLowerCase();
-    const code = String(req.body?.code || "").trim();
-    const clientIp = getClientRateLimitIp(req);
-    const ipRate = await checkDistributedRateLimitAsync(
-      `otp_verify_ip:${clientIp}`,
-      20,
-      OTP_RATE_WINDOW_MS
-    );
-    const emailRate = email ? await checkDistributedRateLimitAsync(`otp_verify_em:${email}`, 10, OTP_RATE_WINDOW_MS) : { allowed: true, retryAfterSecs: 0 };
-    if (!ipRate.allowed || !emailRate.allowed) {
-      res.status(429).json({
-        ok: false,
-        error: "Too many verification attempts. Please wait a few minutes and try again.",
-        retryAfterSecs: Math.max(ipRate.retryAfterSecs, emailRate.retryAfterSecs)
-      });
-      return;
-    }
-    const currentClaims = getVerifiedSessionClaims(req);
-    const verifiedPreferredSid = currentClaims && isCanonicalAuthenticatedClaims(currentClaims) ? currentClaims.sid : void 0;
-    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid, {
-      birthMonthYear: req.body?.birthMonthYear,
-      birthYear: req.body?.birthYear
-    });
-    if (!result.ok || !result.sid) {
-      res.status(result.statusCode || 400).json({ ok: false, error: result.error || "Invalid code." });
-      return;
-    }
-    setSessionCookie(
-      req,
-      res,
-      result.userId || `usr_${result.sid}`,
-      result.sid,
-      "verified"
-    );
-    const originUrl = resolveRequestOrigin(req);
-    const teams = await listTeamsForUser(result.sid, originUrl);
-    res.json({
-      ok: true,
-      email: result.email,
-      displayName: result.displayName,
-      teams
-    });
-  } catch (err) {
-    res.status(500).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Verification failed."
-    });
-  }
-});
-teamRouter.get(["/api/teams/mine", "/api/teams"], async (req, res) => {
+// server/routers/team/rosterAndLifecycleRouter.ts
+var rosterAndLifecycleRouter = express5.Router();
+rosterAndLifecycleRouter.get(["/api/teams/mine", "/api/teams"], async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -19633,7 +19405,7 @@ teamRouter.get(["/api/teams/mine", "/api/teams"], async (req, res) => {
         });
       }
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const teams = await listTeamsForUser(claims.sid, originUrl);
     res.json({
       ok: true,
@@ -19647,14 +19419,14 @@ teamRouter.get(["/api/teams/mine", "/api/teams"], async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams", async (req, res) => {
+rosterAndLifecycleRouter.post("/api/teams", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const team = await createTeamForCoach({
       callerSid: claims.sid,
       originUrl,
@@ -19688,141 +19460,7 @@ teamRouter.post("/api/teams", async (req, res) => {
     });
   }
 });
-teamRouter.put("/api/teams/:teamId", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const updated = await updateTeamBranding({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      updates: req.body || {}
-    });
-    if (!updated) {
-      res.status(403).json({
-        ok: false,
-        error: "Only team coaches can modify team branding and safeguarding settings."
-      });
-      return;
-    }
-    res.json({ ok: true, team: updated });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to update team."
-    });
-  }
-});
-teamRouter.put("/api/teams/:teamId/practice-venues", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const body = req.body || {};
-    const result = await updateTeamPracticeVenues({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      practiceVenues: body.practiceVenues,
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(result.statusCode || 403).json({
-        ok: false,
-        error: result.error || "Coach or Org Admin permissions required."
-      });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({
-      ok: true,
-      practiceVenues: result.practiceVenues,
-      team: result.team,
-      teams
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed updating practice venues."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/invites/bulk", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await bulkCreateAndSendInvites({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      rawCsvOrText: req.body?.rawCsvOrText,
-      rows: Array.isArray(req.body?.rows) ? req.body.rows : void 0,
-      sendEmailsNow: req.body?.sendEmailsNow !== false
-    });
-    if (!result.summary) {
-      res.status(403).json({
-        ok: false,
-        error: "Coach permissions required to invite athletes to this team."
-      });
-      return;
-    }
-    res.json({
-      ok: true,
-      team: result.summary,
-      addedCount: result.addedCount,
-      emailedCount: result.emailedCount,
-      manualLinkCount: result.manualLinkCount,
-      resendConfigured: result.resendConfigured
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to process bulk invites."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/invites/resend", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await resendPendingTeamInvites({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      membershipId: req.body?.membershipId ? String(req.body.membershipId) : "ALL_PENDING"
-    });
-    if (!result.summary) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    res.json({
-      ok: true,
-      team: result.summary,
-      emailedCount: result.emailedCount,
-      resendConfigured: result.resendConfigured
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to resend invites."
-    });
-  }
-});
-teamRouter.get("/api/teams/join-preview", async (req, res) => {
+rosterAndLifecycleRouter.get("/api/teams/join-preview", async (req, res) => {
   try {
     const codeOrSlug = String(req.query.codeOrSlug || "").trim();
     const token = req.query.t ? String(req.query.t).trim() : void 0;
@@ -19841,7 +19479,7 @@ teamRouter.get("/api/teams/join-preview", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/join-claim", async (req, res) => {
+rosterAndLifecycleRouter.post("/api/teams/join-claim", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -19849,7 +19487,7 @@ teamRouter.post("/api/teams/join-claim", async (req, res) => {
       return;
     }
     const athleteName = String(req.body?.athleteName || "").trim();
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const rawUnit = String(req.body?.distanceUnit || "").toLowerCase();
     const distanceUnit = rawUnit === "km" ? "km" : "mi";
     const rawTier = String(req.body?.sharingTier || "").toUpperCase();
@@ -19903,14 +19541,14 @@ teamRouter.post("/api/teams/join-claim", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/sync-snapshot", async (req, res) => {
+rosterAndLifecycleRouter.post("/api/teams/sync-snapshot", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.json({ ok: true, teams: [] });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const verifiedUser = claims.sub?.startsWith("usr_") ? await getUserById(claims.sub).catch(() => null) : null;
     const mergedSnapshot = {
       ...req.body?.snapshot || {},
@@ -19931,818 +19569,7 @@ teamRouter.post("/api/teams/sync-snapshot", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
-    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
-    const updated = await broadcastWorkoutToTeamSquad({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      targetSquadGroup: String(req.body?.targetSquadGroup || "ALL"),
-      targetEventGroups,
-      targetMembershipIds,
-      date: String(req.body?.date || ""),
-      name: String(req.body?.name || ""),
-      sportCategory: req.body?.sportCategory || "Running",
-      plannedDurationSecs: Number(req.body?.plannedDurationSecs || 3600),
-      plannedLoad: Number(req.body?.plannedLoad || 65),
-      workoutSyntax: String(req.body?.workoutSyntax || ""),
-      description: String(req.body?.description || ""),
-      scheduledTime: req.body?.scheduledTime,
-      sessionSlot: req.body?.sessionSlot,
-      locationName: req.body?.locationName,
-      locationCategory: req.body?.locationCategory,
-      meetingNotes: req.body?.meetingNotes,
-      trackSpec: req.body?.trackSpec,
-      athleteOverrides: req.body?.athleteOverrides,
-      replaceSameDateTarget: typeof req.body?.replaceSameDateTarget === "boolean" ? req.body.replaceSameDateTarget : true
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: updated, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to broadcast workout."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/workouts/broadcast-batch", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
-    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
-    const workouts = Array.isArray(req.body?.workouts) ? req.body.workouts : [];
-    const updated = await broadcastWorkoutBatchToTeamSquad({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      targetSquadGroup: String(req.body?.targetSquadGroup || "ALL"),
-      targetEventGroups,
-      targetMembershipIds,
-      publishMode: req.body?.publishMode,
-      planBlockId: req.body?.planBlockId ? String(req.body.planBlockId) : void 0,
-      planBlockName: req.body?.planBlockName ? String(req.body.planBlockName) : void 0,
-      replaceExistingCohortRange: typeof req.body?.replaceExistingCohortRange === "boolean" ? req.body.replaceExistingCohortRange : true,
-      workouts
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: updated, teams, publishedCount: Math.min(160, workouts.length) });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to batch-broadcast training plan."
-    });
-  }
-});
-teamRouter.delete("/api/teams/:teamId/workouts/blocks/:blockId", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const updated = await deleteBroadcastPlanBlockFromTeam({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      blockId: String(req.params.blockId || ""),
-      originUrl
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: updated, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to recall team training block."
-    });
-  }
-});
-teamRouter.put("/api/teams/:teamId/workouts/:broadcastId", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const body = req.body || {};
-    const updated = await updateBroadcastWorkoutOnTeam({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      broadcastId: String(req.params.broadcastId || ""),
-      originUrl,
-      updates: {
-        ...typeof body.date === "string" ? { date: body.date } : {},
-        ...typeof body.name === "string" ? { name: body.name } : {},
-        ...body.sportCategory ? { sportCategory: body.sportCategory } : {},
-        ...body.plannedDurationSecs !== void 0 ? { plannedDurationSecs: Number(body.plannedDurationSecs) } : {},
-        ...body.plannedLoad !== void 0 ? { plannedLoad: Number(body.plannedLoad) } : {},
-        ...typeof body.workoutSyntax === "string" ? { workoutSyntax: body.workoutSyntax } : {},
-        ...typeof body.description === "string" ? { description: body.description } : {},
-        ..."scheduledTime" in body ? { scheduledTime: body.scheduledTime } : {},
-        ..."sessionSlot" in body ? { sessionSlot: body.sessionSlot } : {},
-        ..."locationName" in body ? { locationName: body.locationName } : {},
-        ..."locationCategory" in body ? { locationCategory: body.locationCategory } : {},
-        ..."meetingNotes" in body ? { meetingNotes: body.meetingNotes } : {},
-        ..."trackSpec" in body ? { trackSpec: body.trackSpec } : {}
-      }
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions or broadcast workout not found." });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: updated, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to update broadcast workout."
-    });
-  }
-});
-teamRouter.delete("/api/teams/:teamId/workouts/:broadcastId", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const updated = await deleteBroadcastWorkoutFromTeam({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      broadcastId: String(req.params.broadcastId || ""),
-      originUrl
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: updated, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to delete broadcast workout."
-    });
-  }
-});
-teamRouter.patch("/api/teams/:teamId/members/:membershipId/event-group", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const eventGroup = normalizeCoachEventGroup(req.body?.eventGroup);
-    const originUrl = resolveRequestOrigin(req);
-    const updated = await updateTeamMemberEventGroup({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      membershipId: String(req.params.membershipId || ""),
-      originUrl,
-      eventGroup
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions or roster member not found." });
-      return;
-    }
-    res.json({ ok: true, team: updated });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to update athlete event group."
-    });
-  }
-});
-teamRouter.patch("/api/teams/:teamId/members/:membershipId/photo-release", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await updateTeamMemberPhotoRelease({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      membershipId: String(req.params.membershipId || ""),
-      photoReleaseOptOut: req.body?.photoReleaseOptOut === true,
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(result.status || 403).json({
-        ok: false,
-        error: result.error || "Unable to update photo release setting."
-      });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: result.team, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to update photo release setting."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/stopwatch-activities", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
-    const originUrl = resolveRequestOrigin(req);
-    const updated = await recordCoachStopwatchActivities({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      entries
-    });
-    if (!updated) {
-      res.status(403).json({ ok: false, error: "Coach permissions required." });
-      return;
-    }
-    res.json({ ok: true, team: updated });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to save stopwatch activities."
-    });
-  }
-});
-teamRouter.get("/api/teams/public/timing-pass/:passCode", async (req, res) => {
-  try {
-    const passCode = String(req.params.passCode || "").trim().toUpperCase();
-    const clientIp = getClientRateLimitIp(req);
-    const lookupLimit = await checkDistributedRateLimitAsync(
-      `timing_pass_get:${clientIp}:${passCode}`,
-      40,
-      6e4
-    );
-    if (!lookupLimit.allowed) {
-      res.status(429).json({
-        found: false,
-        error: "Too many timing pass lookups. Please wait a moment.",
-        retryAfterSecs: lookupLimit.retryAfterSecs
-      });
-      return;
-    }
-    const headerPin = req.headers["x-timing-pin"];
-    const rawPin = typeof headerPin === "string" ? headerPin.trim() : typeof req.query.pin === "string" ? req.query.pin.trim() : void 0;
-    if (rawPin) {
-      const pinLimit = await checkDistributedRateLimitAsync(
-        `timing_pin_try:${clientIp}:${passCode}`,
-        8,
-        10 * 6e4
-      );
-      if (!pinLimit.allowed) {
-        res.status(429).json({
-          found: true,
-          pinRequired: true,
-          pinVerified: false,
-          error: "Too many PIN attempts. Ask the coach for a fresh pass or try again shortly.",
-          retryAfterSecs: pinLimit.retryAfterSecs
-        });
-        return;
-      }
-    }
-    const payload = await getPublicDelegatedTimingPass({ passCode, pin: rawPin });
-    const { statusCode, ...body } = payload;
-    res.status(statusCode).json(body);
-  } catch (err) {
-    res.status(500).json({
-      found: false,
-      error: err instanceof Error ? err.message : "Failed to load timing pass."
-    });
-  }
-});
-teamRouter.post(
-  "/api/teams/public/timing-pass/:passCode/submissions",
-  async (req, res) => {
-    try {
-      const passCode = String(req.params.passCode || "").trim().toUpperCase();
-      const clientIp = getClientRateLimitIp(req);
-      const subLimit = await checkDistributedRateLimitAsync(
-        `timing_sub:${clientIp}:${passCode}`,
-        20,
-        6e4
-      );
-      if (!subLimit.allowed) {
-        res.status(429).json({
-          ok: false,
-          error: "Too many split submissions. Please wait a moment before retrying.",
-          retryAfterSecs: subLimit.retryAfterSecs
-        });
-        return;
-      }
-      const headerPin = req.headers["x-timing-pin"];
-      const pin = typeof headerPin === "string" ? headerPin.trim() : typeof req.body?.pin === "string" ? req.body.pin.trim() : void 0;
-      if (pin) {
-        const pinLimit = await checkDistributedRateLimitAsync(
-          `timing_pin_try:${clientIp}:${passCode}`,
-          8,
-          10 * 6e4
-        );
-        if (!pinLimit.allowed) {
-          res.status(429).json({
-            ok: false,
-            error: "Too many PIN attempts. Please wait a few minutes.",
-            retryAfterSecs: pinLimit.retryAfterSecs
-          });
-          return;
-        }
-      }
-      const claims = getVerifiedSessionClaims(req);
-      const callerSid = claims?.sid && isCanonicalAuthenticatedClaims(claims) ? claims.sid : void 0;
-      const originUrl = resolveRequestOrigin(req);
-      const outcome = await submitDelegatedSplits({
-        passCode,
-        pin,
-        callerSid,
-        clientSubmissionId: req.body?.clientSubmissionId,
-        capturedByName: req.body?.capturedByName,
-        gunStartEpochMs: req.body?.gunStartEpochMs,
-        entries: req.body?.entries,
-        originUrl
-      });
-      if (!outcome.ok) {
-        res.status(outcome.statusCode).json({
-          ok: false,
-          error: outcome.error || "Failed to submit splits."
-        });
-        return;
-      }
-      const teams = callerSid ? await listTeamsForUser(callerSid, originUrl) : void 0;
-      res.status(outcome.statusCode).json({
-        ok: true,
-        deduplicated: Boolean(outcome.deduplicated),
-        submission: outcome.submission,
-        ...outcome.team ? { team: outcome.team } : {},
-        ...teams ? { teams } : {}
-      });
-    } catch (err) {
-      res.status(400).json({
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed to submit splits."
-      });
-    }
-  }
-);
-teamRouter.post("/api/teams/:teamId/timing-sessions", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const body = req.body || {};
-    const outcome = await createDelegatedTimingSession({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      meetTitle: body.meetTitle,
-      meetDate: body.meetDate,
-      eventCode: body.eventCode,
-      eventLabel: body.eventLabel,
-      heatLabel: body.heatLabel,
-      stationType: body.stationType,
-      stationLabel: body.stationLabel,
-      splitPlanLabel: body.splitPlanLabel,
-      targetSplitMeters: body.targetSplitMeters,
-      targetLapCount: body.targetLapCount,
-      runners: body.runners,
-      assignedMembershipId: body.assignedMembershipId,
-      pin: body.pin,
-      expiresAt: body.expiresAt
-    });
-    if (!outcome.ok || !outcome.session) {
-      res.status(outcome.statusCode || 400).json({
-        ok: false,
-        error: outcome.error || "Failed to create delegated timing session."
-      });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({
-      ok: true,
-      session: outcome.session,
-      passUrl: outcome.passUrl,
-      team: outcome.team,
-      teams
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to create delegated timing session."
-    });
-  }
-});
-teamRouter.delete(
-  "/api/teams/:teamId/timing-sessions/:sessionId",
-  async (req, res) => {
-    try {
-      const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-        res.status(401).json({ ok: false, error: "Authentication required." });
-        return;
-      }
-      const originUrl = resolveRequestOrigin(req);
-      const outcome = await revokeDelegatedTimingSession({
-        callerSid: claims.sid,
-        teamId: String(req.params.teamId || ""),
-        sessionId: String(req.params.sessionId || ""),
-        originUrl
-      });
-      if (!outcome.ok) {
-        res.status(outcome.statusCode || 400).json({
-          ok: false,
-          error: outcome.error || "Failed to revoke timing session."
-        });
-        return;
-      }
-      const teams = await listTeamsForUser(claims.sid, originUrl);
-      res.json({
-        ok: true,
-        team: outcome.team,
-        teams
-      });
-    } catch (err) {
-      res.status(400).json({
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed to revoke timing session."
-      });
-    }
-  }
-);
-teamRouter.post(
-  "/api/teams/:teamId/timing-submissions/:submissionId/review",
-  async (req, res) => {
-    try {
-      const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-        res.status(401).json({ ok: false, error: "Authentication required." });
-        return;
-      }
-      const originUrl = resolveRequestOrigin(req);
-      const outcome = await reviewDelegatedSplitSubmission({
-        callerSid: claims.sid,
-        teamId: String(req.params.teamId || ""),
-        submissionId: String(req.params.submissionId || ""),
-        action: req.body?.action,
-        originUrl
-      });
-      if (!outcome.ok) {
-        res.status(outcome.statusCode || 400).json({
-          ok: false,
-          error: outcome.error || "Failed to review delegated split submission."
-        });
-        return;
-      }
-      const teams = await listTeamsForUser(claims.sid, originUrl);
-      res.json({
-        ok: true,
-        submission: outcome.submission,
-        team: outcome.team,
-        teams
-      });
-    } catch (err) {
-      res.status(400).json({
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed to review delegated split submission."
-      });
-    }
-  }
-);
-teamRouter.post("/api/teams/:teamId/leave", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const modeRaw = String(req.body?.mode || "LEAVE").toUpperCase();
-    const mode = modeRaw === "GRADUATE_ALUMNI" ? "GRADUATE_ALUMNI" : "LEAVE";
-    const originUrl = resolveRequestOrigin(req);
-    const outcome = await leaveOrGraduateTeam({
-      callerSid: claims.sid,
-      userId: claims.sub?.startsWith("usr_") ? claims.sub : void 0,
-      teamId: String(req.params.teamId || ""),
-      mode,
-      originUrl
-    });
-    if (!outcome.ok) {
-      res.status(400).json({ ok: false, error: outcome.error || "Could not leave team." });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to leave team."
-    });
-  }
-});
-teamRouter.delete("/api/teams/:teamId/members/me/guardian", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const verifiedUser = claims.sub?.startsWith("usr_") ? await getUserById(claims.sub).catch(() => null) : null;
-    const outcome = await revokeAthleteGuardianConsentForTeam({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      originUrl,
-      birthMonthYear: req.body?.birthMonthYear ? String(req.body.birthMonthYear) : void 0,
-      verifiedUserBirthMonthYear: verifiedUser?.birthMonthYear
-    });
-    if (!outcome.ok) {
-      res.status(400).json({ ok: false, error: outcome.error });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: outcome.summary, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed to revoke guardian access."
-    });
-  }
-});
-teamRouter.patch(
-  "/api/teams/:teamId/members/me/sharing-tier",
-  async (req, res) => {
-    try {
-      const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-        res.status(401).json({ ok: false, error: "Authentication required." });
-        return;
-      }
-      const rawTier = String(req.body?.sharingTier || "").toUpperCase();
-      if (rawTier !== "LOAD_ONLY" && rawTier !== "SUMMARY_ONLY" && rawTier !== "FULL_STREAMS") {
-        res.status(400).json({ ok: false, error: "Invalid coach data sharing tier." });
-        return;
-      }
-      const sharingTier = rawTier;
-      const originUrl = resolveRequestOrigin(req);
-      const outcome = await updateMyTeamSharingTier({
-        callerSid: claims.sid,
-        teamId: String(req.params.teamId || ""),
-        sharingTier,
-        originUrl
-      });
-      if (!outcome.ok) {
-        res.status(400).json({ ok: false, error: outcome.error });
-        return;
-      }
-      const teams = await listTeamsForUser(claims.sid, originUrl);
-      res.json({ ok: true, team: outcome.summary, teams });
-    } catch (err) {
-      res.status(400).json({
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed to update team sharing tier."
-      });
-    }
-  }
-);
-teamRouter.patch(
-  "/api/teams/:teamId/members/:membershipId/status",
-  async (req, res) => {
-    try {
-      const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-        res.status(401).json({ ok: false, error: "Authentication required." });
-        return;
-      }
-      const rawStatus = String(req.body?.status || "").toUpperCase();
-      const allowed = [
-        "ACTIVE",
-        "INJURED",
-        "OFF_SEASON",
-        "ALUMNI",
-        "REVOKED"
-      ];
-      const validatedStatus = allowed.find((s) => s === rawStatus);
-      if (!validatedStatus) {
-        res.status(400).json({ ok: false, error: "Invalid member lifecycle status." });
-        return;
-      }
-      const originUrl = resolveRequestOrigin(req);
-      const outcome = await updateMemberRosterLifecycleStatus({
-        callerSid: claims.sid,
-        teamId: String(req.params.teamId || ""),
-        membershipId: String(req.params.membershipId || ""),
-        status: validatedStatus,
-        originUrl
-      });
-      if (!outcome.ok || !outcome.summary) {
-        res.status(403).json({ ok: false, error: outcome.error || "Could not update member status." });
-        return;
-      }
-      res.json({ ok: true, team: outcome.summary });
-    } catch (err) {
-      res.status(400).json({
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed updating member status."
-      });
-    }
-  }
-);
-teamRouter.post(
-  "/api/teams/:teamId/members/:membershipId/parent-consent-link",
-  async (req, res) => {
-    try {
-      const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-        res.status(401).json({ ok: false, error: "Authentication required." });
-        return;
-      }
-      const originUrl = resolveRequestOrigin(req);
-      const outcome = await issueOrResendParentConsentLink({
-        callerSid: claims.sid,
-        teamId: String(req.params.teamId || ""),
-        membershipId: String(req.params.membershipId || ""),
-        originUrl,
-        parentGuardianEmail: req.body?.parentGuardianEmail ? String(req.body.parentGuardianEmail).trim() : void 0
-      });
-      if (!outcome.ok) {
-        const isAuthError = /permission/i.test(outcome.error || "");
-        res.status(isAuthError ? 403 : 400).json({
-          ok: false,
-          error: outcome.error || "Could not issue parent consent link."
-        });
-        return;
-      }
-      res.json({
-        ok: true,
-        consentUrl: outcome.consentUrl,
-        emailStatus: outcome.emailStatus,
-        team: outcome.team
-      });
-    } catch (err) {
-      res.status(400).json({
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed issuing parent consent link."
-      });
-    }
-  }
-);
-teamRouter.post("/api/teams/:teamId/graduate-class", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const graduationYear = Number(req.body?.graduationYear);
-    if (!Number.isFinite(graduationYear) || graduationYear < 2e3 || graduationYear > 2100) {
-      res.status(400).json({ ok: false, error: "Valid graduationYear is required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const outcome = await graduateTeamClass({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      graduationYear,
-      originUrl
-    });
-    if (!outcome.ok) {
-      res.status(403).json({ ok: false, error: outcome.error || "Head Coach permission required." });
-      return;
-    }
-    res.json({ ok: true, graduatedCount: outcome.graduatedCount, team: outcome.summary });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed graduating class."
-    });
-  }
-});
-teamRouter.patch(
-  "/api/teams/:teamId/members/:membershipId/role",
-  async (req, res) => {
-    try {
-      const claims = getVerifiedSessionClaims(req);
-      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-        res.status(401).json({ ok: false, error: "Authentication required." });
-        return;
-      }
-      const role = String(req.body?.role || "").toUpperCase();
-      if (role !== "ATHLETE" && role !== "ASSISTANT_COACH" && role !== "ORG_ADMIN" && role !== "ATHLETIC_TRAINER") {
-        res.status(400).json({
-          ok: false,
-          error: "Role must be ATHLETE, ASSISTANT_COACH, ORG_ADMIN, or ATHLETIC_TRAINER."
-        });
-        return;
-      }
-      const originUrl = resolveRequestOrigin(req);
-      const outcome = await updateMemberRole({
-        callerSid: claims.sid,
-        teamId: String(req.params.teamId || ""),
-        membershipId: String(req.params.membershipId || ""),
-        role,
-        originUrl
-      });
-      if (!outcome.ok || !outcome.summary) {
-        res.status(403).json({ ok: false, error: outcome.error || "Head Coach permission required." });
-        return;
-      }
-      res.json({ ok: true, team: outcome.summary });
-    } catch (err) {
-      res.status(400).json({
-        ok: false,
-        error: err instanceof Error ? err.message : "Failed updating member role."
-      });
-    }
-  }
-);
-teamRouter.post("/api/teams/:teamId/transfer-ownership", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const outcome = await transferTeamHeadCoachOwnership({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      newHeadCoachMembershipId: String(
-        req.body?.newHeadCoachMembershipId || req.body?.targetMembershipId || ""
-      ),
-      originUrl
-    });
-    if (!outcome.ok || !outcome.summary) {
-      res.status(403).json({ ok: false, error: outcome.error || "Could not transfer ownership." });
-      return;
-    }
-    res.json({ ok: true, team: outcome.summary });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed transferring ownership."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/members/merge", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const outcome = await mergeDuplicateRosterMembers({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      sourceMembershipId: String(req.body?.sourceMembershipId || ""),
-      targetMembershipId: String(req.body?.targetMembershipId || ""),
-      originUrl
-    });
-    if (!outcome.ok || !outcome.summary) {
-      res.status(400).json({ ok: false, error: outcome.error || "Could not merge members." });
-      return;
-    }
-    res.json({ ok: true, team: outcome.summary });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed merging roster entries."
-    });
-  }
-});
-teamRouter.get("/api/teams/parent-consent", async (req, res) => {
+rosterAndLifecycleRouter.get("/api/teams/parent-consent", async (req, res) => {
   try {
     const token = String(req.query.token || req.query.t || "").trim();
     const preview = await previewParentConsentToken(token);
@@ -20800,9 +19627,9 @@ teamRouter.get("/api/teams/parent-consent", async (req, res) => {
     res.status(500).send("An error occurred while loading parent consent status.");
   }
 });
-teamRouter.post(
+rosterAndLifecycleRouter.post(
   "/api/teams/parent-consent",
-  express3.urlencoded({ extended: false }),
+  express5.urlencoded({ extended: false }),
   async (req, res) => {
     try {
       const token = String(req.body?.token || req.query.token || "").trim();
@@ -20839,7 +19666,597 @@ teamRouter.post(
     }
   }
 );
-teamRouter.get("/api/teams/:teamId/audit-log", async (req, res) => {
+rosterAndLifecycleRouter.put("/api/teams/:teamId", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const updated = await updateTeamBranding({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      updates: req.body || {}
+    });
+    if (!updated) {
+      res.status(403).json({
+        ok: false,
+        error: "Only team coaches can modify team branding and safeguarding settings."
+      });
+      return;
+    }
+    res.json({ ok: true, team: updated });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to update team."
+    });
+  }
+});
+rosterAndLifecycleRouter.put("/api/teams/:teamId/practice-venues", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const body = req.body || {};
+    const result = await updateTeamPracticeVenues({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      practiceVenues: body.practiceVenues,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(result.statusCode || 403).json({
+        ok: false,
+        error: result.error || "Coach or Org Admin permissions required."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      practiceVenues: result.practiceVenues,
+      team: result.team,
+      teams
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed updating practice venues."
+    });
+  }
+});
+rosterAndLifecycleRouter.post("/api/teams/:teamId/invites/bulk", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const result = await bulkCreateAndSendInvites({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      rawCsvOrText: req.body?.rawCsvOrText,
+      rows: Array.isArray(req.body?.rows) ? req.body.rows : void 0,
+      sendEmailsNow: req.body?.sendEmailsNow !== false
+    });
+    if (!result.summary) {
+      res.status(403).json({
+        ok: false,
+        error: "Coach permissions required to invite athletes to this team."
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      team: result.summary,
+      addedCount: result.addedCount,
+      emailedCount: result.emailedCount,
+      manualLinkCount: result.manualLinkCount,
+      resendConfigured: result.resendConfigured
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to process bulk invites."
+    });
+  }
+});
+rosterAndLifecycleRouter.post("/api/teams/:teamId/invites/resend", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const result = await resendPendingTeamInvites({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      membershipId: req.body?.membershipId ? String(req.body.membershipId) : "ALL_PENDING"
+    });
+    if (!result.summary) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    res.json({
+      ok: true,
+      team: result.summary,
+      emailedCount: result.emailedCount,
+      resendConfigured: result.resendConfigured
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to resend invites."
+    });
+  }
+});
+rosterAndLifecycleRouter.patch(
+  "/api/teams/:teamId/members/:membershipId/event-group",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const eventGroup = normalizeCoachEventGroup(req.body?.eventGroup);
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const updated = await updateTeamMemberEventGroup({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        membershipId: String(req.params.membershipId || ""),
+        originUrl,
+        eventGroup
+      });
+      if (!updated) {
+        res.status(403).json({ ok: false, error: "Coach permissions or roster member not found." });
+        return;
+      }
+      res.json({ ok: true, team: updated });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to update athlete event group."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.patch(
+  "/api/teams/:teamId/members/:membershipId/photo-release",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const result = await updateTeamMemberPhotoRelease({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        membershipId: String(req.params.membershipId || ""),
+        photoReleaseOptOut: req.body?.photoReleaseOptOut === true,
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to update photo release setting."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.team, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to update photo release setting."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.patch(
+  "/api/teams/:teamId/members/:membershipId/coach-groups",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const body = req.body || {};
+      const coachEventGroups = Array.isArray(body.coachEventGroups) ? body.coachEventGroups.map((g) => String(g)) : [];
+      const result = await updateAssistantCoachEventGroups({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        membershipId: String(req.params.membershipId || ""),
+        coachEventGroups,
+        ...body.coachSpecialtyTitle !== void 0 ? { coachSpecialtyTitle: String(body.coachSpecialtyTitle || "") } : {},
+        ...Array.isArray(body.assignedAthleteMembershipIds) ? {
+          assignedAthleteMembershipIds: body.assignedAthleteMembershipIds.map(
+            (id) => String(id)
+          )
+        } : {},
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(403).json({
+          ok: false,
+          error: result.error || "Unable to update assistant coach groups."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.team, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed updating assistant coach groups."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.post("/api/teams/:teamId/leave", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const modeRaw = String(req.body?.mode || "LEAVE").toUpperCase();
+    const mode = modeRaw === "GRADUATE_ALUMNI" ? "GRADUATE_ALUMNI" : "LEAVE";
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const outcome = await leaveOrGraduateTeam({
+      callerSid: claims.sid,
+      userId: claims.sub?.startsWith("usr_") ? claims.sub : void 0,
+      teamId: String(req.params.teamId || ""),
+      mode,
+      originUrl
+    });
+    if (!outcome.ok) {
+      res.status(400).json({ ok: false, error: outcome.error || "Could not leave team." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to leave team."
+    });
+  }
+});
+rosterAndLifecycleRouter.delete(
+  "/api/teams/:teamId/members/me/guardian",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const verifiedUser = claims.sub?.startsWith("usr_") ? await getUserById(claims.sub).catch(() => null) : null;
+      const outcome = await revokeAthleteGuardianConsentForTeam({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        originUrl,
+        birthMonthYear: req.body?.birthMonthYear ? String(req.body.birthMonthYear) : void 0,
+        verifiedUserBirthMonthYear: verifiedUser?.birthMonthYear
+      });
+      if (!outcome.ok) {
+        res.status(400).json({ ok: false, error: outcome.error });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: outcome.summary, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to revoke guardian access."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.patch(
+  "/api/teams/:teamId/members/me/sharing-tier",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const rawTier = String(req.body?.sharingTier || "").toUpperCase();
+      if (rawTier !== "LOAD_ONLY" && rawTier !== "SUMMARY_ONLY" && rawTier !== "FULL_STREAMS") {
+        res.status(400).json({ ok: false, error: "Invalid coach data sharing tier." });
+        return;
+      }
+      const sharingTier = rawTier;
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const outcome = await updateMyTeamSharingTier({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        sharingTier,
+        originUrl
+      });
+      if (!outcome.ok) {
+        res.status(400).json({ ok: false, error: outcome.error });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: outcome.summary, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed to update team sharing tier."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.patch(
+  "/api/teams/:teamId/members/:membershipId/status",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const rawStatus = String(req.body?.status || "").toUpperCase();
+      const allowed = [
+        "ACTIVE",
+        "INJURED",
+        "OFF_SEASON",
+        "ALUMNI",
+        "REVOKED"
+      ];
+      const validatedStatus = allowed.find((s) => s === rawStatus);
+      if (!validatedStatus) {
+        res.status(400).json({ ok: false, error: "Invalid member lifecycle status." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const outcome = await updateMemberRosterLifecycleStatus({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        membershipId: String(req.params.membershipId || ""),
+        status: validatedStatus,
+        originUrl
+      });
+      if (!outcome.ok || !outcome.summary) {
+        res.status(403).json({ ok: false, error: outcome.error || "Could not update member status." });
+        return;
+      }
+      res.json({ ok: true, team: outcome.summary });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed updating member status."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.post(
+  "/api/teams/:teamId/members/:membershipId/parent-consent-link",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const outcome = await issueOrResendParentConsentLink({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        membershipId: String(req.params.membershipId || ""),
+        originUrl,
+        parentGuardianEmail: req.body?.parentGuardianEmail ? String(req.body.parentGuardianEmail).trim() : void 0
+      });
+      if (!outcome.ok) {
+        const isAuthError = /permission/i.test(outcome.error || "");
+        res.status(isAuthError ? 403 : 400).json({
+          ok: false,
+          error: outcome.error || "Could not issue parent consent link."
+        });
+        return;
+      }
+      res.json({
+        ok: true,
+        consentUrl: outcome.consentUrl,
+        emailStatus: outcome.emailStatus,
+        team: outcome.team
+      });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed issuing parent consent link."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.post("/api/teams/:teamId/graduate-class", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const graduationYear = Number(req.body?.graduationYear);
+    if (!Number.isFinite(graduationYear) || graduationYear < 2e3 || graduationYear > 2100) {
+      res.status(400).json({ ok: false, error: "Valid graduationYear is required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const outcome = await graduateTeamClass({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      graduationYear,
+      originUrl
+    });
+    if (!outcome.ok) {
+      res.status(403).json({ ok: false, error: outcome.error || "Head Coach permission required." });
+      return;
+    }
+    res.json({ ok: true, graduatedCount: outcome.graduatedCount, team: outcome.summary });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed graduating class."
+    });
+  }
+});
+rosterAndLifecycleRouter.patch(
+  "/api/teams/:teamId/members/:membershipId/role",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const role = String(req.body?.role || "").toUpperCase();
+      if (role !== "ATHLETE" && role !== "ASSISTANT_COACH" && role !== "ORG_ADMIN" && role !== "ATHLETIC_TRAINER") {
+        res.status(400).json({
+          ok: false,
+          error: "Role must be ATHLETE, ASSISTANT_COACH, ORG_ADMIN, or ATHLETIC_TRAINER."
+        });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const outcome = await updateMemberRole({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        membershipId: String(req.params.membershipId || ""),
+        role,
+        originUrl
+      });
+      if (!outcome.ok || !outcome.summary) {
+        res.status(403).json({ ok: false, error: outcome.error || "Head Coach permission required." });
+        return;
+      }
+      res.json({ ok: true, team: outcome.summary });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed updating member role."
+      });
+    }
+  }
+);
+rosterAndLifecycleRouter.post("/api/teams/:teamId/transfer-ownership", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const outcome = await transferTeamHeadCoachOwnership({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      newHeadCoachMembershipId: String(
+        req.body?.newHeadCoachMembershipId || req.body?.targetMembershipId || ""
+      ),
+      originUrl
+    });
+    if (!outcome.ok || !outcome.summary) {
+      res.status(403).json({ ok: false, error: outcome.error || "Could not transfer ownership." });
+      return;
+    }
+    res.json({ ok: true, team: outcome.summary });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed transferring ownership."
+    });
+  }
+});
+rosterAndLifecycleRouter.post("/api/teams/:teamId/members/merge", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const outcome = await mergeDuplicateRosterMembers({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      sourceMembershipId: String(req.body?.sourceMembershipId || ""),
+      targetMembershipId: String(req.body?.targetMembershipId || ""),
+      originUrl
+    });
+    if (!outcome.ok || !outcome.summary) {
+      res.status(400).json({ ok: false, error: outcome.error || "Could not merge members." });
+      return;
+    }
+    res.json({ ok: true, team: outcome.summary });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed merging roster entries."
+    });
+  }
+});
+rosterAndLifecycleRouter.post("/api/teams/:teamId/staff/invite", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const body = req.body || {};
+    const coachEventGroups = Array.isArray(body.coachEventGroups) ? body.coachEventGroups.map((g) => String(g)) : void 0;
+    const assignedAthleteMembershipIds = Array.isArray(body.assignedAthleteMembershipIds) ? body.assignedAthleteMembershipIds.map((id) => String(id)) : void 0;
+    const result = await inviteTeamCoachingStaff({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      staffName: String(body.staffName || ""),
+      staffEmail: typeof body.staffEmail === "string" ? body.staffEmail : void 0,
+      role: typeof body.role === "string" ? body.role : void 0,
+      coachSpecialtyTitle: typeof body.coachSpecialtyTitle === "string" ? body.coachSpecialtyTitle : void 0,
+      coachEventGroups,
+      assignedAthleteMembershipIds,
+      originUrl
+    });
+    if (!result.ok) {
+      res.status(400).json({
+        ok: false,
+        error: result.error || "Unable to invite coaching staff member."
+      });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({
+      ok: true,
+      member: result.member,
+      inviteUrl: result.inviteUrl,
+      emailStatus: result.emailStatus,
+      team: result.team,
+      teams
+    });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed inviting coaching staff member."
+    });
+  }
+});
+rosterAndLifecycleRouter.get("/api/teams/:teamId/audit-log", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -20867,14 +20284,14 @@ teamRouter.get("/api/teams/:teamId/audit-log", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/safety-alerts", async (req, res) => {
+rosterAndLifecycleRouter.post("/api/teams/:teamId/safety-alerts", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const result = await recordGuardianSafetyAlert({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ""),
@@ -20898,7 +20315,191 @@ teamRouter.post("/api/teams/:teamId/safety-alerts", async (req, res) => {
     });
   }
 });
-teamRouter.get("/api/teams/:teamId/workout-library", async (req, res) => {
+
+// server/routers/team/workoutsAndOpsRouter.ts
+import express6 from "express";
+var workoutsAndOpsRouter = express6.Router();
+workoutsAndOpsRouter.post("/api/teams/:teamId/workouts/broadcast", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
+    const updated = await broadcastWorkoutToTeamSquad({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      targetSquadGroup: String(req.body?.targetSquadGroup || "ALL"),
+      targetEventGroups,
+      targetMembershipIds,
+      date: String(req.body?.date || ""),
+      name: String(req.body?.name || ""),
+      sportCategory: req.body?.sportCategory || "Running",
+      plannedDurationSecs: Number(req.body?.plannedDurationSecs || 3600),
+      plannedLoad: Number(req.body?.plannedLoad || 65),
+      workoutSyntax: String(req.body?.workoutSyntax || ""),
+      description: String(req.body?.description || ""),
+      scheduledTime: req.body?.scheduledTime,
+      sessionSlot: req.body?.sessionSlot,
+      locationName: req.body?.locationName,
+      locationCategory: req.body?.locationCategory,
+      meetingNotes: req.body?.meetingNotes,
+      trackSpec: req.body?.trackSpec,
+      athleteOverrides: req.body?.athleteOverrides,
+      replaceSameDateTarget: typeof req.body?.replaceSameDateTarget === "boolean" ? req.body.replaceSameDateTarget : true
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to broadcast workout."
+    });
+  }
+});
+workoutsAndOpsRouter.post("/api/teams/:teamId/workouts/broadcast-batch", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const targetMembershipIds = Array.isArray(req.body?.targetMembershipIds) ? req.body.targetMembershipIds.map((id) => String(id).trim()).filter(Boolean) : void 0;
+    const targetEventGroups = sanitizeTargetEventGroups(req.body?.targetEventGroups);
+    const workouts = Array.isArray(req.body?.workouts) ? req.body.workouts : [];
+    const updated = await broadcastWorkoutBatchToTeamSquad({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      originUrl,
+      targetSquadGroup: String(req.body?.targetSquadGroup || "ALL"),
+      targetEventGroups,
+      targetMembershipIds,
+      publishMode: req.body?.publishMode,
+      planBlockId: req.body?.planBlockId ? String(req.body.planBlockId) : void 0,
+      planBlockName: req.body?.planBlockName ? String(req.body.planBlockName) : void 0,
+      replaceExistingCohortRange: typeof req.body?.replaceExistingCohortRange === "boolean" ? req.body.replaceExistingCohortRange : true,
+      workouts
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams, publishedCount: Math.min(160, workouts.length) });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to batch-broadcast training plan."
+    });
+  }
+});
+workoutsAndOpsRouter.delete("/api/teams/:teamId/workouts/blocks/:blockId", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const updated = await deleteBroadcastPlanBlockFromTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      blockId: String(req.params.blockId || ""),
+      originUrl
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to recall team training block."
+    });
+  }
+});
+workoutsAndOpsRouter.put("/api/teams/:teamId/workouts/:broadcastId", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const body = req.body || {};
+    const updated = await updateBroadcastWorkoutOnTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      broadcastId: String(req.params.broadcastId || ""),
+      originUrl,
+      updates: {
+        ...typeof body.date === "string" ? { date: body.date } : {},
+        ...typeof body.name === "string" ? { name: body.name } : {},
+        ...body.sportCategory ? { sportCategory: body.sportCategory } : {},
+        ...body.plannedDurationSecs !== void 0 ? { plannedDurationSecs: Number(body.plannedDurationSecs) } : {},
+        ...body.plannedLoad !== void 0 ? { plannedLoad: Number(body.plannedLoad) } : {},
+        ...typeof body.workoutSyntax === "string" ? { workoutSyntax: body.workoutSyntax } : {},
+        ...typeof body.description === "string" ? { description: body.description } : {},
+        ..."scheduledTime" in body ? { scheduledTime: body.scheduledTime } : {},
+        ..."sessionSlot" in body ? { sessionSlot: body.sessionSlot } : {},
+        ..."locationName" in body ? { locationName: body.locationName } : {},
+        ..."locationCategory" in body ? { locationCategory: body.locationCategory } : {},
+        ..."meetingNotes" in body ? { meetingNotes: body.meetingNotes } : {},
+        ..."trackSpec" in body ? { trackSpec: body.trackSpec } : {}
+      }
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions or broadcast workout not found." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to update broadcast workout."
+    });
+  }
+});
+workoutsAndOpsRouter.delete("/api/teams/:teamId/workouts/:broadcastId", async (req, res) => {
+  try {
+    const claims = getVerifiedSessionClaims(req);
+    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+      res.status(401).json({ ok: false, error: "Authentication required." });
+      return;
+    }
+    const originUrl = resolveTrustedRequestOrigin(req);
+    const updated = await deleteBroadcastWorkoutFromTeam({
+      callerSid: claims.sid,
+      teamId: String(req.params.teamId || ""),
+      broadcastId: String(req.params.broadcastId || ""),
+      originUrl
+    });
+    if (!updated) {
+      res.status(403).json({ ok: false, error: "Coach permissions required." });
+      return;
+    }
+    const teams = await listTeamsForUser(claims.sid, originUrl);
+    res.json({ ok: true, team: updated, teams });
+  } catch (err) {
+    res.status(400).json({
+      ok: false,
+      error: err instanceof Error ? err.message : "Failed to delete broadcast workout."
+    });
+  }
+});
+workoutsAndOpsRouter.get("/api/teams/:teamId/workout-library", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -20921,14 +20522,14 @@ teamRouter.get("/api/teams/:teamId/workout-library", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/workout-library", async (req, res) => {
+workoutsAndOpsRouter.post("/api/teams/:teamId/workout-library", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
     const result = await saveTeamWorkoutLibraryTemplate({
       callerSid: claims.sid,
@@ -20962,7 +20563,7 @@ teamRouter.post("/api/teams/:teamId/workout-library", async (req, res) => {
     });
   }
 });
-teamRouter.delete(
+workoutsAndOpsRouter.delete(
   "/api/teams/:teamId/workout-library/:templateId",
   async (req, res) => {
     try {
@@ -20971,7 +20572,7 @@ teamRouter.delete(
         res.status(401).json({ ok: false, error: "Authentication required." });
         return;
       }
-      const originUrl = resolveRequestOrigin(req);
+      const originUrl = resolveTrustedRequestOrigin(req);
       const result = await deleteTeamWorkoutLibraryTemplate({
         callerSid: claims.sid,
         teamId: String(req.params.teamId || ""),
@@ -20995,7 +20596,7 @@ teamRouter.delete(
     }
   }
 );
-teamRouter.get("/api/teams/:teamId/comments", async (req, res) => {
+workoutsAndOpsRouter.get("/api/teams/:teamId/comments", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -21019,14 +20620,14 @@ teamRouter.get("/api/teams/:teamId/comments", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/comments", async (req, res) => {
+workoutsAndOpsRouter.post("/api/teams/:teamId/comments", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
     const result = await postTeamWorkoutComment({
       callerSid: claims.sid,
@@ -21055,14 +20656,14 @@ teamRouter.post("/api/teams/:teamId/comments", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/attendance", async (req, res) => {
+workoutsAndOpsRouter.post("/api/teams/:teamId/attendance", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
     const entries = Array.isArray(body.entries) ? body.entries.map((entry) => ({
       membershipId: String(entry?.membershipId || ""),
@@ -21092,7 +20693,7 @@ teamRouter.post("/api/teams/:teamId/attendance", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) => {
+workoutsAndOpsRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -21114,7 +20715,7 @@ teamRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) =
       });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
     const parseCoord = (raw) => {
       if (typeof raw === "number") return raw;
@@ -21164,72 +20765,7 @@ teamRouter.post("/api/teams/:teamId/attendance/self-checkin", async (req, res) =
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/announcements", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const body = req.body || {};
-    const result = await postTeamAnnouncement({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      title: String(body.title || ""),
-      body: String(body.body || ""),
-      category: typeof body.category === "string" ? body.category : void 0,
-      targetEventGroups: Array.isArray(body.targetEventGroups) ? body.targetEventGroups.map((g) => String(g)) : void 0,
-      publishToParentHub: body.publishToParentHub === true,
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(403).json({
-        ok: false,
-        error: result.error || "Unable to post announcement."
-      });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, announcement: result.announcement, team: result.team, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed posting announcement."
-    });
-  }
-});
-teamRouter.delete("/api/teams/:teamId/announcements/:announcementId", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await deleteTeamAnnouncement({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      announcementId: String(req.params.announcementId || ""),
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(403).json({
-        ok: false,
-        error: result.error || "Unable to delete announcement."
-      });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: result.team, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed deleting announcement."
-    });
-  }
-});
-teamRouter.get("/api/teams/:teamId/field-marks", async (req, res) => {
+workoutsAndOpsRouter.get("/api/teams/:teamId/field-marks", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -21268,14 +20804,14 @@ teamRouter.get("/api/teams/:teamId/field-marks", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/field-marks", async (req, res) => {
+workoutsAndOpsRouter.post("/api/teams/:teamId/field-marks", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
     const topClientBatchId = typeof body.clientBatchId === "string" ? body.clientBatchId : void 0;
     const entries = Array.isArray(body.entries) ? body.entries.map((entry) => ({
@@ -21326,51 +20862,599 @@ teamRouter.post("/api/teams/:teamId/field-marks", async (req, res) => {
     });
   }
 });
-teamRouter.patch("/api/teams/:teamId/members/:membershipId/coach-groups", async (req, res) => {
+
+// server/routers/team/messagingAndPushRouter.ts
+import express7 from "express";
+
+// server/teamMessagingService.ts
+import crypto18 from "crypto";
+function escapeHtml3(raw) {
+  return String(raw || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function defaultPolicyForDoc(doc) {
+  return {
+    athleteRepliesEnabled: doc.messagingPolicy?.athleteRepliesEnabled ?? true,
+    parentRepliesEnabled: doc.messagingPolicy?.parentRepliesEnabled ?? true,
+    enablePushEmailFallback: doc.messagingPolicy?.enablePushEmailFallback ?? true,
+    quietHoursStartHour: doc.messagingPolicy?.quietHoursStartHour ?? 21,
+    quietHoursEndHour: doc.messagingPolicy?.quietHoursEndHour ?? 6,
+    requireGuardianCcForMinors: Boolean(
+      doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || (doc.messagingPolicy?.requireGuardianCcForMinors ?? true)
+    )
+  };
+}
+function isWithinQuietHours2(hour, startHour, endHour) {
+  if (typeof hour !== "number" || !Number.isFinite(hour) || hour < 0 || hour > 23) return false;
+  if (startHour === endHour) return false;
+  if (startHour > endHour) {
+    return hour >= startHour || hour < endHour;
+  }
+  return hour >= startHour && hour < endHour;
+}
+var ALLOWED_CHANNEL_SCOPES = /* @__PURE__ */ new Set([
+  "ALL_TEAM",
+  "EVENT_GROUP",
+  "PARENTS_ONLY",
+  "CUSTOM_SUBGROUP",
+  "DIRECT_TRANSPARENT",
+  "COACHES_STAFF"
+]);
+async function postTeamMessage(params) {
+  if (!ALLOWED_CHANNEL_SCOPES.has(params.channelScope)) {
+    return { ok: false, status: 400, error: "Invalid team message channel scope." };
+  }
+  let pendingGuardianEmail = null;
+  let pendingPushPayload = null;
+  const lockedResult = await withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem) {
+      return { ok: false, status: 403, error: "Active team membership is required to send messages." };
+    }
+    const cleanBody = String(params.body || "").trim().slice(0, 800);
+    if (!cleanBody) {
+      return { ok: false, status: 400, error: "Message body is required." };
+    }
+    const isStaff = canViewSafeguardingMedicalRole(callerMem.role);
+    const isParentFollower = callerMem.role === "PARENT_FOLLOWER";
+    const effectiveEmergencyOverride = isStaff && params.isEmergencyOverride === true;
+    const policy = defaultPolicyForDoc(doc);
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    if (params.channelScope === "COACHES_STAFF" && !isStaff) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coaches & Staff channel is restricted to coaching, medical, and athletic admin staff."
+      };
+    }
+    if (params.channelScope === "PARENTS_ONLY" && callerMem.role === "ATHLETE") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Athletes cannot post to or view the Parents Only channel."
+      };
+    }
+    if (params.channelScope === "PARENTS_ONLY" && isParentFollower && policy.parentRepliesEnabled === false) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Parent replies in Parents Only are currently set to coach-announcements-only."
+      };
+    }
+    if (isParentFollower && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP" || params.channelScope === "COACHES_STAFF")) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Parents may use Parents Only, linked sub-groups, or transparent Direct threads with coaching staff."
+      };
+    }
+    if (callerMem.role === "ATHLETE" && (params.channelScope === "ALL_TEAM" || params.channelScope === "EVENT_GROUP") && !policy.athleteRepliesEnabled) {
+      return {
+        ok: false,
+        status: 403,
+        error: "This team channel is currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
+      };
+    }
+    let channelId = "team:all";
+    let resolvedEventGroup;
+    let customSubgroupId;
+    let customSubgroupName;
+    let targetMembershipId;
+    let targetAthleteName;
+    let guardianCcApplied = Boolean(doc.brand.enableParentGuardianCc);
+    if (params.channelScope === "COACHES_STAFF") {
+      channelId = "staff:only";
+      guardianCcApplied = false;
+    } else if (params.channelScope === "PARENTS_ONLY") {
+      channelId = "parents";
+      guardianCcApplied = true;
+    } else if (params.channelScope === "CUSTOM_SUBGROUP") {
+      const requestedId = String(params.customSubgroupId || "").trim();
+      const subgroup = (doc.customSubgroups || []).find((sg) => sg.id === requestedId);
+      if (!subgroup) {
+        return {
+          ok: false,
+          status: 404,
+          error: "Select a valid team sub-group."
+        };
+      }
+      const isDirectMember = subgroup.memberIds.includes(callerMem.membershipId);
+      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
+      const isLinkedParentMember = isParentFollower && subgroup.includeLinkedParents !== false && Boolean(callerParentEmail) && doc.memberships.some(
+        (child) => subgroup.memberIds.includes(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === callerParentEmail
+      );
+      if (!isStaff && !isDirectMember && !isLinkedParentMember) {
+        return {
+          ok: false,
+          status: 403,
+          error: "You are not assigned to this team sub-group."
+        };
+      }
+      if (callerMem.role === "ATHLETE" && !policy.athleteRepliesEnabled) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Athlete replies are currently set to coach announcements only. Use Direct (SafeSport CC) to message your coach."
+        };
+      }
+      if (isParentFollower && policy.parentRepliesEnabled === false) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Parent replies are currently set to coach announcements only."
+        };
+      }
+      const hasMinorInSubgroup = doc.memberships.some(
+        (m) => subgroup.memberIds.includes(m.membershipId) && (m.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL")
+      );
+      channelId = `subgroup:${subgroup.id}`;
+      customSubgroupId = subgroup.id;
+      customSubgroupName = subgroup.name;
+      guardianCcApplied = Boolean(hasMinorInSubgroup || subgroup.includeLinkedParents !== false);
+    } else if (params.channelScope === "EVENT_GROUP") {
+      resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
+      channelId = `group:${resolvedEventGroup}`;
+    } else if (params.channelScope === "DIRECT_TRANSPARENT") {
+      const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
+      if (isParentFollower && !callerParentEmail) {
+        return {
+          ok: false,
+          status: 403,
+          error: "Parents may only message coaches in the transparent thread of their linked child athlete."
+        };
+      }
+      const targetMem = callerMem.role === "ATHLETE" ? callerMem : doc.memberships.find(
+        (m) => m.membershipId === params.targetMembershipId && m.status !== "REVOKED" && m.role === "ATHLETE"
+      );
+      if (!targetMem) {
+        return {
+          ok: false,
+          status: 404,
+          error: "Select a valid athlete on the roster for a transparent SafeSport message."
+        };
+      }
+      if (isParentFollower) {
+        const targetParentEmail = targetMem.parentGuardianEmail?.trim().toLowerCase();
+        if (!callerParentEmail || !targetParentEmail || callerParentEmail !== targetParentEmail) {
+          return {
+            ok: false,
+            status: 403,
+            error: "Parents may only message coaches in the transparent thread of their linked child athlete."
+          };
+        }
+      }
+      const ageResolved = resolveAthleteAgeTier({
+        birthMonthYear: targetMem.birthMonthYear,
+        birthYear: targetMem.birthYear,
+        orgType: doc.brand.orgType,
+        graduationYear: targetMem.graduationYear
+      });
+      const targetIsProtectedMinor = Boolean(
+        (ageResolved.ageTier === "UNKNOWN" ? targetMem.isMinorU18 : ageResolved.isMinorU18) || doc.brand.orgType === "HIGH_SCHOOL"
+      );
+      if ((targetIsProtectedMinor || policy.requireGuardianCcForMinors) && (params.privateDirectToMinor === true || params.guardianCc === false)) {
+        return {
+          ok: false,
+          status: 403,
+          error: "SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian CC and coaching staff oversight are mandatory."
+        };
+      }
+      channelId = `dm:${targetMem.membershipId}`;
+      targetMembershipId = targetMem.membershipId;
+      targetAthleteName = targetMem.invitedName;
+      guardianCcApplied = Boolean(
+        targetIsProtectedMinor || doc.brand.enableParentGuardianCc || targetMem.parentGuardianEmail
+      );
+      if (guardianCcApplied && targetMem.parentGuardianEmail && callerMem.userSid !== targetMem.userSid && isResendConfigured()) {
+        pendingGuardianEmail = {
+          to: targetMem.parentGuardianEmail,
+          subject: `[MeetReady SafeSport CC] Coach message for ${targetMem.invitedName}`,
+          html: `<p><strong>${escapeHtml3(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml3(callerMem.role)}) sent a team message to ${escapeHtml3(targetMem.invitedName)}:</p><blockquote>${escapeHtml3(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
+          text: `${callerMem.invitedName || doc.brand.coachDisplayName} messaged ${targetMem.invitedName}: ${cleanBody}`
+        };
+      }
+    }
+    const quietHoursActive = isWithinQuietHours2(
+      params.clientLocalHour,
+      policy.quietHoursStartHour,
+      policy.quietHoursEndHour
+    );
+    const record = {
+      id: `msg_${crypto18.randomBytes(6).toString("hex")}`,
+      teamId: doc.brand.teamId,
+      channelId,
+      channelScope: params.channelScope,
+      ...resolvedEventGroup ? { eventGroup: resolvedEventGroup } : {},
+      ...customSubgroupId ? { customSubgroupId } : {},
+      ...customSubgroupName ? { customSubgroupName } : {},
+      ...targetMembershipId ? { targetMembershipId } : {},
+      ...targetAthleteName ? { targetAthleteName } : {},
+      senderSid: params.callerSid,
+      senderMembershipId: callerMem.membershipId,
+      senderName: callerMem.invitedName || doc.brand.coachDisplayName,
+      senderRole: callerMem.role,
+      body: cleanBody,
+      createdAt: nowIso,
+      guardianCcApplied,
+      ...pendingGuardianEmail ? { guardianEmailNotified: false } : {},
+      secondAdultVisible: true,
+      ...quietHoursActive && !effectiveEmergencyOverride ? { sentDuringQuietHours: true } : {},
+      ...effectiveEmergencyOverride ? { isEmergencyOverride: true } : {},
+      acknowledgedByMembershipIds: [callerMem.membershipId]
+    };
+    doc.teamMessages = [record, ...doc.teamMessages || []].slice(0, 500);
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    pendingPushPayload = {
+      teamId: params.teamId,
+      senderSid: params.callerSid,
+      senderName: record.senderName,
+      kind: "TEAM_MESSAGE",
+      channelScope: params.channelScope,
+      eventGroup: resolvedEventGroup,
+      customSubgroupId,
+      targetMembershipId,
+      bodyText: cleanBody,
+      clientLocalHour: params.clientLocalHour,
+      isEmergency: effectiveEmergencyOverride,
+      originUrl: params.originUrl,
+      ...pendingGuardianEmail ? { excludeFallbackEmails: [pendingGuardianEmail.to] } : {}
+    };
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGE_SENT",
+      targetId: targetMembershipId || channelId,
+      metadata: {
+        channelScope: params.channelScope,
+        ...customSubgroupId ? { customSubgroupId } : {},
+        guardianCcApplied,
+        secondAdultVisible: true,
+        sentDuringQuietHours: Boolean(record.sentDuringQuietHours),
+        isEmergencyOverride: Boolean(record.isEmergencyOverride)
+      }
+    });
+    return {
+      ok: true,
+      message: record,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+  if (!lockedResult.ok) {
+    return lockedResult;
+  }
+  const emailToSend = pendingGuardianEmail;
+  const pushToSend = pendingPushPayload;
+  const [emailOutcome, pushOutcome] = await Promise.allSettled([
+    emailToSend ? withBoundedTimeout(sendEmailViaResend(emailToSend), 8e3, "guardian-dm-email") : Promise.resolve(null),
+    pushToSend ? withBoundedTimeout(dispatchTeamPushNotifications(pushToSend), 8e3, "team-message-push") : Promise.resolve(null)
+  ]);
+  const emailDelivered = Boolean(emailToSend) && emailOutcome.status === "fulfilled" && emailOutcome.value !== null && emailOutcome.value.delivered === true;
+  const pushEmailFallbackCount = pushOutcome.status === "fulfilled" && pushOutcome.value !== null ? pushOutcome.value.emailFallbackCount || 0 : 0;
+  if (emailDelivered || pushEmailFallbackCount > 0) {
+    const refreshedTeam = await withTeamRowLock(params.teamId, async () => {
+      const freshDoc = await loadTeamDocRaw(params.teamId);
+      if (!freshDoc) return null;
+      const targetMsg = (freshDoc.teamMessages || []).find((m) => m.id === lockedResult.message.id);
+      if (targetMsg) {
+        if (emailDelivered) targetMsg.guardianEmailNotified = true;
+        if (pushEmailFallbackCount > 0) targetMsg.emailFallbackCount = pushEmailFallbackCount;
+        freshDoc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+        await saveTeamDocRaw(params.teamId, freshDoc);
+      }
+      return projectTeamSummaryForCaller(freshDoc, params.callerSid, params.originUrl);
+    });
+    if (emailDelivered) lockedResult.message.guardianEmailNotified = true;
+    if (pushEmailFallbackCount > 0) {
+      lockedResult.message.emailFallbackCount = pushEmailFallbackCount;
+    }
+    if (refreshedTeam) {
+      lockedResult.team = refreshedTeam;
+    }
+  }
+  return {
+    ...lockedResult,
+    ...pushEmailFallbackCount > 0 ? { emailFallbackCount: pushEmailFallbackCount } : {}
+  };
+}
+async function acknowledgeTeamMessage(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    if (!projected) return { ok: false, status: 403, error: "Membership required." };
+    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
+    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
+    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
+    if (!target) return { ok: false, status: 404, error: "Message not found." };
+    const existingAcks = new Set(target.acknowledgedByMembershipIds || []);
+    existingAcks.add(projected.myMembershipId);
+    target.acknowledgedByMembershipIds = Array.from(existingAcks);
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function flagTeamMessageForReview(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const projected = projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    if (!projected) return { ok: false, status: 403, error: "Membership required." };
+    const canSee = (projected.teamMessages || []).some((m) => m.id === params.messageId);
+    if (!canSee) return { ok: false, status: 404, error: "Message not found or not accessible." };
+    const target = (doc.teamMessages || []).find((m) => m.id === params.messageId);
+    if (!target) return { ok: false, status: 404, error: "Message not found." };
+    const cleanReason = String(params.reason || "Flagged for athletic administrator review").trim().slice(0, 200);
+    target.flaggedForAdminReview = true;
+    target.flaggedReason = cleanReason;
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGE_FLAGGED",
+      targetId: target.id,
+      metadata: {
+        channelId: target.channelId,
+        reason: cleanReason
+      }
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function updateTeamMessagingPolicy(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canManageTeamGovernanceRole(callerMem.role)) {
+      return {
+        ok: false,
+        status: 403,
+        error: "Only Head Coaches or Athletic Admins may change team messaging rules."
+      };
+    }
+    const current = defaultPolicyForDoc(doc);
+    doc.messagingPolicy = {
+      athleteRepliesEnabled: typeof params.athleteRepliesEnabled === "boolean" ? params.athleteRepliesEnabled : current.athleteRepliesEnabled,
+      parentRepliesEnabled: typeof params.parentRepliesEnabled === "boolean" ? params.parentRepliesEnabled : current.parentRepliesEnabled ?? true,
+      enablePushEmailFallback: typeof params.enablePushEmailFallback === "boolean" ? params.enablePushEmailFallback : current.enablePushEmailFallback ?? true,
+      quietHoursStartHour: typeof params.quietHoursStartHour === "number" && params.quietHoursStartHour >= 0 && params.quietHoursStartHour <= 23 ? Math.round(params.quietHoursStartHour) : current.quietHoursStartHour,
+      quietHoursEndHour: typeof params.quietHoursEndHour === "number" && params.quietHoursEndHour >= 0 && params.quietHoursEndHour <= 23 ? Math.round(params.quietHoursEndHour) : current.quietHoursEndHour,
+      requireGuardianCcForMinors: Boolean(
+        doc.brand.orgType === "HIGH_SCHOOL" || doc.brand.defaultSafeSportShield || current.requireGuardianCcForMinors
+      )
+    };
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "TEAM_MESSAGING_POLICY_UPDATED",
+      targetId: params.teamId,
+      metadata: doc.messagingPolicy
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function upsertTeamCustomSubgroup(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED" && m.status !== "ALUMNI"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coaching or Athletic Admin permissions are required to manage team sub-groups."
+      };
+    }
+    const cleanName = String(params.name || "").trim().slice(0, 48);
+    if (cleanName.length < 2) {
+      return { ok: false, status: 400, error: "Sub-group name must be at least 2 characters." };
+    }
+    const activeMemberSet = new Set(
+      doc.memberships.filter((m) => m.status !== "REVOKED" && m.status !== "ALUMNI").map((m) => m.membershipId)
+    );
+    const validMemberIds = Array.from(
+      new Set(
+        (Array.isArray(params.memberIds) ? params.memberIds : []).map((id) => String(id || "").trim()).filter((id) => activeMemberSet.has(id))
+      )
+    );
+    const existingList = doc.customSubgroups || [];
+    const targetId = params.subgroupId ? String(params.subgroupId).trim() : "";
+    const existingIdx = targetId ? existingList.findIndex((g) => g.id === targetId) : -1;
+    if (existingIdx < 0 && existingList.length >= 20) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Maximum of 20 custom sub-groups per team reached."
+      };
+    }
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    const cleanDesc = params.description ? String(params.description).trim().slice(0, 140) : void 0;
+    const saved = {
+      id: existingIdx >= 0 ? existingList[existingIdx].id : `sgrp_${crypto18.randomBytes(5).toString("hex")}`,
+      name: cleanName,
+      ...cleanDesc ? { description: cleanDesc } : {},
+      memberIds: validMemberIds,
+      includeLinkedParents: params.includeLinkedParents !== false,
+      createdByMembershipId: existingIdx >= 0 ? existingList[existingIdx].createdByMembershipId : callerMem.membershipId,
+      createdByName: existingIdx >= 0 ? existingList[existingIdx].createdByName : callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
+      createdAt: existingIdx >= 0 ? existingList[existingIdx].createdAt : nowIso
+    };
+    const nextList = existingIdx >= 0 ? existingList.map((g, i) => i === existingIdx ? saved : g) : [saved, ...existingList];
+    doc.customSubgroups = nextList;
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "CUSTOM_SUBGROUP_SAVED",
+      targetId: saved.id,
+      metadata: {
+        name: saved.name,
+        memberCount: saved.memberIds.length,
+        includeLinkedParents: saved.includeLinkedParents
+      }
+    });
+    return {
+      ok: true,
+      subgroup: saved,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+async function deleteTeamCustomSubgroup(params) {
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc) return { ok: false, status: 404, error: "Team not found." };
+    const callerMem = doc.memberships.find(
+      (m) => m.userSid === params.callerSid && m.status !== "REVOKED"
+    );
+    if (!callerMem || !canProgramWorkoutsRole(callerMem.role) && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        status: 403,
+        error: "Coaching or Athletic Admin permissions are required to delete sub-groups."
+      };
+    }
+    const beforeCount = (doc.customSubgroups || []).length;
+    doc.customSubgroups = (doc.customSubgroups || []).filter((g) => g.id !== params.subgroupId);
+    if (doc.customSubgroups.length === beforeCount) {
+      return { ok: false, status: 404, error: "Sub-group not found." };
+    }
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    await appendAuditLogAsync({
+      teamId: params.teamId,
+      actorSid: params.callerSid,
+      action: "CUSTOM_SUBGROUP_DELETED",
+      targetId: params.subgroupId,
+      metadata: {}
+    });
+    return {
+      ok: true,
+      team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+    };
+  });
+}
+
+// server/routers/team/messagingAndPushRouter.ts
+var messagingAndPushRouter = express7.Router();
+messagingAndPushRouter.post("/api/teams/:teamId/announcements", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
-    const coachEventGroups = Array.isArray(body.coachEventGroups) ? body.coachEventGroups.map((g) => String(g)) : [];
-    const result = await updateAssistantCoachEventGroups({
+    const result = await postTeamAnnouncement({
       callerSid: claims.sid,
       teamId: String(req.params.teamId || ""),
-      membershipId: String(req.params.membershipId || ""),
-      coachEventGroups,
-      ...body.coachSpecialtyTitle !== void 0 ? { coachSpecialtyTitle: String(body.coachSpecialtyTitle || "") } : {},
-      ...Array.isArray(body.assignedAthleteMembershipIds) ? {
-        assignedAthleteMembershipIds: body.assignedAthleteMembershipIds.map((id) => String(id))
-      } : {},
+      title: String(body.title || ""),
+      body: String(body.body || ""),
+      category: typeof body.category === "string" ? body.category : void 0,
+      targetEventGroups: Array.isArray(body.targetEventGroups) ? body.targetEventGroups.map((g) => String(g)) : void 0,
+      publishToParentHub: body.publishToParentHub === true,
       originUrl
     });
     if (!result.ok) {
       res.status(403).json({
         ok: false,
-        error: result.error || "Unable to update assistant coach groups."
+        error: result.error || "Unable to post announcement."
       });
       return;
     }
     const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: result.team, teams });
+    res.json({ ok: true, announcement: result.announcement, team: result.team, teams });
   } catch (err) {
     res.status(400).json({
       ok: false,
-      error: err instanceof Error ? err.message : "Failed updating assistant coach groups."
+      error: err instanceof Error ? err.message : "Failed posting announcement."
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/messages", async (req, res) => {
+messagingAndPushRouter.delete(
+  "/api/teams/:teamId/announcements/:announcementId",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const result = await deleteTeamAnnouncement({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        announcementId: String(req.params.announcementId || ""),
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(403).json({
+          ok: false,
+          error: result.error || "Unable to delete announcement."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.team, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed deleting announcement."
+      });
+    }
+  }
+);
+messagingAndPushRouter.post("/api/teams/:teamId/messages", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
     const scope = String(body.channelScope || "ALL_TEAM");
     const result = await postTeamMessage({
@@ -21409,111 +21493,120 @@ teamRouter.post("/api/teams/:teamId/messages", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/teams/:teamId/messages/:messageId/ack", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await acknowledgeTeamMessage({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      messageId: String(req.params.messageId || ""),
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(result.status || 403).json({
-        ok: false,
-        error: result.error || "Unable to acknowledge message."
+messagingAndPushRouter.post(
+  "/api/teams/:teamId/messages/:messageId/ack",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const result = await acknowledgeTeamMessage({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        messageId: String(req.params.messageId || ""),
+        originUrl
       });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: result.team, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed acknowledging message."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/messages/:messageId/flag", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const body = req.body || {};
-    const result = await flagTeamMessageForReview({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      messageId: String(req.params.messageId || ""),
-      reason: typeof body.reason === "string" ? body.reason : void 0,
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(result.status || 403).json({
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to acknowledge message."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.team, teams });
+    } catch (err) {
+      res.status(400).json({
         ok: false,
-        error: result.error || "Unable to flag message."
+        error: err instanceof Error ? err.message : "Failed acknowledging message."
       });
-      return;
     }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: result.team, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed flagging message."
-    });
   }
-});
-teamRouter.patch("/api/teams/:teamId/messaging-policy", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const body = req.body || {};
-    const result = await updateTeamMessagingPolicy({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      athleteRepliesEnabled: typeof body.athleteRepliesEnabled === "boolean" ? body.athleteRepliesEnabled : void 0,
-      parentRepliesEnabled: typeof body.parentRepliesEnabled === "boolean" ? body.parentRepliesEnabled : void 0,
-      enablePushEmailFallback: typeof body.enablePushEmailFallback === "boolean" ? body.enablePushEmailFallback : void 0,
-      quietHoursStartHour: typeof body.quietHoursStartHour === "number" ? body.quietHoursStartHour : void 0,
-      quietHoursEndHour: typeof body.quietHoursEndHour === "number" ? body.quietHoursEndHour : void 0,
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(result.status || 403).json({
+);
+messagingAndPushRouter.post(
+  "/api/teams/:teamId/messages/:messageId/flag",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const body = req.body || {};
+      const result = await flagTeamMessageForReview({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        messageId: String(req.params.messageId || ""),
+        reason: typeof body.reason === "string" ? body.reason : void 0,
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to flag message."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.team, teams });
+    } catch (err) {
+      res.status(400).json({
         ok: false,
-        error: result.error || "Unable to update messaging policy."
+        error: err instanceof Error ? err.message : "Failed flagging message."
       });
-      return;
     }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: result.team, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed updating messaging policy."
-    });
   }
-});
-teamRouter.post("/api/teams/:teamId/subgroups", async (req, res) => {
+);
+messagingAndPushRouter.patch(
+  "/api/teams/:teamId/messaging-policy",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const body = req.body || {};
+      const result = await updateTeamMessagingPolicy({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        athleteRepliesEnabled: typeof body.athleteRepliesEnabled === "boolean" ? body.athleteRepliesEnabled : void 0,
+        parentRepliesEnabled: typeof body.parentRepliesEnabled === "boolean" ? body.parentRepliesEnabled : void 0,
+        enablePushEmailFallback: typeof body.enablePushEmailFallback === "boolean" ? body.enablePushEmailFallback : void 0,
+        quietHoursStartHour: typeof body.quietHoursStartHour === "number" ? body.quietHoursStartHour : void 0,
+        quietHoursEndHour: typeof body.quietHoursEndHour === "number" ? body.quietHoursEndHour : void 0,
+        originUrl
+      });
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to update messaging policy."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.team, teams });
+    } catch (err) {
+      res.status(400).json({
+        ok: false,
+        error: err instanceof Error ? err.message : "Failed updating messaging policy."
+      });
+    }
+  }
+);
+messagingAndPushRouter.post("/api/teams/:teamId/subgroups", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
       res.status(401).json({ ok: false, error: "Authentication required." });
       return;
     }
-    const originUrl = resolveRequestOrigin(req);
+    const originUrl = resolveTrustedRequestOrigin(req);
     const body = req.body || {};
     const result = await upsertTeamCustomSubgroup({
       callerSid: claims.sid,
@@ -21541,82 +21634,40 @@ teamRouter.post("/api/teams/:teamId/subgroups", async (req, res) => {
     });
   }
 });
-teamRouter.delete("/api/teams/:teamId/subgroups/:subgroupId", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const result = await deleteTeamCustomSubgroup({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      subgroupId: String(req.params.subgroupId || ""),
-      originUrl
-    });
-    if (!result.ok) {
-      res.status(result.status || 403).json({
-        ok: false,
-        error: result.error || "Unable to delete sub-group."
+messagingAndPushRouter.delete(
+  "/api/teams/:teamId/subgroups/:subgroupId",
+  async (req, res) => {
+    try {
+      const claims = getVerifiedSessionClaims(req);
+      if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
+        res.status(401).json({ ok: false, error: "Authentication required." });
+        return;
+      }
+      const originUrl = resolveTrustedRequestOrigin(req);
+      const result = await deleteTeamCustomSubgroup({
+        callerSid: claims.sid,
+        teamId: String(req.params.teamId || ""),
+        subgroupId: String(req.params.subgroupId || ""),
+        originUrl
       });
-      return;
-    }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({ ok: true, team: result.team, teams });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed deleting sub-group."
-    });
-  }
-});
-teamRouter.post("/api/teams/:teamId/staff/invite", async (req, res) => {
-  try {
-    const claims = getVerifiedSessionClaims(req);
-    if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
-      res.status(401).json({ ok: false, error: "Authentication required." });
-      return;
-    }
-    const originUrl = resolveRequestOrigin(req);
-    const body = req.body || {};
-    const coachEventGroups = Array.isArray(body.coachEventGroups) ? body.coachEventGroups.map((g) => String(g)) : void 0;
-    const assignedAthleteMembershipIds = Array.isArray(body.assignedAthleteMembershipIds) ? body.assignedAthleteMembershipIds.map((id) => String(id)) : void 0;
-    const result = await inviteTeamCoachingStaff({
-      callerSid: claims.sid,
-      teamId: String(req.params.teamId || ""),
-      staffName: String(body.staffName || ""),
-      staffEmail: typeof body.staffEmail === "string" ? body.staffEmail : void 0,
-      role: typeof body.role === "string" ? body.role : void 0,
-      coachSpecialtyTitle: typeof body.coachSpecialtyTitle === "string" ? body.coachSpecialtyTitle : void 0,
-      coachEventGroups,
-      assignedAthleteMembershipIds,
-      originUrl
-    });
-    if (!result.ok) {
+      if (!result.ok) {
+        res.status(result.status || 403).json({
+          ok: false,
+          error: result.error || "Unable to delete sub-group."
+        });
+        return;
+      }
+      const teams = await listTeamsForUser(claims.sid, originUrl);
+      res.json({ ok: true, team: result.team, teams });
+    } catch (err) {
       res.status(400).json({
         ok: false,
-        error: result.error || "Unable to invite coaching staff member."
+        error: err instanceof Error ? err.message : "Failed deleting sub-group."
       });
-      return;
     }
-    const teams = await listTeamsForUser(claims.sid, originUrl);
-    res.json({
-      ok: true,
-      member: result.member,
-      inviteUrl: result.inviteUrl,
-      emailStatus: result.emailStatus,
-      team: result.team,
-      teams
-    });
-  } catch (err) {
-    res.status(400).json({
-      ok: false,
-      error: err instanceof Error ? err.message : "Failed inviting coaching staff member."
-    });
   }
-});
-teamRouter.get("/api/push/vapid-public-key", async (_req, res) => {
+);
+messagingAndPushRouter.get("/api/push/vapid-public-key", async (_req, res) => {
   try {
     const keys = await getOrInitVapidKeys();
     res.json({ ok: true, publicKey: keys.publicKey });
@@ -21627,7 +21678,7 @@ teamRouter.get("/api/push/vapid-public-key", async (_req, res) => {
     });
   }
 });
-teamRouter.get("/api/push/status", async (req, res) => {
+messagingAndPushRouter.get("/api/push/status", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -21653,7 +21704,7 @@ teamRouter.get("/api/push/status", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/push/subscribe", async (req, res) => {
+messagingAndPushRouter.post("/api/push/subscribe", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -21684,7 +21735,7 @@ teamRouter.post("/api/push/subscribe", async (req, res) => {
     });
   }
 });
-teamRouter.delete("/api/push/subscribe", async (req, res) => {
+messagingAndPushRouter.delete("/api/push/subscribe", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -21704,7 +21755,7 @@ teamRouter.delete("/api/push/subscribe", async (req, res) => {
     });
   }
 });
-teamRouter.post("/api/push/test", async (req, res) => {
+messagingAndPushRouter.post("/api/push/test", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
     if (!claims?.sid || !isCanonicalAuthenticatedClaims(claims)) {
@@ -21730,9 +21781,17 @@ teamRouter.post("/api/push/test", async (req, res) => {
   }
 });
 
+// server/routers/teamRouter.ts
+var teamRouter = express8.Router();
+teamRouter.use(emailOtpRouter);
+teamRouter.use(timingRouter);
+teamRouter.use(rosterAndLifecycleRouter);
+teamRouter.use(workoutsAndOpsRouter);
+teamRouter.use(messagingAndPushRouter);
+
 // server/routers/teamEventsRouter.ts
-import express4 from "express";
-var teamEventsRouter = express4.Router();
+import express9 from "express";
+var teamEventsRouter = express9.Router();
 teamEventsRouter.get("/api/teams/:teamId/events", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -21959,7 +22018,7 @@ teamEventsRouter.get(
 );
 
 // server/routers/teamMeetDayRouter.ts
-import express5 from "express";
+import express10 from "express";
 
 // server/teamMeetDayOpsService.ts
 import crypto19 from "crypto";
@@ -22174,7 +22233,7 @@ async function deleteMeetDayPacket(params) {
 }
 
 // server/routers/teamMeetDayRouter.ts
-var teamMeetDayRouter = express5.Router();
+var teamMeetDayRouter = express10.Router();
 teamMeetDayRouter.get(
   "/api/teams/:teamId/meet-day-packets",
   async (req, res) => {
@@ -22295,7 +22354,7 @@ teamMeetDayRouter.delete(
 );
 
 // server/routers/teamInjuryRouter.ts
-import express6 from "express";
+import express11 from "express";
 
 // server/teamInjuryService.ts
 import crypto20 from "crypto";
@@ -22534,7 +22593,7 @@ async function deleteTeamInjuryCase(params) {
 }
 
 // server/routers/teamInjuryRouter.ts
-var teamInjuryRouter = express6.Router();
+var teamInjuryRouter = express11.Router();
 teamInjuryRouter.get("/api/teams/:teamId/injuries", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -22648,7 +22707,7 @@ teamInjuryRouter.delete(
 );
 
 // server/routers/teamBillingRouter.ts
-import express7 from "express";
+import express12 from "express";
 
 // server/teamBillingService.ts
 import crypto21 from "crypto";
@@ -23540,7 +23599,7 @@ async function getDistrictAdOverview(params) {
 }
 
 // server/routers/teamBillingRouter.ts
-var teamBillingRouter = express7.Router();
+var teamBillingRouter = express12.Router();
 teamBillingRouter.get("/api/teams/district-overview", async (req, res) => {
   try {
     const claims = getVerifiedSessionClaims(req);
@@ -23705,8 +23764,8 @@ teamBillingRouter.post("/api/billing/stripe/webhook", async (req, res) => {
 
 // server/routers/teamSyncRouter.ts
 import crypto22 from "crypto";
-import express8 from "express";
-var teamSyncRouter = express8.Router();
+import express13 from "express";
+var teamSyncRouter = express13.Router();
 function resolveSyncOrigin(req) {
   return resolveTrustedRequestOrigin(req);
 }
@@ -24104,7 +24163,7 @@ teamSyncRouter.post(
 );
 
 // server/routers/authRouter.ts
-import express9 from "express";
+import express14 from "express";
 import crypto24 from "crypto";
 
 // server/webauthnVerify.ts
@@ -25080,7 +25139,7 @@ async function deleteThreshAccountPermanently(req, res) {
 }
 
 // server/routers/authRouter.ts
-var authRouter = express9.Router();
+var authRouter = express14.Router();
 var PENDING_DOB_TTL_MS = 15 * 60 * 1e3;
 async function savePendingSignupDob(key, birthMonthYear) {
   if (!birthMonthYear) return;
@@ -26597,7 +26656,7 @@ function resolveCorosCallbackUrl(req) {
 var resolveCallbackUrl = resolveStravaCallbackUrl;
 
 // server/routers/intervalsRouter.ts
-import express11 from "express";
+import express16 from "express";
 
 // server/routers/activitiesRouter.ts
 import { Router as Router2 } from "express";
@@ -26939,7 +26998,7 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 });
 
 // server/routers/stravaRouter.ts
-import express10 from "express";
+import express15 from "express";
 import crypto26 from "crypto";
 import fs6 from "fs";
 
@@ -28257,7 +28316,7 @@ var stravaCallbackHandler = async (req, res) => {
     );
   }
 };
-var stravaRouter = express10.Router();
+var stravaRouter = express15.Router();
 stravaRouter.post("/api/strava/credentials", async (req, res) => {
   const clientId = (req.body?.clientId || "").trim();
   const clientSecret = (req.body?.clientSecret || "").trim();
@@ -29898,7 +29957,7 @@ var intervalsCallbackHandler = async (req, res) => {
     );
   }
 };
-var intervalsRouter = express11.Router();
+var intervalsRouter = express16.Router();
 intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
@@ -33318,7 +33377,7 @@ configRouter.post("/api/auth/logout", async (req, res) => {
 });
 
 // server/routers/webhookRouter.ts
-import express12 from "express";
+import express17 from "express";
 import fs8 from "fs";
 async function executeHourlyBackgroundPoll() {
   const results = {
@@ -33351,7 +33410,7 @@ async function executeHourlyBackgroundPoll() {
   await saveSessionCacheAsync();
   return results;
 }
-var webhookRouter = express12.Router();
+var webhookRouter = express17.Router();
 webhookRouter.all("/api/cron/hourly-sync", async (req, res) => {
   if (!hasValidCronAuthorization(req)) {
     res.status(401).json({ ok: false, error: "Unauthorized cron invocation." });
@@ -33510,7 +33569,7 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
 });
 
 // server/routers/analyticsRouter.ts
-import express13 from "express";
+import express18 from "express";
 
 // server/funnelAnalyticsService.ts
 var FUNNEL_EVENT_NAMES = [
@@ -33777,7 +33836,7 @@ async function getFunnelSummaryAsync(opts) {
 }
 
 // server/routers/analyticsRouter.ts
-var analyticsRouter = express13.Router();
+var analyticsRouter = express18.Router();
 analyticsRouter.post("/api/analytics/event", async (req, res) => {
   try {
     const rateLimit = await checkDistributedRateLimitAsync(
@@ -33837,9 +33896,9 @@ analyticsRouter.get("/api/analytics/summary", async (req, res) => {
 
 // server/apiRouter.ts
 var SERVER_BOOT_ISO = (/* @__PURE__ */ new Date()).toISOString();
-var apiRouter = express14.Router();
+var apiRouter = express19.Router();
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use(express14.urlencoded({ extended: false }));
+apiRouter.use(express19.urlencoded({ extended: false }));
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
@@ -33860,7 +33919,7 @@ apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
   const env = process.env;
-  const buildTimestamp = "2026-11-23T16:52:52Z" ? "2026-11-23T16:52:52Z" : SERVER_BOOT_ISO;
+  const buildTimestamp = "2026-11-24T06:05:33Z" ? "2026-11-24T06:05:33Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",
@@ -33919,7 +33978,7 @@ apiRouter.use(analyticsRouter);
 import fs9 from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
-import express15 from "express";
+import express20 from "express";
 
 // src/utils/shareWorkoutCodec.ts
 var FORBIDDEN_RAW_TELEMETRY_KEYS = [
@@ -34210,7 +34269,7 @@ function buildJoinOgMetadata(slug, preview) {
   };
 }
 function createOgPreviewRouter(options = {}) {
-  const router = express15.Router();
+  const router = express20.Router();
   let cachedHtmlShell = options.htmlShell ?? null;
   const getHtmlShell = () => {
     if (cachedHtmlShell !== null) {
@@ -34289,10 +34348,10 @@ function createOgPreviewRouter(options = {}) {
 var ogPreviewRouter = createOgPreviewRouter();
 
 // server/vercelApp.ts
-var app = express16();
+var app = express21();
 app.disable("x-powered-by");
 app.use(
-  express16.json({
+  express21.json({
     limit: "2mb",
     reviver: strava64BitJsonReviver,
     verify: (req, _res, buf) => {
