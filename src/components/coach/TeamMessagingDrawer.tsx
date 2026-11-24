@@ -1,26 +1,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useModalDialog } from '../../hooks/useModalDialog';
 import {
-  AlertTriangle,
-  Bell,
-  BellRinging,
-  Check,
-  Copy,
-  Download,
-  Flag,
-  Lock,
-  MessageSquare,
-  Plus,
-  RefreshCw,
-  Send,
-  ShieldCheck,
-  Trash2,
-  Users,
-  WifiOff,
-  X,
-} from '../icons/PhosphorIcons';
-import { COACH_EVENT_GROUP_OPTIONS } from '../../physiology/teamOnboardingEngine';
-import {
   acknowledgeTeamMessageApi,
   deleteTeamCustomSubgroupApi,
   flagTeamMessageApi,
@@ -49,10 +29,24 @@ import {
 } from '../../utils/pushNotificationsClient';
 import {
   CommsAnnouncementsTab,
-  CommsReadReceiptPopover,
-  CommsSubgroupManager,
   CommsWorkoutNotesTab,
 } from './CommsHubSecondaryTabs';
+import {
+  buildDirectThreadsSummary,
+  buildLocalDemoTeamMessage,
+  downloadMessagingAuditCsv,
+  filterVisibleQueuedOutboxMessages,
+  filterVisibleTeamMessages,
+  isLocalHourInQuietHours,
+  resolveDirectThreadAthlete,
+  type TeamMessagingDrawerProps,
+} from './messaging/teamMessagingHelpers';
+import {
+  TeamMessagingHeaderAndTabs,
+  TeamMessagingPushBar,
+} from './messaging/TeamMessagingPushBar';
+import { TeamMessagingChannelRail } from './messaging/TeamMessagingChannelRail';
+import { TeamMessagingFeedAndComposer } from './messaging/TeamMessagingFeedAndComposer';
 import type {
   CoachEventGroup,
   TeamMessageChannelScope,
@@ -61,38 +55,9 @@ import type {
   TeamSummaryWithRole,
 } from '../../types';
 
-export interface TeamMessagingDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  activeTeam: TeamSummaryWithRole | null;
-  myTeams: TeamSummaryWithRole[];
-  onTeamsUpdated: (teams: TeamSummaryWithRole[], activeTeamId?: string) => void;
-  viewerMode?: 'ATHLETE' | 'COACH';
-  initialScope?: TeamMessageChannelScope;
-}
+export type { TeamMessagingDrawerProps };
 
-const COACH_QUICK_TEMPLATES = [
-  'Meet bus departs 2:30 PM from North Gate. Bring spikes & warmups.',
-  'Lightning Shelter: All groups move inside main gym immediately.',
-  'Hydration check + bring extra water & warmup jersey today.',
-  'Great work today! Log a 10-second soreness check-in tonight.',
-];
-
-function formatMsgTimestamp(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return iso.slice(0, 16);
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  } catch {
-    return iso.slice(11, 16);
-  }
-}
-
-function sanitizeCsvCell(raw: unknown): string {
-  const s = String(raw ?? '').replace(/[\r\n"]/g, ' ').trim();
-  const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
-  return `"${safe}"`;
-}
+const QUEUED_OFFLINE_BADGE_LABEL = 'Queued offline — not delivered yet';
 
 export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   isOpen,
@@ -243,66 +208,29 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
     [activeTeam?.memberships]
   );
 
-  const resolvedDirectAthlete = useMemo(() => {
-    if (!isStaff) {
-      if (activeTeam?.myRole === 'PARENT_FOLLOWER') {
-        const linkedIds = new Set(activeTeam.myLinkedChildMembershipIds || []);
-        const linkedChild = athleteMembers.find((m) => linkedIds.has(m.membershipId));
-        if (linkedChild) return linkedChild;
-      }
-      return (
-        athleteMembers.find((m) => m.membershipId === activeTeam?.myMembershipId) ||
-        athleteMembers[0] ||
-        null
-      );
-    }
-    return (
-      athleteMembers.find((m) => m.membershipId === selectedAthleteMembershipId) ||
-      athleteMembers[0] ||
-      null
-    );
-  }, [
-    activeTeam?.myLinkedChildMembershipIds,
-    activeTeam?.myMembershipId,
-    activeTeam?.myRole,
-    athleteMembers,
-    isStaff,
-    selectedAthleteMembershipId,
-  ]);
+  const resolvedDirectAthlete = useMemo(
+    () =>
+      resolveDirectThreadAthlete({
+        isStaff,
+        activeTeam,
+        athleteMembers,
+        selectedAthleteMembershipId,
+      }),
+    [activeTeam, athleteMembers, isStaff, selectedAthleteMembershipId]
+  );
 
-  const directThreads = useMemo(() => {
-    if (!isStaff) return [];
-    const byMemId = new Map<
-      string,
-      { membershipId: string; athleteName: string; preview: string; createdAt: string; count: number }
-    >();
-    for (const msg of activeTeam?.teamMessages || []) {
-      if (msg.channelScope !== 'DIRECT_TRANSPARENT' || !msg.targetMembershipId) continue;
-      const member = athleteMembers.find((m) => m.membershipId === msg.targetMembershipId);
-      const prev = byMemId.get(msg.targetMembershipId);
-      const count = (prev?.count || 0) + 1;
-      if (!prev || msg.createdAt > prev.createdAt) {
-        byMemId.set(msg.targetMembershipId, {
-          membershipId: msg.targetMembershipId,
-          athleteName: member?.invitedName || msg.targetAthleteName || msg.senderName,
-          preview: msg.body,
-          createdAt: msg.createdAt,
-          count,
-        });
-      } else {
-        byMemId.set(msg.targetMembershipId, { ...prev, count });
-      }
-    }
-    return Array.from(byMemId.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [activeTeam?.teamMessages, athleteMembers, isStaff]);
+  const directThreads = useMemo(
+    () =>
+      buildDirectThreadsSummary({
+        isStaff,
+        teamMessages: activeTeam?.teamMessages || [],
+        athleteMembers,
+      }),
+    [activeTeam?.teamMessages, athleteMembers, isStaff]
+  );
 
   const localHour = new Date().getHours();
-  const isQuietHours =
-    policy.quietHoursStartHour > policy.quietHoursEndHour
-      ? localHour >= policy.quietHoursStartHour || localHour < policy.quietHoursEndHour
-      : policy.quietHoursStartHour < policy.quietHoursEndHour &&
-        localHour >= policy.quietHoursStartHour &&
-        localHour < policy.quietHoursEndHour;
+  const isQuietHours = isLocalHourInQuietHours(policy, localHour);
 
   const resolvedSubgroupId = useMemo(() => {
     const groups = activeTeam?.customSubgroups || [];
@@ -312,52 +240,41 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
     return groups[0]?.id || '';
   }, [activeTeam?.customSubgroups, selectedSubgroupId]);
 
-  const visibleMessages = useMemo(() => {
-    const all = activeTeam?.teamMessages || [];
-    return all
-      .filter((m) => {
-        if (!isStaff && m.channelScope === 'COACHES_STAFF') return false;
-        if (activeTeam?.myRole === 'ATHLETE' && m.channelScope === 'PARENTS_ONLY') return false;
-        if (m.channelScope !== activeScope) return false;
-        if (activeScope === 'EVENT_GROUP') return !m.eventGroup || m.eventGroup === selectedGroup;
-        if (activeScope === 'CUSTOM_SUBGROUP') {
-          return !resolvedSubgroupId || m.customSubgroupId === resolvedSubgroupId;
-        }
-        if (activeScope === 'DIRECT_TRANSPARENT') {
-          return !resolvedDirectAthlete || m.targetMembershipId === resolvedDirectAthlete.membershipId;
-        }
-        return true;
-      })
-      .slice()
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  }, [
-    activeScope,
-    activeTeam?.myRole,
-    activeTeam?.teamMessages,
-    isStaff,
-    resolvedDirectAthlete,
-    resolvedSubgroupId,
-    selectedGroup,
-  ]);
+  const visibleMessages = useMemo(
+    () =>
+      filterVisibleTeamMessages({
+        teamMessages: activeTeam?.teamMessages || [],
+        isStaff,
+        myRole: activeTeam?.myRole,
+        activeScope,
+        selectedGroup,
+        resolvedSubgroupId,
+        resolvedDirectAthlete,
+      }),
+    [
+      activeScope,
+      activeTeam?.myRole,
+      activeTeam?.teamMessages,
+      isStaff,
+      resolvedDirectAthlete,
+      resolvedSubgroupId,
+      selectedGroup,
+    ]
+  );
 
   const visibleQueuedMessages = useMemo(
     () =>
-      queuedOfflineMessages.filter(
-        (q) =>
-          activeTeam &&
-          q.teamId === activeTeam.brand.teamId &&
-          q.channelScope === activeScope &&
-          (activeScope !== 'EVENT_GROUP' || q.eventGroup === selectedGroup) &&
-          (activeScope !== 'CUSTOM_SUBGROUP' ||
-            !resolvedSubgroupId ||
-            q.customSubgroupId === resolvedSubgroupId) &&
-          (activeScope !== 'DIRECT_TRANSPARENT' ||
-            !resolvedDirectAthlete ||
-            q.targetMembershipId === resolvedDirectAthlete.membershipId)
-      ),
+      filterVisibleQueuedOutboxMessages({
+        queuedOfflineMessages,
+        activeTeamId: activeTeam?.brand.teamId,
+        activeScope,
+        selectedGroup,
+        resolvedSubgroupId,
+        resolvedDirectAthlete,
+      }),
     [
       activeScope,
-      activeTeam,
+      activeTeam?.brand.teamId,
       queuedOfflineMessages,
       resolvedDirectAthlete,
       resolvedSubgroupId,
@@ -409,40 +326,18 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
     }
 
     const fallbackLocalSend = () => {
-      const targetMem = activeScope === 'DIRECT_TRANSPARENT' ? resolvedDirectAthlete : null;
-      const newMsg: TeamMessageRecord = {
-        id: `msg-local-${Date.now()}`,
-        teamId: activeTeam.brand.teamId,
-        channelId:
-          activeScope === 'ALL_TEAM'
-            ? 'team:all'
-            : activeScope === 'PARENTS_ONLY'
-              ? 'parents'
-              : activeScope === 'CUSTOM_SUBGROUP'
-                ? `subgroup:${activeSubgroup?.id || 'custom'}`
-                : activeScope === 'COACHES_STAFF'
-                  ? 'staff:only'
-                  : activeScope === 'EVENT_GROUP'
-                    ? `group:${selectedGroup}`
-                    : `dm:${targetMem?.membershipId || 'self'}`,
-        channelScope: activeScope,
-        ...(activeScope === 'EVENT_GROUP' ? { eventGroup: selectedGroup } : {}),
-        ...(activeSubgroup
-          ? { customSubgroupId: activeSubgroup.id, customSubgroupName: activeSubgroup.name }
-          : {}),
-        ...(targetMem ? { targetMembershipId: targetMem.membershipId, targetAthleteName: targetMem.invitedName } : {}),
-        senderSid: 'local-user',
-        senderMembershipId: activeTeam.myMembershipId,
-        senderName: isStaff ? activeTeam.brand.coachDisplayName : 'Sample Athlete',
-        senderRole: isStaff ? activeTeam.myRole : 'ATHLETE',
+      const newMsg = buildLocalDemoTeamMessage({
+        activeTeam,
+        activeScope,
+        selectedGroup,
+        activeSubgroup,
+        resolvedDirectAthlete,
+        isStaff,
         body: clean,
-        createdAt: new Date().toISOString(),
-        guardianCcApplied: activeScope !== 'COACHES_STAFF' && policy.requireGuardianCcForMinors,
-        secondAdultVisible: true,
-        ...(isQuietHours && !emergencyOverride ? { sentDuringQuietHours: true } : {}),
-        ...(emergencyOverride ? { isEmergencyOverride: true } : {}),
-        acknowledgedByMembershipIds: [activeTeam.myMembershipId],
-      };
+        policy,
+        isQuietHours,
+        emergencyOverride,
+      });
       applyUpdatedTeam({
         ...activeTeam,
         teamMessages: [newMsg, ...(activeTeam.teamMessages || [])].slice(0, 500),
@@ -494,7 +389,8 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
         channelScope: activeScope,
         eventGroup: activeScope === 'EVENT_GROUP' ? selectedGroup : undefined,
         customSubgroupId: activeSubgroup?.id,
-        targetMembershipId: activeScope === 'DIRECT_TRANSPARENT' ? resolvedDirectAthlete?.membershipId : undefined,
+        targetMembershipId:
+          activeScope === 'DIRECT_TRANSPARENT' ? resolvedDirectAthlete?.membershipId : undefined,
         body: clean,
         guardianCc: true,
         clientLocalHour: localHour,
@@ -733,29 +629,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   };
 
   const handleExportAuditCsv = () => {
-    const rows = [
-      ['CreatedAt', 'Channel', 'Sender', 'Role', 'Target', 'GuardianCC', 'QuietHours', 'Flagged', 'Message'].join(','),
-      ...(activeTeam.teamMessages || []).map((m) =>
-        [
-          sanitizeCsvCell(m.createdAt),
-          sanitizeCsvCell(m.channelId),
-          sanitizeCsvCell(m.senderName),
-          sanitizeCsvCell(m.senderRole),
-          sanitizeCsvCell(m.targetAthleteName || ''),
-          sanitizeCsvCell(m.guardianCcApplied ? 'YES' : 'NO'),
-          sanitizeCsvCell(m.sentDuringQuietHours ? 'YES' : 'NO'),
-          sanitizeCsvCell(m.flaggedForAdminReview ? 'FLAGGED' : 'OK'),
-          sanitizeCsvCell(m.body),
-        ].join(',')
-      ),
-    ].join('\n');
-    const blob = new Blob([rows], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${activeTeam.brand.slug}-safesport-messages-audit.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadMessagingAuditCsv(activeTeam);
   };
 
   const handleToggleDevicePush = async () => {
@@ -821,185 +695,34 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
       className="fixed inset-0 z-50 flex items-end sm:items-stretch justify-end bg-black/60"
     >
       <div className="w-full max-w-xl h-full max-h-[92dvh] sm:max-h-none overflow-y-auto rounded-t-2xl sm:rounded-none bg-white dark:bg-ap-obsidian text-ap-ink dark:text-ap-chalk border-l border-ap-edge flex flex-col shadow-2xl">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-ap-frame/15 dark:border-ap-edge-dark flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 ap-text-brand shrink-0" />
-              <h2 id={headingId} className="text-sm sm:text-base font-extrabold truncate">
-                {activeTeam.brand.shortName || activeTeam.brand.name} · Comms Hub
-              </h2>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 mt-0.5 text-2xs font-mono">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full ap-status-prime font-bold">
-                <ShieldCheck className="w-3 h-3" /> SafeSport MAAPP Two-Adult CC
-              </span>
-              {canManagePolicy && (
-                <>
-                  <button
-                    type="button"
-                    data-testid="messaging-policy-replies-toggle"
-                    onClick={() => void handleToggleAthleteReplies()}
-                    className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-full ap-card-inset font-semibold cursor-pointer"
-                  >
-                    {policy.athleteRepliesEnabled ? 'Replies: ON' : 'Broadcast Only'}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="messaging-export-csv-btn"
-                    onClick={handleExportAuditCsv}
-                    className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-full ap-card-inset font-semibold inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <Download className="w-3 h-3" /> Audit CSV
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-label="Close Team Messaging"
-            onClick={onClose}
-            className="min-h-[44px] min-w-[44px] rounded-xl ap-card-inset inline-flex items-center justify-center cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <TeamMessagingHeaderAndTabs
+          headingId={headingId}
+          activeTeam={activeTeam}
+          canManagePolicy={canManagePolicy}
+          policy={policy}
+          onToggleAthleteReplies={() => void handleToggleAthleteReplies()}
+          onExportAuditCsv={handleExportAuditCsv}
+          onClose={onClose}
+          commsTab={commsTab}
+          onSelectTab={(tab) => {
+            setCommsTab(tab);
+            setStatusError(null);
+            setStatusInfo(null);
+          }}
+        />
 
-        {/* Top Unified Comms Hub Section Tabs */}
-        <div
-          role="tablist"
-          aria-label="Comms Hub Sections"
-          className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex items-center gap-1.5"
-        >
-          {(
-            [
-              {
-                id: 'CHAT' as const,
-                label: 'Chat',
-                count: (activeTeam.teamMessages || []).length,
-                testId: 'comms-tab-chat',
-              },
-              {
-                id: 'ANNOUNCEMENTS' as const,
-                label: 'Announcements',
-                count: (activeTeam.announcements || []).length,
-                testId: 'comms-tab-announcements',
-              },
-              {
-                id: 'WORKOUT_NOTES' as const,
-                label: 'Workout Notes',
-                count: (activeTeam.workoutComments || []).length,
-                testId: 'comms-tab-workout-notes',
-              },
-            ] as const
-          ).map((tab) => {
-            const active = commsTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                data-testid={tab.testId}
-                aria-selected={active}
-                onClick={() => {
-                  setCommsTab(tab.id);
-                  setStatusError(null);
-                  setStatusInfo(null);
-                }}
-                className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5 ${
-                  active ? 'ap-nav-volt-active' : 'liquid-capsule-track text-ap-ink dark:text-ap-chalk'
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span className="text-2xs font-mono opacity-80">({tab.count})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Device Push Alerts Bar (expanded until enabled, then compact pill to maximize chat height) */}
-        {(!pushEnabled || pushPanelExpanded) ? (
-          <div className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset flex flex-wrap items-center justify-between gap-2">
-            <div className="min-w-0 space-y-0.5 flex-1">
-              <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-ap-ink dark:text-ap-chalk">
-                {pushEnabled ? (
-                  <BellRinging className="w-4 h-4 ap-text-brand shrink-0" weight="fill" />
-                ) : (
-                  <Bell className="w-4 h-4 text-ap-muted dark:text-ap-muted-dark shrink-0" />
-                )}
-                <span>Device Push Notifications</span>
-                {pushEnabled && (
-                  <span className="px-2 py-0.5 rounded-full ap-status-prime text-2xs font-mono font-bold">
-                    ON{pushCount > 1 ? ` (${pushCount})` : ''}
-                  </span>
-                )}
-              </div>
-              <p className="text-2xs text-ap-muted dark:text-ap-muted-dark leading-snug">
-                {pushNotice ||
-                  (iosStandaloneNeeded
-                    ? 'iPhone/iPad: Add to Home Screen for push, or rely on automatic MeetReady Email Fallback when push is off.'
-                    : 'No push on this device? MeetReady automatically sends SafeSport-safe email fallbacks for urgent team updates.')}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              {pushEnabled && !isSampleDemo && (
-                <button
-                  type="button"
-                  disabled={pushLoading}
-                  data-testid="send-test-push-btn"
-                  onClick={() => void handleSendTestPush()}
-                  className="min-h-[44px] px-3 py-1.5 rounded-xl ap-btn-secondary text-xs font-bold cursor-pointer disabled:opacity-50"
-                >
-                  Test Alert
-                </button>
-              )}
-              <button
-                type="button"
-                disabled={pushLoading}
-                data-testid="toggle-device-push-btn"
-                aria-pressed={pushEnabled}
-                onClick={() => void handleToggleDevicePush()}
-                className={`min-h-[44px] px-3.5 py-1.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
-                  pushEnabled ? 'ap-nav-volt-active' : 'ap-btn-primary'
-                }`}
-              >
-                {pushEnabled ? (
-                  <BellRinging className="w-4 h-4" weight="bold" />
-                ) : (
-                  <Bell className="w-4 h-4" weight="bold" />
-                )}
-                <span>{pushLoading ? 'Updating…' : pushEnabled ? 'Push Alerts ON' : 'Enable Device Push'}</span>
-              </button>
-              {pushEnabled && (
-                <button
-                  type="button"
-                  onClick={() => setPushPanelExpanded(false)}
-                  className="min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark cursor-pointer"
-                >
-                  Hide
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="px-4 py-1.5 border-b border-ap-frame/15 dark:border-ap-edge-dark flex items-center justify-between gap-2 text-2xs">
-            <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-ap-muted dark:text-ap-muted-dark">
-              <BellRinging className="w-3.5 h-3.5 ap-text-brand" weight="fill" />
-              <span>Device Push Alerts</span>
-            </span>
-            <button
-              type="button"
-              data-testid="toggle-device-push-btn"
-              aria-pressed={true}
-              onClick={() => setPushPanelExpanded(true)}
-              className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg ap-status-prime font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
-            >
-              <span>Push Alerts ON{pushCount > 1 ? ` (${pushCount})` : ''}</span>
-              <span className="opacity-75">· Manage</span>
-            </button>
-          </div>
-        )}
+        <TeamMessagingPushBar
+          pushEnabled={pushEnabled}
+          pushPanelExpanded={pushPanelExpanded}
+          setPushPanelExpanded={setPushPanelExpanded}
+          pushCount={pushCount}
+          pushNotice={pushNotice}
+          iosStandaloneNeeded={iosStandaloneNeeded}
+          isSampleDemo={isSampleDemo}
+          pushLoading={pushLoading}
+          onSendTestPush={() => void handleSendTestPush()}
+          onToggleDevicePush={() => void handleToggleDevicePush()}
+        />
 
         {commsTab === 'ANNOUNCEMENTS' && (
           <CommsAnnouncementsTab
@@ -1033,441 +756,59 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
 
         {commsTab === 'CHAT' && (
           <>
-            {/* Channel Rail */}
-            <div className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center gap-1.5" role="tablist">
-              {(
-                [
-                  { id: 'ALL_TEAM', label: 'Whole Team', testId: 'msg-channel-all', show: true },
-                  { id: 'EVENT_GROUP', label: 'Event Group', testId: 'msg-channel-group', show: true },
-                  {
-                    id: 'PARENTS_ONLY',
-                    label: 'Parents Only',
-                    testId: 'messaging-scope-parents_only',
-                    show: isStaff || activeTeam.myRole === 'PARENT_FOLLOWER',
-                  },
-                  {
-                    id: 'CUSTOM_SUBGROUP',
-                    label: 'Sub-Groups',
-                    testId: 'messaging-scope-custom_subgroup',
-                    show: isStaff || (activeTeam.customSubgroups?.length || 0) > 0,
-                  },
-                  { id: 'COACHES_STAFF', label: 'Coaches & Staff', testId: 'msg-channel-staff', show: isStaff },
-                  { id: 'DIRECT_TRANSPARENT', label: 'Direct (SafeSport CC)', testId: 'msg-channel-direct', show: true },
-                ] as const
-              )
-                .filter((c) => c.show)
-                .map((ch) => {
-                  const active = activeScope === ch.id;
-                  return (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      role="tab"
-                      data-testid={ch.testId}
-                      aria-selected={active}
-                      onClick={() => {
-                        setActiveScope(ch.id);
-                        setStatusError(null);
-                        setOpenReceiptMsgId(null);
-                      }}
-                      className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-bold cursor-pointer ${
-                        active ? 'ap-nav-volt-active' : 'liquid-capsule-track text-ap-ink dark:text-ap-chalk'
-                      }`}
-                    >
-                      {ch.label}
-                    </button>
-                  );
-                })}
-            </div>
+            <TeamMessagingChannelRail
+              activeTeam={activeTeam}
+              isStaff={isStaff}
+              isSampleDemo={isSampleDemo}
+              activeScope={activeScope}
+              setActiveScope={setActiveScope}
+              setStatusError={setStatusError}
+              setStatusInfo={setStatusInfo}
+              setOpenReceiptMsgId={setOpenReceiptMsgId}
+              selectedGroup={selectedGroup}
+              setSelectedGroup={setSelectedGroup}
+              resolvedSubgroupId={resolvedSubgroupId}
+              setSelectedSubgroupId={setSelectedSubgroupId}
+              subgroupComposerOpen={subgroupComposerOpen}
+              setSubgroupComposerOpen={setSubgroupComposerOpen}
+              onApplyTeam={applyUpdatedTeam}
+              onTeamsUpdated={onTeamsUpdated}
+              onDeleteSubgroup={(sgId) => void handleDeleteSubgroup(sgId)}
+              athleteMembers={athleteMembers}
+              resolvedDirectAthlete={resolvedDirectAthlete}
+              setSelectedAthleteMembershipId={setSelectedAthleteMembershipId}
+              directThreads={directThreads}
+              isQuietHours={isQuietHours}
+              policy={policy}
+              emergencyOverride={emergencyOverride}
+              setEmergencyOverride={setEmergencyOverride}
+            />
 
-            {activeScope === 'PARENTS_ONLY' && (
-              <div
-                data-testid="msg-parents-only-banner"
-                className="px-4 py-2 bg-ap-cobalt/10 dark:bg-ap-volt/10 border-b border-ap-frame/15 dark:border-ap-edge-dark text-2xs font-mono text-ap-ink dark:text-ap-chalk flex items-center gap-1.5"
-              >
-                <Users className="w-3.5 h-3.5 ap-text-brand shrink-0" />
-                <span>
-                  Parents &amp; Coaching Staff Only — athletes never see messages posted here.
-                </span>
-              </div>
-            )}
-
-            {activeScope === 'CUSTOM_SUBGROUP' && (
-              <div className="px-4 py-2 bg-ap-card-inset/50 border-b border-ap-frame/10 dark:border-ap-edge-dark space-y-2 text-xs">
-                <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {(activeTeam.customSubgroups || []).map((sg) => {
-                      const activeSg = resolvedSubgroupId === sg.id;
-                      return (
-                        <div key={sg.id} className="inline-flex items-center gap-1">
-                          <button
-                            type="button"
-                            data-testid={`comms-subgroup-pill-${sg.id}`}
-                            onClick={() => setSelectedSubgroupId(sg.id)}
-                            className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg font-bold text-2xs cursor-pointer ${
-                              activeSg
-                                ? 'ap-nav-volt-active'
-                                : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark'
-                            }`}
-                          >
-                            {sg.name} ({sg.memberIds.length})
-                          </button>
-                          {isStaff && activeSg && (
-                            <button
-                              type="button"
-                              aria-label={`Delete sub-group ${sg.name}`}
-                              onClick={() => void handleDeleteSubgroup(sg.id)}
-                              className="min-h-[44px] min-w-[44px] sm:min-h-[30px] sm:min-w-[30px] rounded-lg text-rose-500 inline-flex items-center justify-center cursor-pointer"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {(activeTeam.customSubgroups || []).length === 0 && !subgroupComposerOpen && (
-                      <span className="text-2xs text-ap-muted dark:text-ap-muted-dark">
-                        No custom sub-groups yet (e.g. Travel Bus #1, Meet Volunteers).
-                      </span>
-                    )}
-                  </div>
-                  {isStaff && !subgroupComposerOpen && (
-                    <button
-                      type="button"
-                      data-testid="comms-subgroup-create-btn"
-                      onClick={() => setSubgroupComposerOpen(true)}
-                      className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>New Sub-Group</span>
-                    </button>
-                  )}
-                </div>
-
-                {subgroupComposerOpen && (
-                  <CommsSubgroupManager
-                    activeTeam={activeTeam}
-                    isSampleDemo={isSampleDemo}
-                    onApplyTeam={applyUpdatedTeam}
-                    onTeamsUpdated={onTeamsUpdated}
-                    onCreated={(sgId) => {
-                      setSelectedSubgroupId(sgId);
-                      setSubgroupComposerOpen(false);
-                      setStatusInfo('Custom sub-group created ✓');
-                    }}
-                    onCancel={() => setSubgroupComposerOpen(false)}
-                    onError={(msg) => setStatusError(msg)}
-                  />
-                )}
-              </div>
-            )}
-
-            {/* Sub-selector bar for Event Group or Transparent Direct Thread */}
-            {activeScope === 'EVENT_GROUP' && (
-              <div className="px-4 py-2 bg-ap-card-inset/50 flex items-center gap-2 text-xs border-b border-ap-frame/10 dark:border-ap-edge-dark">
-                <span className="font-mono text-2xs uppercase text-ap-muted dark:text-ap-muted-dark">Group:</span>
-                <select
-                  aria-label="Select Event Group Channel"
-                  value={selectedGroup}
-                  onChange={(e) => setSelectedGroup(e.target.value as CoachEventGroup)}
-                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold"
-                >
-                  {COACH_EVENT_GROUP_OPTIONS.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.shortLabel}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {activeScope === 'DIRECT_TRANSPARENT' && (
-              <div
-                data-testid="msg-safesport-cc-banner"
-                className="px-4 py-2 bg-emerald-500/10 border-b border-emerald-500/25 space-y-2 text-xs"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-bold text-emerald-800 dark:text-emerald-300 inline-flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5" />
-                    Zero-Secret-DM Rule Active: Head Coach &amp; Parent/Guardian CC&apos;d
-                  </span>
-                  {isStaff && athleteMembers.length > 0 && (
-                    <select
-                      aria-label="Select Athlete for SafeSport Thread"
-                      value={resolvedDirectAthlete?.membershipId || ''}
-                      onChange={(e) => setSelectedAthleteMembershipId(e.target.value)}
-                      className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs font-semibold"
-                    >
-                      {athleteMembers.map((m) => (
-                        <option key={m.membershipId} value={m.membershipId}>
-                          {m.invitedName}
-                          {m.parentGuardianEmail ? ' (Guardian Email CC)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                {isStaff && directThreads.length > 0 && (
-                  <div
-                    data-testid="msg-active-threads-inbox"
-                    className="flex flex-wrap items-center gap-1.5"
-                  >
-                    <span className="text-2xs font-mono uppercase text-ap-muted dark:text-ap-muted-dark mr-1">
-                      Active Threads:
-                    </span>
-                    {directThreads.slice(0, 6).map((thr) => {
-                      const isSel = resolvedDirectAthlete?.membershipId === thr.membershipId;
-                      return (
-                        <button
-                          key={thr.membershipId}
-                          type="button"
-                          onClick={() => setSelectedAthleteMembershipId(thr.membershipId)}
-                          className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded-full text-2xs font-semibold cursor-pointer truncate max-w-[200px] ${
-                            isSel
-                              ? 'ap-nav-volt-active'
-                              : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk'
-                          }`}
-                        >
-                          {thr.athleteName} ({thr.count})
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Quiet Hours Banner */}
-            {isQuietHours && (
-              <div className="px-4 py-1.5 bg-amber-500/15 border-b border-amber-500/30 flex flex-wrap items-center justify-between gap-2 text-2xs font-mono text-amber-900 dark:text-amber-200">
-                <span className="inline-flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  Quiet Hours ({policy.quietHoursStartHour}:00–{policy.quietHoursEndHour}:00): avoid non-urgent texts.
-                </span>
-                <label className="inline-flex items-center gap-1.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    data-testid="msg-emergency-override"
-                    checked={emergencyOverride}
-                    onChange={(e) => setEmergencyOverride(e.target.checked)}
-                  />
-                  <span>Emergency / Weather Override</span>
-                </label>
-              </div>
-            )}
-
-            {queuedOfflineMessages.length > 0 && (
-              <div
-                data-testid="comms-outbox-queued-banner"
-                className="px-4 py-1.5 bg-amber-500/20 border-b border-amber-500/35 flex items-center justify-between gap-2 text-2xs font-mono text-amber-950 dark:text-amber-100"
-              >
-                <span className="inline-flex items-center gap-1.5 font-bold">
-                  <WifiOff className="w-3.5 h-3.5 shrink-0" />
-                  {queuedOfflineMessages.length} queued offline (saved locally, survives reload)
-                </span>
-                <button
-                  type="button"
-                  data-testid="comms-outbox-retry-btn"
-                  disabled={flushingOutbox}
-                  onClick={() => void handleFlushAllOutbox()}
-                  className="min-h-[44px] sm:min-h-[30px] px-2.5 py-0.5 rounded-lg bg-amber-600 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>{flushingOutbox ? 'Syncing…' : 'Sync All'}</span>
-                </button>
-              </div>
-            )}
-
-            {/* Messages Feed */}
-            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
-              {visibleMessages.length === 0 && visibleQueuedMessages.length === 0 ? (
-                <div className="rounded-xl ap-card-inset p-4 text-xs text-ap-muted dark:text-ap-muted-dark">
-                  No messages in this channel yet. Post a meet reminder or practice note below.
-                </div>
-              ) : (
-                visibleMessages.map((msg) => {
-                  const ackCount = msg.acknowledgedByMembershipIds?.length || 0;
-                  const alreadyAcked = msg.acknowledgedByMembershipIds?.includes(activeTeam.myMembershipId);
-                  const receiptOpen = openReceiptMsgId === msg.id;
-                  return (
-                    <div
-                      key={msg.id}
-                      data-testid={`team-msg-item-${msg.id}`}
-                      className={`rounded-xl border px-3 py-2.5 space-y-1.5 text-xs ${
-                        msg.flaggedForAdminReview
-                          ? 'border-rose-500/40 bg-rose-500/10'
-                          : 'border-ap-frame/15 dark:border-ap-edge-dark ap-card-inset'
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono">
-                        <span className="font-bold text-ap-ink dark:text-ap-chalk">
-                          {msg.senderName}{' '}
-                          <span className="text-ap-muted dark:text-ap-muted-dark font-normal">
-                            ({activeTeam.memberships.find((m) => m.membershipId === msg.senderMembershipId)?.coachSpecialtyTitle || msg.senderRole})
-                          </span>
-                          {msg.targetAthleteName ? ` → ${msg.targetAthleteName}` : ''}
-                        </span>
-                        <div className="flex flex-wrap items-center gap-1">
-                          {msg.guardianCcApplied && (
-                            <span className="px-1.5 py-0.5 rounded ap-status-info">Guardian CC ✓</span>
-                          )}
-                          {(msg.emailFallbackCount || 0) > 0 && (
-                            <span className="px-1.5 py-0.5 rounded ap-status-info">
-                              Push + Email ({msg.emailFallbackCount})
-                            </span>
-                          )}
-                          {msg.isEmergencyOverride && (
-                            <span className="px-1.5 py-0.5 rounded ap-status-caution">Emergency</span>
-                          )}
-                          {msg.flaggedForAdminReview && (
-                            <span className="px-1.5 py-0.5 rounded ap-status-strained">Flagged</span>
-                          )}
-                          <span className="text-ap-muted dark:text-ap-muted-dark">
-                            {formatMsgTimestamp(msg.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-ap-ink dark:text-ap-chalk leading-snug">{msg.body}</p>
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <button
-                            type="button"
-                            data-testid={`msg-ack-btn-${msg.id}`}
-                            onClick={() => void handleAck(msg.id)}
-                            className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer ${
-                              alreadyAcked
-                                ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
-                                : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark'
-                            }`}
-                          >
-                            <Check className="w-3 h-3" />
-                            <span>Got It ({ackCount})</span>
-                          </button>
-                          {isStaff && (
-                            <button
-                              type="button"
-                              data-testid={`msg-read-receipts-btn-${msg.id}`}
-                              aria-expanded={receiptOpen}
-                              onClick={() => setOpenReceiptMsgId(receiptOpen ? null : msg.id)}
-                              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
-                            >
-                              <Users className="w-3 h-3" />
-                              <span>Receipts</span>
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            data-testid={`msg-copy-remind-btn-${msg.id}`}
-                            onClick={() => void handleCopyRemindMessage(msg)}
-                            className="min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <Copy className="w-3 h-3" />
-                            <span>{copiedMsgId === msg.id ? 'Copied ✓' : 'Copy Remind'}</span>
-                          </button>
-                        </div>
-                        {!msg.flaggedForAdminReview && (
-                          <button
-                            type="button"
-                            data-testid={`msg-flag-btn-${msg.id}`}
-                            onClick={() => void handleFlag(msg.id)}
-                            className="min-h-[44px] sm:min-h-[34px] px-2 py-0.5 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark hover:text-rose-500 inline-flex items-center gap-1 cursor-pointer"
-                          >
-                            <Flag className="w-3 h-3" />
-                            <span>Flag</span>
-                          </button>
-                        )}
-                      </div>
-                      {isStaff && receiptOpen && (
-                        <CommsReadReceiptPopover
-                          message={msg}
-                          activeTeam={activeTeam}
-                          onClose={() => setOpenReceiptMsgId(null)}
-                        />
-                      )}
-                    </div>
-                  );
-                })
-              )}
-              {visibleQueuedMessages.map((q) => (
-                <div
-                  key={q.localId}
-                  data-testid={`team-msg-queued-${q.localId}`}
-                  className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 space-y-1.5 text-xs"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-2xs font-mono">
-                    <span className="inline-flex items-center gap-1 font-bold text-amber-900 dark:text-amber-200">
-                      <WifiOff className="w-3.5 h-3.5 shrink-0" />
-                      <span>Queued offline — not delivered yet (saved locally)</span>
-                    </span>
-                    <button
-                      type="button"
-                      data-testid="team-msg-retry-btn"
-                      disabled={retryingId === q.localId}
-                      onClick={() => void handleRetryQueuedMessage(q)}
-                      className="min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>{retryingId === q.localId ? 'Retrying…' : 'Retry'}</span>
-                    </button>
-                  </div>
-                  <p className="text-ap-ink dark:text-ap-chalk leading-snug">{q.body}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* Composer */}
-            <form onSubmit={(e) => void handleSend(e)} className="px-4 py-3 border-t border-ap-frame/15 dark:border-ap-edge-dark space-y-2">
-              {isStaff && (
-                <div className="flex flex-wrap gap-1">
-                  {COACH_QUICK_TEMPLATES.map((tpl) => (
-                    <button
-                      key={tpl}
-                      type="button"
-                      onClick={() => setDraftBody(tpl)}
-                      className="min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded-md ap-card-inset text-2xs text-ap-ink dark:text-ap-chalk hover:underline cursor-pointer truncate max-w-[200px]"
-                    >
-                      {tpl}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {statusError && (
-                <div role="alert" className="text-2xs font-mono text-rose-600 dark:text-rose-400">
-                  {statusError}
-                </div>
-              )}
-              {statusInfo && (
-                <div className="text-2xs font-mono text-emerald-600 dark:text-emerald-400">{statusInfo}</div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  data-testid="team-msg-input"
-                  aria-label="Message text"
-                  value={draftBody}
-                  onChange={(e) => setDraftBody(e.target.value)}
-                  placeholder={
-                    activeScope === 'DIRECT_TRANSPARENT'
-                      ? 'Write a SafeSport transparent note (Guardian & Coach CC)...'
-                      : activeScope === 'PARENTS_ONLY'
-                        ? 'Message Parents & Guardians only...'
-                        : 'Write an immutable, audited team message...'
-                  }
-                  className="flex-1 min-h-[44px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-3 text-xs text-ap-ink dark:text-ap-chalk"
-                />
-                <button
-                  type="submit"
-                  data-testid="team-msg-send-btn"
-                  disabled={sending || !draftBody.trim()}
-                  className="ap-btn-primary !min-h-[44px] px-4 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  <span>Send</span>
-                </button>
-              </div>
-            </form>
+            <TeamMessagingFeedAndComposer
+              activeTeam={activeTeam}
+              isStaff={isStaff}
+              activeScope={activeScope}
+              queuedOfflineMessages={queuedOfflineMessages}
+              visibleMessages={visibleMessages}
+              visibleQueuedMessages={visibleQueuedMessages}
+              flushingOutbox={flushingOutbox}
+              onFlushAllOutbox={() => void handleFlushAllOutbox()}
+              openReceiptMsgId={openReceiptMsgId}
+              setOpenReceiptMsgId={setOpenReceiptMsgId}
+              copiedMsgId={copiedMsgId}
+              onAck={(id) => void handleAck(id)}
+              onCopyRemindMessage={(msg) => void handleCopyRemindMessage(msg)}
+              onFlag={(id) => void handleFlag(id)}
+              retryingId={retryingId}
+              onRetryQueuedMessage={(item) => void handleRetryQueuedMessage(item)}
+              queuedOfflineBadgeLabel={QUEUED_OFFLINE_BADGE_LABEL}
+              draftBody={draftBody}
+              setDraftBody={setDraftBody}
+              sending={sending}
+              statusError={statusError}
+              statusInfo={statusInfo}
+              onSend={(e) => void handleSend(e)}
+            />
           </>
         )}
 

@@ -1,9 +1,9 @@
 // server/vercelApp.ts
 import "dotenv/config";
-import express21 from "express";
+import express24 from "express";
 
 // server/apiRouter.ts
-import express19 from "express";
+import express22 from "express";
 
 // server/securityUtils.ts
 import crypto from "crypto";
@@ -26656,7 +26656,994 @@ function resolveCorosCallbackUrl(req) {
 var resolveCallbackUrl = resolveStravaCallbackUrl;
 
 // server/routers/intervalsRouter.ts
-import express16 from "express";
+import express19 from "express";
+
+// server/routers/intervals/intervalsAuthAndConfig.ts
+import express15 from "express";
+function getEffectiveIntervalsConfig(req) {
+  const activeReq = req ?? requestContext.getStore();
+  if (activeReq && !isAuthenticatedRequest(activeReq)) {
+    return { apiKey: "", accessToken: "", athleteId: "0", scope: "" };
+  }
+  const allowEnvFallback = process.env.NODE_ENV !== "production" && !process.env.VERCEL;
+  const headerKey = activeReq?.headers["x-intervals-api-key"] || "";
+  const headerToken = activeReq?.headers["x-intervals-access-token"] || "";
+  const headerAthlete = activeReq?.headers["x-intervals-athlete-id"] || "";
+  const apiKey = (headerKey || runtimeStore.intervalsApiKey || (allowEnvFallback ? process.env.INTERVALS_API_KEY : "") || "").trim();
+  const accessToken = (headerToken || runtimeStore.intervalsAccessToken || "").trim();
+  const athleteId = (headerAthlete || runtimeStore.intervalsAthleteId || (allowEnvFallback ? process.env.INTERVALS_ATHLETE_ID : "") || "0").trim() || "0";
+  const scope = runtimeStore.intervalsScope || "";
+  return { apiKey, accessToken, athleteId, scope };
+}
+function getIntervalsAuthHeader(config) {
+  if (config.accessToken) {
+    return `Bearer ${config.accessToken}`;
+  }
+  if (config.apiKey) {
+    return `Basic ${Buffer.from(`API_KEY:${config.apiKey}`).toString("base64")}`;
+  }
+  return null;
+}
+function getEffectiveIntervalsClientConfig(req) {
+  const activeReq = req ?? requestContext.getStore();
+  const headerClientId = activeReq?.headers["x-intervals-client-id"] || "";
+  const headerClientSecret = activeReq?.headers["x-intervals-client-secret"] || "";
+  const clientId = (headerClientId || process.env.INTERVALS_CLIENT_ID || "").trim();
+  const clientSecret = (headerClientSecret || process.env.INTERVALS_CLIENT_SECRET || "").trim();
+  return { clientId, clientSecret };
+}
+var intervalsIdentityByKey = /* @__PURE__ */ new Map();
+async function resolveIntervalsAthleteIdentity(req) {
+  const config = getEffectiveIntervalsConfig(req);
+  const authHeader = getIntervalsAuthHeader(config);
+  if (!authHeader) return null;
+  const cacheKey = config.accessToken ? `tok_${config.accessToken.slice(-10)}` : `key_${config.apiKey}`;
+  const cached = intervalsIdentityByKey.get(cacheKey);
+  if (cached && !isGenericName(cached.athleteName)) {
+    return cached;
+  }
+  try {
+    const resp = await fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(config.athleteId || "0")}`,
+      {
+        headers: { Authorization: authHeader, Accept: "application/json" }
+      }
+    );
+    if (!resp.ok) return null;
+    const rawProfile = await resp.json();
+    const resolvedId = String(rawProfile.id || config.athleteId || "0");
+    const fullName = String(rawProfile.name || "").trim() || [rawProfile.firstname, rawProfile.lastname].filter(Boolean).join(" ").trim() || "";
+    if (fullName && !isGenericName(fullName)) {
+      runtimeStore.intervalsAthleteName = fullName;
+      saveSessionCache();
+    }
+    const entry = {
+      athleteId: resolvedId,
+      athleteName: fullName,
+      rawProfile
+    };
+    intervalsIdentityByKey.set(cacheKey, entry);
+    return entry;
+  } catch {
+    return null;
+  }
+}
+var intervalsCallbackHandler = async (req, res) => {
+  const code = String(req.query.code || "").trim();
+  const error = String(req.query.error || "").trim();
+  const stateToken = String(req.query.state || "").trim();
+  const cookieNonce = getOAuthStateCookieNonce(req);
+  const verifiedState = verifyOAuthStateToken(stateToken);
+  clearOAuthStateCookie(res);
+  if (error) {
+    const errMsg = error === "access_denied" ? "Access was denied by the user on Intervals.icu." : error;
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "intervals",
+      error: `Intervals.icu connection failed: ${errMsg}`
+    });
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Intervals.icu Connection Error",
+        heading: "Intervals.icu Connection Could Not Complete",
+        accentColor: "#FB7185",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to MeetReady",
+        ctaHref: "/#fitness?openDataSources=1",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+    return;
+  }
+  if (!code) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Missing Authorization Code",
+        heading: "Intervals.icu Authorization Code Missing",
+        accentColor: "#FB7185",
+        body: "No authorization code was returned by Intervals.icu.",
+        ctaLabel: "Return to MeetReady",
+        ctaHref: "/#fitness?openDataSources=1"
+      })
+    );
+    return;
+  }
+  if (!verifiedState || !cookieNonce || !timingSafeStringEqual(cookieNonce, verifiedState.nonce)) {
+    res.status(400).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Invalid OAuth State",
+        heading: "Security Verification Failed",
+        accentColor: "#FB7185",
+        body: !verifiedState ? "OAuth state token was invalid or expired. Please re-initiate Intervals.icu connection." : "Browser OAuth verification cookie was missing or did not match. Please re-initiate Intervals.icu connection.",
+        ctaLabel: "Return to MeetReady",
+        ctaHref: "/#fitness?openDataSources=1"
+      })
+    );
+    return;
+  }
+  try {
+    const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
+    if (!clientId || !clientSecret) {
+      throw new Error(
+        "Intervals.icu OAuth client credentials (INTERVALS_CLIENT_ID / INTERVALS_CLIENT_SECRET) are not configured."
+      );
+    }
+    const tokenResp = await fetch("https://intervals.icu/api/oauth/token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json"
+      },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code
+      }).toString()
+    });
+    if (!tokenResp.ok) {
+      const errBody = await tokenResp.text();
+      throw new Error(
+        `Intervals.icu token exchange failed (${tokenResp.status}): ${errBody.slice(0, 160)}`
+      );
+    }
+    const tokenData = await tokenResp.json();
+    const accessToken = String(tokenData.access_token || "").trim();
+    if (!accessToken) {
+      throw new Error("Intervals.icu did not return a valid access token.");
+    }
+    const athleteId = String(tokenData.id || tokenData.athlete?.id || "0").trim();
+    const athleteName = String(
+      tokenData.name || tokenData.athlete?.name || [tokenData.firstname, tokenData.lastname].filter(Boolean).join(" ") || `Athlete ${athleteId}`
+    ).trim();
+    const sid = verifiedState.sid || ensureRequestSessionSid(req, res);
+    bindRequestScopeKey(req, sid);
+    const store = getScopedRuntimeStore(req);
+    store.intervalsAccessToken = accessToken;
+    store.intervalsScope = tokenData.scope || "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE";
+    store.intervalsAthleteId = athleteId;
+    store.intervalsAthleteName = athleteName;
+    const callerClaims = getVerifiedSessionClaims(req);
+    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+      await connectServiceToUser(callerClaims.sub, "intervals", athleteId, athleteName);
+    }
+    setSessionCookie(req, res, athleteName, sid, "verified");
+    await saveSessionCacheAsync(req, res, sid);
+    const oauthPayloadJson = safeJsonForScript({
+      type: "OAUTH_AUTH_SUCCESS",
+      provider: "intervals",
+      athleteId,
+      athleteName,
+      scope: store.intervalsScope,
+      returnUrl: "/#fitness?openDataSources=1"
+    });
+    res.type("html").send(
+      renderThreshOAuthHtml({
+        title: "Intervals.icu Connected \xB7 MeetReady",
+        heading: `Intervals.icu Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
+        accentColor: "#10B981",
+        body: "Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and cross-watch calendar push are ready.",
+        ctaLabel: "Continue to MeetReady",
+        ctaHref: "/#fitness?openDataSources=1",
+        scriptBody: `(function() {
+          var payload = ${oauthPayloadJson};
+          try {
+            localStorage.setItem('thresh_session_active_hint', '1');
+            if (payload.athleteId) {
+              localStorage.setItem('aeropulse_intervals_athlete_id', String(payload.athleteId));
+            }
+            if (payload.athleteName) {
+              localStorage.setItem('aeropulse_intervals_athlete_name', payload.athleteName);
+            }
+            localStorage.setItem('aeropulse_intervals_connected', '1');
+            localStorage.removeItem('aeropulse_intervals_api_key');
+            localStorage.setItem('aeropulse_oauth_just_connected', '1');
+          } catch (e) {}
+          var hasOpener = false;
+          try {
+            if (window.opener && window.opener !== window) {
+              hasOpener = true;
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+          var isPopupWindow = hasOpener || window.name === 'aeropulse_oauth_popup';
+          if (isPopupWindow) {
+            setTimeout(function() {
+              try { window.close(); } catch (e) {}
+            }, 300);
+          } else {
+            window.location.replace(payload.returnUrl || '/#fitness?openDataSources=1');
+          }
+        })();`
+      })
+    );
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    const errJson = safeJsonForScript({
+      type: "OAUTH_AUTH_ERROR",
+      provider: "intervals",
+      error: `Intervals.icu connection failed: ${errMsg}`
+    });
+    res.status(500).type("html").send(
+      renderThreshOAuthHtml({
+        title: "Intervals.icu Connection Error",
+        heading: "Intervals.icu Connection Failed",
+        accentColor: "#FB7185",
+        body: escapeHtml(errMsg),
+        ctaLabel: "Return to MeetReady",
+        ctaHref: "/#fitness?openDataSources=1",
+        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
+        scriptBody: `(function() {
+          var payload = ${errJson};
+          try {
+            if (window.opener && window.opener !== window) {
+              window.opener.postMessage(payload, window.location.origin);
+            }
+          } catch (e) {}
+          try {
+            var bc = new BroadcastChannel('aeropulse_oauth');
+            bc.postMessage(payload);
+          } catch (e) {}
+        })();`
+      })
+    );
+  }
+};
+var intervalsAuthRouter = express15.Router();
+intervalsAuthRouter.get(["/api/intervals/auth/url", "/api/auth/intervals/url"], (req, res) => {
+  const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
+  if (!clientId || !clientSecret) {
+    res.status(400).json({
+      error: "Intervals.icu OAuth is not configured on this server yet. Please set INTERVALS_CLIENT_ID and INTERVALS_CLIENT_SECRET in your Vercel Environment Variables (or local .env)."
+    });
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const mode = String(req.query.mode || "cloud").toLowerCase();
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const clientNonce = String(req.query.state || "").trim();
+  const { stateToken, nonce } = issueOAuthStateToken({
+    nonce: clientNonce || void 0,
+    sid,
+    flow,
+    mode
+  });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolveIntervalsCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE",
+    state: stateToken
+  });
+  const authUrl = `https://intervals.icu/oauth/authorize?${params.toString()}`;
+  res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
+});
+intervalsAuthRouter.get(["/api/intervals/auth/login", "/api/auth/intervals/login"], (req, res) => {
+  const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
+  if (!clientId || !clientSecret) {
+    const msg = encodeURIComponent(
+      "Intervals.icu OAuth is not configured on this server yet (missing INTERVALS_CLIENT_ID or INTERVALS_CLIENT_SECRET)."
+    );
+    res.redirect(302, `/?auth_error=${msg}`);
+    return;
+  }
+  const sid = ensureRequestSessionSid(req, res);
+  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
+  const { stateToken, nonce } = issueOAuthStateToken({ sid, flow, mode: "cloud" });
+  setOAuthStateCookie(req, res, nonce);
+  const redirectUri = resolveIntervalsCallbackUrl(req);
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE",
+    state: stateToken
+  });
+  res.redirect(302, `https://intervals.icu/oauth/authorize?${params.toString()}`);
+});
+intervalsAuthRouter.get(
+  [
+    "/auth/intervals/callback",
+    "/auth/intervals/callback/",
+    "/api/intervals/callback",
+    "/api/intervals/callback/",
+    "/api/auth/intervals/callback",
+    "/api/auth/intervals/callback/"
+  ],
+  intervalsCallbackHandler
+);
+intervalsAuthRouter.post("/api/intervals/connect", async (req, res) => {
+  try {
+    const apiKey = String(req.body?.apiKey || "").trim();
+    const athleteId = String(req.body?.athleteId || "0").trim() || "0";
+    if (!apiKey) {
+      res.status(400).json({ error: "Please provide a valid Intervals.icu Personal API Key." });
+      return;
+    }
+    const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
+    const profileResp = await fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`,
+      {
+        headers: { Authorization: authHeader, Accept: "application/json" }
+      }
+    );
+    if (!profileResp.ok) {
+      res.status(profileResp.status).json({
+        error: `Intervals.icu authentication failed (${profileResp.status}). Verify your Athlete ID and Personal API Key.`
+      });
+      return;
+    }
+    const profileData = await profileResp.json();
+    const resolvedId = String(profileData.id || athleteId);
+    const resolvedName = profileData.name || [profileData.firstname, profileData.lastname].filter(Boolean).join(" ") || `Athlete ${resolvedId}`;
+    const sessionToken = setSessionCookie(req, res, resolvedName);
+    const createdClaims = decodeAndVerifyToken(sessionToken);
+    if (createdClaims?.sid) {
+      bindRequestScopeKey(req, createdClaims.sid);
+    }
+    runtimeStore.intervalsApiKey = apiKey;
+    runtimeStore.intervalsAthleteId = resolvedId;
+    runtimeStore.intervalsAthleteName = resolvedName;
+    const callerClaims = getVerifiedSessionClaims(req);
+    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+      await connectServiceToUser(callerClaims.sub, "intervals", resolvedId, resolvedName);
+    }
+    await saveSessionCacheAsync(req, res, createdClaims?.sid);
+    res.json({
+      connected: true,
+      athleteId: resolvedId,
+      athleteName: resolvedName
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : "Failed to connect to Intervals.icu"
+    });
+  }
+});
+intervalsAuthRouter.post("/api/intervals/disconnect", async (req, res) => {
+  runtimeStore.intervalsApiKey = "";
+  runtimeStore.intervalsAccessToken = "";
+  runtimeStore.intervalsScope = "";
+  runtimeStore.intervalsAthleteName = "";
+  const callerClaims = getVerifiedSessionClaims(req);
+  if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
+    await disconnectServiceFromUser(callerClaims.sub, "intervals");
+  }
+  await saveSessionCacheAsync(req, res);
+  res.json({ connected: false });
+});
+
+// server/routers/intervals/intervalsSyncService.ts
+function rankSegmentEffortsAcrossActivities(activities) {
+  const bySegmentId = /* @__PURE__ */ new Map();
+  for (const act of activities) {
+    if (!Array.isArray(act.segmentEfforts)) continue;
+    for (const eff of act.segmentEfforts) {
+      if (!eff || !eff.segmentId || !(eff.elapsedTimeSecs > 0)) continue;
+      const sid = String(eff.segmentId);
+      const list = bySegmentId.get(sid) || [];
+      list.push(eff);
+      bySegmentId.set(sid, list);
+    }
+  }
+  for (const list of bySegmentId.values()) {
+    list.sort((a, b) => a.elapsedTimeSecs - b.elapsedTimeSecs);
+    list.forEach((eff, idx) => {
+      if (idx === 0) eff.prRank = 1;
+      else if (idx === 1) eff.prRank = 2;
+      else if (idx === 2) eff.prRank = 3;
+      else eff.prRank = null;
+    });
+  }
+  for (const act of activities) {
+    if (Array.isArray(act.segmentEfforts) && act.segmentEfforts.length > 0) {
+      const prCount = act.segmentEfforts.filter((e) => e.prRank === 1).length;
+      if (prCount > (act.stravaPrCount || 0)) {
+        act.stravaPrCount = prCount;
+      }
+    }
+  }
+}
+async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldestActivitiesDate = "2010-01-01") {
+  let authHeader;
+  let athleteId;
+  if (typeof configOrKey === "string") {
+    authHeader = "Basic " + Buffer.from(`API_KEY:${configOrKey}`).toString("base64");
+    athleteId = maybeAthleteId || "0";
+  } else {
+    const header = getIntervalsAuthHeader(configOrKey);
+    if (!header) {
+      throw new Error(
+        "Intervals.icu authentication header could not be constructed (missing API key or access token)."
+      );
+    }
+    authHeader = header;
+    athleteId = configOrKey.athleteId || maybeAthleteId || "0";
+  }
+  const now = /* @__PURE__ */ new Date();
+  const newest = new Date(now.getTime() + 86400 * 1e3).toISOString().slice(0, 10);
+  const futureEventsDate = new Date(now);
+  futureEventsDate.setUTCDate(futureEventsDate.getUTCDate() + 90);
+  const newestEvents = futureEventsDate.toISOString().slice(0, 10);
+  const oldestEventsDate = new Date(now);
+  oldestEventsDate.setUTCDate(oldestEventsDate.getUTCDate() - 180);
+  const oldestEvents = oldestEventsDate.toISOString().slice(0, 10);
+  const safeOldestActs = /^\d{4}-\d{2}-\d{2}$/.test(oldestActivitiesDate) ? oldestActivitiesDate : "2010-01-01";
+  const isDeltaSync = safeOldestActs > "2020-01-01";
+  const oldestWellness = isDeltaSync ? "2024-01-01" : "2018-01-01";
+  const [profileResp, wellnessResp, activitiesResp, eventsResp] = await Promise.all([
+    fetch(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`, {
+      headers: { Authorization: authHeader, Accept: "application/json" }
+    }),
+    fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldestWellness}&newest=${newest}`,
+      {
+        headers: { Authorization: authHeader, Accept: "application/json" }
+      }
+    ),
+    fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/activities?oldest=${safeOldestActs}&newest=${newest}`,
+      {
+        headers: { Authorization: authHeader, Accept: "application/json" }
+      }
+    ),
+    fetch(
+      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/events?oldest=${oldestEvents}&newest=${newestEvents}`,
+      {
+        headers: { Authorization: authHeader, Accept: "application/json" }
+      }
+    )
+  ]);
+  if (!wellnessResp.ok || !activitiesResp.ok) {
+    throw new Error(
+      `Intervals.icu sync returned status wellness=${wellnessResp.status}, activities=${activitiesResp.status}`
+    );
+  }
+  let parsedRawProfile = null;
+  if (profileResp.ok) {
+    const profile = await profileResp.json();
+    parsedRawProfile = profile;
+    runtimeStore.intervalsAthleteName = profile.name || [profile.firstname, profile.lastname].filter(Boolean).join(" ") || runtimeStore.intervalsAthleteName;
+    if (Array.isArray(profile.sportSettings)) {
+      const bikeSetting = profile.sportSettings.find(
+        (s) => Array.isArray(s.types) && s.types.includes("Ride")
+      );
+      const runSetting = profile.sportSettings.find(
+        (s) => Array.isArray(s.types) && s.types.includes("Run")
+      );
+      if (bikeSetting) {
+        if (bikeSetting.ftp) runtimeStore.athleteFtp = Number(bikeSetting.ftp);
+        if (bikeSetting.indoor_ftp) runtimeStore.athleteIndoorFtp = Number(bikeSetting.indoor_ftp);
+        if (bikeSetting.lthr) runtimeStore.athleteLthr = Number(bikeSetting.lthr);
+        if (bikeSetting.max_hr) runtimeStore.athleteMaxHr = Number(bikeSetting.max_hr);
+      }
+      if (runSetting && runSetting.ftp) {
+        runtimeStore.athleteRunFtp = Number(runSetting.ftp);
+      }
+    }
+    const bikes = Array.isArray(profile.bikes) ? profile.bikes.map((b) => ({
+      id: String(b.id),
+      name: String(b.name || "Road Bike"),
+      type: "BIKE",
+      distanceMeters: Number(b.distance || 0),
+      maxRecommendedMeters: 8046720,
+      // 5,000 mi chain/service interval
+      primary: Boolean(b.primary)
+    })) : [];
+    const shoes = Array.isArray(profile.shoes) ? profile.shoes.map((s) => ({
+      id: String(s.id),
+      name: String(s.name || "Running Shoe"),
+      type: "SHOE",
+      distanceMeters: Number(s.distance || 0),
+      maxRecommendedMeters: 724205,
+      // 450 mi shoe retirement threshold
+      primary: Boolean(s.primary)
+    })) : [];
+    if (bikes.length > 0 || shoes.length > 0) {
+      runtimeStore.gearItems = [...bikes, ...shoes];
+    }
+  }
+  const rawWellnessAll = await wellnessResp.json();
+  const rawActivities = await activitiesResp.json();
+  const rawEvents = eventsResp.ok ? await eventsResp.json() : [];
+  const rawWellness = rawWellnessAll.filter((w, i, a) => {
+    const d = w?.id || w?.date;
+    if (!d || d > newest) return false;
+    if (i === a.length - 1 || d === newest) {
+      const hasAnyTelemetry = w.sleepSecs != null || w.hrv != null || w.restingHR != null || w.steps != null;
+      if (!hasAnyTelemetry && d >= newest) return false;
+    }
+    return true;
+  });
+  const redactedStravaCount = rawActivities.filter(
+    (a) => a && a.source === "STRAVA" && !a.type && a.moving_time == null
+  ).length;
+  let lastValidWeight = Number(parsedRawProfile?.icu_weight || parsedRawProfile?.weight || 0) > 30 ? Number(Number(parsedRawProfile?.icu_weight || parsedRawProfile?.weight).toFixed(1)) : 70;
+  let lastValidVo2 = 50;
+  let lastValidRhr = Number(parsedRawProfile?.icu_resting_hr || 0) > 25 ? Math.round(Number(parsedRawProfile?.icu_resting_hr)) : 49;
+  const wellnessDays = rawWellness.map((w, idx, arr) => {
+    const ctl = Number((w.ctl ?? 0).toFixed(1));
+    const atl = Number((w.atl ?? 0).toFixed(1));
+    const tsb = Number((ctl - atl).toFixed(1));
+    const loadRatio = ctl > 5 ? Number((atl / ctl).toFixed(2)) : 1;
+    const rampRate = Number((w.rampRate ?? 0).toFixed(1));
+    const hrv = Math.round(w.hrv ?? w.hrvRMSSD ?? 0);
+    const slice7 = arr.slice(Math.max(0, idx - 6), idx + 1).map((item) => Number(item.hrv ?? item.hrvRMSSD ?? 0)).filter((v) => v > 0);
+    const baseline7d = slice7.length > 0 ? slice7.reduce((a, b) => a + b, 0) / slice7.length : hrv;
+    const slice60 = arr.slice(Math.max(0, idx - 59), idx + 1).map((item) => Number(item.hrv ?? item.hrvRMSSD ?? 0)).filter((v) => v > 0);
+    const mean60 = slice60.length > 0 ? slice60.reduce((a, b) => a + b, 0) / slice60.length : baseline7d || 52;
+    const variance60 = slice60.length > 1 ? slice60.reduce((acc, v) => acc + Math.pow(v - mean60, 2), 0) / slice60.length : 36;
+    const sd60 = Math.max(4, Math.sqrt(variance60));
+    const hrvNormalBandLow = Math.round(mean60 - 0.85 * sd60);
+    const hrvNormalBandHigh = Math.round(mean60 + 0.85 * sd60);
+    let hrvStatus = "Balanced";
+    const checkHrv = baseline7d || hrv;
+    if (checkHrv > 0) {
+      if (checkHrv < hrvNormalBandLow - 3 || hrv > 0 && hrv < hrvNormalBandLow - 5) {
+        hrvStatus = "Low";
+      } else if (checkHrv < hrvNormalBandLow || checkHrv > hrvNormalBandHigh + 4) {
+        hrvStatus = "Unbalanced";
+      }
+    }
+    if (w.restingHR && Number(w.restingHR) > 0) lastValidRhr = Math.round(Number(w.restingHR));
+    if (w.weight && Number(w.weight) > 0) lastValidWeight = Number(Number(w.weight).toFixed(1));
+    if (w.vo2max && Number(w.vo2max) > 0) lastValidVo2 = Number(w.vo2max);
+    const sleepSecs = Number(w.sleepSecs ?? 0);
+    const sleepScore = Number(
+      w.sleepScore ?? (sleepSecs > 0 ? Math.min(98, Math.round(sleepSecs / 28800 * 85)) : 0)
+    );
+    const sleepQuality = w.sleepQuality != null ? Number(w.sleepQuality) : void 0;
+    const sleepSlice7 = arr.slice(Math.max(0, idx - 6), idx + 1).map((item) => Number(item.sleepSecs ?? 0)).filter((s) => s > 0);
+    const sleepDebt7dSecs = sleepSlice7.length > 0 ? Math.max(
+      0,
+      Math.round(sleepSlice7.reduce((acc, s) => acc + Math.max(0, 27e3 - s), 0))
+    ) : 0;
+    const rideSport = Array.isArray(w.sportInfo) ? w.sportInfo.find((s) => s.type === "Ride") : void 0;
+    const runSport = Array.isArray(w.sportInfo) ? w.sportInfo.find((s) => s.type === "Run") : void 0;
+    const rideEftp = rideSport?.eftp ? Math.round(Number(rideSport.eftp)) : void 0;
+    const rideWPrime = rideSport?.wPrime ? Math.round(Number(rideSport.wPrime)) : void 0;
+    const ridePMax = rideSport?.pMax ? Math.round(Number(rideSport.pMax)) : void 0;
+    const runEftp = runSport?.eftp ? Math.round(Number(runSport.eftp)) : void 0;
+    const runWPrime = runSport?.wPrime ? Math.round(Number(runSport.wPrime)) : void 0;
+    const runPMax = runSport?.pMax ? Math.round(Number(runSport.pMax)) : void 0;
+    const prev28 = arr[Math.max(0, idx - 28)];
+    const prevCtl = prev28 ? Number(prev28.ctl ?? ctl) : ctl;
+    const ctlDelta28 = ctl - prevCtl;
+    let garminTrainingStatus = "Maintaining";
+    let trainingStatusReason = "Balanced acute-to-chronic workload and stable autonomic baseline.";
+    if (loadRatio > 1.45 && (hrvStatus === "Low" || tsb < -22)) {
+      garminTrainingStatus = "Overreaching";
+      trainingStatusReason = `Very high acute load ratio (${loadRatio}x) with suppressed TSB (${tsb}) and HRV.`;
+    } else if (hrvStatus === "Low" && (sleepScore > 0 && sleepScore < 72 || tsb < -12)) {
+      garminTrainingStatus = "Strained";
+      trainingStatusReason = `HRV (${hrv || Math.round(baseline7d)} ms) is below normal corridor (${hrvNormalBandLow}\u2013${hrvNormalBandHigh} ms) with elevated fatigue.`;
+    } else if (ctl > 45 && tsb >= 4 && tsb <= 20 && rampRate < 0 && hrvStatus === "Balanced") {
+      garminTrainingStatus = "Peaking";
+      trainingStatusReason = `High aerobic base (CTL ${ctl}) paired with fresh positive form (TSB +${tsb}) and balanced HRV.`;
+    } else if ((rampRate >= 0.4 || ctlDelta28 >= 1.5 || loadRatio >= 0.85 && loadRatio <= 1.3) && hrvStatus !== "Low") {
+      garminTrainingStatus = "Productive";
+      trainingStatusReason = `Optimal load ratio (${loadRatio}x) building aerobic fitness (CTL ${ctl}) with ${hrvStatus.toLowerCase()} HRV.`;
+    } else if (loadRatio < 0.78 && tsb > 0 && ctlDelta28 >= -3) {
+      garminTrainingStatus = "Recovery";
+      trainingStatusReason = `Reduced acute training load (${loadRatio}x) allowing supercompensation and freshness.`;
+    } else if (rampRate < -3.5 && ctlDelta28 < -4 && loadRatio < 0.7) {
+      garminTrainingStatus = "Detraining";
+      trainingStatusReason = `Sustained reduction in training load (Ramp ${rampRate}/wk) lowering chronic fitness.`;
+    } else if (loadRatio > 1.15 && hrvStatus === "Unbalanced") {
+      garminTrainingStatus = "Unproductive";
+      trainingStatusReason = `High workload (${loadRatio}x) accompanied by unbalanced autonomic recovery.`;
+    }
+    let readinessStatus = "Optimal";
+    if (garminTrainingStatus === "Strained" || garminTrainingStatus === "Overreaching" || tsb < -18 || hrvStatus === "Low") {
+      readinessStatus = "Strain";
+    } else if (garminTrainingStatus === "Unproductive" || tsb < -10 || hrvStatus === "Unbalanced" || sleepScore > 0 && sleepScore < 70) {
+      readinessStatus = "Caution";
+    }
+    return {
+      date: w.id || w.date || newest,
+      ctl,
+      atl,
+      tsb,
+      loadRatio,
+      rampRate,
+      hrvRMSSD: hrv,
+      hrvBaseline7d: Math.round(baseline7d),
+      hrvNormalBandLow,
+      hrvNormalBandHigh,
+      hrvStatus,
+      restingHR: w.restingHR ? Math.round(Number(w.restingHR)) : lastValidRhr,
+      sleepSecs,
+      sleepScore,
+      sleepQuality,
+      sleepDebt7dSecs,
+      weightKg: w.weight ? Number(Number(w.weight).toFixed(1)) : lastValidWeight,
+      vo2MaxCycling: w.vo2max ? Number(w.vo2max) : lastValidVo2,
+      vo2MaxRunning: w.vo2max ? Number(w.vo2max) : lastValidVo2,
+      spO2: w.spO2 ? Number(w.spO2) : void 0,
+      respiration: w.respiration ? Number(w.respiration) : void 0,
+      steps: w.steps != null ? Number(w.steps) : void 0,
+      floorsClimbed: w.floorsClimbed != null ? Number(w.floorsClimbed) : void 0,
+      soreness: w.soreness ?? void 0,
+      rideEftp,
+      rideWPrime,
+      ridePMax,
+      runEftp,
+      runWPrime,
+      runPMax,
+      garminTrainingStatus,
+      trainingStatusReason,
+      readinessStatus,
+      dailyLoad: Math.round(w.ctlLoad ?? w.atlLoad ?? 0)
+    };
+  });
+  const icuStravaAthleteId = String(parsedRawProfile?.strava_id || "").replace(/[^0-9]/g, "");
+  const cachedStravaArchive = icuStravaAthleteId ? loadJsonFile(
+    `/tmp/aeropulse-strava-archive-${icuStravaAthleteId}.json`,
+    []
+  ) : [];
+  const stravaArchiveById = /* @__PURE__ */ new Map();
+  for (const sa of cachedStravaArchive) {
+    if (sa && sa.id) stravaArchiveById.set(String(sa.id), sa);
+  }
+  const garminStravaIds = /* @__PURE__ */ new Set();
+  const knownGarminLoadByDate = /* @__PURE__ */ new Map();
+  const stubsByDate = /* @__PURE__ */ new Map();
+  for (const a of rawActivities) {
+    if (!a || !a.start_date_local) continue;
+    const d = String(a.start_date_local).slice(0, 10);
+    if (a.source !== "STRAVA" && a.strava_id) {
+      garminStravaIds.add(String(a.strava_id));
+    }
+    if (a.type || a.moving_time != null || a.elapsed_time != null) {
+      knownGarminLoadByDate.set(
+        d,
+        (knownGarminLoadByDate.get(d) || 0) + Number(a.icu_training_load ?? 0)
+      );
+    } else if (a.source === "STRAVA") {
+      const list = stubsByDate.get(d) || [];
+      list.push(a);
+      stubsByDate.set(d, list);
+    }
+  }
+  const enrichedRawActivities = [];
+  for (const a of rawActivities) {
+    if (!a || !a.start_date_local) continue;
+    if (a.source === "STRAVA" && !a.type && a.moving_time == null && a.elapsed_time == null) {
+      const sid = String(a.strava_id || a.id);
+      if (garminStravaIds.has(sid)) continue;
+      const cachedSa = stravaArchiveById.get(sid);
+      if (cachedSa && (cachedSa.moving_time || cachedSa.elapsed_time)) {
+        enrichedRawActivities.push({
+          ...a,
+          id: `strava-${sid}`,
+          strava_id: sid,
+          type: cachedSa.sport_type || cachedSa.type || "Ride",
+          name: cachedSa.name || "Recorded Session",
+          moving_time: cachedSa.moving_time || cachedSa.elapsed_time,
+          elapsed_time: cachedSa.elapsed_time || cachedSa.moving_time,
+          distance: cachedSa.distance ?? 0,
+          total_elevation_gain: cachedSa.total_elevation_gain ?? 0,
+          trainer: Boolean(cachedSa.trainer),
+          average_watts: cachedSa.average_watts,
+          icu_weighted_avg_watts: cachedSa.weighted_average_watts || cachedSa.average_watts,
+          average_heartrate: cachedSa.average_heartrate,
+          max_heartrate: cachedSa.max_heartrate,
+          average_cadence: cachedSa.average_cadence,
+          device_name: cachedSa.device_name || void 0
+        });
+      }
+      continue;
+    }
+    enrichedRawActivities.push(a);
+  }
+  const seenStravaIds = /* @__PURE__ */ new Set();
+  const activities = enrichedRawActivities.filter((a) => {
+    if (!a || !a.start_date_local) return false;
+    if (!a.type && a.moving_time == null && a.elapsed_time == null) return false;
+    if (a.source === "STRAVA" && !a.name && a.moving_time == null) return false;
+    const duration = Number(a.moving_time ?? a.elapsed_time ?? 0);
+    if (duration <= 0) return false;
+    if (a.strava_id) {
+      const sid = String(a.strava_id);
+      if (seenStravaIds.has(sid)) return false;
+      seenStravaIds.add(sid);
+    }
+    return true;
+  }).map((a) => {
+    const rawType = String(a.type || "").trim();
+    const rawSubType = String(a.sub_type || "").trim();
+    const rawName = String(a.name || "").trim();
+    const rawDevice = String(a.device_name || "").trim();
+    const combinedMeta = `${rawType} ${rawSubType} ${rawName} ${rawDevice}`;
+    const rawStartLatLng = Array.isArray(a.start_latlng) && a.start_latlng.length >= 2 ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])] : void 0;
+    const isWatopiaOrMakuriGps = rawStartLatLng && Number.isFinite(rawStartLatLng[0]) && Number.isFinite(rawStartLatLng[1]) && rawStartLatLng[0] >= -12.6 && rawStartLatLng[0] <= -9.8 && rawStartLatLng[1] >= 164.8 && rawStartLatLng[1] <= 168;
+    const hasNoLatLngStream = Array.isArray(a.stream_types) && a.stream_types.length > 0 && !a.stream_types.includes("latlng");
+    const isVirtualPlatform = /virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|rgt/i.test(
+      combinedMeta
+    ) || Boolean(isWatopiaOrMakuriGps);
+    const classified = classifyMultiSportActivity(rawType || rawSubType, `${rawSubType} ${rawName}`, {
+      trainer: Boolean(a.trainer) || isVirtualPlatform || /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga|pool/i.test(combinedMeta),
+      hasGps: Boolean(rawStartLatLng) && !hasNoLatLngStream,
+      isVirtualPlatform
+    });
+    const sportCategory = classified.sportCategory;
+    const isIndoor = classified.environment === "INDOOR";
+    const subType = classified.subType;
+    const movingTimeSecs = Number(a.moving_time ?? a.elapsed_time ?? 0);
+    const distanceMeters = Number(a.distance ?? 0);
+    const avgPower = a.icu_average_watts ?? a.average_watts ?? void 0;
+    const normalizedPower = a.icu_weighted_avg_watts ?? avgPower;
+    const avgHr = Number(a.average_heartrate ?? 0);
+    const maxHr = Number(a.max_heartrate ?? 0);
+    const avgPaceSecsPerKm = sportCategory === "Running" && distanceMeters > 0 ? Math.round(movingTimeSecs / (distanceMeters / 1e3)) : void 0;
+    const gapPaceSecsPerKm = sportCategory === "Running" && a.gap && Number(a.gap) > 0 ? Math.round(1e3 / Number(a.gap)) : void 0;
+    const canUsePowerForIf = sportCategory === "Cycling" || sportCategory === "Running" && Number(runtimeStore.athleteRunFtp) > 0;
+    const userFtp = sportCategory === "Running" ? runtimeStore.athleteRunFtp || 350 : runtimeStore.athleteFtp || 250;
+    const rawIcuIf = Number(a.icu_intensity ?? 0);
+    let trainingLoad = Math.round(Number(a.icu_training_load ?? 0));
+    let intensityFactor = rawIcuIf > 0 ? Number((rawIcuIf > 3 ? rawIcuIf / 100 : rawIcuIf).toFixed(2)) : void 0;
+    if (canUsePowerForIf && normalizedPower && movingTimeSecs > 0) {
+      const ifVal = normalizedPower / userFtp;
+      if (!intensityFactor) {
+        intensityFactor = Number(ifVal.toFixed(2));
+      }
+      if (!trainingLoad) {
+        trainingLoad = Math.round(
+          movingTimeSecs * normalizedPower * ifVal / (userFtp * 3600) * 100
+        );
+      }
+    } else if (avgHr > 0 && movingTimeSecs > 0) {
+      const userLthr = runtimeStore.athleteLthr || 165;
+      const hrRatio = Math.max(0.4, Math.min(1.25, avgHr / userLthr));
+      if (!intensityFactor) {
+        intensityFactor = Number(hrRatio.toFixed(2));
+      }
+      if (!trainingLoad) {
+        trainingLoad = Math.round(movingTimeSecs / 3600 * Math.pow(hrRatio, 2) * 80);
+      }
+    } else if (!trainingLoad && movingTimeSecs > 0) {
+      trainingLoad = Math.round(movingTimeSecs / 3600 * 45);
+    }
+    let efficiencyFactor = 0;
+    if (sportCategory === "Cycling" && normalizedPower && avgHr > 0) {
+      efficiencyFactor = Number((normalizedPower / avgHr).toFixed(2));
+    } else if (sportCategory === "Running" && distanceMeters > 0 && movingTimeSecs > 0 && avgHr > 0) {
+      const speedMetersPerMin = distanceMeters / (movingTimeSecs / 60);
+      efficiencyFactor = Number((speedMetersPerMin / avgHr).toFixed(2));
+    }
+    const rawIntervals = Array.isArray(a.icu_intervals) ? a.icu_intervals : [];
+    const intervals = rawIntervals.map((iv, idx) => {
+      const dist = Number(iv.distance || 0);
+      const dur = Number(iv.moving_time || iv.elapsed_time || 0);
+      const avgSpeed = Number(iv.average_speed || 0);
+      const gapSpeed = Number(iv.gap || avgSpeed);
+      return {
+        id: String(iv.id || `iv-${idx}`),
+        type: iv.type === "WORK" ? "WORK" : "RECOVERY",
+        label: iv.label || iv.group_id || (iv.type === "WORK" ? `Work Interval #${idx + 1}` : `Recovery #${idx + 1}`),
+        startTimeSecs: Number(iv.start_time || 0),
+        durationSecs: dur,
+        distanceMeters: Math.round(dist),
+        avgWatts: iv.average_watts ? Math.round(Number(iv.average_watts)) : void 0,
+        weightedAvgWatts: iv.weighted_average_watts ? Math.round(Number(iv.weighted_average_watts)) : void 0,
+        intensityPct: iv.intensity ? Math.round(Number(iv.intensity)) : void 0,
+        zone: iv.zone ? Number(iv.zone) : void 0,
+        avgHr: iv.average_heartrate ? Math.round(Number(iv.average_heartrate)) : void 0,
+        maxHr: iv.max_heartrate ? Math.round(Number(iv.max_heartrate)) : void 0,
+        avgPaceSecsPerKm: avgSpeed > 0 ? Math.round(1e3 / avgSpeed) : void 0,
+        gapPaceSecsPerKm: gapSpeed > 0 ? Math.round(1e3 / gapSpeed) : void 0,
+        avgCadence: iv.average_cadence ? Math.round(Number(iv.average_cadence)) : void 0,
+        decouplingPct: iv.decoupling != null ? Number(Number(iv.decoupling).toFixed(1)) : void 0,
+        strideLengthMeters: iv.average_stride ? Number(Number(iv.average_stride).toFixed(2)) : void 0
+      };
+    });
+    const hrZoneSecs = Array.isArray(a.icu_hr_zone_times) ? a.icu_hr_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0)))) : [0, 0, 0, 0, 0, 0, 0];
+    const pwrZoneSecs = Array.isArray(a.icu_zone_times) ? a.icu_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0)))) : void 0;
+    const intervalsSourceBadges = Array.from(
+      /* @__PURE__ */ new Set([
+        "Intervals.icu",
+        ...a.source === "GARMIN_CONNECT" ? ["Garmin"] : a.source === "STRAVA" ? ["Strava"] : []
+      ])
+    );
+    const intervalsTimestamps = normalizeActivityTimestamps({
+      startDateLocal: a.start_date_local ? stripTimezoneSuffix(String(a.start_date_local)) : void 0,
+      startDateUtc: a.start_date ? String(a.start_date) : void 0,
+      startLatLng: Array.isArray(a.latlng) && a.latlng.length === 2 ? [Number(a.latlng[0]), Number(a.latlng[1])] : void 0,
+      fallbackBrowserTz: true
+    });
+    return {
+      id: String(a.id),
+      intervalsId: String(a.id),
+      intervalsActivityId: String(a.id),
+      stravaId: a.strava_id ? String(a.strava_id) : void 0,
+      garminActivityId: a.source === "GARMIN_CONNECT" ? String(a.id) : void 0,
+      source: a.source || "INTERVALS_ICU",
+      sourceBadges: intervalsSourceBadges,
+      rawSportType: rawType || void 0,
+      name: rawName || `${subType} ${sportCategory}`,
+      startDateLocal: intervalsTimestamps.startDateLocal,
+      ...intervalsTimestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: intervalsTimestamps.startDateUtcMs } : {},
+      sportCategory,
+      environment: isIndoor ? "INDOOR" : "OUTDOOR",
+      subType,
+      movingTimeSecs,
+      distanceMeters,
+      elevationGainMeters: Math.round(Number(a.total_elevation_gain ?? 0)),
+      avgPower: avgPower ? Math.round(avgPower) : void 0,
+      normalizedPower: normalizedPower ? Math.round(normalizedPower) : void 0,
+      intensityFactor,
+      trainingLoad,
+      avgHr: avgHr > 0 ? Math.round(avgHr) : void 0,
+      maxHr: maxHr > 0 ? Math.round(maxHr) : void 0,
+      avgCadence: a.average_cadence ? Math.round(Number(a.average_cadence)) : void 0,
+      avgPaceSecsPerKm,
+      gapPaceSecsPerKm,
+      efficiencyFactor,
+      aerobicDecouplingPct: a.decoupling != null ? Number(Number(a.decoupling).toFixed(1)) : void 0,
+      variabilityIndex: normalizedPower && avgPower && avgPower > 0 ? Number((normalizedPower / avgPower).toFixed(2)) : void 0,
+      zoneSecs: {
+        hr: hrZoneSecs,
+        ...pwrZoneSecs ? { power: pwrZoneSecs } : {}
+      },
+      gearName: a.gear?.name || void 0,
+      deviceName: a.device_name ? String(a.device_name) : void 0,
+      hasSegments: Boolean(a.has_segments),
+      intervals
+    };
+  });
+  const segmentsCache = loadJsonFile(
+    SEGMENTS_BY_ACTIVITY_CACHE_FILE,
+    {}
+  );
+  const routesCache = loadJsonFile(
+    ROUTES_BY_ACTIVITY_CACHE_FILE,
+    {}
+  );
+  const kudosCache = loadJsonFile(
+    STRAVA_KUDOS_CACHE_FILE,
+    {}
+  );
+  for (const act of activities) {
+    if (Array.isArray(segmentsCache[act.id]) && segmentsCache[act.id].length > 0) {
+      act.segmentEfforts = segmentsCache[act.id].map((eff) => ({ ...eff }));
+    }
+    const routePts = routesCache[act.id];
+    if (Array.isArray(routePts) && routePts.length >= 2) {
+      act.routeLatLngs = routePts;
+      act.startLatLng = routePts[0];
+      act.endLatLng = routePts[routePts.length - 1];
+      const [firstLat, firstLng] = routePts[0];
+      if (act.sportCategory === "Cycling" && firstLat >= -12.6 && firstLat <= -9.8 && firstLng >= 164.8 && firstLng <= 168) {
+        act.environment = "INDOOR";
+        act.subType = "Virtual Cycling";
+      }
+    }
+    const kEntry = kudosCache[act.id] || (act.stravaId ? kudosCache[act.stravaId] : void 0);
+    if (kEntry) {
+      if (kEntry.kudosCount !== void 0) act.kudosCount = kEntry.kudosCount;
+      if (kEntry.hasKudoed !== void 0) act.hasKudoed = kEntry.hasKudoed;
+      if (Array.isArray(kEntry.kudoers)) act.kudoers = kEntry.kudoers;
+      if (Array.isArray(kEntry.comments)) {
+        act.comments = kEntry.comments;
+        act.commentCount = kEntry.comments.length;
+      }
+    }
+  }
+  rankSegmentEffortsAcrossActivities(activities);
+  const cacheKey = typeof configOrKey === "string" ? configOrKey : configOrKey.apiKey || configOrKey.accessToken || "default";
+  const scopedPlannedFile = getScopedPlannedEventsFile(void 0, cacheKey);
+  const localPlanned = scopedPlannedFile ? loadJsonFile(scopedPlannedFile, []) : [];
+  const icuPlanned = rawEvents.filter((ev) => ev && ev.start_date_local).map((ev) => {
+    const dur = Number(ev.moving_time ?? 3600);
+    const desc = String(ev.description || "");
+    return {
+      id: `icu-ev-${ev.id}`,
+      date: String(ev.start_date_local).slice(0, 10),
+      name: String(ev.name || "Planned Workout"),
+      sportCategory: /run/i.test(String(ev.type || "")) ? "Running" : "Cycling",
+      environmentPreference: /indoor|virtual|trainer/i.test(String(ev.type || "") + desc) ? "INDOOR" : "FLEXIBLE",
+      description: desc || "Structured workout synced from Intervals.icu calendar.",
+      plannedLoad: Math.round(Number(ev.icu_training_load ?? 65)),
+      plannedDurationSecs: dur,
+      targetZoneSummary: "Intervals.icu Calendar Event",
+      workoutSyntax: desc,
+      structuredSteps: parseWorkoutSyntaxToSteps(desc, dur),
+      source: "INTERVALS_ICU"
+    };
+  });
+  const plannedEvents = [...localPlanned, ...icuPlanned];
+  const stravaLinkedCount = activities.filter((a) => Boolean(a.stravaId)).length;
+  runtimeStore.garminActivitiesCount = activities.length;
+  runtimeStore.redactedStravaCount = redactedStravaCount;
+  if (runtimeStore.stravaActivitiesCount < stravaLinkedCount) {
+    runtimeStore.stravaActivitiesCount = stravaLinkedCount;
+  }
+  runtimeStore.totalActivitiesCount = Math.max(
+    activities.length,
+    activities.length + Math.max(0, runtimeStore.stravaActivitiesCount - stravaLinkedCount)
+  );
+  runtimeStore.earliestActivityDate = activities.length > 0 ? activities[activities.length - 1].startDateLocal.slice(0, 10) : runtimeStore.earliestActivityDate;
+  const accumulatedWellnessSummary = {};
+  for (const w of wellnessDays) {
+    if (w.weightKg && w.weightKg > 30 && w.weightKg !== 70) {
+      accumulatedWellnessSummary.weightKg = w.weightKg;
+    }
+    if (w.restingHR && w.restingHR > 25 && w.restingHR !== 49) {
+      accumulatedWellnessSummary.restingHR = w.restingHR;
+    }
+    if (w.vo2MaxCycling && w.vo2MaxCycling > 25 && w.vo2MaxCycling !== 50) {
+      accumulatedWellnessSummary.vo2MaxCycling = w.vo2MaxCycling;
+    }
+    if (w.vo2MaxRunning && w.vo2MaxRunning > 25 && w.vo2MaxRunning !== 50) {
+      accumulatedWellnessSummary.vo2MaxRunning = w.vo2MaxRunning;
+    }
+    if (w.rideEftp && w.rideEftp > 60) accumulatedWellnessSummary.rideEftp = w.rideEftp;
+    if (w.rideWPrime && w.rideWPrime > 5e3) accumulatedWellnessSummary.rideWPrime = w.rideWPrime;
+    if (w.ridePMax && w.ridePMax > 300) accumulatedWellnessSummary.ridePMax = w.ridePMax;
+    if (w.runEftp && w.runEftp > 80) accumulatedWellnessSummary.runEftp = w.runEftp;
+  }
+  const fullProfile = buildServerAthleteProfile(
+    parsedRawProfile,
+    accumulatedWellnessSummary,
+    activities
+  );
+  runtimeStore.athleteProfile = fullProfile;
+  runtimeStore.lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
+  runtimeStore.nextHourlySyncAt = new Date(Date.now() + 3600 * 1e3).toISOString();
+  saveSessionCache();
+  return {
+    wellnessDays,
+    activities,
+    plannedEvents,
+    redactedStravaCount,
+    athleteProfile: {
+      ...fullProfile,
+      gearItems: runtimeStore.gearItems
+    },
+    syncedAt: runtimeStore.lastSyncedAt,
+    nextHourlySyncAt: runtimeStore.nextHourlySyncAt
+  };
+}
+
+// server/routers/intervals/intervalsProfileAndPushRouter.ts
+import express17 from "express";
 
 // server/routers/activitiesRouter.ts
 import { Router as Router2 } from "express";
@@ -26998,7 +27985,7 @@ activitiesRouter.post("/api/activities/hydrate-routes", async (req, res) => {
 });
 
 // server/routers/stravaRouter.ts
-import express15 from "express";
+import express16 from "express";
 import crypto26 from "crypto";
 import fs6 from "fs";
 
@@ -28316,7 +29303,7 @@ var stravaCallbackHandler = async (req, res) => {
     );
   }
 };
-var stravaRouter = express15.Router();
+var stravaRouter = express16.Router();
 stravaRouter.post("/api/strava/credentials", async (req, res) => {
   const clientId = (req.body?.clientId || "").trim();
   const clientSecret = (req.body?.clientSecret || "").trim();
@@ -29102,863 +30089,9 @@ stravaRouter.post("/api/activities/:id/kudos", (req, res) => {
   }
 });
 
-// server/routers/intervalsRouter.ts
-function getEffectiveIntervalsConfig(req) {
-  const activeReq = req ?? requestContext.getStore();
-  if (activeReq && !isAuthenticatedRequest(activeReq)) {
-    return { apiKey: "", accessToken: "", athleteId: "0", scope: "" };
-  }
-  const allowEnvFallback = process.env.NODE_ENV !== "production" && !process.env.VERCEL;
-  const headerKey = activeReq?.headers["x-intervals-api-key"] || "";
-  const headerToken = activeReq?.headers["x-intervals-access-token"] || "";
-  const headerAthlete = activeReq?.headers["x-intervals-athlete-id"] || "";
-  const apiKey = (headerKey || runtimeStore.intervalsApiKey || (allowEnvFallback ? process.env.INTERVALS_API_KEY : "") || "").trim();
-  const accessToken = (headerToken || runtimeStore.intervalsAccessToken || "").trim();
-  const athleteId = (headerAthlete || runtimeStore.intervalsAthleteId || (allowEnvFallback ? process.env.INTERVALS_ATHLETE_ID : "") || "0").trim() || "0";
-  const scope = runtimeStore.intervalsScope || "";
-  return { apiKey, accessToken, athleteId, scope };
-}
-function getIntervalsAuthHeader(config) {
-  if (config.accessToken) {
-    return `Bearer ${config.accessToken}`;
-  }
-  if (config.apiKey) {
-    return `Basic ${Buffer.from(`API_KEY:${config.apiKey}`).toString("base64")}`;
-  }
-  return null;
-}
-function getEffectiveIntervalsClientConfig(req) {
-  const activeReq = req ?? requestContext.getStore();
-  const headerClientId = activeReq?.headers["x-intervals-client-id"] || "";
-  const headerClientSecret = activeReq?.headers["x-intervals-client-secret"] || "";
-  const clientId = (headerClientId || process.env.INTERVALS_CLIENT_ID || "").trim();
-  const clientSecret = (headerClientSecret || process.env.INTERVALS_CLIENT_SECRET || "").trim();
-  return { clientId, clientSecret };
-}
-var intervalsIdentityByKey = /* @__PURE__ */ new Map();
-async function resolveIntervalsAthleteIdentity(req) {
-  const config = getEffectiveIntervalsConfig(req);
-  const authHeader = getIntervalsAuthHeader(config);
-  if (!authHeader) return null;
-  const cacheKey = config.accessToken ? `tok_${config.accessToken.slice(-10)}` : `key_${config.apiKey}`;
-  const cached = intervalsIdentityByKey.get(cacheKey);
-  if (cached && !isGenericName(cached.athleteName)) {
-    return cached;
-  }
-  try {
-    const resp = await fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(config.athleteId || "0")}`,
-      {
-        headers: { Authorization: authHeader, Accept: "application/json" }
-      }
-    );
-    if (!resp.ok) return null;
-    const rawProfile = await resp.json();
-    const resolvedId = String(rawProfile.id || config.athleteId || "0");
-    const fullName = String(rawProfile.name || "").trim() || [rawProfile.firstname, rawProfile.lastname].filter(Boolean).join(" ").trim() || "";
-    if (fullName && !isGenericName(fullName)) {
-      runtimeStore.intervalsAthleteName = fullName;
-      saveSessionCache();
-    }
-    const entry = {
-      athleteId: resolvedId,
-      athleteName: fullName,
-      rawProfile
-    };
-    intervalsIdentityByKey.set(cacheKey, entry);
-    return entry;
-  } catch {
-    return null;
-  }
-}
-function rankSegmentEffortsAcrossActivities(activities) {
-  const bySegmentId = /* @__PURE__ */ new Map();
-  for (const act of activities) {
-    if (!Array.isArray(act.segmentEfforts)) continue;
-    for (const eff of act.segmentEfforts) {
-      if (!eff || !eff.segmentId || !(eff.elapsedTimeSecs > 0)) continue;
-      const sid = String(eff.segmentId);
-      const list = bySegmentId.get(sid) || [];
-      list.push(eff);
-      bySegmentId.set(sid, list);
-    }
-  }
-  for (const list of bySegmentId.values()) {
-    list.sort((a, b) => a.elapsedTimeSecs - b.elapsedTimeSecs);
-    list.forEach((eff, idx) => {
-      if (idx === 0) eff.prRank = 1;
-      else if (idx === 1) eff.prRank = 2;
-      else if (idx === 2) eff.prRank = 3;
-      else eff.prRank = null;
-    });
-  }
-  for (const act of activities) {
-    if (Array.isArray(act.segmentEfforts) && act.segmentEfforts.length > 0) {
-      const prCount = act.segmentEfforts.filter((e) => e.prRank === 1).length;
-      if (prCount > (act.stravaPrCount || 0)) {
-        act.stravaPrCount = prCount;
-      }
-    }
-  }
-}
-async function syncIntervalsAllHistory(configOrKey, maybeAthleteId = "0", oldestActivitiesDate = "2010-01-01") {
-  let authHeader;
-  let athleteId;
-  if (typeof configOrKey === "string") {
-    authHeader = "Basic " + Buffer.from(`API_KEY:${configOrKey}`).toString("base64");
-    athleteId = maybeAthleteId || "0";
-  } else {
-    const header = getIntervalsAuthHeader(configOrKey);
-    if (!header) {
-      throw new Error(
-        "Intervals.icu authentication header could not be constructed (missing API key or access token)."
-      );
-    }
-    authHeader = header;
-    athleteId = configOrKey.athleteId || maybeAthleteId || "0";
-  }
-  const now = /* @__PURE__ */ new Date();
-  const newest = new Date(now.getTime() + 86400 * 1e3).toISOString().slice(0, 10);
-  const futureEventsDate = new Date(now);
-  futureEventsDate.setUTCDate(futureEventsDate.getUTCDate() + 90);
-  const newestEvents = futureEventsDate.toISOString().slice(0, 10);
-  const oldestEventsDate = new Date(now);
-  oldestEventsDate.setUTCDate(oldestEventsDate.getUTCDate() - 180);
-  const oldestEvents = oldestEventsDate.toISOString().slice(0, 10);
-  const safeOldestActs = /^\d{4}-\d{2}-\d{2}$/.test(oldestActivitiesDate) ? oldestActivitiesDate : "2010-01-01";
-  const isDeltaSync = safeOldestActs > "2020-01-01";
-  const oldestWellness = isDeltaSync ? "2024-01-01" : "2018-01-01";
-  const [profileResp, wellnessResp, activitiesResp, eventsResp] = await Promise.all([
-    fetch(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`, {
-      headers: { Authorization: authHeader, Accept: "application/json" }
-    }),
-    fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/wellness?oldest=${oldestWellness}&newest=${newest}`,
-      {
-        headers: { Authorization: authHeader, Accept: "application/json" }
-      }
-    ),
-    fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/activities?oldest=${safeOldestActs}&newest=${newest}`,
-      {
-        headers: { Authorization: authHeader, Accept: "application/json" }
-      }
-    ),
-    fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}/events?oldest=${oldestEvents}&newest=${newestEvents}`,
-      {
-        headers: { Authorization: authHeader, Accept: "application/json" }
-      }
-    )
-  ]);
-  if (!wellnessResp.ok || !activitiesResp.ok) {
-    throw new Error(
-      `Intervals.icu sync returned status wellness=${wellnessResp.status}, activities=${activitiesResp.status}`
-    );
-  }
-  let parsedRawProfile = null;
-  if (profileResp.ok) {
-    const profile = await profileResp.json();
-    parsedRawProfile = profile;
-    runtimeStore.intervalsAthleteName = profile.name || [profile.firstname, profile.lastname].filter(Boolean).join(" ") || runtimeStore.intervalsAthleteName;
-    if (Array.isArray(profile.sportSettings)) {
-      const bikeSetting = profile.sportSettings.find(
-        (s) => Array.isArray(s.types) && s.types.includes("Ride")
-      );
-      const runSetting = profile.sportSettings.find(
-        (s) => Array.isArray(s.types) && s.types.includes("Run")
-      );
-      if (bikeSetting) {
-        if (bikeSetting.ftp) runtimeStore.athleteFtp = Number(bikeSetting.ftp);
-        if (bikeSetting.indoor_ftp) runtimeStore.athleteIndoorFtp = Number(bikeSetting.indoor_ftp);
-        if (bikeSetting.lthr) runtimeStore.athleteLthr = Number(bikeSetting.lthr);
-        if (bikeSetting.max_hr) runtimeStore.athleteMaxHr = Number(bikeSetting.max_hr);
-      }
-      if (runSetting && runSetting.ftp) {
-        runtimeStore.athleteRunFtp = Number(runSetting.ftp);
-      }
-    }
-    const bikes = Array.isArray(profile.bikes) ? profile.bikes.map((b) => ({
-      id: String(b.id),
-      name: String(b.name || "Road Bike"),
-      type: "BIKE",
-      distanceMeters: Number(b.distance || 0),
-      maxRecommendedMeters: 8046720,
-      // 5,000 mi chain/service interval
-      primary: Boolean(b.primary)
-    })) : [];
-    const shoes = Array.isArray(profile.shoes) ? profile.shoes.map((s) => ({
-      id: String(s.id),
-      name: String(s.name || "Running Shoe"),
-      type: "SHOE",
-      distanceMeters: Number(s.distance || 0),
-      maxRecommendedMeters: 724205,
-      // 450 mi shoe retirement threshold
-      primary: Boolean(s.primary)
-    })) : [];
-    if (bikes.length > 0 || shoes.length > 0) {
-      runtimeStore.gearItems = [...bikes, ...shoes];
-    }
-  }
-  const rawWellnessAll = await wellnessResp.json();
-  const rawActivities = await activitiesResp.json();
-  const rawEvents = eventsResp.ok ? await eventsResp.json() : [];
-  const rawWellness = rawWellnessAll.filter((w, i, a) => {
-    const d = w?.id || w?.date;
-    if (!d || d > newest) return false;
-    if (i === a.length - 1 || d === newest) {
-      const hasAnyTelemetry = w.sleepSecs != null || w.hrv != null || w.restingHR != null || w.steps != null;
-      if (!hasAnyTelemetry && d >= newest) return false;
-    }
-    return true;
-  });
-  const redactedStravaCount = rawActivities.filter(
-    (a) => a && a.source === "STRAVA" && !a.type && a.moving_time == null
-  ).length;
-  let lastValidWeight = Number(parsedRawProfile?.icu_weight || parsedRawProfile?.weight || 0) > 30 ? Number(Number(parsedRawProfile?.icu_weight || parsedRawProfile?.weight).toFixed(1)) : 70;
-  let lastValidVo2 = 50;
-  let lastValidRhr = Number(parsedRawProfile?.icu_resting_hr || 0) > 25 ? Math.round(Number(parsedRawProfile?.icu_resting_hr)) : 49;
-  const wellnessDays = rawWellness.map((w, idx, arr) => {
-    const ctl = Number((w.ctl ?? 0).toFixed(1));
-    const atl = Number((w.atl ?? 0).toFixed(1));
-    const tsb = Number((ctl - atl).toFixed(1));
-    const loadRatio = ctl > 5 ? Number((atl / ctl).toFixed(2)) : 1;
-    const rampRate = Number((w.rampRate ?? 0).toFixed(1));
-    const hrv = Math.round(w.hrv ?? w.hrvRMSSD ?? 0);
-    const slice7 = arr.slice(Math.max(0, idx - 6), idx + 1).map((item) => Number(item.hrv ?? item.hrvRMSSD ?? 0)).filter((v) => v > 0);
-    const baseline7d = slice7.length > 0 ? slice7.reduce((a, b) => a + b, 0) / slice7.length : hrv;
-    const slice60 = arr.slice(Math.max(0, idx - 59), idx + 1).map((item) => Number(item.hrv ?? item.hrvRMSSD ?? 0)).filter((v) => v > 0);
-    const mean60 = slice60.length > 0 ? slice60.reduce((a, b) => a + b, 0) / slice60.length : baseline7d || 52;
-    const variance60 = slice60.length > 1 ? slice60.reduce((acc, v) => acc + Math.pow(v - mean60, 2), 0) / slice60.length : 36;
-    const sd60 = Math.max(4, Math.sqrt(variance60));
-    const hrvNormalBandLow = Math.round(mean60 - 0.85 * sd60);
-    const hrvNormalBandHigh = Math.round(mean60 + 0.85 * sd60);
-    let hrvStatus = "Balanced";
-    const checkHrv = baseline7d || hrv;
-    if (checkHrv > 0) {
-      if (checkHrv < hrvNormalBandLow - 3 || hrv > 0 && hrv < hrvNormalBandLow - 5) {
-        hrvStatus = "Low";
-      } else if (checkHrv < hrvNormalBandLow || checkHrv > hrvNormalBandHigh + 4) {
-        hrvStatus = "Unbalanced";
-      }
-    }
-    if (w.restingHR && Number(w.restingHR) > 0) lastValidRhr = Math.round(Number(w.restingHR));
-    if (w.weight && Number(w.weight) > 0) lastValidWeight = Number(Number(w.weight).toFixed(1));
-    if (w.vo2max && Number(w.vo2max) > 0) lastValidVo2 = Number(w.vo2max);
-    const sleepSecs = Number(w.sleepSecs ?? 0);
-    const sleepScore = Number(
-      w.sleepScore ?? (sleepSecs > 0 ? Math.min(98, Math.round(sleepSecs / 28800 * 85)) : 0)
-    );
-    const sleepQuality = w.sleepQuality != null ? Number(w.sleepQuality) : void 0;
-    const sleepSlice7 = arr.slice(Math.max(0, idx - 6), idx + 1).map((item) => Number(item.sleepSecs ?? 0)).filter((s) => s > 0);
-    const sleepDebt7dSecs = sleepSlice7.length > 0 ? Math.max(
-      0,
-      Math.round(sleepSlice7.reduce((acc, s) => acc + Math.max(0, 27e3 - s), 0))
-    ) : 0;
-    const rideSport = Array.isArray(w.sportInfo) ? w.sportInfo.find((s) => s.type === "Ride") : void 0;
-    const runSport = Array.isArray(w.sportInfo) ? w.sportInfo.find((s) => s.type === "Run") : void 0;
-    const rideEftp = rideSport?.eftp ? Math.round(Number(rideSport.eftp)) : void 0;
-    const rideWPrime = rideSport?.wPrime ? Math.round(Number(rideSport.wPrime)) : void 0;
-    const ridePMax = rideSport?.pMax ? Math.round(Number(rideSport.pMax)) : void 0;
-    const runEftp = runSport?.eftp ? Math.round(Number(runSport.eftp)) : void 0;
-    const runWPrime = runSport?.wPrime ? Math.round(Number(runSport.wPrime)) : void 0;
-    const runPMax = runSport?.pMax ? Math.round(Number(runSport.pMax)) : void 0;
-    const prev28 = arr[Math.max(0, idx - 28)];
-    const prevCtl = prev28 ? Number(prev28.ctl ?? ctl) : ctl;
-    const ctlDelta28 = ctl - prevCtl;
-    let garminTrainingStatus = "Maintaining";
-    let trainingStatusReason = "Balanced acute-to-chronic workload and stable autonomic baseline.";
-    if (loadRatio > 1.45 && (hrvStatus === "Low" || tsb < -22)) {
-      garminTrainingStatus = "Overreaching";
-      trainingStatusReason = `Very high acute load ratio (${loadRatio}x) with suppressed TSB (${tsb}) and HRV.`;
-    } else if (hrvStatus === "Low" && (sleepScore > 0 && sleepScore < 72 || tsb < -12)) {
-      garminTrainingStatus = "Strained";
-      trainingStatusReason = `HRV (${hrv || Math.round(baseline7d)} ms) is below normal corridor (${hrvNormalBandLow}\u2013${hrvNormalBandHigh} ms) with elevated fatigue.`;
-    } else if (ctl > 45 && tsb >= 4 && tsb <= 20 && rampRate < 0 && hrvStatus === "Balanced") {
-      garminTrainingStatus = "Peaking";
-      trainingStatusReason = `High aerobic base (CTL ${ctl}) paired with fresh positive form (TSB +${tsb}) and balanced HRV.`;
-    } else if ((rampRate >= 0.4 || ctlDelta28 >= 1.5 || loadRatio >= 0.85 && loadRatio <= 1.3) && hrvStatus !== "Low") {
-      garminTrainingStatus = "Productive";
-      trainingStatusReason = `Optimal load ratio (${loadRatio}x) building aerobic fitness (CTL ${ctl}) with ${hrvStatus.toLowerCase()} HRV.`;
-    } else if (loadRatio < 0.78 && tsb > 0 && ctlDelta28 >= -3) {
-      garminTrainingStatus = "Recovery";
-      trainingStatusReason = `Reduced acute training load (${loadRatio}x) allowing supercompensation and freshness.`;
-    } else if (rampRate < -3.5 && ctlDelta28 < -4 && loadRatio < 0.7) {
-      garminTrainingStatus = "Detraining";
-      trainingStatusReason = `Sustained reduction in training load (Ramp ${rampRate}/wk) lowering chronic fitness.`;
-    } else if (loadRatio > 1.15 && hrvStatus === "Unbalanced") {
-      garminTrainingStatus = "Unproductive";
-      trainingStatusReason = `High workload (${loadRatio}x) accompanied by unbalanced autonomic recovery.`;
-    }
-    let readinessStatus = "Optimal";
-    if (garminTrainingStatus === "Strained" || garminTrainingStatus === "Overreaching" || tsb < -18 || hrvStatus === "Low") {
-      readinessStatus = "Strain";
-    } else if (garminTrainingStatus === "Unproductive" || tsb < -10 || hrvStatus === "Unbalanced" || sleepScore > 0 && sleepScore < 70) {
-      readinessStatus = "Caution";
-    }
-    return {
-      date: w.id || w.date || newest,
-      ctl,
-      atl,
-      tsb,
-      loadRatio,
-      rampRate,
-      hrvRMSSD: hrv,
-      hrvBaseline7d: Math.round(baseline7d),
-      hrvNormalBandLow,
-      hrvNormalBandHigh,
-      hrvStatus,
-      restingHR: w.restingHR ? Math.round(Number(w.restingHR)) : lastValidRhr,
-      sleepSecs,
-      sleepScore,
-      sleepQuality,
-      sleepDebt7dSecs,
-      weightKg: w.weight ? Number(Number(w.weight).toFixed(1)) : lastValidWeight,
-      vo2MaxCycling: w.vo2max ? Number(w.vo2max) : lastValidVo2,
-      vo2MaxRunning: w.vo2max ? Number(w.vo2max) : lastValidVo2,
-      spO2: w.spO2 ? Number(w.spO2) : void 0,
-      respiration: w.respiration ? Number(w.respiration) : void 0,
-      steps: w.steps != null ? Number(w.steps) : void 0,
-      floorsClimbed: w.floorsClimbed != null ? Number(w.floorsClimbed) : void 0,
-      soreness: w.soreness ?? void 0,
-      rideEftp,
-      rideWPrime,
-      ridePMax,
-      runEftp,
-      runWPrime,
-      runPMax,
-      garminTrainingStatus,
-      trainingStatusReason,
-      readinessStatus,
-      dailyLoad: Math.round(w.ctlLoad ?? w.atlLoad ?? 0)
-    };
-  });
-  const icuStravaAthleteId = String(parsedRawProfile?.strava_id || "").replace(/[^0-9]/g, "");
-  const cachedStravaArchive = icuStravaAthleteId ? loadJsonFile(
-    `/tmp/aeropulse-strava-archive-${icuStravaAthleteId}.json`,
-    []
-  ) : [];
-  const stravaArchiveById = /* @__PURE__ */ new Map();
-  for (const sa of cachedStravaArchive) {
-    if (sa && sa.id) stravaArchiveById.set(String(sa.id), sa);
-  }
-  const garminStravaIds = /* @__PURE__ */ new Set();
-  const knownGarminLoadByDate = /* @__PURE__ */ new Map();
-  const stubsByDate = /* @__PURE__ */ new Map();
-  for (const a of rawActivities) {
-    if (!a || !a.start_date_local) continue;
-    const d = String(a.start_date_local).slice(0, 10);
-    if (a.source !== "STRAVA" && a.strava_id) {
-      garminStravaIds.add(String(a.strava_id));
-    }
-    if (a.type || a.moving_time != null || a.elapsed_time != null) {
-      knownGarminLoadByDate.set(
-        d,
-        (knownGarminLoadByDate.get(d) || 0) + Number(a.icu_training_load ?? 0)
-      );
-    } else if (a.source === "STRAVA") {
-      const list = stubsByDate.get(d) || [];
-      list.push(a);
-      stubsByDate.set(d, list);
-    }
-  }
-  const enrichedRawActivities = [];
-  for (const a of rawActivities) {
-    if (!a || !a.start_date_local) continue;
-    if (a.source === "STRAVA" && !a.type && a.moving_time == null && a.elapsed_time == null) {
-      const sid = String(a.strava_id || a.id);
-      if (garminStravaIds.has(sid)) continue;
-      const cachedSa = stravaArchiveById.get(sid);
-      if (cachedSa && (cachedSa.moving_time || cachedSa.elapsed_time)) {
-        enrichedRawActivities.push({
-          ...a,
-          id: `strava-${sid}`,
-          strava_id: sid,
-          type: cachedSa.sport_type || cachedSa.type || "Ride",
-          name: cachedSa.name || "Recorded Session",
-          moving_time: cachedSa.moving_time || cachedSa.elapsed_time,
-          elapsed_time: cachedSa.elapsed_time || cachedSa.moving_time,
-          distance: cachedSa.distance ?? 0,
-          total_elevation_gain: cachedSa.total_elevation_gain ?? 0,
-          trainer: Boolean(cachedSa.trainer),
-          average_watts: cachedSa.average_watts,
-          icu_weighted_avg_watts: cachedSa.weighted_average_watts || cachedSa.average_watts,
-          average_heartrate: cachedSa.average_heartrate,
-          max_heartrate: cachedSa.max_heartrate,
-          average_cadence: cachedSa.average_cadence,
-          device_name: cachedSa.device_name || void 0
-        });
-      }
-      continue;
-    }
-    enrichedRawActivities.push(a);
-  }
-  const seenStravaIds = /* @__PURE__ */ new Set();
-  const activities = enrichedRawActivities.filter((a) => {
-    if (!a || !a.start_date_local) return false;
-    if (!a.type && a.moving_time == null && a.elapsed_time == null) return false;
-    if (a.source === "STRAVA" && !a.name && a.moving_time == null) return false;
-    const duration = Number(a.moving_time ?? a.elapsed_time ?? 0);
-    if (duration <= 0) return false;
-    if (a.strava_id) {
-      const sid = String(a.strava_id);
-      if (seenStravaIds.has(sid)) return false;
-      seenStravaIds.add(sid);
-    }
-    return true;
-  }).map((a) => {
-    const rawType = String(a.type || "").trim();
-    const rawSubType = String(a.sub_type || "").trim();
-    const rawName = String(a.name || "").trim();
-    const rawDevice = String(a.device_name || "").trim();
-    const combinedMeta = `${rawType} ${rawSubType} ${rawName} ${rawDevice}`;
-    const rawStartLatLng = Array.isArray(a.start_latlng) && a.start_latlng.length >= 2 ? [Number(a.start_latlng[0]), Number(a.start_latlng[1])] : void 0;
-    const isWatopiaOrMakuriGps = rawStartLatLng && Number.isFinite(rawStartLatLng[0]) && Number.isFinite(rawStartLatLng[1]) && rawStartLatLng[0] >= -12.6 && rawStartLatLng[0] <= -9.8 && rawStartLatLng[1] >= 164.8 && rawStartLatLng[1] <= 168;
-    const hasNoLatLngStream = Array.isArray(a.stream_types) && a.stream_types.length > 0 && !a.stream_types.includes("latlng");
-    const isVirtualPlatform = /virtual|zwift|watopia|makuri|neokyo|urukazi|alpe du zwift|ven-top|crit city|rouvy|mywhoosh|indievelo|trainingpeaks virtual|bkool|fulgaz|kinomap|rgt/i.test(
-      combinedMeta
-    ) || Boolean(isWatopiaOrMakuriGps);
-    const classified = classifyMultiSportActivity(rawType || rawSubType, `${rawSubType} ${rawName}`, {
-      trainer: Boolean(a.trainer) || isVirtualPlatform || /virtual|indoor|treadmill|zwift|trainer|spinning|peloton|wahoo|rouvy|mywhoosh|trainerroad|sufferfest|kickr|tacx|wattbike|stages|erg mode|ramp test|gym|weight|hiit|workout|yoga|pool/i.test(combinedMeta),
-      hasGps: Boolean(rawStartLatLng) && !hasNoLatLngStream,
-      isVirtualPlatform
-    });
-    const sportCategory = classified.sportCategory;
-    const isIndoor = classified.environment === "INDOOR";
-    const subType = classified.subType;
-    const movingTimeSecs = Number(a.moving_time ?? a.elapsed_time ?? 0);
-    const distanceMeters = Number(a.distance ?? 0);
-    const avgPower = a.icu_average_watts ?? a.average_watts ?? void 0;
-    const normalizedPower = a.icu_weighted_avg_watts ?? avgPower;
-    const avgHr = Number(a.average_heartrate ?? 0);
-    const maxHr = Number(a.max_heartrate ?? 0);
-    const avgPaceSecsPerKm = sportCategory === "Running" && distanceMeters > 0 ? Math.round(movingTimeSecs / (distanceMeters / 1e3)) : void 0;
-    const gapPaceSecsPerKm = sportCategory === "Running" && a.gap && Number(a.gap) > 0 ? Math.round(1e3 / Number(a.gap)) : void 0;
-    const canUsePowerForIf = sportCategory === "Cycling" || sportCategory === "Running" && Number(runtimeStore.athleteRunFtp) > 0;
-    const userFtp = sportCategory === "Running" ? runtimeStore.athleteRunFtp || 350 : runtimeStore.athleteFtp || 250;
-    const rawIcuIf = Number(a.icu_intensity ?? 0);
-    let trainingLoad = Math.round(Number(a.icu_training_load ?? 0));
-    let intensityFactor = rawIcuIf > 0 ? Number((rawIcuIf > 3 ? rawIcuIf / 100 : rawIcuIf).toFixed(2)) : void 0;
-    if (canUsePowerForIf && normalizedPower && movingTimeSecs > 0) {
-      const ifVal = normalizedPower / userFtp;
-      if (!intensityFactor) {
-        intensityFactor = Number(ifVal.toFixed(2));
-      }
-      if (!trainingLoad) {
-        trainingLoad = Math.round(
-          movingTimeSecs * normalizedPower * ifVal / (userFtp * 3600) * 100
-        );
-      }
-    } else if (avgHr > 0 && movingTimeSecs > 0) {
-      const userLthr = runtimeStore.athleteLthr || 165;
-      const hrRatio = Math.max(0.4, Math.min(1.25, avgHr / userLthr));
-      if (!intensityFactor) {
-        intensityFactor = Number(hrRatio.toFixed(2));
-      }
-      if (!trainingLoad) {
-        trainingLoad = Math.round(movingTimeSecs / 3600 * Math.pow(hrRatio, 2) * 80);
-      }
-    } else if (!trainingLoad && movingTimeSecs > 0) {
-      trainingLoad = Math.round(movingTimeSecs / 3600 * 45);
-    }
-    let efficiencyFactor = 0;
-    if (sportCategory === "Cycling" && normalizedPower && avgHr > 0) {
-      efficiencyFactor = Number((normalizedPower / avgHr).toFixed(2));
-    } else if (sportCategory === "Running" && distanceMeters > 0 && movingTimeSecs > 0 && avgHr > 0) {
-      const speedMetersPerMin = distanceMeters / (movingTimeSecs / 60);
-      efficiencyFactor = Number((speedMetersPerMin / avgHr).toFixed(2));
-    }
-    const rawIntervals = Array.isArray(a.icu_intervals) ? a.icu_intervals : [];
-    const intervals = rawIntervals.map((iv, idx) => {
-      const dist = Number(iv.distance || 0);
-      const dur = Number(iv.moving_time || iv.elapsed_time || 0);
-      const avgSpeed = Number(iv.average_speed || 0);
-      const gapSpeed = Number(iv.gap || avgSpeed);
-      return {
-        id: String(iv.id || `iv-${idx}`),
-        type: iv.type === "WORK" ? "WORK" : "RECOVERY",
-        label: iv.label || iv.group_id || (iv.type === "WORK" ? `Work Interval #${idx + 1}` : `Recovery #${idx + 1}`),
-        startTimeSecs: Number(iv.start_time || 0),
-        durationSecs: dur,
-        distanceMeters: Math.round(dist),
-        avgWatts: iv.average_watts ? Math.round(Number(iv.average_watts)) : void 0,
-        weightedAvgWatts: iv.weighted_average_watts ? Math.round(Number(iv.weighted_average_watts)) : void 0,
-        intensityPct: iv.intensity ? Math.round(Number(iv.intensity)) : void 0,
-        zone: iv.zone ? Number(iv.zone) : void 0,
-        avgHr: iv.average_heartrate ? Math.round(Number(iv.average_heartrate)) : void 0,
-        maxHr: iv.max_heartrate ? Math.round(Number(iv.max_heartrate)) : void 0,
-        avgPaceSecsPerKm: avgSpeed > 0 ? Math.round(1e3 / avgSpeed) : void 0,
-        gapPaceSecsPerKm: gapSpeed > 0 ? Math.round(1e3 / gapSpeed) : void 0,
-        avgCadence: iv.average_cadence ? Math.round(Number(iv.average_cadence)) : void 0,
-        decouplingPct: iv.decoupling != null ? Number(Number(iv.decoupling).toFixed(1)) : void 0,
-        strideLengthMeters: iv.average_stride ? Number(Number(iv.average_stride).toFixed(2)) : void 0
-      };
-    });
-    const hrZoneSecs = Array.isArray(a.icu_hr_zone_times) ? a.icu_hr_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0)))) : [0, 0, 0, 0, 0, 0, 0];
-    const pwrZoneSecs = Array.isArray(a.icu_zone_times) ? a.icu_zone_times.slice(0, 7).map((v) => Math.max(0, Math.round(Number(v || 0)))) : void 0;
-    const intervalsSourceBadges = Array.from(
-      /* @__PURE__ */ new Set([
-        "Intervals.icu",
-        ...a.source === "GARMIN_CONNECT" ? ["Garmin"] : a.source === "STRAVA" ? ["Strava"] : []
-      ])
-    );
-    const intervalsTimestamps = normalizeActivityTimestamps({
-      startDateLocal: a.start_date_local ? stripTimezoneSuffix(String(a.start_date_local)) : void 0,
-      startDateUtc: a.start_date ? String(a.start_date) : void 0,
-      startLatLng: Array.isArray(a.latlng) && a.latlng.length === 2 ? [Number(a.latlng[0]), Number(a.latlng[1])] : void 0,
-      fallbackBrowserTz: true
-    });
-    return {
-      id: String(a.id),
-      intervalsId: String(a.id),
-      intervalsActivityId: String(a.id),
-      stravaId: a.strava_id ? String(a.strava_id) : void 0,
-      garminActivityId: a.source === "GARMIN_CONNECT" ? String(a.id) : void 0,
-      source: a.source || "INTERVALS_ICU",
-      sourceBadges: intervalsSourceBadges,
-      rawSportType: rawType || void 0,
-      name: rawName || `${subType} ${sportCategory}`,
-      startDateLocal: intervalsTimestamps.startDateLocal,
-      ...intervalsTimestamps.startDateUtcMs !== void 0 ? { startDateUtcMs: intervalsTimestamps.startDateUtcMs } : {},
-      sportCategory,
-      environment: isIndoor ? "INDOOR" : "OUTDOOR",
-      subType,
-      movingTimeSecs,
-      distanceMeters,
-      elevationGainMeters: Math.round(Number(a.total_elevation_gain ?? 0)),
-      avgPower: avgPower ? Math.round(avgPower) : void 0,
-      normalizedPower: normalizedPower ? Math.round(normalizedPower) : void 0,
-      intensityFactor,
-      trainingLoad,
-      avgHr: avgHr > 0 ? Math.round(avgHr) : void 0,
-      maxHr: maxHr > 0 ? Math.round(maxHr) : void 0,
-      avgCadence: a.average_cadence ? Math.round(Number(a.average_cadence)) : void 0,
-      avgPaceSecsPerKm,
-      gapPaceSecsPerKm,
-      efficiencyFactor,
-      aerobicDecouplingPct: a.decoupling != null ? Number(Number(a.decoupling).toFixed(1)) : void 0,
-      variabilityIndex: normalizedPower && avgPower && avgPower > 0 ? Number((normalizedPower / avgPower).toFixed(2)) : void 0,
-      zoneSecs: {
-        hr: hrZoneSecs,
-        ...pwrZoneSecs ? { power: pwrZoneSecs } : {}
-      },
-      gearName: a.gear?.name || void 0,
-      deviceName: a.device_name ? String(a.device_name) : void 0,
-      hasSegments: Boolean(a.has_segments),
-      intervals
-    };
-  });
-  const segmentsCache = loadJsonFile(
-    SEGMENTS_BY_ACTIVITY_CACHE_FILE,
-    {}
-  );
-  const routesCache = loadJsonFile(
-    ROUTES_BY_ACTIVITY_CACHE_FILE,
-    {}
-  );
-  const kudosCache = loadJsonFile(
-    STRAVA_KUDOS_CACHE_FILE,
-    {}
-  );
-  for (const act of activities) {
-    if (Array.isArray(segmentsCache[act.id]) && segmentsCache[act.id].length > 0) {
-      act.segmentEfforts = segmentsCache[act.id].map((eff) => ({ ...eff }));
-    }
-    const routePts = routesCache[act.id];
-    if (Array.isArray(routePts) && routePts.length >= 2) {
-      act.routeLatLngs = routePts;
-      act.startLatLng = routePts[0];
-      act.endLatLng = routePts[routePts.length - 1];
-      const [firstLat, firstLng] = routePts[0];
-      if (act.sportCategory === "Cycling" && firstLat >= -12.6 && firstLat <= -9.8 && firstLng >= 164.8 && firstLng <= 168) {
-        act.environment = "INDOOR";
-        act.subType = "Virtual Cycling";
-      }
-    }
-    const kEntry = kudosCache[act.id] || (act.stravaId ? kudosCache[act.stravaId] : void 0);
-    if (kEntry) {
-      if (kEntry.kudosCount !== void 0) act.kudosCount = kEntry.kudosCount;
-      if (kEntry.hasKudoed !== void 0) act.hasKudoed = kEntry.hasKudoed;
-      if (Array.isArray(kEntry.kudoers)) act.kudoers = kEntry.kudoers;
-      if (Array.isArray(kEntry.comments)) {
-        act.comments = kEntry.comments;
-        act.commentCount = kEntry.comments.length;
-      }
-    }
-  }
-  rankSegmentEffortsAcrossActivities(activities);
-  const cacheKey = typeof configOrKey === "string" ? configOrKey : configOrKey.apiKey || configOrKey.accessToken || "default";
-  const scopedPlannedFile = getScopedPlannedEventsFile(void 0, cacheKey);
-  const localPlanned = scopedPlannedFile ? loadJsonFile(scopedPlannedFile, []) : [];
-  const icuPlanned = rawEvents.filter((ev) => ev && ev.start_date_local).map((ev) => {
-    const dur = Number(ev.moving_time ?? 3600);
-    const desc = String(ev.description || "");
-    return {
-      id: `icu-ev-${ev.id}`,
-      date: String(ev.start_date_local).slice(0, 10),
-      name: String(ev.name || "Planned Workout"),
-      sportCategory: /run/i.test(String(ev.type || "")) ? "Running" : "Cycling",
-      environmentPreference: /indoor|virtual|trainer/i.test(String(ev.type || "") + desc) ? "INDOOR" : "FLEXIBLE",
-      description: desc || "Structured workout synced from Intervals.icu calendar.",
-      plannedLoad: Math.round(Number(ev.icu_training_load ?? 65)),
-      plannedDurationSecs: dur,
-      targetZoneSummary: "Intervals.icu Calendar Event",
-      workoutSyntax: desc,
-      structuredSteps: parseWorkoutSyntaxToSteps(desc, dur),
-      source: "INTERVALS_ICU"
-    };
-  });
-  const plannedEvents = [...localPlanned, ...icuPlanned];
-  const stravaLinkedCount = activities.filter((a) => Boolean(a.stravaId)).length;
-  runtimeStore.garminActivitiesCount = activities.length;
-  runtimeStore.redactedStravaCount = redactedStravaCount;
-  if (runtimeStore.stravaActivitiesCount < stravaLinkedCount) {
-    runtimeStore.stravaActivitiesCount = stravaLinkedCount;
-  }
-  runtimeStore.totalActivitiesCount = Math.max(
-    activities.length,
-    activities.length + Math.max(0, runtimeStore.stravaActivitiesCount - stravaLinkedCount)
-  );
-  runtimeStore.earliestActivityDate = activities.length > 0 ? activities[activities.length - 1].startDateLocal.slice(0, 10) : runtimeStore.earliestActivityDate;
-  const accumulatedWellnessSummary = {};
-  for (const w of wellnessDays) {
-    if (w.weightKg && w.weightKg > 30 && w.weightKg !== 70) {
-      accumulatedWellnessSummary.weightKg = w.weightKg;
-    }
-    if (w.restingHR && w.restingHR > 25 && w.restingHR !== 49) {
-      accumulatedWellnessSummary.restingHR = w.restingHR;
-    }
-    if (w.vo2MaxCycling && w.vo2MaxCycling > 25 && w.vo2MaxCycling !== 50) {
-      accumulatedWellnessSummary.vo2MaxCycling = w.vo2MaxCycling;
-    }
-    if (w.vo2MaxRunning && w.vo2MaxRunning > 25 && w.vo2MaxRunning !== 50) {
-      accumulatedWellnessSummary.vo2MaxRunning = w.vo2MaxRunning;
-    }
-    if (w.rideEftp && w.rideEftp > 60) accumulatedWellnessSummary.rideEftp = w.rideEftp;
-    if (w.rideWPrime && w.rideWPrime > 5e3) accumulatedWellnessSummary.rideWPrime = w.rideWPrime;
-    if (w.ridePMax && w.ridePMax > 300) accumulatedWellnessSummary.ridePMax = w.ridePMax;
-    if (w.runEftp && w.runEftp > 80) accumulatedWellnessSummary.runEftp = w.runEftp;
-  }
-  const fullProfile = buildServerAthleteProfile(
-    parsedRawProfile,
-    accumulatedWellnessSummary,
-    activities
-  );
-  runtimeStore.athleteProfile = fullProfile;
-  runtimeStore.lastSyncedAt = (/* @__PURE__ */ new Date()).toISOString();
-  runtimeStore.nextHourlySyncAt = new Date(Date.now() + 3600 * 1e3).toISOString();
-  saveSessionCache();
-  return {
-    wellnessDays,
-    activities,
-    plannedEvents,
-    redactedStravaCount,
-    athleteProfile: {
-      ...fullProfile,
-      gearItems: runtimeStore.gearItems
-    },
-    syncedAt: runtimeStore.lastSyncedAt,
-    nextHourlySyncAt: runtimeStore.nextHourlySyncAt
-  };
-}
-var intervalsCallbackHandler = async (req, res) => {
-  const code = String(req.query.code || "").trim();
-  const error = String(req.query.error || "").trim();
-  const stateToken = String(req.query.state || "").trim();
-  const cookieNonce = getOAuthStateCookieNonce(req);
-  const verifiedState = verifyOAuthStateToken(stateToken);
-  clearOAuthStateCookie(res);
-  if (error) {
-    const errMsg = error === "access_denied" ? "Access was denied by the user on Intervals.icu." : error;
-    const errJson = safeJsonForScript({
-      type: "OAUTH_AUTH_ERROR",
-      provider: "intervals",
-      error: `Intervals.icu connection failed: ${errMsg}`
-    });
-    res.status(400).type("html").send(
-      renderThreshOAuthHtml({
-        title: "Intervals.icu Connection Error",
-        heading: "Intervals.icu Connection Could Not Complete",
-        accentColor: "#FB7185",
-        body: escapeHtml(errMsg),
-        ctaLabel: "Return to MeetReady",
-        ctaHref: "/#fitness?openDataSources=1",
-        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
-        scriptBody: `(function() {
-          var payload = ${errJson};
-          try {
-            if (window.opener && window.opener !== window) {
-              window.opener.postMessage(payload, window.location.origin);
-            }
-          } catch (e) {}
-          try {
-            var bc = new BroadcastChannel('aeropulse_oauth');
-            bc.postMessage(payload);
-          } catch (e) {}
-        })();`
-      })
-    );
-    return;
-  }
-  if (!code) {
-    res.status(400).type("html").send(
-      renderThreshOAuthHtml({
-        title: "Missing Authorization Code",
-        heading: "Intervals.icu Authorization Code Missing",
-        accentColor: "#FB7185",
-        body: "No authorization code was returned by Intervals.icu.",
-        ctaLabel: "Return to MeetReady",
-        ctaHref: "/#fitness?openDataSources=1"
-      })
-    );
-    return;
-  }
-  if (!verifiedState || !cookieNonce || !timingSafeStringEqual(cookieNonce, verifiedState.nonce)) {
-    res.status(400).type("html").send(
-      renderThreshOAuthHtml({
-        title: "Invalid OAuth State",
-        heading: "Security Verification Failed",
-        accentColor: "#FB7185",
-        body: !verifiedState ? "OAuth state token was invalid or expired. Please re-initiate Intervals.icu connection." : "Browser OAuth verification cookie was missing or did not match. Please re-initiate Intervals.icu connection.",
-        ctaLabel: "Return to MeetReady",
-        ctaHref: "/#fitness?openDataSources=1"
-      })
-    );
-    return;
-  }
-  try {
-    const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
-    if (!clientId || !clientSecret) {
-      throw new Error(
-        "Intervals.icu OAuth client credentials (INTERVALS_CLIENT_ID / INTERVALS_CLIENT_SECRET) are not configured."
-      );
-    }
-    const tokenResp = await fetch("https://intervals.icu/api/oauth/token", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Accept: "application/json"
-      },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        code
-      }).toString()
-    });
-    if (!tokenResp.ok) {
-      const errBody = await tokenResp.text();
-      throw new Error(
-        `Intervals.icu token exchange failed (${tokenResp.status}): ${errBody.slice(0, 160)}`
-      );
-    }
-    const tokenData = await tokenResp.json();
-    const accessToken = String(tokenData.access_token || "").trim();
-    if (!accessToken) {
-      throw new Error("Intervals.icu did not return a valid access token.");
-    }
-    const athleteId = String(tokenData.id || tokenData.athlete?.id || "0").trim();
-    const athleteName = String(
-      tokenData.name || tokenData.athlete?.name || [tokenData.firstname, tokenData.lastname].filter(Boolean).join(" ") || `Athlete ${athleteId}`
-    ).trim();
-    const sid = verifiedState.sid || ensureRequestSessionSid(req, res);
-    bindRequestScopeKey(req, sid);
-    const store = getScopedRuntimeStore(req);
-    store.intervalsAccessToken = accessToken;
-    store.intervalsScope = tokenData.scope || "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE";
-    store.intervalsAthleteId = athleteId;
-    store.intervalsAthleteName = athleteName;
-    const callerClaims = getVerifiedSessionClaims(req);
-    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
-      await connectServiceToUser(callerClaims.sub, "intervals", athleteId, athleteName);
-    }
-    setSessionCookie(req, res, athleteName, sid, "verified");
-    await saveSessionCacheAsync(req, res, sid);
-    const oauthPayloadJson = safeJsonForScript({
-      type: "OAUTH_AUTH_SUCCESS",
-      provider: "intervals",
-      athleteId,
-      athleteName,
-      scope: store.intervalsScope,
-      returnUrl: "/#fitness?openDataSources=1"
-    });
-    res.type("html").send(
-      renderThreshOAuthHtml({
-        title: "Intervals.icu Connected \xB7 MeetReady",
-        heading: `Intervals.icu Connected${athleteName && !isGenericName(athleteName) ? ` \xB7 ${escapeHtml(athleteName)}` : ""}`,
-        accentColor: "#10B981",
-        body: "Your Intervals.icu account is now linked via OAuth 2.0. Structured workouts, wellness metrics, and cross-watch calendar push are ready.",
-        ctaLabel: "Continue to MeetReady",
-        ctaHref: "/#fitness?openDataSources=1",
-        scriptBody: `(function() {
-          var payload = ${oauthPayloadJson};
-          try {
-            localStorage.setItem('thresh_session_active_hint', '1');
-            if (payload.athleteId) {
-              localStorage.setItem('aeropulse_intervals_athlete_id', String(payload.athleteId));
-            }
-            if (payload.athleteName) {
-              localStorage.setItem('aeropulse_intervals_athlete_name', payload.athleteName);
-            }
-            localStorage.setItem('aeropulse_intervals_connected', '1');
-            localStorage.removeItem('aeropulse_intervals_api_key');
-            localStorage.setItem('aeropulse_oauth_just_connected', '1');
-          } catch (e) {}
-          var hasOpener = false;
-          try {
-            if (window.opener && window.opener !== window) {
-              hasOpener = true;
-              window.opener.postMessage(payload, window.location.origin);
-            }
-          } catch (e) {}
-          try {
-            var bc = new BroadcastChannel('aeropulse_oauth');
-            bc.postMessage(payload);
-          } catch (e) {}
-          var isPopupWindow = hasOpener || window.name === 'aeropulse_oauth_popup';
-          if (isPopupWindow) {
-            setTimeout(function() {
-              try { window.close(); } catch (e) {}
-            }, 300);
-          } else {
-            window.location.replace(payload.returnUrl || '/#fitness?openDataSources=1');
-          }
-        })();`
-      })
-    );
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error";
-    const errJson = safeJsonForScript({
-      type: "OAUTH_AUTH_ERROR",
-      provider: "intervals",
-      error: `Intervals.icu connection failed: ${errMsg}`
-    });
-    res.status(500).type("html").send(
-      renderThreshOAuthHtml({
-        title: "Intervals.icu Connection Error",
-        heading: "Intervals.icu Connection Failed",
-        accentColor: "#FB7185",
-        body: escapeHtml(errMsg),
-        ctaLabel: "Return to MeetReady",
-        ctaHref: "/#fitness?openDataSources=1",
-        ctaOnClick: "if (window.opener || window.name === 'aeropulse_oauth_popup') { try { window.close(); } catch (e) {} return false; }",
-        scriptBody: `(function() {
-          var payload = ${errJson};
-          try {
-            if (window.opener && window.opener !== window) {
-              window.opener.postMessage(payload, window.location.origin);
-            }
-          } catch (e) {}
-          try {
-            var bc = new BroadcastChannel('aeropulse_oauth');
-            bc.postMessage(payload);
-          } catch (e) {}
-        })();`
-      })
-    );
-  }
-};
-var intervalsRouter = express16.Router();
-intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
+// server/routers/intervals/intervalsProfileAndPushRouter.ts
+var intervalsProfileAndPushRouter = express17.Router();
+intervalsProfileAndPushRouter.post("/api/intervals/profile/sync", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
     const intervalsAuth = getIntervalsAuthHeader(config);
@@ -30115,131 +30248,7 @@ intervalsRouter.post("/api/intervals/profile/sync", async (req, res) => {
     });
   }
 });
-intervalsRouter.get(["/api/intervals/auth/url", "/api/auth/intervals/url"], (req, res) => {
-  const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
-  if (!clientId || !clientSecret) {
-    res.status(400).json({
-      error: "Intervals.icu OAuth is not configured on this server yet. Please set INTERVALS_CLIENT_ID and INTERVALS_CLIENT_SECRET in your Vercel Environment Variables (or local .env)."
-    });
-    return;
-  }
-  const sid = ensureRequestSessionSid(req, res);
-  const mode = String(req.query.mode || "cloud").toLowerCase();
-  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
-  const clientNonce = String(req.query.state || "").trim();
-  const { stateToken, nonce } = issueOAuthStateToken({
-    nonce: clientNonce || void 0,
-    sid,
-    flow,
-    mode
-  });
-  setOAuthStateCookie(req, res, nonce);
-  const redirectUri = resolveIntervalsCallbackUrl(req);
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE",
-    state: stateToken
-  });
-  const authUrl = `https://intervals.icu/oauth/authorize?${params.toString()}`;
-  res.json({ url: authUrl, redirectUri, clientId, state: stateToken });
-});
-intervalsRouter.get(["/api/intervals/auth/login", "/api/auth/intervals/login"], (req, res) => {
-  const { clientId, clientSecret } = getEffectiveIntervalsClientConfig(req);
-  if (!clientId || !clientSecret) {
-    const msg = encodeURIComponent(
-      "Intervals.icu OAuth is not configured on this server yet (missing INTERVALS_CLIENT_ID or INTERVALS_CLIENT_SECRET)."
-    );
-    res.redirect(302, `/?auth_error=${msg}`);
-    return;
-  }
-  const sid = ensureRequestSessionSid(req, res);
-  const flow = String(req.query.flow || "redirect").toLowerCase() === "popup" ? "popup" : "redirect";
-  const { stateToken, nonce } = issueOAuthStateToken({ sid, flow, mode: "cloud" });
-  setOAuthStateCookie(req, res, nonce);
-  const redirectUri = resolveIntervalsCallbackUrl(req);
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    scope: "ACTIVITY:READ,WELLNESS:READ,CALENDAR:WRITE",
-    state: stateToken
-  });
-  res.redirect(302, `https://intervals.icu/oauth/authorize?${params.toString()}`);
-});
-intervalsRouter.get(
-  [
-    "/auth/intervals/callback",
-    "/auth/intervals/callback/",
-    "/api/intervals/callback",
-    "/api/intervals/callback/",
-    "/api/auth/intervals/callback",
-    "/api/auth/intervals/callback/"
-  ],
-  intervalsCallbackHandler
-);
-intervalsRouter.post("/api/intervals/connect", async (req, res) => {
-  try {
-    const apiKey = String(req.body?.apiKey || "").trim();
-    const athleteId = String(req.body?.athleteId || "0").trim() || "0";
-    if (!apiKey) {
-      res.status(400).json({ error: "Please provide a valid Intervals.icu Personal API Key." });
-      return;
-    }
-    const authHeader = "Basic " + Buffer.from(`API_KEY:${apiKey}`).toString("base64");
-    const profileResp = await fetch(
-      `https://intervals.icu/api/v1/athlete/${encodeURIComponent(athleteId)}`,
-      {
-        headers: { Authorization: authHeader, Accept: "application/json" }
-      }
-    );
-    if (!profileResp.ok) {
-      res.status(profileResp.status).json({
-        error: `Intervals.icu authentication failed (${profileResp.status}). Verify your Athlete ID and Personal API Key.`
-      });
-      return;
-    }
-    const profileData = await profileResp.json();
-    const resolvedId = String(profileData.id || athleteId);
-    const resolvedName = profileData.name || [profileData.firstname, profileData.lastname].filter(Boolean).join(" ") || `Athlete ${resolvedId}`;
-    const sessionToken = setSessionCookie(req, res, resolvedName);
-    const createdClaims = decodeAndVerifyToken(sessionToken);
-    if (createdClaims?.sid) {
-      bindRequestScopeKey(req, createdClaims.sid);
-    }
-    runtimeStore.intervalsApiKey = apiKey;
-    runtimeStore.intervalsAthleteId = resolvedId;
-    runtimeStore.intervalsAthleteName = resolvedName;
-    const callerClaims = getVerifiedSessionClaims(req);
-    if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
-      await connectServiceToUser(callerClaims.sub, "intervals", resolvedId, resolvedName);
-    }
-    await saveSessionCacheAsync(req, res, createdClaims?.sid);
-    res.json({
-      connected: true,
-      athleteId: resolvedId,
-      athleteName: resolvedName
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: error instanceof Error ? error.message : "Failed to connect to Intervals.icu"
-    });
-  }
-});
-intervalsRouter.post("/api/intervals/disconnect", async (req, res) => {
-  runtimeStore.intervalsApiKey = "";
-  runtimeStore.intervalsAccessToken = "";
-  runtimeStore.intervalsScope = "";
-  runtimeStore.intervalsAthleteName = "";
-  const callerClaims = getVerifiedSessionClaims(req);
-  if (callerClaims && callerClaims.sub?.startsWith("usr_")) {
-    await disconnectServiceFromUser(callerClaims.sub, "intervals");
-  }
-  await saveSessionCacheAsync(req, res);
-  res.json({ connected: false });
-});
-intervalsRouter.post("/api/intervals/workout/push", async (req, res) => {
+intervalsProfileAndPushRouter.post("/api/intervals/workout/push", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
     const authHeader = getIntervalsAuthHeader(config);
@@ -30341,7 +30350,7 @@ intervalsRouter.post("/api/intervals/workout/push", async (req, res) => {
     });
   }
 });
-intervalsRouter.get("/api/intervals/sync", async (req, res) => {
+intervalsProfileAndPushRouter.get("/api/intervals/sync", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
     const authHeader = getIntervalsAuthHeader(config);
@@ -30358,7 +30367,7 @@ intervalsRouter.get("/api/intervals/sync", async (req, res) => {
     });
   }
 });
-intervalsRouter.get("/api/intervals/activities/:id/streams", async (req, res) => {
+intervalsProfileAndPushRouter.get("/api/intervals/activities/:id/streams", async (req, res) => {
   try {
     const config = getEffectiveIntervalsConfig(req);
     const authHeader = getIntervalsAuthHeader(config);
@@ -30495,7 +30504,11 @@ intervalsRouter.get("/api/intervals/activities/:id/streams", async (req, res) =>
     });
   }
 });
-intervalsRouter.get("/api/calendar/events", async (req, res) => {
+
+// server/routers/intervals/intervalsCalendarRouter.ts
+import express18 from "express";
+var intervalsCalendarRouter = express18.Router();
+intervalsCalendarRouter.get("/api/calendar/events", async (req, res) => {
   const scopedFile = getScopedPlannedEventsFile(req);
   const cloud = await loadAthleteCloudState(req);
   if (cloud && cloud.plannedEvents.length > 0) {
@@ -30509,7 +30522,7 @@ intervalsRouter.get("/api/calendar/events", async (req, res) => {
   const localPlanned = loadJsonFile(scopedFile, []);
   res.json({ events: localPlanned });
 });
-intervalsRouter.post("/api/calendar/events", async (req, res) => {
+intervalsCalendarRouter.post("/api/calendar/events", async (req, res) => {
   try {
     const body = req.body || {};
     const date = String(body.date || (/* @__PURE__ */ new Date()).toISOString().slice(0, 10)).slice(0, 10);
@@ -30638,7 +30651,7 @@ intervalsRouter.post("/api/calendar/events", async (req, res) => {
     });
   }
 });
-intervalsRouter.put("/api/calendar/events/:id", async (req, res) => {
+intervalsCalendarRouter.put("/api/calendar/events/:id", async (req, res) => {
   const id = req.params.id;
   const body = req.body || {};
   const scopedFile = getScopedPlannedEventsFile(req);
@@ -30667,7 +30680,7 @@ intervalsRouter.put("/api/calendar/events/:id", async (req, res) => {
   await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ updated: true, event: patched, events: updated });
 });
-intervalsRouter.delete("/api/calendar/blocks/:blockId", async (req, res) => {
+intervalsCalendarRouter.delete("/api/calendar/blocks/:blockId", async (req, res) => {
   const scopedFile = getScopedPlannedEventsFile(req);
   const cloud = await loadAthleteCloudState(req);
   if (!scopedFile && !cloud) {
@@ -30684,7 +30697,7 @@ intervalsRouter.delete("/api/calendar/blocks/:blockId", async (req, res) => {
   await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ deleted: true, events: updated });
 });
-intervalsRouter.delete("/api/calendar/events/:id", async (req, res) => {
+intervalsCalendarRouter.delete("/api/calendar/events/:id", async (req, res) => {
   const scopedFile = getScopedPlannedEventsFile(req);
   const cloud = await loadAthleteCloudState(req);
   if (!scopedFile && !cloud) {
@@ -30701,6 +30714,12 @@ intervalsRouter.delete("/api/calendar/events/:id", async (req, res) => {
   await saveAthleteCloudState(req, { plannedEvents: updated });
   res.json({ deleted: true, events: updated });
 });
+
+// server/routers/intervalsRouter.ts
+var intervalsRouter = express19.Router();
+intervalsRouter.use(intervalsAuthRouter);
+intervalsRouter.use(intervalsProfileAndPushRouter);
+intervalsRouter.use(intervalsCalendarRouter);
 
 // server/routers/wahooRouter.ts
 import { Router as Router3 } from "express";
@@ -33377,7 +33396,7 @@ configRouter.post("/api/auth/logout", async (req, res) => {
 });
 
 // server/routers/webhookRouter.ts
-import express17 from "express";
+import express20 from "express";
 import fs8 from "fs";
 async function executeHourlyBackgroundPoll() {
   const results = {
@@ -33410,7 +33429,7 @@ async function executeHourlyBackgroundPoll() {
   await saveSessionCacheAsync();
   return results;
 }
-var webhookRouter = express17.Router();
+var webhookRouter = express20.Router();
 webhookRouter.all("/api/cron/hourly-sync", async (req, res) => {
   if (!hasValidCronAuthorization(req)) {
     res.status(401).json({ ok: false, error: "Unauthorized cron invocation." });
@@ -33569,7 +33588,7 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
 });
 
 // server/routers/analyticsRouter.ts
-import express18 from "express";
+import express21 from "express";
 
 // server/funnelAnalyticsService.ts
 var FUNNEL_EVENT_NAMES = [
@@ -33836,7 +33855,7 @@ async function getFunnelSummaryAsync(opts) {
 }
 
 // server/routers/analyticsRouter.ts
-var analyticsRouter = express18.Router();
+var analyticsRouter = express21.Router();
 analyticsRouter.post("/api/analytics/event", async (req, res) => {
   try {
     const rateLimit = await checkDistributedRateLimitAsync(
@@ -33896,9 +33915,9 @@ analyticsRouter.get("/api/analytics/summary", async (req, res) => {
 
 // server/apiRouter.ts
 var SERVER_BOOT_ISO = (/* @__PURE__ */ new Date()).toISOString();
-var apiRouter = express19.Router();
+var apiRouter = express22.Router();
 apiRouter.use(securityHeadersMiddleware);
-apiRouter.use(express19.urlencoded({ extended: false }));
+apiRouter.use(express22.urlencoded({ extended: false }));
 apiRouter.use((req, res, next) => {
   responseByReq.set(req, res);
   requestContext.run(req, () => {
@@ -33919,7 +33938,7 @@ apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
   const env = process.env;
-  const buildTimestamp = "2026-11-24T06:05:33Z" ? "2026-11-24T06:05:33Z" : SERVER_BOOT_ISO;
+  const buildTimestamp = "2026-11-24T07:37:57Z" ? "2026-11-24T07:37:57Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",
@@ -33978,7 +33997,7 @@ apiRouter.use(analyticsRouter);
 import fs9 from "node:fs";
 import path2 from "node:path";
 import { fileURLToPath } from "node:url";
-import express20 from "express";
+import express23 from "express";
 
 // src/utils/shareWorkoutCodec.ts
 var FORBIDDEN_RAW_TELEMETRY_KEYS = [
@@ -34269,7 +34288,7 @@ function buildJoinOgMetadata(slug, preview) {
   };
 }
 function createOgPreviewRouter(options = {}) {
-  const router = express20.Router();
+  const router = express23.Router();
   let cachedHtmlShell = options.htmlShell ?? null;
   const getHtmlShell = () => {
     if (cachedHtmlShell !== null) {
@@ -34348,10 +34367,10 @@ function createOgPreviewRouter(options = {}) {
 var ogPreviewRouter = createOgPreviewRouter();
 
 // server/vercelApp.ts
-var app = express21();
+var app = express24();
 app.disable("x-powered-by");
 app.use(
-  express21.json({
+  express24.json({
     limit: "2mb",
     reviver: strava64BitJsonReviver,
     verify: (req, _res, buf) => {

@@ -153,11 +153,16 @@ describe('Track 2: Shared-Device Sign-Out Race Guards & Public Team Hub Fixes', 
     expect(localStorage.getItem('aeropulse_strava_access_token')).toBeNull();
     expect(localStorage.getItem('aeropulse_strava_athlete_name')).toBeNull();
 
-    // Verify useTelemetrySync.ts guards post-await writes in fetchServerConfigStatus & syncLiveTelemetry
-    const hookSrc = fs.readFileSync(
-      path.join(process.cwd(), 'src/hooks/useTelemetrySync.ts'),
-      'utf8'
-    );
+    // Verify useTelemetrySync.ts & telemetrySync modules guard post-await writes in fetchServerConfigStatus & syncLiveTelemetry
+    const telemetrySyncDir = path.join(process.cwd(), 'src/hooks/telemetrySync');
+    const telemetrySyncParts = [
+      fs.readFileSync(path.join(process.cwd(), 'src/hooks/useTelemetrySync.ts'), 'utf8'),
+      ...fs
+        .readdirSync(telemetrySyncDir)
+        .filter((f) => f.endsWith('.ts'))
+        .map((f) => fs.readFileSync(path.join(telemetrySyncDir, f), 'utf8')),
+    ];
+    const hookSrc = telemetrySyncParts.join('\n');
     expect(hookSrc).toContain('isBrowserSessionLoggedOut');
     const guardMatches = hookSrc.match(/isBrowserSessionLoggedOut\(\)/g) || [];
     expect(guardMatches.length).toBeGreaterThanOrEqual(12);

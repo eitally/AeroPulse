@@ -56,11 +56,11 @@ flowchart LR
 | `src/utils/telemetryStorage.ts` + `src/utils/telemetryStorage/*.ts` | Profile calibration, Dexie snapshots, activity dedup/merge, wellness recompute, client storage | Thin barrel (`<= 120` lines); must stay decoupled from lazy heavy modules |
 | `src/physiology/` | Pure physiological math (`CTL`/`ATL`/`TSB`, `rTSS`, `CP`/`W'`, `VDOT` pods, durability, 3-layer FAT reconciliation, NCAA conversions) | Pure deterministic TypeScript; shared by client, workers & server |
 | `src/db/` | Dexie schemas (`workoutStore.ts`, `teamChatOutbox.ts`) | Offline-first IndexedDB persistence and durable outboxes |
-| `src/contexts/` & `src/hooks/` | Workspace state providers and cloud/wearable/team sync hooks | Includes `useAthleteCloudSync.ts` fast-reload protection |
-| `src/components/` | UI views, modals, charts (`uPlot`), maps (`Leaflet`), stopwatch, coach cockpit | Every component file `<= 2,500` lines; `App.tsx <= 2,100`; Impeccable audit clean |
+| `src/contexts/` & `src/hooks/` + `src/hooks/telemetrySync/*.ts` | Workspace state providers and cloud/wearable/team sync hooks | Includes `useAthleteCloudSync.ts` fast-reload protection and `useTelemetrySync.ts <= 900` lines |
+| `src/components/` (`stopwatch/*.ts(x)`, `coach/messaging/*.ts(x)`) | UI views, modals, charts (`uPlot`), maps (`Leaflet`), stopwatch, coach cockpit | Every component file `<= 2,500` lines (`TracksideStopwatchView.tsx <= 1,150`, `TeamMessagingDrawer.tsx <= 850`, `App.tsx <= 2,100`); Impeccable audit clean |
 | `src/workers/` | Off-main-thread `.FIT`/`.GPX`/`.TCX` decoding and 1Hz rep detection | Keeps stopwatch and scroll threads stutter-free |
 | `server/vercelApp.ts` + `server/apiRouter.ts` | Express app construction, security headers, health probe (`/api/health`), router mounting | Imported natively by Node 22 ESM in CI; bundled to `api/index.js` |
-| `server/routers/` & `server/routers/team/*.ts` | HTTP route handlers (`auth`, wearables, billing, injury, events, meet-day, `team/*`) | Thin handlers delegating business rules to `server/*Service.ts` |
+| `server/routers/` & `server/routers/{team,intervals}/*.ts` | HTTP route handlers (`auth`, wearables, billing, injury, events, meet-day, `team/*`, `intervals/*`) | Thin facades (`teamRouter.ts`, `intervalsRouter.ts <= 120` lines) delegating to domain modules |
 | `server/*Service.ts` | Domain services, RBAC, Postgres queries, `AES-256-GCM` vault, Clean-Room AI, Web Push/Email | Enforces COPPA `<13`, U18 Guardian-CC, FERPA photo opt-out |
 | `tests/` & `e2e/` | Vitest unit/Postgres integration suites + Playwright desktop/mobile E2E matrix | Enforces line caps, bundle budgets, and visual/functional parity |
 

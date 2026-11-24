@@ -43,10 +43,11 @@ describe('Sprint 3C: Monolith Decomposition Ceiling & Extracted Helper Guards', 
     expect(violations).toEqual([]);
   });
 
-  it('keeps src/types.ts, server/routers/teamRouter.ts, and telemetryStorage.ts as thin <= 120-line facades with <= 1,200-line submodules', () => {
+  it('keeps src/types.ts, server/routers/teamRouter.ts, intervalsRouter.ts, and telemetryStorage.ts as thin <= 120-line facades with <= 1,200-line submodules', () => {
     const facadeCeilings = [
       'src/types.ts',
       'server/routers/teamRouter.ts',
+      'server/routers/intervalsRouter.ts',
       'src/utils/telemetryStorage.ts',
     ];
     for (const rel of facadeCeilings) {
@@ -54,13 +55,44 @@ describe('Sprint 3C: Monolith Decomposition Ceiling & Extracted Helper Guards', 
       expect(lines, `${rel} exceeded thin facade ceiling`).toBeLessThanOrEqual(120);
     }
 
-    const domainDirs = ['src/types', 'server/routers/team', 'src/utils/telemetryStorage'];
+    const domainDirs = [
+      'src/types',
+      'server/routers/team',
+      'server/routers/intervals',
+      'src/utils/telemetryStorage',
+    ];
     for (const dirRel of domainDirs) {
       const files = collectComponentFiles(path.join(ROOT, dirRel));
       expect(files.length, `${dirRel} should contain extracted domain modules`).toBeGreaterThanOrEqual(4);
       for (const file of files) {
         const lines = fs.readFileSync(file, 'utf8').split('\n').length;
         expect(lines, `${path.relative(ROOT, file)} exceeded 1,200-line module ceiling`).toBeLessThanOrEqual(1200);
+      }
+    }
+  });
+
+  it('enforces MEE-14 modularized ceilings for TracksideStopwatchView, useTelemetrySync, and TeamMessagingDrawer', () => {
+    const targetCeilings: Array<[string, number]> = [
+      ['src/components/TracksideStopwatchView.tsx', 1150],
+      ['src/hooks/useTelemetrySync.ts', 900],
+      ['src/components/coach/TeamMessagingDrawer.tsx', 850],
+    ];
+    for (const [rel, cap] of targetCeilings) {
+      const lines = fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n').length;
+      expect(lines, `${rel} exceeded MEE-14 ceiling of ${cap} lines`).toBeLessThanOrEqual(cap);
+    }
+
+    const extractedDirs: Array<[string, number]> = [
+      ['src/components/stopwatch', 4],
+      ['src/hooks/telemetrySync', 3],
+      ['src/components/coach/messaging', 4],
+    ];
+    for (const [dirRel, minFiles] of extractedDirs) {
+      const files = collectComponentFiles(path.join(ROOT, dirRel));
+      expect(files.length, `${dirRel} should contain extracted domain modules`).toBeGreaterThanOrEqual(minFiles);
+      for (const file of files) {
+        const lines = fs.readFileSync(file, 'utf8').split('\n').length;
+        expect(lines, `${path.relative(ROOT, file)} exceeded 1,200-line submodule ceiling`).toBeLessThanOrEqual(1200);
       }
     }
   });
