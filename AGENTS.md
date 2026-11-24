@@ -51,3 +51,13 @@ SERVE_BUILT_DIST=1 CI=true npx playwright test
 
 - Track work in **Linear** (`https://linear.app/meetready`, team key `MEE`) and reference `Fixes MEE-XX` in commit messages and PRs.
 - Keep concise feature specs in `docs/specs/` and architectural decision records in `docs/adr/`. Do not store canonical specs or roadmaps in local agent artifact folders.
+
+## Start-of-Session Context Checklist
+
+Before planning or editing code in a new conversation:
+
+1. Check **[Linear (`MEE`)](https://linear.app/meetready)** for active sprint issues, priorities, and acceptance criteria.
+2. Read [`ARCHITECTURE.md`](ARCHITECTURE.md) for domain boundaries, facade limits, and client/Postgres sync invariants.
+3. Check [`docs/specs/README.md`](docs/specs/README.md) (including [`docs/specs/gtm-and-coach-research.md`](docs/specs/gtm-and-coach-research.md)) and [`docs/adr/`](docs/adr/) for accepted specs and architecture decisions.
+4. Consult [`docs/runbooks/production-setup.md`](docs/runbooks/production-setup.md) for Resend DNS, Vercel production env vars, and school procurement operations.
+5. Follow [`docs/AI_COLLABORATION_GUIDE.md`](docs/AI_COLLABORATION_GUIDE.md) for prompting conventions, swarm/subagent orchestration, and overnight autonomous run guardrails.

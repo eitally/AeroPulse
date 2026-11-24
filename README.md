@@ -17,6 +17,8 @@
 | **[Architecture Overview](ARCHITECTURE.md)** | `ARCHITECTURE.md` | System diagram, domain module ownership, and IndexedDB ↔ Postgres sync invariants. |
 | **[Contributor Guide](CONTRIBUTING.md)** | `CONTRIBUTING.md` | Prerequisites, CI-parity verification commands, module boundaries, and Linear workflow. |
 | **[AI & Code Invariants](AGENTS.md)** | `AGENTS.md` | Workspace rules, bundle/line ceilings, SafeSport/FERPA gates, and Node 22 ESM checks. |
+| **[AI Collaboration Guide](docs/AI_COLLABORATION_GUIDE.md)** | `docs/AI_COLLABORATION_GUIDE.md` | Prompting playbook, slash commands, swarm/subagent orchestration, and overnight autonomous run templates. |
+| **[Production Setup Runbook](docs/runbooks/production-setup.md)** | `docs/runbooks/production-setup.md` | Resend DNS/GoDaddy setup, Vercel production env matrix, `/api/health` checks, and school procurement desk. |
 | **[Design System](DESIGN.md)** & **[Tokens Guide](docs/DESIGN_SYSTEM.md)** | `DESIGN.md` · `docs/DESIGN_SYSTEM.md` | Canonical *Mondo Clay & Stadium Chalk* tokens, `Velocity Chevron M`, `Z1–Z6` semantics, WCAG AA. |
 | **[Online Docs Portal (`/docs`)](public/docs/index.html)** | `/docs` · `/docs/` | Searchable standalone documentation portal with interactive physiology & compliance references. |
 | **[Illustrated Coach Guide](public/docs/coach.html)** | `/docs/coach.html` | Visual 5-chapter Coach manual covering team setup, Squad Triage, Stopwatch, and Family Hub. |

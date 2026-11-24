@@ -72,6 +72,9 @@ NODE_ENV=test \
 
 - **Canonical Tracker:** [Linear — MeetReady (`MEE`)](https://linear.app/meetready). Move your issue to `In Progress` when starting work.
 - **Commit & PR Linking:** Reference the Linear key in commit messages and PR titles (`feat(coach): add split CSV filter (Fixes MEE-42)`).
+- **AI Collaboration & Operations Guides:**
+  - Read [AI Collaboration Guide](docs/AI_COLLABORATION_GUIDE.md) for prompting templates, slash commands (`/plan`, `/grill-me`, `/teamwork`, `/goal`), swarm rules, and unattended overnight runs.
+  - Consult [Production Setup Runbook](docs/runbooks/production-setup.md) for Resend DNS, Vercel Production environment variables, and `procurement@meetready.app` vendor readiness.
 - **Durable Specs & Decisions:**
   - Write concise feature specs (`80–150` lines) in `docs/specs/` before major UI or backend changes.
   - Record cross-cutting architectural or compliance decisions in `docs/adr/`.
