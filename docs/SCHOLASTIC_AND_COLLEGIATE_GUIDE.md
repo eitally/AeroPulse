@@ -1,6 +1,6 @@
-# MeetReady v2.3 — High School & Collegiate Team Pack Guide
+# MeetReady — High School, Collegiate & Club Team Guide
 
-This guide documents the scholastic, NCAA collegiate, and club team capabilities built into **MeetReady v2.3** (`src/physiology/teamOnboardingEngine.ts`, `src/physiology/scholasticEngine.ts`, `src/components/TeamManagementPanel.tsx`, and `server/teamService.ts`), designed to replace fragmented coaching spreadsheets, pace calculators, and result trackers with one unified workspace.
+This guide documents the scholastic, NCAA collegiate, and club team capabilities built into **MeetReady** (`src/physiology/teamOnboardingEngine.ts`, `src/physiology/scholasticEngine.ts`, `src/components/CoachWorkspaceView.tsx`, `src/components/TeamManagementPanel.tsx`, and `server/teamService.ts`), designed to replace fragmented coaching spreadsheets, pace calculators, generic team messaging apps, and result trackers with one unified workspace.
 
 ---
 
@@ -128,4 +128,13 @@ Converts injured or load-managed training-room sessions into **Virtual Running M
 ## 6. NCAA Bylaw 17.1 (`20-Hour Weekly / 4-Hour Daily CARA`) Compliance Audit
 
 Collegiate programs must comply with NCAA Bylaw 17.1 limiting in-season Countable Athletically Related Activities (CARA) to **20 hours per week** and **4 hours per day**.
-- `summarizeNcaaCaraWeeklyHours` audits rolling 7-day logged activity duration across every connected athlete in the **HS & College Coach Deck**, flagging warnings at `≥ 17.5h/wk` and non-compliance at `> 20.0h/wk` or `> 4.0h/day`.
+---
+
+## 7. Delegated Timing (`/time`), External Meet Interop & Unified Family Comms
+
+- **Simplified 5-Tab Coach Workspace (`CoachWorkspaceView.tsx`)**: Separates daily ops cleanly into `Home` (Quick Panel Links, Alerts & Conflicts, Comms Launcher), dedicated `Workouts`, `Meets & Plan` (Team Events, Meet Day Packets, External Meet Interop), `Timing` (`0.01s` Trackside Stopwatch + Hold-to-Pause + explicit rep-start separation), and `Team` (Roll Call, Health & Injuries, Staff & Admin).
+- **Zero-PII Delegated Timing Passes (`/time/:passCode`)**: Coaches assign an athlete captain or team manager to capture trackside splits via QR/link without elevating role privileges or exposing birthdates, emails, guardian contacts, or injury records. All submissions enter a **Pending Splits Queue** (`PENDING_COACH_APPROVAL`) before publishing and carry honest `Hand-Timed` / `Delegated Hand-Timed` provenance.
+- **External Meet Interop & 3-Layer Reconciliation (`EXTERNAL_MEET` vs. `HOST_DUAL_MEET`)**: Preserves external Hy-Tek / Athletic.net heat and lane assignments with Clerk-Tent Overrides (`CLERK_OVERRIDE`), enforces full-team export guards, and reconciles **Official FAT + Hand-Timed Splits + GPS Watch Streams** on the same race without double-counting weekly `TSS`.
+- **Team Events, Timed `.ics` Feeds & Family Hub (`TeamEventsRouter`, `FamilyMeetHubCard`)**: Athletes and `PARENT_FOLLOWER` guardians submit `Going / Out / Late / Conflict` RSVPs (`Team Bus / Parent Pickup / Self Travel`) that automatically surface in Meet Entries, Relay Alternates, and Roll Call, alongside revocable private `webcal://` `.ics` calendar links.
+- **Unified Comms Hub, Push-to-Email Fallback & Curated Meet Albums**: Combines `Chat`, `Announcements`, and `Workout Notes` with `Parents Only` & custom sub-groups, staff `Got It` read-receipt rosters, automatic Web Push → Resend email fallback, durable Dexie offline chat outbox, 1-tap PII-redacted Remind/ParentSquare copy, and **Curated Meet Album links** guarded by **FERPA `photoReleaseOptOut`** warnings.
+- **AT Injury/RTP Hub, GPS Practice Check-In & District AD Overview**: Sports medicine staff (`ATHLETIC_TRAINER`) manage confidential return-to-play stages (`OUT` / `MODIFIED` / `LIMITED` / `CLEARED`) integrated directly with Roll Call; Haversine practice geofences allow 1-tap `On-Site ✓` check-in (`Permissions-Policy: geolocation=(self)`); and Athletic Directors monitor multi-school compliance and flat-rate PO/Stripe billing.

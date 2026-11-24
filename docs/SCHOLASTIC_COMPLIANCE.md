@@ -12,11 +12,11 @@
 
 ### Closed-Roster Onboarding & Age Verification (`YYYY-MM`)
 1. **Under-13 Account Prohibition (COPPA):**
-   - Server and client age gates hard-block standalone or team account creation when age is `< 13` (coaches may time watchless trackside splits without creating child accounts).
+   - Server and client age gates apply conservative `${birthYear}-12` validation when checking birth-year thresholds and hard-block standalone or team account creation when age is `< 13` (coaches may still time watchless trackside splits without creating child accounts).
 2. **Mandatory Parental Consent & Quarantine (Ages 13–17 & `HIGH_SCHOOL`):**
-   - Minor athletes (`13–17`) and `HIGH_SCHOOL` rosters require `parentGuardianEmail`, cannot bypass immutable minor `birthMonthYear` rules, and stay in Safe-Sport quarantine (`LOAD_ONLY` + Gemini AI disabled) until parental consent is acknowledged.
+   - Minor athletes (`13–17`) and `HIGH_SCHOOL` rosters require `parentGuardianEmail`, lock minor `birthMonthYear` against tampering, use raster-only team logos (dropping unverified inline SVGs), and remain in SafeSport quarantine (`LOAD_ONLY` + Gemini AI disabled) until parental consent is verified.
 3. **Zero Un-CC'd 1-on-1 Minor Messaging (SafeSport MAAPP):**
-   - Direct coach-to-minor `sms:` buttons are disabled and private un-CC&apos;d coach-to-minor workout comments are rejected with HTTP `403`. Every minor comment automatically enforces Guardian visibility and audit logging.
+   - Direct coach-to-minor `sms:` buttons are disabled, private un-CC&apos;d coach-to-minor workout comments return HTTP `403`, and staff-only `COACHES_STAFF` or minor DM push notifications redact PII and enforce parent/staff oversight and `thresh_audit_log` logging.
 
 ---
 
@@ -43,5 +43,7 @@
    - `HEAD_COACH` & `ASSISTANT_COACH` program workouts; `ATHLETIC_TRAINER` reviews Squad Triage and injury/safety alerts without modifying workout broadcasts; `ORG_ADMIN` administers District/AD compliance and reads immutable `thresh_audit_log` records.
 2. **Zero Ads & Zero Data Sales (SOPIPA / AB-1584 / FERPA):**
    - Student data is never sold, rented, or used for advertising, and leaves `100%` of Strava payloads outside Google Gemini AI prompts.
-3. **Deletion, Portability & Automatic July 15 Graduation:**
-   - Parents or adult athletes (`18+` FERPA rights transfer) can export data or permanently delete accounts at any time, and graduating seniors roll over automatically to Alumni while retaining portable workout & stopwatch history.
+3. **FERPA Photo Release Opt-Out Guardrails (`photoReleaseOptOut`):**
+   - Roster entries support explicit FERPA photo-release opt-out flags (`PATCH /api/teams/:teamId/members/:membershipId/photo-release`). MeetReady intentionally stores **zero raw minor user-generated photo uploads**—linking only staff-curated external album URLs (`https://` allowlist) while displaying pre-save and post-save FERPA reminders when opted-out athletes are on the roster.
+4. **Deletion Tombstones, Portability & July 15 Graduation:**
+   - Parents or adult athletes (`18+` FERPA rights transfer) can export data or permanently delete accounts at any time (`DELETED` tombstones prevent Postgres account resurrection), and graduating seniors roll over automatically to Alumni while retaining portable workout & stopwatch history.

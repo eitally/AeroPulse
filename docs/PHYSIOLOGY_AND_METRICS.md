@@ -189,7 +189,7 @@ MeetReady's **Readiness Morphing Engine** combines morning `HRV rMSSD` vs. the 6
 
 ---
 
-## 8. Horizon 1–3 & v2.3 Scholastic Mathematical Models (`src/physiology/`)
+## 8. Orthopedic, Durability, Track & 1Hz Interval Mathematical Models (`src/physiology/`)
 
 ### 8.1 3-Channel Orthopedic Load Decomposition (`orthopedicEngine.ts`)
 Each activity $i$ with training load $\text{TSS}_i$ and sport modality $s_i$ is projected onto three orthogonal physiological strain channels:

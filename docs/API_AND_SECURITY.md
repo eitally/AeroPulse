@@ -20,7 +20,8 @@ This document covers the server-side architecture of **MeetReady**, including Mu
 ### 1.3 `AES-256-GCM` Token Vault & Normalized Postgres Storage (`server/tokenVault.ts`)
 - Encrypts provider credentials and tenant state at rest using `AES-256-GCM` (`96-bit` random IV + `128-bit` auth tag).
 - Unified secret key resolution: `TOKEN_VAULT_KEY || OAUTH_ENCRYPTION_KEY || SESSION_SECRET` (generate production 256-bit keys via `npm run secrets:generate`).
-- **Normalized Postgres Persistence & Strict TLS**: Writes to `thresh_tenant_vault`, `thresh_teams`, `thresh_team_members`, and append-only `thresh_audit_log` with `pg_advisory_xact_lock` row serialization and `ssl: { rejectUnauthorized: true }` in production, alongside encrypted `HttpOnly` backup cookies (`thresh_vault`, `thresh_user`).
+- **Normalized Postgres Persistence & Strict TLS**: Writes to `thresh_tenant_vault`, `thresh_teams`, `thresh_team_members`, `thresh_team_events`, `thresh_team_event_rsvps`, `thresh_team_messages`, `thresh_stripe_events`, and append-only `thresh_audit_log` with `pg_advisory_xact_lock` row serialization and `ssl: { rejectUnauthorized: true }` in production, alongside encrypted `HttpOnly` backup cookies (`thresh_vault`, `thresh_user`).
+- **Deletion Tombstones & Edge Security Headers**: Deleted users leave a permanent `DELETED` tombstone preventing `thresh_user` resurrection in Postgres; responses enforce `Permissions-Policy: geolocation=(self)` (scoped to self-origin practice geofence check-in) and strict HTML CSP (`form-action 'self'; frame-ancestors 'none'`) on public confirmation pages.
 
 ### 1.4 Clean-Room Allowlist AI Firewall (`server/cleanRoomFirewall.ts`)
 - **Strict Allowlist Schema**: Strips 100% of Strava-sourced activities (including `recentWorkouts`) before any request reaches Google Gemini AI.
@@ -39,14 +40,15 @@ This document covers the server-side architecture of **MeetReady**, including Mu
 | `GET / POST` | `/api/strava/*`, `/api/intervals/*`, `/api/wahoo/*`, `/api/polar/*`, `/api/garmin/*` | Cookie-nonce verified OAuth flows, 1Hz workout sync, canonical `startDateUtcMs` deduplication, and credential revocation. |
 | `POST` | `/api/auth/logout` | Clears server vault/session cookies for clean shared-device sign-out. |
 
-### 2.2 Multi-Team, Safe-Sport Governance, Library & Comments (`server/routers/teamRouter.ts`)
+### 2.2 Multi-Team, SafeSport Governance, Events, Comms & Meet Ops (`server/routers/teamRouter.ts` + Domain Routers)
 
-| Method | Path | Purpose |
+| Router / Group | Path Prefix / Key Endpoints | Purpose |
 | :--- | :--- | :--- |
-| `GET / POST` | `/api/teams`, `/api/teams/join-preview`, `/api/teams/join-claim` | Lists/creates teams with `ORG_ADMIN` / `ATHLETIC_TRAINER` / coach / parent RBAC; hashes and strips `parentConsentToken`; enforces COPPA `<13` block and U18 quarantine. |
-| `PATCH / DELETE` | `/api/teams/:teamId/members/me/sharing-tier`, `/api/teams/:teamId/members/:id/role`, `/api/teams/:teamId/members/me/guardian` | Post-join `sharingTier` editing, staff role assignments (`HEAD_COACH`, `ASSISTANT_COACH`, `ORG_ADMIN`, `ATHLETIC_TRAINER`), and immutable minor DOB guardian controls. |
-| `POST / PUT / DELETE` | `/api/teams/:teamId/workouts/broadcast`, `/broadcast-batch`, `/workouts/:broadcastId`, `/blocks/:blockId` | Cloud team workout CRUD and cohort block recall (`canProgramWorkoutsRole`: `HEAD_COACH` / `ASSISTANT_COACH` only). |
-| `GET / POST / DELETE` | `/api/teams/:teamId/workout-library`, `/comments`, `/safety-alerts`, `/audit-log` | Reusable team Workout Library, workout comments with mandatory `403` U18 Guardian-CC enforcement, Guardian safety alerts, and `HEAD_COACH`/`ORG_ADMIN` immutable audit log. |
+| **Team Roster & Governance** (`server/routers/team/rosterAndLifecycleRouter.ts`) | `/api/teams`, `/join-preview`, `/join-claim`, `PATCH /members/:id/photo-release`, `/members/me/sharing-tier`, `/audit-log` | Team CRUD with `ORG_ADMIN` / `ATHLETIC_TRAINER` / `PARENT_FOLLOWER` RBAC, COPPA `<13` (`${birthYear}-12`) & U18 quarantine, immutable minor DOB, FERPA `photoReleaseOptOut`, and audit log. |
+| **Unified Comms & Push** (`server/routers/team/messagingAndPushRouter.ts`) | `POST /announcements`, `POST /messages`, `/messages/:id/ack`, `/messages/:id/flag`, `/subgroups`, `POST /api/push/*` | Unified Comms Hub (`ALL_TEAM`, `COACHES_STAFF`, `PARENTS_ONLY`, `CUSTOM_SUBGROUP`), MAAPP guardian oversight, read receipts, Web Push VAPID + automatic Resend email fallback. |
+| **Workouts & Field Ops** (`server/routers/team/workoutsAndOpsRouter.ts`) | `/workouts/broadcast`, `/workout-library`, `/comments`, `/attendance`, `/attendance/self-checkin`, `/field-marks` | Reusable Workout Library, `403` Guardian-CC minor comments, Haversine GPS geofence check-in, and field event mark logging. |
+| **Delegated Timing** (`server/routers/team/timingRouter.ts`) | `/api/teams/public/timing-pass/:passCode`, `/timing-sessions`, `/timing-submissions/:id/review`, `/stopwatch-activities` | Zero-PII `/time` delegated timing passes (`First + Last Initial`) and coach staging review queue. |
+| **Events, Meets, Injury, Billing & Sync** (`server/routers/team*Router.ts`) | `/events`, `/events/ics-token`, `/api/teams/public/:slugOrCode/calendar.ics`, `/meet-day-packets`, `/injury-cases`, `/billing/*`, `/athletic-net/*` | Unified `TeamEvent` + RSVP + timed `.ics` feeds, External Meet Interop, AT RTP Injury Hub, Stripe/PO Billing, District AD overview, and first-party funnel telemetry (`analyticsRouter.ts`). |
 
 ### 2.3 Vault, Physiology, Webhooks & OTA Workout Export
 

@@ -1,4 +1,4 @@
-name: THRESH CI — Typecheck, Unit Tests & Bundle Budget
+name: MeetReady CI — Typecheck, Unit Tests & Bundle Budget
 
 on:
   push:

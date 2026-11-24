@@ -1,6 +1,6 @@
 # MeetReady — Complete Interactive User Manual
 
-Welcome to the **MeetReady (`#1 Stadium Track` Edition)** User Guide. You can also access an interactive, searchable version of this guide directly inside the application at any time by clicking the **`?` (User Guide)** icon in the top navigation bar or visiting `/docs/index.html`.
+Welcome to the **MeetReady (Mondo Clay & Stadium Chalk Edition)** User Guide. You can also access an interactive, searchable version of this guide directly inside the application at any time by clicking the **`?` (User Guide)** icon in the top navigation bar or visiting `/docs/index.html`.
 
 ---
 
@@ -13,7 +13,7 @@ Welcome to the **MeetReady (`#1 Stadium Track` Edition)** User Guide. You can al
 5. [Chapter 5: Activity Inspector, 1Hz Streams & Route Segments](#chapter-5-activity-inspector-1hz-streams--route-segments)
 6. [Chapter 6: Lab & Goals: Power/Pace Curves, Biometrics & Benchmarks](#chapter-6-lab--goals-powerpace-curves-biometrics--benchmarks)
 7. [Chapter 7: Teams, Coaching Roster, Privacy Shield & Gemini AI Coach](#chapter-7-teams-coaching-roster-privacy-shield--gemini-ai-coach)
-8. [Chapter 8: High School & Collegiate Team Pack (`v2.3`)](#chapter-8--horizon-13--v23-high-school--collegiate-workflows)
+16. [Chapter 8: Scholastic, Collegiate & Family Workflows](#chapter-8-scholastic-collegiate--family-workflows)
 
 ---
 
@@ -140,10 +140,9 @@ Switch between four sub-workspaces in **Activities**:
 
 ---
 
-## Chapter 8 · Horizon 1–3 & v2.3 High School / Collegiate Workflows
+## Chapter 8 · Scholastic, Collegiate & Family Workflows
 
-- **3-Channel Orthopedic Strip & Plan vs. Actual Ledger** on **Today / Fitness**.
-- **Fatigue-Sliced `0–40 kJ/kg` & `0–2,000 kcal` Durability** on **Curves**.
-- **Course Physics & Carb/Sodium Race Simulator** on **Goals & Totals**.
-- **GPS Rubber-Banding, `THV-...` Verified Passports & NCAA Track Converter** in **Log Official Race Result**.
-- **VDOT Pacing Pods (Pods A–D), Watchless Split Stopwatch & NCAA 20-Hour CARA Audit** in **HS & College Coach Deck** (see [docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md](SCHOLASTIC_AND_COLLEGIATE_GUIDE.md)).
+- **Simplified 5-Tab Coach Workspace**: Dedicated `Home` (Quick Panel Links, Alerts & Conflicts, Comms Launcher), `Workouts` (Builder & Library), `Meets & Plan` (Team Events, Meet Day Packets, External Hy-Tek/Athletic.net Interop), `Timing` (`0.01s` multi-runner stopwatch + `/time` Delegated Timing Passes), and `Team` (Roll Call, GPS Check-In, AT Injury Hub, Roster & Admin).
+- **Family Hub, Event RSVPs & Timed `.ics` Sync**: Linked `PARENT_FOLLOWER` accounts view athlete meet schedules, bus/arrival times, `Latest Timed Splits`, and Curated Meet Albums, submit 1-tap `Going / Out / Late / Conflict` RSVPs, and subscribe via revocable timed `webcal://` `.ics` feeds.
+- **Unified Comms Hub**: Consolidated `Chat`, `Announcements`, and `Workout Notes` with `Parents Only` & custom sub-groups, staff `Got It` read-receipt rosters, Web Push with automatic Resend Email fallback, durable Dexie offline outbox, and 1-tap PII-redacted `Copy for Remind / ParentSquare`.
+- **Athlete Daily & Physiological Intelligence**: Evening Closeout cards, watchless `SELF_REPORTED` completion auto-upgrading on wearable sync, **3-Channel Orthopedic Strip & Plan vs. Actual Ledger**, **`0–40 kJ/kg` & `0–2,000 kcal` Durability**, **Course Physics & Fueling Race Simulator**, and **3-layer Official FAT / Hand-Timed / Watch reconciliation** (see [docs/SCHOLASTIC_AND_COLLEGIATE_GUIDE.md](SCHOLASTIC_AND_COLLEGIATE_GUIDE.md)).
