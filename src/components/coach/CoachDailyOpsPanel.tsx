@@ -984,7 +984,7 @@ export const CoachDailyOpsPanel: React.FC<CoachDailyOpsPanelProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAllMembers((prev) => !prev)}
-                  className="min-h-[38px] px-3 py-1 rounded-lg ap-card-inset text-2xs font-mono font-bold cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[38px] px-3 py-1 rounded-lg ap-card-inset text-2xs font-mono font-bold cursor-pointer"
                 >
                   {showAllMembers
                     ? 'Show First 25 Athletes'

@@ -423,7 +423,7 @@ export const ActivityInspectorZonesAndSplits: React.FC<
                           <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
                           <span>Auto-Zone Insight</span>
                           <span
-                            className={`px-1.5 py-0.2 rounded text-2xs font-mono font-bold ${
+                            className={`px-1.5 py-0.5 rounded text-2xs font-mono font-bold ${
                               showAutoZoneInsight
                                 ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
                                 : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
@@ -630,7 +630,7 @@ export const ActivityInspectorZonesAndSplits: React.FC<
                                 </span>
                                 {showAutoZoneInsight && (
                                   <span
-                                    className={`text-2xs px-1.5 py-0.2 rounded font-mono ${
+                                    className={`text-2xs px-1.5 py-0.5 rounded font-mono ${
                                       Math.abs(z.deltaPct) <= 6
                                         ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
                                         : z.deltaPct > 6

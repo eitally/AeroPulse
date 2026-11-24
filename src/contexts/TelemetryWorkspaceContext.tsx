@@ -14,6 +14,7 @@ import type {
   TrackWorkoutSpec,
   UnifiedActivity,
   UnifiedWellnessDay,
+  WorkoutQuickLog,
   WorkoutSessionSlot,
 } from '../types';
 import type { SafetySwapEventInput } from '../physiology/sessionCheckInAndDigestEngine';
@@ -86,6 +87,11 @@ export interface TelemetryWorkspaceContextValue {
   handleHydrateMoreRoutes: () => Promise<void>;
   handleToggleActivityKudos: (activity: UnifiedActivity) => Promise<void>;
   handleAddActivityComment: (activity: UnifiedActivity, text: string) => Promise<void>;
+  handleUpdateActivityQuickLog?: (
+    activityId: string,
+    quickLog: WorkoutQuickLog,
+    opts?: { syncGear?: boolean }
+  ) => void;
   handleImportSingleParsedActivity: (activity: UnifiedActivity) => void;
   handleImportMultipleParsedActivities: (activities: UnifiedActivity[]) => void;
   handleUpdateAnnualMileageGoal: (sport: 'Running' | 'Cycling' | 'Swimming', targetMeters: number) => void;

@@ -40,14 +40,47 @@ const ORG_TYPE_OPTIONS: Array<{ id: TeamOrgType; label: string; subtitle: string
   },
 ];
 
+const ALLOWED_RASTER_CREST_MIME_TYPES = new Set([
+  'image/png',
+  'image/webp',
+  'image/jpeg',
+  'image/jpg',
+]);
+
+export function isAllowedRasterCrestFile(file: { type?: string; name?: string }): boolean {
+  const mime = String(file.type || '').trim().toLowerCase();
+  const name = String(file.name || '').trim().toLowerCase();
+  if (mime === 'image/svg+xml' || mime.includes('svg') || name.endsWith('.svg')) {
+    return false;
+  }
+  if (mime) {
+    return ALLOWED_RASTER_CREST_MIME_TYPES.has(mime);
+  }
+  return /\.(png|webp|jpe?g)$/.test(name);
+}
+
+export function sanitizeCrestPreviewDataUrl(url?: string): string | undefined {
+  const trimmed = String(url || '').trim();
+  if (!trimmed) return undefined;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith('data:image/svg')) return undefined;
+  if (/^data:image\/(?:png|webp|jpeg|jpg);base64,[a-z0-9+/=]+$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return undefined;
+}
+
 async function downscaleLogoFileToDataUrl(file: File): Promise<string> {
+  if (!isAllowedRasterCrestFile(file)) {
+    throw new Error('SVG crests are blocked for security. Please upload a PNG, WebP, or JPEG image.');
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read image file.'));
     reader.onload = () => {
       const resultStr = String(reader.result || '');
-      if (file.type === 'image/svg+xml' && resultStr.length <= 48_000) {
-        resolve(resultStr);
+      if (resultStr.trim().toLowerCase().startsWith('data:image/svg')) {
+        reject(new Error('SVG crests are blocked for security. Please upload a PNG, WebP, or JPEG image.'));
         return;
       }
       const img = new Image();
@@ -62,7 +95,9 @@ async function downscaleLogoFileToDataUrl(file: File): Promise<string> {
         canvas.height = h;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          resolve(resultStr.slice(0, 90_000));
+          const safeFallback = sanitizeCrestPreviewDataUrl(resultStr.slice(0, 90_000));
+          if (safeFallback) resolve(safeFallback);
+          else reject(new Error('Could not process raster crest image.'));
           return;
         }
         ctx.clearRect(0, 0, w, h);
@@ -154,6 +189,11 @@ export const TeamBrandingStudioForm: React.FC<TeamBrandingStudioFormProps> = ({
   onErrorMessage,
 }) => {
   const logoFileInputRef = useRef<HTMLInputElement | null>(null);
+  const safePreviewLogoUrl = sanitizeCrestPreviewDataUrl(previewBrand.logoDataUrl);
+  const safePreviewBrand: TeamBrandConfig = {
+    ...previewBrand,
+    logoDataUrl: safePreviewLogoUrl,
+  };
 
   return (
     <form
@@ -404,16 +444,19 @@ export const TeamBrandingStudioForm: React.FC<TeamBrandingStudioFormProps> = ({
                     ref={logoFileInputRef}
                     type="file"
                     aria-label="Upload team crest or logo image"
-                    accept="image/svg+xml,image/png,image/webp,image/jpeg"
+                    accept="image/png,image/webp,image/jpeg"
                     className="hidden"
                     onChange={async (e) => {
                       const f = e.target.files?.[0];
+                      e.target.value = '';
                       if (!f) return;
                       try {
                         const resized = await downscaleLogoFileToDataUrl(f);
                         setLogoDataUrl(resized);
-                      } catch {
-                        onErrorMessage('Could not process crest image.');
+                      } catch (err) {
+                        onErrorMessage(
+                          err instanceof Error ? err.message : 'Could not process crest image.'
+                        );
                       }
                     }}
                   />
@@ -438,7 +481,7 @@ export const TeamBrandingStudioForm: React.FC<TeamBrandingStudioFormProps> = ({
                   className="absolute top-0 left-0 right-0 h-[3px]"
                   style={{ background: livePalette.hairlineGradientLight }}
                 />
-                <AeroPulseLogo size="md" showTagline teamBrand={previewBrand} />
+                <AeroPulseLogo size="md" showTagline teamBrand={safePreviewBrand} />
               </div>
 
               <div className="space-y-2 pt-1 text-xs">

@@ -433,10 +433,40 @@ export function buildDistrictAdExecutiveSummaryHtml(report: DistrictOverviewRepo
 </html>`;
 }
 
+export function downloadDistrictAdSummaryHtmlFallback(report: DistrictOverviewReport): string {
+  const html = buildDistrictAdExecutiveSummaryHtml(report);
+  if (
+    typeof document !== 'undefined' &&
+    typeof Blob !== 'undefined' &&
+    typeof URL !== 'undefined' &&
+    typeof URL.createObjectURL === 'function'
+  ) {
+    const slug = (report.districtFilter || 'meetready-district')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    const dateTag = (report.generatedAt || new Date().toISOString()).slice(0, 10);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${slug || 'meetready-district'}-ad-summary-${dateTag}.html`;
+    if (a.style) a.style.display = 'none';
+    document.body?.appendChild?.(a);
+    a.click();
+    a.remove?.();
+    URL.revokeObjectURL(url);
+  }
+  return html;
+}
+
 export function openPrintableDistrictAdSummaryWindow(report: DistrictOverviewReport): boolean {
   if (typeof window === 'undefined') return false;
   const popup = window.open('', '_blank', 'width=960,height=740');
-  if (!popup) return false;
+  if (!popup) {
+    downloadDistrictAdSummaryHtmlFallback(report);
+    return false;
+  }
   popup.document.open();
   popup.document.write(buildDistrictAdExecutiveSummaryHtml(report));
   popup.document.close();

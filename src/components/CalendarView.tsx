@@ -1533,7 +1533,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                               <div className="flex items-center justify-between gap-1">
                                 {plannedStripe ? (
                                   <span
-                                    className={`text-2xs font-mono font-bold px-1 py-0.2 rounded-xs leading-tight bg-white/85 dark:bg-[#0B110E]/80 border border-slate-300/70 dark:border-white/15 ${plannedStripe.dominantZone.inkClass}`}
+                                    className={`text-2xs font-mono font-bold px-1 py-0.5 rounded-xs leading-tight bg-white/85 dark:bg-[#0B110E]/80 border border-slate-300/70 dark:border-white/15 ${plannedStripe.dominantZone.inkClass}`}
                                     title={`Planned Target Zone: ${plannedStripe.dominantZone.code} ${plannedStripe.dominantZone.name}`}
                                   >
                                     {plannedStripe.dominantZone.code}
@@ -1834,7 +1834,7 @@ const CalendarViewInner: React.FC<CalendarViewProps> = ({
                                                 compliancePct >= 85 && compliancePct <= 115;
                                               return (
                                                 <span
-                                                  className={`px-1 py-0.2 rounded-xs text-2xs font-mono ${
+                                                  className={`px-1 py-0.5 rounded-xs text-2xs font-mono ${
                                                     inRange
                                                       ? 'ap-status-prime'
                                                       : 'ap-status-caution'

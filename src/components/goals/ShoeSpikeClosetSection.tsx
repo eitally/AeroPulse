@@ -23,6 +23,7 @@ import {
   getDefaultMaxRecommendedMeters,
   getFootwearClassLabel,
   metersToDisplayUnitInput,
+  readSavedActivityQuickLogs,
   setPrimaryGearItem,
   toggleRetireGearItem,
   upsertGearItem,
@@ -82,7 +83,7 @@ export const ShoeSpikeClosetSection: React.FC<ShoeSpikeClosetSectionProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
 
   const summaries = useMemo(
-    () => computeGearClosetSummaries(gearItems, activities),
+    () => computeGearClosetSummaries(gearItems, activities, readSavedActivityQuickLogs()),
     [gearItems, activities]
   );
 

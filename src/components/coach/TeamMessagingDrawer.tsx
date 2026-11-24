@@ -840,7 +840,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                     type="button"
                     data-testid="messaging-policy-replies-toggle"
                     onClick={() => void handleToggleAthleteReplies()}
-                    className="px-2 py-0.5 rounded-full ap-card-inset font-semibold cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-full ap-card-inset font-semibold cursor-pointer"
                   >
                     {policy.athleteRepliesEnabled ? 'Replies: ON' : 'Broadcast Only'}
                   </button>
@@ -848,7 +848,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                     type="button"
                     data-testid="messaging-export-csv-btn"
                     onClick={handleExportAuditCsv}
-                    className="px-2 py-0.5 rounded-full ap-card-inset font-semibold inline-flex items-center gap-1 cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[28px] px-2.5 py-0.5 rounded-full ap-card-inset font-semibold inline-flex items-center gap-1 cursor-pointer"
                   >
                     <Download className="w-3 h-3" /> Audit CSV
                   </button>
@@ -907,7 +907,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                   setStatusError(null);
                   setStatusInfo(null);
                 }}
-                className={`min-h-[40px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5 ${
+                className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-extrabold cursor-pointer inline-flex items-center gap-1.5 ${
                   active ? 'ap-nav-volt-active' : 'liquid-capsule-track text-ap-ink dark:text-ap-chalk'
                 }`}
               >
@@ -975,7 +975,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                 <button
                   type="button"
                   onClick={() => setPushPanelExpanded(false)}
-                  className="min-h-[36px] px-2 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark cursor-pointer"
+                  className="min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark cursor-pointer"
                 >
                   Hide
                 </button>
@@ -993,7 +993,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
               data-testid="toggle-device-push-btn"
               aria-pressed={true}
               onClick={() => setPushPanelExpanded(true)}
-              className="px-2.5 py-1 rounded-lg ap-status-prime font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
+              className="min-h-[44px] sm:min-h-[32px] px-2.5 py-1 rounded-lg ap-status-prime font-mono font-bold inline-flex items-center gap-1 cursor-pointer"
             >
               <span>Push Alerts ON{pushCount > 1 ? ` (${pushCount})` : ''}</span>
               <span className="opacity-75">· Manage</span>
@@ -1104,7 +1104,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                             type="button"
                             data-testid={`comms-subgroup-pill-${sg.id}`}
                             onClick={() => setSelectedSubgroupId(sg.id)}
-                            className={`min-h-[34px] px-2.5 py-1 rounded-lg font-bold text-2xs cursor-pointer ${
+                            className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg font-bold text-2xs cursor-pointer ${
                               activeSg
                                 ? 'ap-nav-volt-active'
                                 : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark'
@@ -1117,7 +1117,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                               type="button"
                               aria-label={`Delete sub-group ${sg.name}`}
                               onClick={() => void handleDeleteSubgroup(sg.id)}
-                              className="min-h-[30px] min-w-[30px] rounded-lg text-rose-500 inline-flex items-center justify-center cursor-pointer"
+                              className="min-h-[44px] min-w-[44px] sm:min-h-[30px] sm:min-w-[30px] rounded-lg text-rose-500 inline-flex items-center justify-center cursor-pointer"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1136,7 +1136,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                       type="button"
                       data-testid="comms-subgroup-create-btn"
                       onClick={() => setSubgroupComposerOpen(true)}
-                      className="min-h-[34px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                      className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg ap-btn-secondary text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>New Sub-Group</span>
@@ -1170,7 +1170,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                   aria-label="Select Event Group Channel"
                   value={selectedGroup}
                   onChange={(e) => setSelectedGroup(e.target.value as CoachEventGroup)}
-                  className="min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold"
+                  className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold"
                 >
                   {COACH_EVENT_GROUP_OPTIONS.map((g) => (
                     <option key={g.id} value={g.id}>
@@ -1196,7 +1196,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                       aria-label="Select Athlete for SafeSport Thread"
                       value={resolvedDirectAthlete?.membershipId || ''}
                       onChange={(e) => setSelectedAthleteMembershipId(e.target.value)}
-                      className="min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs font-semibold"
+                      className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 text-xs font-semibold"
                     >
                       {athleteMembers.map((m) => (
                         <option key={m.membershipId} value={m.membershipId}>
@@ -1222,7 +1222,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                           key={thr.membershipId}
                           type="button"
                           onClick={() => setSelectedAthleteMembershipId(thr.membershipId)}
-                          className={`min-h-[32px] px-2.5 py-0.5 rounded-full text-2xs font-semibold cursor-pointer truncate max-w-[200px] ${
+                          className={`min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded-full text-2xs font-semibold cursor-pointer truncate max-w-[200px] ${
                             isSel
                               ? 'ap-nav-volt-active'
                               : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark text-ap-ink dark:text-ap-chalk'
@@ -1270,7 +1270,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                   data-testid="comms-outbox-retry-btn"
                   disabled={flushingOutbox}
                   onClick={() => void handleFlushAllOutbox()}
-                  className="min-h-[30px] px-2.5 py-0.5 rounded-lg bg-amber-600 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                  className="min-h-[44px] sm:min-h-[30px] px-2.5 py-0.5 rounded-lg bg-amber-600 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw className="w-3 h-3" />
                   <span>{flushingOutbox ? 'Syncing…' : 'Sync All'}</span>
@@ -1334,7 +1334,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                             type="button"
                             data-testid={`msg-ack-btn-${msg.id}`}
                             onClick={() => void handleAck(msg.id)}
-                            className={`min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer ${
+                            className={`min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold inline-flex items-center gap-1 cursor-pointer ${
                               alreadyAcked
                                 ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300'
                                 : 'bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark'
@@ -1349,7 +1349,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                               data-testid={`msg-read-receipts-btn-${msg.id}`}
                               aria-expanded={receiptOpen}
                               onClick={() => setOpenReceiptMsgId(receiptOpen ? null : msg.id)}
-                              className="min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
+                              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
                             >
                               <Users className="w-3 h-3" />
                               <span>Receipts</span>
@@ -1359,7 +1359,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                             type="button"
                             data-testid={`msg-copy-remind-btn-${msg.id}`}
                             onClick={() => void handleCopyRemindMessage(msg)}
-                            className="min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
+                            className="min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg text-2xs font-mono font-semibold bg-white dark:bg-ap-carbon border border-ap-frame/20 dark:border-ap-edge-dark inline-flex items-center gap-1 cursor-pointer"
                           >
                             <Copy className="w-3 h-3" />
                             <span>{copiedMsgId === msg.id ? 'Copied ✓' : 'Copy Remind'}</span>
@@ -1370,7 +1370,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                             type="button"
                             data-testid={`msg-flag-btn-${msg.id}`}
                             onClick={() => void handleFlag(msg.id)}
-                            className="min-h-[34px] px-2 py-0.5 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark hover:text-rose-500 inline-flex items-center gap-1 cursor-pointer"
+                            className="min-h-[44px] sm:min-h-[34px] px-2 py-0.5 rounded-lg text-2xs font-mono text-ap-muted dark:text-ap-muted-dark hover:text-rose-500 inline-flex items-center gap-1 cursor-pointer"
                           >
                             <Flag className="w-3 h-3" />
                             <span>Flag</span>
@@ -1404,7 +1404,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                       data-testid="team-msg-retry-btn"
                       disabled={retryingId === q.localId}
                       onClick={() => void handleRetryQueuedMessage(q)}
-                      className="min-h-[34px] px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                      className="min-h-[44px] sm:min-h-[34px] px-2.5 py-0.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-bold inline-flex items-center gap-1 cursor-pointer disabled:opacity-50"
                     >
                       <RefreshCw className="w-3 h-3" />
                       <span>{retryingId === q.localId ? 'Retrying…' : 'Retry'}</span>
@@ -1424,7 +1424,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
                       key={tpl}
                       type="button"
                       onClick={() => setDraftBody(tpl)}
-                      className="px-2 py-0.5 rounded-md ap-card-inset text-2xs text-ap-ink dark:text-ap-chalk hover:underline cursor-pointer truncate max-w-[200px]"
+                      className="min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded-md ap-card-inset text-2xs text-ap-ink dark:text-ap-chalk hover:underline cursor-pointer truncate max-w-[200px]"
                     >
                       {tpl}
                     </button>

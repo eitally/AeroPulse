@@ -232,7 +232,7 @@ export interface InjuryHubDashboardSummary {
   safeSportFlags: SafeSportInjuryContextItem[];
 }
 
-function shiftIsoDateDays(baseIso: string, deltaDays: number): string {
+export function shiftIsoDateDays(baseIso: string, deltaDays: number): string {
   const parsed = new Date(`${baseIso.slice(0, 10)}T12:00:00Z`);
   if (Number.isNaN(parsed.getTime())) return baseIso.slice(0, 10);
   parsed.setUTCDate(parsed.getUTCDate() + deltaDays);

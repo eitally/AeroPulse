@@ -44,6 +44,7 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
   const [districtFilter, setDistrictFilter] = useState<string>('');
   const [serverReport, setServerReport] = useState<DistrictOverviewReport | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [printNotice, setPrintNotice] = useState<string | null>(null);
 
   const clientFallbackReport = useMemo(
     () =>
@@ -136,7 +137,14 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
             <button
               type="button"
               data-testid="district-print-summary-btn"
-              onClick={() => openPrintableDistrictAdSummaryWindow(report)}
+              onClick={() => {
+                const opened = openPrintableDistrictAdSummaryWindow(report);
+                setPrintNotice(
+                  opened
+                    ? null
+                    : 'Pop-up window blocked by browser — downloaded the District AD Executive Summary as an offline .html file instead. Open the downloaded file to print or save as PDF.'
+                );
+              }}
               className="ap-btn-primary !min-h-[44px] sm:!min-h-[36px] px-3.5 py-2 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
             >
               <FileText className="w-4 h-4" />
@@ -153,6 +161,26 @@ export const DistrictAdOverviewModal: React.FC<DistrictAdOverviewModalProps> = (
             </button>
           </div>
         </div>
+
+        {printNotice && (
+          <div
+            role="status"
+            data-testid="district-print-notice"
+            className="rounded-xl ap-status-caution px-3.5 py-2.5 text-xs font-semibold flex flex-wrap items-center justify-between gap-2"
+          >
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{printNotice}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPrintNotice(null)}
+              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-white/80 dark:bg-ap-carbon text-2xs font-bold cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
         {/* KPI Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">

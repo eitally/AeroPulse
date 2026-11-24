@@ -715,7 +715,7 @@ export const PhysiologicalTrendsView: React.FC<PhysiologicalTrendsViewProps> = (
                       <span className="truncate">{meta.shortLabel}</span>
                     </span>
                     <span
-                      className={`text-2xs font-mono px-1.5 py-0.2 rounded ${
+                      className={`text-2xs font-mono px-1.5 py-0.5 rounded ${
                         isSelected
                           ? 'bg-slate-900/10 dark:bg-white/10 text-slate-800 dark:text-slate-200 font-semibold'
                           : 'text-slate-600 dark:text-slate-400'

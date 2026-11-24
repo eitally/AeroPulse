@@ -80,6 +80,7 @@ export const STORAGE_KEYS = {
 
   // Session Storage
   PENDING_TEAM_JOIN: 'thresh_pending_team_join_v1',
+  PENDING_BILLING_CHECKOUT: 'thresh_pending_billing_checkout_v1',
   ONBOARDING_ROLE: 'thresh_onboarding_role',
   OPEN_PLAN_COHORT: 'thresh_open_plan_cohort',
 
@@ -174,6 +175,7 @@ const EXPLICIT_USER_STORAGE_KEYS: readonly string[] = [
   STORAGE_KEYS.CLOUD_STATE_DIRTY,
   STORAGE_KEYS.BEDTIME_REMINDER,
   STORAGE_KEYS.PENDING_SHARED_WORKOUT,
+  STORAGE_KEYS.PENDING_BILLING_CHECKOUT,
 ];
 
 const EXPLICIT_USER_STORAGE_KEY_SET: ReadonlySet<string> = new Set(EXPLICIT_USER_STORAGE_KEYS);

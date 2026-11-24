@@ -77,6 +77,7 @@ import { useWorkspaceOnboarding } from './hooks/useWorkspaceOnboarding';
 import { useSampleDemoWorkspace } from './hooks/useSampleDemoWorkspace';
 import { useStopwatchSyncBridge } from './hooks/useStopwatchSyncBridge';
 import { useAthleteProfileAndGoals } from './hooks/useAthleteProfileAndGoals';
+import { useBillingReturnNotice } from './hooks/useBillingReturnNotice';
 import { emitFunnelEvent } from './utils/funnelTelemetry';
 import { WorkspaceErrorBoundary } from './components/WorkspaceErrorBoundary';
 import { getLocalDateIso } from './physiology/stravaLoadCalibration';
@@ -652,46 +653,13 @@ export default function App() {
     isSessionLoggedOut,
   });
 
-  const [billingNotice, setBillingNotice] = useState<{ tone: 'success' | 'info'; text: string } | null>(null);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    if (initialIsSampleQuery) {
-      const r = params.get('sample') === 'coach' ? 'COACH' : 'ATHLETE';
-      emitFunnelEvent('demo_enter', { role: r, tier: r === 'COACH' ? 'DEMO_COACH' : 'DEMO_ATHLETE', dedupeSessionKey: 'demo_enter' });
-    }
-    const billing = params.get('billing');
-    if (billing !== 'success' && billing !== 'cancelled') return;
-    params.delete('billing');
-    try { window.history.replaceState({}, '', `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash}`); } catch { /* ignore */ }
-    if (billing === 'cancelled') {
-      setBillingNotice({ tone: 'info', text: 'Stripe checkout cancelled — your Net-30 PO and current team plan remain unchanged.' });
-      return;
-    }
-    setBillingNotice({ tone: 'success', text: 'Stripe checkout completed — verifying annual plan activation…' });
-    if (isSampleDemoMode) return;
-    let cancelled = false;
-    let timerId: number | null = null;
-    const pollBilling = (attempt: number) => {
-      fetch(`/api/teams/mine?origin=${encodeURIComponent(window.location.origin)}`, { credentials: 'include' })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d: { teams?: TeamSummaryWithRole[] } | null) => {
-          if (cancelled) return;
-          const teams = Array.isArray(d?.teams) ? d.teams : [];
-          if (teams.length > 0) setMyTeams(teams);
-          if (teams.some((t) => t.billing?.status === 'ACTIVE_PAID')) {
-            setBillingNotice({ tone: 'success', text: 'Annual program billing activated (Active Paid).' });
-          } else if (attempt < 3) {
-            timerId = window.setTimeout(() => pollBilling(attempt + 1), 2000);
-          } else {
-            setBillingNotice({ tone: 'info', text: 'Stripe return received — plan activation is still finalizing. Refresh shortly if still Pilot.' });
-          }
-        })
-        .catch(() => { if (!cancelled && attempt < 3) timerId = window.setTimeout(() => pollBilling(attempt + 1), 2000); });
-    };
-    pollBilling(1);
-    return () => { cancelled = true; if (timerId !== null) window.clearTimeout(timerId); };
-  }, [initialIsSampleQuery, isSampleDemoMode, setMyTeams]);
+  const { billingNotice, setBillingNotice } = useBillingReturnNotice({
+    initialIsSampleQuery,
+    isSampleDemoMode,
+    activeTeamId,
+    setMyTeams,
+    setActiveTeamId,
+  });
 
   const effectiveTeams = isSampleDemoMode ? sampleDemoTeams : myTeams;
   const effectiveActiveTeamId = isSampleDemoMode ? sampleDemoActiveTeamId : activeTeamId;
@@ -866,6 +834,7 @@ export default function App() {
     handleHydrateMoreRoutes,
     handleToggleActivityKudos,
     handleAddActivityComment,
+    handleUpdateActivityQuickLog,
     loadStreamsForActivity,
     handleSelectActivity,
   } = useRouteStreams({
@@ -1574,6 +1543,7 @@ export default function App() {
       handleHydrateMoreRoutes,
       handleToggleActivityKudos,
       handleAddActivityComment,
+      handleUpdateActivityQuickLog,
       handleImportSingleParsedActivity,
       handleImportMultipleParsedActivities,
       handleUpdateAnnualMileageGoal,
@@ -1628,6 +1598,7 @@ export default function App() {
       handleHydrateMoreRoutes,
       handleToggleActivityKudos,
       handleAddActivityComment,
+      handleUpdateActivityQuickLog,
       handleImportSingleParsedActivity,
       handleImportMultipleParsedActivities,
       handleUpdateAnnualMileageGoal,

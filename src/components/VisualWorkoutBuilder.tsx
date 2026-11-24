@@ -23,10 +23,13 @@ import type {
   PracticeVenueCategory,
   SportCategory,
   TeamSummaryWithRole,
+  TeamWorkoutLibraryCategory,
+  TeamWorkoutLibraryTemplate,
   TrackWorkoutSpec,
   WorkoutSessionSlot,
 } from '../types';
 import { useTeamCoach, type TeamCoachContextValue } from '../contexts/TeamCoachContext';
+import { saveWorkoutLibraryTemplateApi } from '../utils/teamLifecycleApi';
 import {
   DEFAULT_PRACTICE_VENUE_PRESETS,
   formatPracticeTime12h,
@@ -106,6 +109,9 @@ export interface VisualWorkoutBuilderProps {
   submitLabel?: string;
   compact?: boolean;
   onSave: (payload: VisualWorkoutSavePayload) => Promise<void> | void;
+  onSaveToLibrary?: (
+    template: Omit<TeamWorkoutLibraryTemplate, 'id' | 'createdAt' | 'createdByName'>
+  ) => Promise<void> | void;
   onCancel?: () => void;
   onOpenTracksideStopwatch?: () => void;
 }
@@ -413,6 +419,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
   submitLabel,
   compact = false,
   onSave,
+  onSaveToLibrary,
   onCancel,
   onOpenTracksideStopwatch,
 }) => {
@@ -475,6 +482,15 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
     tone: 'ok' | 'warn';
   } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSavingLibrary, setIsSavingLibrary] = useState(false);
+
+  const canSaveToTeamLibrary = Boolean(
+    onSaveToLibrary ||
+      (effectiveActiveTeam &&
+        (effectiveActiveTeam.myRole === 'HEAD_COACH' ||
+          effectiveActiveTeam.myRole === 'ASSISTANT_COACH' ||
+          effectiveActiveTeam.myRole === 'ORG_ADMIN'))
+  );
 
   // Re-hydrate cleanly when switching into editing another existing event or date
   useEffect(() => {
@@ -839,6 +855,110 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
     onOpenTracksideStopwatch?.();
   };
 
+  const handleSaveToLibraryClick = async () => {
+    const cleanName = (builderName.trim() || 'Custom Session').slice(0, 100);
+    const category: TeamWorkoutLibraryCategory =
+      builderSport === 'Swimming'
+        ? 'SWIMMING'
+        : builderSport === 'Multisport'
+          ? 'TRIATHLON'
+          : builderSport === 'Cycling'
+            ? 'CYCLING'
+            : summaryStats.load < 45
+              ? 'RECOVERY'
+              : /tempo|sub-t|xc|hill/i.test(`${cleanName} ${notes}`)
+                ? 'XC_TEMPO'
+                : builderSport === 'Running' && (isTrackOvalMode || Boolean(detectedTrackSpec))
+                  ? 'TRACK'
+                  : 'ROAD';
+    const payload = {
+      name: cleanName,
+      category,
+      sportCategory: builderSport,
+      workoutSyntax: effectiveSyntax,
+      description: (notes.trim() || cleanName).slice(0, 400),
+      plannedDurationSecs: summaryStats.durationSecs,
+      plannedLoad: summaryStats.load,
+      ...(builderSport === 'Running' && detectedTrackSpec ? { trackSpec: detectedTrackSpec } : {}),
+    };
+
+    if (onSaveToLibrary) {
+      setIsSavingLibrary(true);
+      try {
+        await onSaveToLibrary(payload);
+        setStatusMessage({
+          text: `Saved "${cleanName}" to Team Workout Library.`,
+          tone: 'ok',
+        });
+      } catch (err) {
+        setStatusMessage({
+          text: err instanceof Error ? err.message : 'Could not save template.',
+          tone: 'warn',
+        });
+      } finally {
+        setIsSavingLibrary(false);
+      }
+      return;
+    }
+
+    if (!effectiveActiveTeam) return;
+    if (effectiveActiveTeam.brand.teamId.startsWith('demo_team_')) {
+      const localTemplate: TeamWorkoutLibraryTemplate = {
+        id: `lib_${Date.now()}`,
+        ...payload,
+        createdByName:
+          effectiveActiveTeam.brand.coachDisplayName ||
+          teamCtx?.primaryAthleteDisplayName ||
+          'Coach',
+        createdAt: new Date().toISOString(),
+      };
+      const updatedTeam: TeamSummaryWithRole = {
+        ...effectiveActiveTeam,
+        workoutLibrary: [localTemplate, ...(effectiveActiveTeam.workoutLibrary || [])],
+      };
+      const currentTeams = teamCtx?.myTeams || [effectiveActiveTeam];
+      teamCtx?.onTeamsUpdated(
+        currentTeams.map((t) =>
+          t.brand.teamId === updatedTeam.brand.teamId ? updatedTeam : t
+        ),
+        updatedTeam.brand.teamId
+      );
+      setStatusMessage({
+        text: `Saved "${cleanName}" to Team Workout Library.`,
+        tone: 'ok',
+      });
+      return;
+    }
+
+    setIsSavingLibrary(true);
+    try {
+      const res = await saveWorkoutLibraryTemplateApi(effectiveActiveTeam.brand.teamId, payload);
+      if (teamCtx) {
+        if (Array.isArray(res.teams)) {
+          teamCtx.onTeamsUpdated(res.teams, effectiveActiveTeam.brand.teamId);
+        } else if (res.team) {
+          teamCtx.onTeamsUpdated(
+            teamCtx.myTeams.map((t) =>
+              t.brand.teamId === res.team!.brand.teamId ? res.team! : t
+            ),
+            res.team.brand.teamId
+          );
+        }
+      }
+      setStatusMessage({
+        text: `Saved "${cleanName}" to Team Workout Library.`,
+        tone: 'ok',
+      });
+    } catch (err) {
+      setStatusMessage({
+        text: err instanceof Error ? err.message : 'Could not save template.',
+        tone: 'warn',
+      });
+    } finally {
+      setIsSavingLibrary(false);
+    }
+  };
+
   const resolvedStepLines = useMemo(
     () =>
       effectiveSyntax
@@ -982,7 +1102,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   if (opt.id === 'AM' && !scheduledTime) setScheduledTime('06:30');
                   if (opt.id === 'PM' && !scheduledTime) setScheduledTime('15:45');
                 }}
-                className={`flex-1 min-h-[40px] sm:min-h-[34px] px-2 py-1 rounded-md cursor-pointer ${
+                className={`flex-1 min-h-[44px] sm:min-h-[34px] px-2 py-1 rounded-md cursor-pointer ${
                   sessionSlot === opt.id
                     ? 'ap-nav-volt-active'
                     : 'text-slate-700 dark:text-slate-300'
@@ -1159,7 +1279,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
       <div className="space-y-2.5">
         {/* Warm-up Block */}
         <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-turf/60 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 cursor-pointer min-h-[40px]">
+          <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 cursor-pointer min-h-[44px] sm:min-h-[40px]">
             <input
               type="checkbox"
               checked={warmup.enabled}
@@ -1187,7 +1307,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     value: Math.max(0.5, Number(e.target.value) || 1),
                   }));
                 }}
-                className="w-16 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="w-16 min-h-[44px] sm:min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               />
               <select
                 aria-label="Warm-up unit"
@@ -1199,7 +1319,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     unit: e.target.value as 'min' | 'mi' | 'km',
                   }));
                 }}
-                className="min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="min-h-[44px] sm:min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               >
                 <option value="min">min</option>
                 <option value="mi">mi</option>
@@ -1311,7 +1431,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           prev.map((s) => (s.id === row.id ? { ...s, reps: v } : s))
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   </label>
 
@@ -1331,7 +1451,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           prev.map((s) => (s.id === row.id ? { ...s, value: v } : s))
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     />
                   </label>
 
@@ -1347,7 +1467,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           prev.map((s) => (s.id === row.id ? { ...s, unit: u } : s))
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     >
                       <option value="min">min</option>
                       <option value="sec">sec</option>
@@ -1377,7 +1497,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                           )
                         );
                       }}
-                      className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
+                      className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                     >
                       {!STEP_ZONE_PRESETS.some((z) => z.intensityPct === row.intensityPct) && (
                         <option value={row.intensityPct}>{row.intensityPct}% Custom</option>
@@ -1410,7 +1530,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                               prev.map((s) => (s.id === row.id ? { ...s, restValue: v } : s))
                             );
                           }}
-                          className="min-h-[42px] sm:min-h-[38px] w-full rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
+                          className="min-h-[44px] sm:min-h-[38px] w-full rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-2 font-mono text-xs text-slate-900 dark:text-white"
                         />
                       </label>
                       <label className="w-14 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
@@ -1425,7 +1545,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                               prev.map((s) => (s.id === row.id ? { ...s, restUnit: u } : s))
                             );
                           }}
-                          className="min-h-[42px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-1 font-mono text-xs text-slate-900 dark:text-white"
+                          className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-turf px-1 font-mono text-xs text-slate-900 dark:text-white"
                         >
                           <option value="sec">s</option>
                           <option value="min">m</option>
@@ -1448,7 +1568,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                         setSets((prev) => prev.filter((s) => s.id !== row.id));
                       }}
                       aria-label={`Remove block ${idx + 1}`}
-                      className="min-h-[42px] min-w-[42px] sm:min-h-[38px] sm:min-w-[38px] inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-600 disabled:opacity-30 cursor-pointer"
+                      className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-600 disabled:opacity-30 cursor-pointer"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -1491,7 +1611,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
 
         {/* Cooldown Block */}
         <div className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/80 dark:bg-ap-turf/60 p-3 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 cursor-pointer min-h-[40px]">
+          <label className="inline-flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 cursor-pointer min-h-[44px] sm:min-h-[40px]">
             <input
               type="checkbox"
               checked={cooldown.enabled}
@@ -1519,7 +1639,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     value: Math.max(0.5, Number(e.target.value) || 1),
                   }));
                 }}
-                className="w-16 min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="w-16 min-h-[44px] sm:min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               />
               <select
                 aria-label="Cooldown unit"
@@ -1531,7 +1651,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                     unit: e.target.value as 'min' | 'mi' | 'km',
                   }));
                 }}
-                className="min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
+                className="min-h-[44px] sm:min-h-[40px] rounded-lg border border-stone-300 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs text-slate-900 dark:text-white"
               >
                 <option value="min">min</option>
                 <option value="mi">mi</option>
@@ -1760,6 +1880,18 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
             >
               <Timer className="w-3.5 h-3.5" />
               <span>Time on Track</span>
+            </button>
+          )}
+          {canSaveToTeamLibrary && (
+            <button
+              type="button"
+              data-testid="visual-builder-save-library-btn"
+              disabled={isSavingLibrary}
+              onClick={() => void handleSaveToLibraryClick()}
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[36px] px-3 py-1 text-2xs font-mono font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5 ap-text-brand" />
+              <span>{isSavingLibrary ? 'Saving…' : 'Save to Library'}</span>
             </button>
           )}
         </div>

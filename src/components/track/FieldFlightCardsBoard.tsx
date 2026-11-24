@@ -356,7 +356,7 @@ export const FieldFlightCardsBoard: React.FC<FieldFlightCardsBoardProps> = ({
                   </span>
                   {sum?.bestMarkMeters && showWindInputs && typeof sum.bestMarkWindMps === 'number' && (
                     <span
-                      className={`px-1.5 py-0.2 rounded tabular-nums ${
+                      className={`px-1.5 py-0.5 rounded tabular-nums ${
                         sum.isWindAidedBest
                           ? 'bg-amber-500/20 text-amber-300'
                           : 'bg-emerald-500/20 text-emerald-300'

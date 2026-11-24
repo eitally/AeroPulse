@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from 'react';
-import type { ConnectionStatus, UnifiedActivity } from '../types';
+import type { ConnectionStatus, UnifiedActivity, WorkoutQuickLog } from '../types';
 import { upsampleAndAnalyzeActivityInWorker } from '../workers/activityWorkerClient';
 import {
+  db,
   getActivityStreamFromDexie,
   saveActivityStreamToDexie,
+  splitActivityAndStreams,
 } from '../db/workoutStore';
 import {
   applyStopwatchStreamFusionToActivity,
@@ -562,6 +564,42 @@ export function useRouteStreams({
     [isSampleDemoMode, loadStreamsForActivity, setActivities, setSelectedActivity]
   );
 
+  const handleUpdateActivityQuickLog = useCallback(
+    (activityId: string, quickLog: WorkoutQuickLog, opts?: { syncGear?: boolean }) => {
+      const applyUpdate = (list: UnifiedActivity[]): UnifiedActivity[] =>
+        list.map((a) => {
+          if (a.id !== activityId) return a;
+          const updated: UnifiedActivity = {
+            ...a,
+            quickLog,
+            ...(opts?.syncGear
+              ? {
+                  gearId: quickLog.gearId ? quickLog.gearId : undefined,
+                  gearName: quickLog.gearName ? quickLog.gearName : undefined,
+                }
+              : {}),
+          };
+          setSelectedActivity((curr) => (curr && curr.id === activityId ? updated : curr));
+          if (!isSampleDemoMode) {
+            try {
+              const { activityRecord } = splitActivityAndStreams(updated);
+              void db.activities.put(activityRecord).catch(() => {});
+            } catch {
+              // ignore IndexedDB unavailable errors in unit/headless contexts
+            }
+          }
+          return updated;
+        });
+
+      if (isSampleDemoMode) {
+        setSampleDemoActivities(applyUpdate);
+      } else {
+        setActivities(applyUpdate);
+      }
+    },
+    [isSampleDemoMode, setActivities, setSampleDemoActivities, setSelectedActivity]
+  );
+
   return {
     isScanningSegments,
     isHydratingRoutes,
@@ -569,6 +607,7 @@ export function useRouteStreams({
     handleHydrateMoreRoutes,
     handleToggleActivityKudos,
     handleAddActivityComment,
+    handleUpdateActivityQuickLog,
     loadStreamsForActivity,
     handleSelectActivity,
   };

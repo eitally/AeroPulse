@@ -1104,7 +1104,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
             data-testid={`meet-filter-gender-${g.id.toLowerCase()}`}
             aria-pressed={genderFilter === g.id}
             onClick={() => setGenderFilter(g.id)}
-            className={`min-h-[36px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${
+            className={`min-h-[44px] sm:min-h-[36px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${
               genderFilter === g.id
                 ? 'ap-nav-volt-active'
                 : 'bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk border border-ap-frame/15 dark:border-ap-edge-dark'
@@ -1119,7 +1119,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
           data-testid="meet-filter-division-select"
           value={divisionFilter}
           onChange={(e) => setDivisionFilter(e.target.value)}
-          className="min-h-[36px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs font-semibold text-ap-ink dark:text-ap-chalk"
+          className="min-h-[44px] sm:min-h-[36px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs font-semibold text-ap-ink dark:text-ap-chalk"
         >
           <option value="ALL">All Divisions</option>
           {availableDivisions.map((div) => (
@@ -1169,7 +1169,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 runners,
               })
             }
-            className="ap-btn-primary !min-h-[32px] px-2.5 py-0.5 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
+            className="ap-btn-primary !min-h-[44px] sm:!min-h-[32px] px-2.5 py-0.5 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
           >
             <Timer className="w-3.5 h-3.5" />
             <span>Time This Event</span>
@@ -1192,7 +1192,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 })),
               })
             }
-            className="ap-btn-secondary !min-h-[32px] px-2.5 py-0.5 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
+            className="ap-btn-secondary !min-h-[44px] sm:!min-h-[32px] px-2.5 py-0.5 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer"
           >
             <Users className="w-3.5 h-3.5" />
             <span>Delegate</span>
@@ -1223,7 +1223,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                   setSeedingAuthority('EXTERNAL_MEET');
                   setHasUnsavedChanges(true);
                 }}
-                className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'EXTERNAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+                className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'EXTERNAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
               >
                 External Meet (Athletic.net / Hy-Tek)
               </button>
@@ -1235,7 +1235,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                   setSeedingAuthority('HOST_DUAL_MEET');
                   setHasUnsavedChanges(true);
                 }}
-                className={`min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'HOST_DUAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
+                className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg cursor-pointer ${seedingAuthority === 'HOST_DUAL_MEET' ? 'ap-nav-volt-active' : 'text-ap-ink dark:text-ap-chalk'}`}
               >
                 Host / Dual Meet Seeding
               </button>
@@ -1251,7 +1251,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 setHasUnsavedChanges(true);
               }}
               aria-label="Meet Title"
-              className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold w-full sm:w-56"
+              className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-semibold w-full sm:w-56"
             />
             <input
               type="date"
@@ -1261,14 +1261,14 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 setHasUnsavedChanges(true);
               }}
               aria-label="Meet Date"
-              className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs"
+              className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-xs"
             />
             <button
               type="button"
               data-testid="meet-save-packet-btn"
               disabled={isSavingPacket}
               onClick={() => void handleSavePacket(false)}
-              className="ap-btn-primary !min-h-[38px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
+              className="ap-btn-primary !min-h-[44px] sm:!min-h-[38px] px-3 py-1 text-xs font-bold cursor-pointer shrink-0"
             >
               {isSavingPacket ? 'Saving…' : 'Save Packet'}
             </button>
@@ -1293,7 +1293,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                     const found = savedPackets.find((p) => p.packetId === val);
                     if (found) applyPacketToEditor(found);
                   }}
-                  className="min-h-[38px] max-w-[170px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs"
+                  className="min-h-[44px] sm:min-h-[38px] max-w-[170px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs"
                 >
                   <option value="">+ New Packet</option>
                   {savedPackets.map((p) => (
@@ -1308,7 +1308,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                     aria-label="Delete saved meet packet"
                     data-testid="meet-delete-packet-btn"
                     onClick={() => void handleDeleteSavedPacket(activePacketId)}
-                    className="min-h-[38px] min-w-[38px] rounded-lg ap-card-inset inline-flex items-center justify-center text-rose-600 dark:text-rose-400 cursor-pointer"
+                    className="min-h-[44px] min-w-[44px] sm:min-h-[38px] sm:min-w-[38px] rounded-lg ap-card-inset inline-flex items-center justify-center text-rose-600 dark:text-rose-400 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -1329,7 +1329,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 }}
                 aria-label="AthleticLIVE URL"
                 placeholder="https://live.athletic.net/meets/..."
-                className="flex-1 min-w-0 min-h-[34px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-2xs font-mono"
+                className="flex-1 min-w-0 min-h-[44px] sm:min-h-[34px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-2xs font-mono"
               />
               {/^https:\/\//i.test(athleticLiveUrl.trim()) && (
                 <a
@@ -1337,7 +1337,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="Open AthleticLIVE meet link"
-                  className="min-h-[34px] min-w-[34px] rounded-lg ap-card-inset inline-flex items-center justify-center text-ap-clay dark:text-ap-volt"
+                  className="min-h-[44px] min-w-[44px] sm:min-h-[34px] sm:min-w-[34px] rounded-lg ap-card-inset inline-flex items-center justify-center text-ap-clay dark:text-ap-volt"
                 >
                   <ArrowSquareOut className="w-3.5 h-3.5" />
                 </a>
@@ -1356,7 +1356,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                     setMeetDelayMinutes(mins);
                     setHasUnsavedChanges(true);
                   }}
-                  className={`min-h-[32px] px-2 rounded-lg font-bold cursor-pointer ${meetDelayMinutes === mins ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark'}`}
+                  className={`min-h-[44px] sm:min-h-[32px] px-2 rounded-lg font-bold cursor-pointer ${meetDelayMinutes === mins ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon border border-ap-frame/15 dark:border-ap-edge-dark'}`}
                 >
                   {mins === 0 ? 'On Time' : `+${mins}m`}
                 </button>
@@ -1401,7 +1401,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               data-testid="meet-guard-save-close-btn"
               disabled={isSavingPacket}
               onClick={() => void handleSavePacket(true)}
-              className="ap-btn-primary !min-h-[34px] px-2.5 py-1 text-2xs font-bold cursor-pointer"
+              className="ap-btn-primary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs font-bold cursor-pointer"
             >
               Save Packet
             </button>
@@ -1413,7 +1413,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 setHasUnsavedChanges(false);
                 onClose();
               }}
-              className="ap-btn-secondary !min-h-[34px] px-2.5 py-1 text-2xs font-bold cursor-pointer"
+              className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs font-bold cursor-pointer"
             >
               Discard &amp; Close
             </button>
@@ -1421,7 +1421,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               type="button"
               data-testid="meet-guard-keep-editing-btn"
               onClick={() => setShowUnsavedCloseGuard(false)}
-              className="min-h-[34px] px-2.5 py-1 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 text-2xs font-bold cursor-pointer"
+              className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-white dark:bg-ap-carbon border border-ap-frame/20 text-2xs font-bold cursor-pointer"
             >
               Keep Editing
             </button>
@@ -1519,7 +1519,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                 if (!opened) {
                   setPacketFeedback({
                     tone: 'caution',
-                    text: 'Print window was blocked by the browser. Allow pop-ups or use Download Offline HTML below.',
+                    text: 'Pop-up window blocked by browser — downloaded the meet packet as an offline .html file instead. Open the downloaded file to print or save as PDF.',
                   });
                 }
               }}
@@ -1555,7 +1555,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                     setPacketFeedback({ tone: 'prime', text: 'Downloaded offline HTML meet packet.' });
                     setPrintPopupBlocked(false);
                   }}
-                  className="ap-btn-secondary !min-h-[34px] px-2.5 py-1 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer shrink-0"
+                  className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-2.5 py-1 text-2xs font-bold inline-flex items-center gap-1 cursor-pointer shrink-0"
                 ><Download className="w-3.5 h-3.5" /><span>Download Offline HTML</span></button>
               )}
             </div>
@@ -1592,11 +1592,11 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               <div className="inline-flex flex-wrap items-center gap-1.5">
                 <button
                   type="button" data-testid="meet-export-scope-full" aria-pressed={exportScope === 'FULL_TEAM'} onClick={() => setExportScope('FULL_TEAM')}
-                  className={`min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${exportScope === 'FULL_TEAM' ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk border border-ap-frame/20'}`}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${exportScope === 'FULL_TEAM' ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk border border-ap-frame/20'}`}
                 >Export Full Team ({activeAllEntries.length})</button>
                 <button
                   type="button" data-testid="meet-export-scope-filtered" aria-pressed={exportScope === 'FILTERED_ONLY'} onClick={() => setExportScope('FILTERED_ONLY')}
-                  className={`min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${exportScope === 'FILTERED_ONLY' ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk border border-ap-frame/20'}`}
+                  className={`min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg font-mono text-2xs font-bold cursor-pointer ${exportScope === 'FILTERED_ONLY' ? 'ap-nav-volt-active' : 'bg-white dark:bg-ap-carbon text-ap-ink dark:text-ap-chalk border border-ap-frame/20'}`}
                 >Export Filtered Only ({activeFilteredEntries.length})</button>
               </div>
             </div>
@@ -1617,7 +1617,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                     type="button"
                     data-testid="meet-scratch-conflict-btn"
                     onClick={handleScratchConflictedEntries}
-                    className="min-h-[34px] px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-mono text-2xs font-bold cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[34px] px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-mono text-2xs font-bold cursor-pointer"
                   >
                     Scratch Conflicted
                   </button>
@@ -1699,10 +1699,10 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                   {selectedEventSpec?.category === 'RELAY' && (
                     <>
                       <span className="text-ap-muted dark:text-ap-muted-dark">Relay Quartet:</span>
-                      <select aria-label="Relay Squad Letter" value={newRelayTeam} onChange={(e) => setNewRelayTeam(e.target.value)} className="min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold">
+                      <select aria-label="Relay Squad Letter" value={newRelayTeam} onChange={(e) => setNewRelayTeam(e.target.value)} className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold">
                         <option value="A">Team A</option><option value="B">Team B</option><option value="C">Team C</option>
                       </select>
-                      <select aria-label="Relay Leg Order" value={newRelayLeg} onChange={(e) => setNewRelayLeg(Number(e.target.value) as 1 | 2 | 3 | 4)} className="min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold">
+                      <select aria-label="Relay Leg Order" value={newRelayLeg} onChange={(e) => setNewRelayLeg(Number(e.target.value) as 1 | 2 | 3 | 4)} className="min-h-[44px] sm:min-h-[34px] rounded-lg border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-bold">
                         <option value={1}>Leg 1 (Leadoff)</option><option value={2}>Leg 2</option><option value={3}>Leg 3</option><option value={4}>Leg 4 (Anchor)</option>
                       </select>
                     </>
@@ -1728,7 +1728,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                       value={entriesSearchQuery}
                       onChange={(e) => setEntriesSearchQuery(e.target.value)}
                       placeholder="Search athlete, event, bib, or seed..."
-                      className="w-full min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon pl-8 pr-2.5 text-xs"
+                      className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon pl-8 pr-2.5 text-xs"
                     />
                   </div>
                   <select
@@ -1736,7 +1736,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                     data-testid="meet-filter-event"
                     value={eventFilter}
                     onChange={(e) => setEventFilter(e.target.value)}
-                    className="min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs font-semibold text-ap-ink dark:text-ap-chalk"
+                    className="min-h-[44px] sm:min-h-[38px] rounded-lg border border-ap-frame/20 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2 font-mono text-2xs font-semibold text-ap-ink dark:text-ap-chalk"
                   >
                     <option value="ALL">All Events</option>
                     {availableEntryEvents.map((evCode) => (
@@ -1766,7 +1766,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                           setEntriesSearchQuery('');
                           setEventFilter('ALL');
                         }}
-                        className="ap-btn-secondary !min-h-[34px] px-3 py-1 text-2xs font-bold cursor-pointer"
+                        className="ap-btn-secondary !min-h-[44px] sm:!min-h-[34px] px-3 py-1 text-2xs font-bold cursor-pointer"
                       >
                         Clear Search Filters
                       </button>
@@ -1897,7 +1897,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap gap-1.5">
                   {ALL_MEET_DAY_EVENTS.filter((e) => e.category !== 'FIELD').map((ev) => (
-                    <button key={ev.code} type="button" onClick={() => setSelectedHeatEvent(ev.code)} className={`min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${selectedHeatEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'}`}>
+                    <button key={ev.code} type="button" onClick={() => setSelectedHeatEvent(ev.code)} className={`min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${selectedHeatEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'}`}>
                       {ev.code}
                     </button>
                   ))}
@@ -1906,7 +1906,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
                   <button
                     type="button" data-testid="meet-host-slow-to-fast-toggle" aria-pressed={hostSlowToFast}
                     onClick={() => setHostSlowToFast((v) => !v)}
-                    className="min-h-[34px] px-2.5 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
+                    className="min-h-[44px] sm:min-h-[34px] px-2.5 rounded-lg ap-card-inset font-mono text-2xs font-bold cursor-pointer"
                   >
                     Order: {hostSlowToFast ? 'Slow-to-Fast' : 'Fast-First'}
                   </button>
@@ -2008,7 +2008,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
             <div className="space-y-3">
               <div className="flex flex-wrap gap-1.5">
                 {ALL_MEET_DAY_EVENTS.filter((e) => e.category === 'FIELD').map((ev) => (
-                  <button key={ev.code} type="button" onClick={() => setSelectedFlightEvent(ev.code)} className={`min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${selectedFlightEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'}`}>
+                  <button key={ev.code} type="button" onClick={() => setSelectedFlightEvent(ev.code)} className={`min-h-[44px] sm:min-h-[36px] px-2.5 py-1 rounded-lg font-mono font-bold cursor-pointer ${selectedFlightEvent === ev.code ? 'ap-nav-volt-active' : 'ap-card-inset'}`}>
                     {ev.code}
                   </button>
                 ))}

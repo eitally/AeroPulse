@@ -67,7 +67,7 @@ export const CalendarPlannedTooltip: React.FC<CalendarPlannedTooltipProps> = ({
                 </span>
                 <span className="text-slate-600 dark:text-slate-400">·</span>
                 <span
-                  className={`px-1.5 py-0.2 rounded text-2xs font-bold bg-white/85 dark:bg-[#0B110E]/80 border border-slate-300/70 dark:border-white/15 ${hoveredPrescription.stripe.dominantZone.inkClass}`}
+                  className={`px-1.5 py-0.5 rounded text-2xs font-bold bg-white/85 dark:bg-[#0B110E]/80 border border-slate-300/70 dark:border-white/15 ${hoveredPrescription.stripe.dominantZone.inkClass}`}
                 >
                   {hoveredPrescription.stripe.dominantZone.code}{' '}
                   {hoveredPrescription.stripe.dominantZone.name}

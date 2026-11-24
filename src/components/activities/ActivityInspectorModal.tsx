@@ -65,6 +65,11 @@ export interface ActivityInspectorModalProps {
   segmentHistoryBySegmentId: Map<string, SegmentHistorySummary>;
   repeatedSegmentsList: RepeatedSegmentSummary[];
   gearItems?: AthleteGearItem[];
+  onUpdateActivityQuickLog?: (
+    activityId: string,
+    quickLog: WorkoutQuickLog,
+    opts?: { syncGear?: boolean }
+  ) => void;
 }
 
 export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
@@ -90,6 +95,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
   segmentHistoryBySegmentId,
   repeatedSegmentsList,
   gearItems: gearItemsProp,
+  onUpdateActivityQuickLog: onUpdateActivityQuickLogProp,
 }) => {
   let wsCtx: TelemetryWorkspaceContextValue | null = null;
   try {
@@ -98,6 +104,8 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
     wsCtx = null;
   }
   const effectiveGearItems = gearItemsProp ?? wsCtx?.effectiveGearItems ?? [];
+  const effectiveOnUpdateActivityQuickLog =
+    onUpdateActivityQuickLogProp ?? wsCtx?.handleUpdateActivityQuickLog;
   const [streamHoverIndex, setStreamHoverIndex] = useState<number | null>(null);
   const [streamZoomRange, setStreamZoomRange] = useState<[number, number] | null>(null);
   const [debriefZoomWindow, setDebriefZoomWindow] = useState<{
@@ -113,6 +121,8 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
       return {};
     }
   });
+  const quickLogsByIdRef = useRef<Record<string, WorkoutQuickLog>>(quickLogsById);
+  quickLogsByIdRef.current = quickLogsById;
   const [quickLogSavedMsg, setQuickLogSavedMsg] = useState<string | null>(null);
   const inspectorDialogRef = useRef<HTMLDivElement>(null);
   const formId = useId();
@@ -123,29 +133,41 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
   });
 
   const saveQuickLogForActivity = (actId: string, patch: Partial<WorkoutQuickLog>) => {
-    setQuickLogsById((prev) => {
-      const existing = prev[actId] || {
+    const prev = quickLogsByIdRef.current;
+    const baseActivity =
+      selectedActivity?.id === actId
+        ? selectedActivity
+        : activities.find((a) => a.id === actId);
+    const existing = prev[actId] ||
+      baseActivity?.quickLog || {
         rpe: 6,
         feelRating: 'NORMAL' as const,
-        carbsGramsPerHour: 60,
+        carbsGramsPerHour: baseActivity?.sportCategory === 'Cycling' ? 75 : 60,
         sodiumMgPerHour: 500,
-        gearName: '',
+        ...(baseActivity?.gearId ? { gearId: baseActivity.gearId } : {}),
+        gearName: baseActivity?.gearName || '',
         loggedAt: new Date().toISOString(),
       };
-      const updated: WorkoutQuickLog = {
-        ...existing,
-        ...patch,
-        loggedAt: new Date().toISOString(),
-      };
-      const next = { ...prev, [actId]: updated };
-      try {
-        localStorage.setItem('thresh_quick_logs_v1', JSON.stringify(next));
-      } catch {
-        // ignore quota errors
-      }
-      return next;
-    });
-    setQuickLogSavedMsg('Saved to Durability & Fueling ledger');
+    const updated: WorkoutQuickLog = {
+      ...existing,
+      ...patch,
+      loggedAt: new Date().toISOString(),
+    };
+    const next = { ...prev, [actId]: updated };
+    quickLogsByIdRef.current = next;
+    setQuickLogsById(next);
+    try {
+      localStorage.setItem('thresh_quick_logs_v1', JSON.stringify(next));
+    } catch {
+      // ignore quota errors
+    }
+    const syncGear = 'gearId' in patch || 'gearName' in patch;
+    effectiveOnUpdateActivityQuickLog?.(actId, updated, { syncGear });
+    setQuickLogSavedMsg(
+      syncGear
+        ? 'Saved — Shoe & Spike Closet mileage updated'
+        : 'Saved to Durability & Fueling ledger'
+    );
     window.setTimeout(() => setQuickLogSavedMsg(null), 2600);
   };
 
@@ -348,7 +370,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                     role="tab"
                     aria-selected={inspectorTab === tab.id}
                     onClick={() => setInspectorTab(tab.id)}
-                    className={`min-h-[40px] sm:min-h-[34px] px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                    className={`min-h-[44px] sm:min-h-[34px] px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                       inspectorTab === tab.id
                         ? 'ap-nav-volt-active shadow-xs'
                         : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
@@ -784,7 +806,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                     <button
                       type="button"
                       onClick={() => onToggleKudos && onToggleKudos(selectedActivity)}
-                      className={`min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      className={`min-h-[44px] sm:min-h-[34px] inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                         selectedActivity.hasKudoed
                           ? 'bg-[#C23800] text-white shadow-xs'
                           : 'border border-[#C23800]/35 dark:border-[#FC4C02]/40 bg-[#C23800]/10 dark:bg-[#FC4C02]/10 ap-text-strava hover:bg-[#C23800]/20 dark:hover:bg-[#FC4C02]/20'
@@ -983,7 +1005,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                             onClick={() =>
                               saveQuickLogForActivity(selectedActivity.id, { rpe: val })
                             }
-                            className={`min-h-[36px] min-w-[30px] sm:min-h-[28px] sm:min-w-[26px] rounded-md font-mono text-2xs font-bold transition-colors ${
+                            className={`min-h-[44px] min-w-[32px] sm:min-h-[28px] sm:min-w-[26px] rounded-md font-mono text-2xs font-bold transition-colors ${
                               curLog.rpe === val
                                 ? val >= 8
                                   ? 'bg-rose-600 text-white'
@@ -1018,7 +1040,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                               carbsGramsPerHour: Math.max(0, Number(e.target.value) || 0),
                             })
                           }
-                          className="w-16 min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                          className="w-16 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
                         />
                         <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">g/hr</span>
                       </div>
@@ -1043,7 +1065,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                               sodiumMgPerHour: Math.max(0, Number(e.target.value) || 0),
                             })
                           }
-                          className="w-16 min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
+                          className="w-16 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
                         />
                         <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">mg/h</span>
                       </div>
@@ -1067,10 +1089,13 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                           if (sportGear.length > 0) {
                             const matchedGearId =
                               curLog.gearId ||
-                              selectedActivity.gearId ||
+                              (curLog.gearId === undefined ? selectedActivity.gearId : '') ||
                               sportGear.find(
                                 (g) =>
-                                  g.name === (curLog.gearName || selectedActivity.gearName)
+                                  g.name ===
+                                  (curLog.gearName !== undefined
+                                    ? curLog.gearName
+                                    : selectedActivity.gearName)
                               )?.id ||
                               '';
                             return (
@@ -1081,11 +1106,11 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                                 onChange={(e) => {
                                   const chosen = sportGear.find((g) => g.id === e.target.value);
                                   saveQuickLogForActivity(selectedActivity.id, {
-                                    gearId: chosen?.id,
-                                    gearName: chosen?.name || '',
+                                    gearId: chosen ? chosen.id : '',
+                                    gearName: chosen ? chosen.name : '',
                                     ...(chosen?.footwearClass
                                       ? { footwearClass: chosen.footwearClass }
-                                      : {}),
+                                      : { footwearClass: undefined }),
                                   });
                                 }}
                                 className="w-full min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2.5 py-1 text-xs text-slate-900 dark:text-slate-100 cursor-pointer"
@@ -1112,6 +1137,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                               value={curLog.gearName ?? ''}
                               onChange={(e) =>
                                 saveQuickLogForActivity(selectedActivity.id, {
+                                  gearId: '',
                                   gearName: e.target.value,
                                 })
                               }
@@ -1322,7 +1348,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                         type="button"
                         onClick={onScanMoreSegments}
                         disabled={isScanningSegments}
-                        className="min-h-[32px] px-3 py-1 rounded-lg border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-50 text-xs font-semibold text-blue-600 dark:text-blue-400 transition-colors whitespace-nowrap"
+                        className="min-h-[44px] sm:min-h-[32px] px-3 py-1 rounded-lg border border-blue-500/40 bg-blue-500/10 hover:bg-blue-500/20 disabled:opacity-50 text-xs font-semibold text-blue-600 dark:text-blue-400 transition-colors whitespace-nowrap"
                       >
                         {isScanningSegments
                           ? 'Scanning Historical Segments...'
@@ -1432,7 +1458,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                                           e.stopPropagation();
                                           setModalSelectedSegmentId(sid);
                                         }}
-                                        className={`min-h-[28px] px-2.5 py-1 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
+                                        className={`min-h-[44px] sm:min-h-[28px] px-2.5 py-1 rounded-md text-xs font-semibold transition-colors whitespace-nowrap ${
                                           isSelectedForChart
                                             ? 'bg-ap-cobalt text-white dark:bg-ap-volt dark:text-ap-obsidian'
                                             : 'bg-slate-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20'

@@ -18,6 +18,7 @@ import {
   RTP_STAGE_METADATA,
   buildDemoSeedInjuryCases,
   computePainTrendHeatmap,
+  shiftIsoDateDays,
   stripClinicalNotesForRole,
   type InjuryBodyRegion,
 } from '../../physiology/injuryHubEngine';
@@ -28,6 +29,7 @@ import {
 } from '../../utils/injuryHubApi';
 import { getLocalDateIso } from '../../physiology/stravaLoadCalibration';
 import type {
+  TeamAttendanceRecord,
   TeamInjuryCaseRecord,
   TeamInjuryRtpStage,
   TeamSummaryWithRole,
@@ -118,6 +120,63 @@ export function buildDailyClearanceCsv(
   return [headers.map(escapeClearanceCsvCell).join(','), ...rows].join('\n');
 }
 
+export function buildMultiDayClearanceCsv(params: {
+  cases: TeamInjuryCaseRecord[];
+  teamName: string;
+  endDateIso: string;
+  windowDays: number;
+  attendanceByDate?: Record<string, Record<string, TeamAttendanceRecord>>;
+}): string {
+  const sanitized = stripClinicalNotesForRole(params.cases || [], 'HEAD_COACH');
+  const safeDays = Math.max(1, Math.min(90, Math.round(params.windowDays || 1)));
+  const cleanEndIso = params.endDateIso.slice(0, 10);
+  const headers = [
+    'Team',
+    'Date',
+    'Athlete',
+    'Body Region',
+    'Severity',
+    'RTP Stage',
+    'Attendance Status',
+    'Coach Restrictions',
+    'Coach Guidance',
+    'Case Opened',
+    'Target Return Date',
+    'Updated By',
+  ];
+
+  const rows: string[] = [];
+  for (let offset = -(safeDays - 1); offset <= 0; offset += 1) {
+    const dayIso = shiftIsoDateDays(cleanEndIso, offset);
+    const attForDay = params.attendanceByDate?.[dayIso] || {};
+    for (const c of sanitized) {
+      const openedIso = (c.createdAt || '').slice(0, 10);
+      if (openedIso && openedIso > dayIso) continue;
+      if (!openedIso && dayIso !== cleanEndIso) continue;
+      const attStatus = attForDay[c.membershipId]?.status || '';
+      rows.push(
+        [
+          params.teamName,
+          dayIso,
+          c.athleteName,
+          c.bodyRegion,
+          c.severity,
+          c.rtpStage,
+          attStatus,
+          c.restrictions || '',
+          c.coachGuidance || '',
+          openedIso || dayIso,
+          c.targetReturnDate || '',
+          c.updatedByName || 'Athletic Trainer',
+        ]
+          .map(escapeClearanceCsvCell)
+          .join(',')
+      );
+    }
+  }
+  return [headers.map(escapeClearanceCsvCell).join(','), ...rows].join('\n');
+}
+
 function heatTileClass(
   heatLevel: 'NONE' | 'LOW' | 'ELEVATED' | 'HOTSPOT',
   selected: boolean
@@ -153,6 +212,7 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
 
   const isAthleticTrainer = activeTeam?.myRole === 'ATHLETIC_TRAINER';
   const [heatmapWindow, setHeatmapWindow] = useState<7 | 30>(7);
+  const [clearanceExportDays, setClearanceExportDays] = useState<1 | 7 | 14 | 30>(1);
   const [stageFilter, setStageFilter] = useState<TeamInjuryRtpStage | 'ALL'>('ALL');
   const [selectedRegionFilter, setSelectedRegionFilter] = useState<InjuryBodyRegion | 'ALL'>(
     'ALL'
@@ -341,27 +401,47 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
   const handleExportDailyClearance = () => {
     if (!activeTeam) return;
     const todayIso = getLocalDateIso();
+    const teamLabel = activeTeam.brand.shortName || activeTeam.brand.name;
     const sanitized = stripClinicalNotesForRole(visibleCases, 'HEAD_COACH');
-    const csv = buildDailyClearanceCsv(
-      sanitized,
-      activeTeam.brand.shortName || activeTeam.brand.name,
-      todayIso
-    );
     const slug = (activeTeam.brand.slug || activeTeam.brand.shortName || 'team')
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, '-');
+
+    const isMultiDay = clearanceExportDays > 1;
+    const startIso = shiftIsoDateDays(todayIso, -(clearanceExportDays - 1));
+    const csv = isMultiDay
+      ? buildMultiDayClearanceCsv({
+          cases: sanitized,
+          teamName: teamLabel,
+          endDateIso: todayIso,
+          windowDays: clearanceExportDays,
+          attendanceByDate: activeTeam.attendanceByDate,
+        })
+      : buildDailyClearanceCsv(sanitized, teamLabel, todayIso);
+    const filename = isMultiDay
+      ? `${slug}-clearance-${clearanceExportDays}d-${startIso}-to-${todayIso}.csv`
+      : `${slug}-daily-clearance-${todayIso}.csv`;
+
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${slug}-daily-clearance-${todayIso}.csv`;
+    anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
     URL.revokeObjectURL(url);
-    setStatusBanner(
-      `Exported daily RTP clearance CSV (${sanitized.length} row${sanitized.length === 1 ? '' : 's'}, clinical notes excluded).`
-    );
+
+    if (isMultiDay) {
+      const rowCount = Math.max(0, csv.split('\n').length - 1);
+      setStatusBanner(
+        `Exported ${clearanceExportDays}-day RTP clearance log (${startIso} to ${todayIso}, ${rowCount} row${rowCount === 1 ? '' : 's'}, clinical notes excluded).`
+      );
+    } else {
+      setStatusBanner(
+        `Exported daily RTP clearance CSV (${sanitized.length} row${sanitized.length === 1 ? '' : 's'}, clinical notes excluded).`
+      );
+    }
   };
 
   const handleSaveCase = async (e: React.FormEvent) => {
@@ -562,6 +642,20 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <select
+              aria-label="Clearance CSV window"
+              data-testid="injury-hub-clearance-range-select"
+              value={clearanceExportDays}
+              onChange={(e) =>
+                setClearanceExportDays(Number(e.target.value) as 1 | 7 | 14 | 30)
+              }
+              className="min-h-[44px] sm:min-h-[38px] rounded-xl border border-ap-frame/25 dark:border-ap-edge-dark bg-white dark:bg-ap-carbon px-2.5 text-xs font-mono font-bold text-ap-ink dark:text-ap-chalk cursor-pointer"
+            >
+              <option value={1}>Today (1d)</option>
+              <option value={7}>7-Day Log</option>
+              <option value={14}>14-Day Log</option>
+              <option value={30}>30-Day Log</option>
+            </select>
             <button
               type="button"
               data-testid="injury-hub-export-clearance-btn"
@@ -569,7 +663,11 @@ export const AthleticTrainerInjuryHub: React.FC<AthleticTrainerInjuryHubProps> =
               className="ap-btn-secondary !min-h-[44px] sm:!min-h-[38px] px-3 py-1.5 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>Export Clearance CSV</span>
+              <span>
+                {clearanceExportDays === 1
+                  ? 'Export Clearance CSV'
+                  : `Export ${clearanceExportDays}d CSV`}
+              </span>
             </button>
             <button
               type="button"

@@ -17,6 +17,7 @@ import {
   openPrintableSchoolPoInvoiceWindow,
 } from '../../utils/schoolPoInvoiceHelper';
 import { emitFunnelEvent } from '../../utils/funnelTelemetry';
+import { recordPendingBillingCheckoutTeam } from '../../hooks/useBillingReturnNotice';
 import type {
   SchoolPoInvoiceRecord,
   TeamBillingPlanCode,
@@ -248,6 +249,7 @@ export const TeamBillingAndPoModal: React.FC<TeamBillingAndPoModalProps> = ({
         ...(billingEmail.trim() ? { billingContactEmail: billingEmail.trim() } : {}),
       });
       if (resp.stripeConfigured && resp.checkoutUrl) {
+        recordPendingBillingCheckoutTeam(activeTeam.brand.teamId, activeTeam.brand.name);
         emitFunnelEvent('stripe_checkout_started', {
           role: activeTeam.myRole === 'ORG_ADMIN' ? 'ORG_ADMIN' : 'COACH',
           tier: selectedPlan,

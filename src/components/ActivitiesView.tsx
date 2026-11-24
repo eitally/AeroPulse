@@ -1105,7 +1105,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                       >
                         <span className="truncate max-w-[180px]">{cl.title}</span>
                         <span
-                          className={`px-1.5 py-0.2 rounded text-2xs font-mono ${
+                          className={`px-1.5 py-0.5 rounded text-2xs font-mono ${
                             isAct
                               ? 'bg-white/20 text-white'
                               : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
@@ -1491,7 +1491,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                           if (!matchedPlan || !matchedPlan.plannedLoad || matchedPlan.plannedLoad <= 0) {
                             return (
                               <span
-                                className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-2xs font-medium text-slate-500 dark:text-slate-400 bg-stone-100 dark:bg-slate-800/80"
+                                className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-2xs font-medium text-slate-500 dark:text-slate-400 bg-stone-100 dark:bg-slate-800/80"
                                 title="No scheduled calendar workout on this date"
                               >
                                 Unscheduled
@@ -1512,7 +1512,7 @@ const ActivitiesViewInner: React.FC<ActivitiesViewProps> = ({
                           );
                           return (
                             <span
-                              className={`inline-block mt-0.5 px-1.5 py-0.2 rounded text-2xs font-bold ${
+                              className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-2xs font-bold ${
                                 adherence >= 85 ? 'ap-status-prime' : 'ap-status-caution'
                               }`}
                               title={`Scheduled: "${matchedPlan.name}" (${matchedPlan.plannedLoad} TSS)`}

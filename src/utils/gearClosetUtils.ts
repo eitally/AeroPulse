@@ -3,7 +3,9 @@ import type {
   DistanceUnit,
   TrackFootwearClass,
   UnifiedActivity,
+  WorkoutQuickLog,
 } from '../types';
+import { STORAGE_KEYS } from './storageKeys';
 
 export const METERS_PER_MILE = 1609.344;
 export const METERS_PER_KM = 1000;
@@ -102,16 +104,45 @@ function normalizeGearName(raw?: string): string {
     .replace(/\s+/g, ' ');
 }
 
+export function readSavedActivityQuickLogs(): Record<string, WorkoutQuickLog> {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.QUICK_LOGS);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, WorkoutQuickLog>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
 export function doesActivityMatchGear(
   activity: UnifiedActivity,
-  gear: AthleteGearItem
+  gear: AthleteGearItem,
+  quickLogOverride?: WorkoutQuickLog
 ): boolean {
-  const actGearId = String(activity.gearId || activity.quickLog?.gearId || '').trim();
+  const hasExplicitOverrideId =
+    quickLogOverride !== undefined && quickLogOverride.gearId !== undefined;
+  const actGearId = String(
+    hasExplicitOverrideId
+      ? quickLogOverride.gearId
+      : activity.gearId || activity.quickLog?.gearId || ''
+  ).trim();
   if (actGearId && actGearId === gear.id) {
     return true;
   }
 
-  const actGearName = normalizeGearName(activity.gearName || activity.quickLog?.gearName);
+  const hasExplicitOverrideName =
+    quickLogOverride !== undefined &&
+    quickLogOverride.gearName !== undefined &&
+    (hasExplicitOverrideId || quickLogOverride.gearName !== '');
+  const actGearName = normalizeGearName(
+    hasExplicitOverrideName
+      ? quickLogOverride.gearName
+      : activity.gearName || activity.quickLog?.gearName
+  );
   if (!actGearName) return false;
 
   const gearName = normalizeGearName(gear.name);
@@ -128,7 +159,8 @@ export function doesActivityMatchGear(
 
 export function computeGearWearSummary(
   gear: AthleteGearItem,
-  activities: UnifiedActivity[]
+  activities: UnifiedActivity[],
+  quickLogsById?: Record<string, WorkoutQuickLog>
 ): GearWearSummary {
   const baselineMeters = Math.max(0, Number(gear.distanceMeters || 0));
   const fallbackMax = getDefaultMaxRecommendedMeters(
@@ -144,7 +176,8 @@ export function computeGearWearSummary(
   let matchedActivityCount = 0;
   for (const act of activities || []) {
     if (!act) continue;
-    if (doesActivityMatchGear(act, gear)) {
+    const override = quickLogsById?.[act.id];
+    if (doesActivityMatchGear(act, gear, override)) {
       matchedActivityMeters += Math.max(0, Number(act.distanceMeters || 0));
       matchedActivityCount += 1;
     }
@@ -183,10 +216,11 @@ export function computeGearWearSummary(
 
 export function computeGearClosetSummaries(
   gearItems: AthleteGearItem[],
-  activities: UnifiedActivity[]
+  activities: UnifiedActivity[],
+  quickLogsById?: Record<string, WorkoutQuickLog>
 ): GearWearSummary[] {
   return (gearItems || [])
-    .map((item) => computeGearWearSummary(item, activities))
+    .map((item) => computeGearWearSummary(item, activities, quickLogsById))
     .sort((a, b) => {
       if (Boolean(a.item.retired) !== Boolean(b.item.retired)) {
         return a.item.retired ? 1 : -1;

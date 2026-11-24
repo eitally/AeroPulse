@@ -2056,13 +2056,26 @@ export function buildMeetDayPacketHtml(params: PrintableMeetDayPacketParams): st
 export function openPrintableMeetDayPacketWindow(params: PrintableMeetDayPacketParams): boolean {
   if (typeof window === 'undefined') return false;
   const win = window.open('', '_blank', 'width=900,height=700');
-  if (!win) return false;
+  if (!win) {
+    downloadMeetPacketHtmlFallback(params);
+    return false;
+  }
 
   const html = buildMeetDayPacketHtml(params);
+  win.document.open?.();
   win.document.write(html);
   win.document.close();
-  win.focus?.();
-  win.print?.();
+  try {
+    win.opener = null;
+  } catch {
+    // ignore read-only opener implementations
+  }
+  try {
+    win.focus?.();
+    win.print?.();
+  } catch {
+    // ignore focus/print errors in headless contexts
+  }
   return true;
 }
 
@@ -2078,12 +2091,15 @@ export function downloadMeetPacketHtmlFallback(params: PrintableMeetDayPacketPar
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '');
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8;' });
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${slug || 'meetready-packet'}.html`;
+    if (a.style) a.style.display = 'none';
+    document.body?.appendChild?.(a);
     a.click();
+    a.remove?.();
     URL.revokeObjectURL(url);
   }
   return html;
