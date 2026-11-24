@@ -978,7 +978,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                           5s Post-Workout Quick-Log
                         </span>
                         <span className="font-semibold text-slate-800 dark:text-slate-100">
-                          RPE, Exogenous Fueling (`g/hr` · `mg/hr`) &amp; Gear Tag
+                          RPE, Exogenous Fueling (g/hr · mg/hr) &amp; Gear Tag
                         </span>
                       </div>
                       {quickLogSavedMsg ? (
@@ -1067,7 +1067,7 @@ export const ActivityInspectorModal: React.FC<ActivityInspectorModalProps> = ({
                           }
                           className="w-16 min-h-[44px] sm:min-h-[38px] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 px-2 py-1 font-mono text-xs text-slate-900 dark:text-slate-100"
                         />
-                        <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">mg/h</span>
+                        <span className="text-2xs font-mono text-slate-600 dark:text-slate-400">mg/hr</span>
                       </div>
 
                       {/* Gear / Shoe Tag */}

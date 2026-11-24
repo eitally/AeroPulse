@@ -1367,7 +1367,7 @@ export const MeetDayHeatAndFlightModal: React.FC<MeetDayHeatAndFlightModalProps>
         {inline ? (
           <button
             type="button"
-            aria-label="Close Meet-Day Modal"
+            aria-label="Back to Calendar"
             onClick={onClose}
             className="min-h-[44px] sm:min-h-[36px] px-3 rounded-xl ap-card-inset inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer shrink-0"
           >

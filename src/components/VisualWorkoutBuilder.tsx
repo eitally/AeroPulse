@@ -39,6 +39,7 @@ import { formatPace } from '../utils/formatters';
 import {
   computeAmplitudeHeightPct,
   formatHumanReadableStepLine,
+  inferWorkoutLibraryCategory,
   parseStructuredTrackWorkout,
   parseWorkoutSteps,
 } from '../utils/workoutParser';
@@ -857,20 +858,13 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
 
   const handleSaveToLibraryClick = async () => {
     const cleanName = (builderName.trim() || 'Custom Session').slice(0, 100);
-    const category: TeamWorkoutLibraryCategory =
-      builderSport === 'Swimming'
-        ? 'SWIMMING'
-        : builderSport === 'Multisport'
-          ? 'TRIATHLON'
-          : builderSport === 'Cycling'
-            ? 'CYCLING'
-            : summaryStats.load < 45
-              ? 'RECOVERY'
-              : /tempo|sub-t|xc|hill/i.test(`${cleanName} ${notes}`)
-                ? 'XC_TEMPO'
-                : builderSport === 'Running' && (isTrackOvalMode || Boolean(detectedTrackSpec))
-                  ? 'TRACK'
-                  : 'ROAD';
+    const category = inferWorkoutLibraryCategory({
+      sportCategory: builderSport,
+      name: cleanName,
+      description: notes,
+      plannedLoad: summaryStats.load,
+      isTrack: isTrackOvalMode || Boolean(detectedTrackSpec),
+    });
     const payload = {
       name: cleanName,
       category,
@@ -1416,7 +1410,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                 className="rounded-xl border border-stone-200 dark:border-ap-edge bg-white/85 dark:bg-ap-carbon p-3 space-y-2 text-xs"
               >
                 <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-end">
-                  <label className="sm:col-span-2 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
+                  <label className="sm:col-span-1 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
                     <span>Reps</span>
                     <input
                       type="number"
@@ -1511,8 +1505,8 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                   </label>
 
                   {row.reps > 1 ? (
-                    <div className="col-span-2 sm:col-span-2 flex gap-1">
-                      <label className="flex-1 flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
+                    <div className="col-span-2 sm:col-span-3 flex gap-1.5">
+                      <label className="flex-1 min-w-[56px] flex flex-col gap-0.5 text-2xs font-mono text-slate-500">
                         <span>Rest</span>
                         <input
                           type="number"
@@ -1554,7 +1548,7 @@ export const VisualWorkoutBuilder: React.FC<VisualWorkoutBuilderProps> = ({
                       </label>
                     </div>
                   ) : (
-                    <div className="sm:col-span-2 text-2xs font-mono text-slate-500 pb-2">
+                    <div className="sm:col-span-3 text-2xs font-mono text-slate-500 pb-2">
                       Steady Effort
                     </div>
                   )}

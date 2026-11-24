@@ -32,7 +32,7 @@ import {
   type MultiSetPodSetInput,
   type VdotPodRosterInput,
 } from '../physiology/scholasticEngine';
-import { parseStructuredTrackWorkout } from '../utils/workoutParser';
+import { inferWorkoutLibraryCategory, parseStructuredTrackWorkout } from '../utils/workoutParser';
 import { emitFunnelEvent, resolveFunnelTierFromOrgType } from '../utils/funnelTelemetry';
 import { getLocalDateIso } from '../physiology/stravaLoadCalibration';
 import {
@@ -699,14 +699,14 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
     if (foundWarmup !== null) {
       setIncludeWarmup(true);
       setWarmupDistanceMeters(foundWarmup);
-    } else if (!/warm/i.test(clean)) {
+    } else if (!/\b(?:warm\s*-?\s*up|wu)\b/i.test(clean)) {
       setIncludeWarmup(false);
     }
 
     if (foundCooldown !== null) {
       setIncludeCooldown(true);
       setCooldownDistanceMeters(foundCooldown);
-    } else if (!/cool/i.test(clean)) {
+    } else if (!/\b(?:cool\s*-?\s*down|cd)\b/i.test(clean)) {
       setIncludeCooldown(false);
     }
 
@@ -1100,20 +1100,13 @@ export const CoachClipboardWorkoutBuilder: React.FC<CoachClipboardWorkoutBuilder
 
   const handleSaveToLibrary = async () => {
     const name = (workoutTitle.trim() || builtWorkout.setsSummary || 'Custom Session').slice(0, 100);
-    const category: TeamWorkoutLibraryCategory =
-      clipboardSport === 'Swimming'
-        ? 'SWIMMING'
-        : clipboardSport === 'Multisport'
-          ? 'TRIATHLON'
-          : clipboardSport === 'Cycling'
-            ? 'CYCLING'
-            : builtWorkout.plannedLoad < 45
-              ? 'RECOVERY'
-              : /tempo|sub-t|xc|hill/i.test(`${name} ${builtWorkout.setsSummary}`)
-                ? 'XC_TEMPO'
-                : builtWorkout.trackSpec
-                  ? 'TRACK'
-                  : 'ROAD';
+    const category = inferWorkoutLibraryCategory({
+      sportCategory: clipboardSport,
+      name,
+      description: builtWorkout.setsSummary,
+      plannedLoad: builtWorkout.plannedLoad,
+      isTrack: Boolean(builtWorkout.trackSpec),
+    });
     const payload = {
       name,
       category,

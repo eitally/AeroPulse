@@ -210,6 +210,7 @@ export function buildSampleDemoGearItems(anchorDateIso?: string): AthleteGearIte
 interface DemoCoachAthleteSpec {
   idNum: string;
   name: string;
+  gender: 'M' | 'F';
   squadGroup: string;
   eventGroup: CoachEventGroup;
   gradYear: number;
@@ -237,6 +238,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '01',
     name: 'Lucas Alvarez',
+    gender: 'M',
     squadGroup: 'Varsity',
     eventGroup: 'DISTANCE',
     gradYear: 2026,
@@ -258,6 +260,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '02',
     name: 'Maya Chen',
+    gender: 'F',
     squadGroup: 'Varsity',
     eventGroup: 'DISTANCE',
     gradYear: 2027,
@@ -283,6 +286,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '03',
     name: 'Ethan Patel',
+    gender: 'M',
     squadGroup: 'Varsity',
     eventGroup: 'MID_DISTANCE',
     gradYear: 2027,
@@ -304,6 +308,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '04',
     name: 'Sofia Rodriguez',
+    gender: 'F',
     squadGroup: 'Varsity',
     eventGroup: 'DISTANCE',
     gradYear: 2026,
@@ -325,6 +330,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '05',
     name: 'Nolan Brooks',
+    gender: 'M',
     squadGroup: 'Varsity',
     eventGroup: 'MID_DISTANCE',
     gradYear: 2026,
@@ -346,6 +352,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '06',
     name: 'Kira Nakamura',
+    gender: 'F',
     squadGroup: 'Varsity',
     eventGroup: 'MID_DISTANCE',
     gradYear: 2028,
@@ -367,6 +374,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '07',
     name: 'Mateo Flores',
+    gender: 'M',
     squadGroup: 'JV',
     eventGroup: 'HURDLES',
     gradYear: 2028,
@@ -388,6 +396,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '08',
     name: 'Hannah Kim',
+    gender: 'F',
     squadGroup: 'JV',
     eventGroup: 'JUMPS',
     gradYear: 2028,
@@ -409,6 +418,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '09',
     name: 'Devon Carter',
+    gender: 'M',
     squadGroup: 'Varsity',
     eventGroup: 'SPRINTS',
     gradYear: 2027,
@@ -430,6 +440,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '10',
     name: 'Chloe Okafor',
+    gender: 'F',
     squadGroup: 'Varsity',
     eventGroup: 'POLE_VAULT',
     gradYear: 2026,
@@ -451,6 +462,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '11',
     name: 'Liam Gallagher',
+    gender: 'M',
     squadGroup: 'JV',
     eventGroup: 'THROWS',
     gradYear: 2029,
@@ -472,6 +484,7 @@ const DEMO_COACH_ATHLETE_SPECS: DemoCoachAthleteSpec[] = [
   {
     idNum: '12',
     name: 'Ava Washington',
+    gender: 'F',
     squadGroup: 'Return-to-Run',
     eventGroup: 'MID_DISTANCE',
     gradYear: 2028,
@@ -771,6 +784,7 @@ export function buildSampleDemoCoachSquad(baseDateIso?: string): TeamSummaryWith
       membershipId,
       teamId,
       role: 'ATHLETE',
+      genderDivision: spec.gender,
       squadGroup: spec.squadGroup,
       eventGroup: spec.eventGroup,
       invitedName: spec.name,

@@ -227,6 +227,11 @@
   [tabindex]:focus:not(:focus-visible) {
     outline: none;
   }
+
+  select {
+    align-content: center;
+    padding-block: 0.375rem;
+  }
 }
 
 /* ==========================================================================

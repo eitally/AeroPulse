@@ -1,4 +1,4 @@
-import type { AthleteProfile } from '../types.ts';
+import type { AthleteProfile, SportCategory, TeamWorkoutLibraryCategory } from '../types.ts';
 import {
   buildTrackSpeedReserveProfile,
   solve400mRacePaceSecsPerKm,
@@ -199,7 +199,7 @@ function extractDistanceMeters(cleanLine: string, isRepeatWork = false): number 
 
   // 2. Disambiguate `<val>m` (where 15m 60% = 15 minutes vs 400m = 400m vs 30m fly/60m blocks/60m walk)
   const hasExplicitMinutesHint =
-    /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|cooldown|cool-down|steady|progression)\b|\d+\s*%/i.test(
+    /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|wu|cooldown|cool-down|cd|steady|progression)\b|\d+\s*%/i.test(
       source
     );
 
@@ -322,8 +322,8 @@ function extractTargetPaceSecsPerKm(
 
 function inferStepKind(cleanLine: string, explicitKind?: ParsedWorkoutStep['stepKind']): ParsedWorkoutStep['stepKind'] {
   if (explicitKind) return explicitKind;
-  if (/\bwarm\s*-?\s*up\b/i.test(cleanLine)) return 'warmup';
-  if (/\bcool\s*-?\s*down\b/i.test(cleanLine)) return 'cooldown';
+  if (/\b(?:warm\s*-?\s*up|wu)\b/i.test(cleanLine)) return 'warmup';
+  if (/\b(?:cool\s*-?\s*down|cd)\b/i.test(cleanLine)) return 'cooldown';
   if (/\b(?:jog|walk|rest|recovery|float|standing)\b/i.test(cleanLine)) return 'rest';
   return 'work';
 }
@@ -701,4 +701,32 @@ export function formatHumanReadableStepLine(
   }
 
   return normalizedPrefix;
+}
+
+export function inferWorkoutLibraryCategory(params: {
+  sportCategory: SportCategory;
+  name: string;
+  description?: string;
+  plannedLoad: number;
+  isTrack?: boolean;
+}): TeamWorkoutLibraryCategory {
+  if (params.sportCategory === 'Swimming') return 'SWIMMING';
+  if (params.sportCategory === 'Multisport') return 'TRIATHLON';
+  if (params.sportCategory === 'Cycling') return 'CYCLING';
+
+  const combinedText = `${params.name} ${params.description || ''}`;
+  const isTrackSession =
+    Boolean(params.isTrack) ||
+    /\b(track|vo2|5k|mile|1600|800|400|1000|300|200|intervals?|repeats?|ladder|cv)\b/i.test(
+      combinedText
+    );
+  const isXcOrTempoSession = /\b(tempo|sub-?t|xc|cross\s*country|hill|hills|threshold)\b/i.test(
+    combinedText
+  );
+
+  if (isXcOrTempoSession && !params.isTrack) return 'XC_TEMPO';
+  if (isTrackSession) return 'TRACK';
+  if (isXcOrTempoSession) return 'XC_TEMPO';
+  if (params.plannedLoad < 45) return 'RECOVERY';
+  return 'ROAD';
 }

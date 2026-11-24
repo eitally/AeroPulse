@@ -95,7 +95,7 @@ export const TeamMessagingFeedAndComposer: React.FC<TeamMessagingFeedAndComposer
     )}
 
     {/* Messages Feed */}
-    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+    <div className="flex-1 min-h-[180px] overflow-y-auto px-4 py-3 space-y-2.5">
       {visibleMessages.length === 0 && visibleQueuedMessages.length === 0 ? (
         <div className="rounded-xl ap-card-inset p-4 text-xs text-ap-muted dark:text-ap-muted-dark">
           No messages in this channel yet. Post a meet reminder or practice note below.
@@ -240,13 +240,13 @@ export const TeamMessagingFeedAndComposer: React.FC<TeamMessagingFeedAndComposer
       className="px-4 py-3 border-t border-ap-frame/15 dark:border-ap-edge-dark space-y-2"
     >
       {isStaff && (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-nowrap overflow-x-auto no-scrollbar sm:flex-wrap gap-1">
           {COACH_QUICK_TEMPLATES.map((tpl) => (
             <button
               key={tpl}
               type="button"
               onClick={() => setDraftBody(tpl)}
-              className="min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded-md ap-card-inset text-2xs text-ap-ink dark:text-ap-chalk hover:underline cursor-pointer truncate max-w-[200px]"
+              className="shrink-0 min-h-[44px] sm:min-h-[32px] px-2.5 py-0.5 rounded-md ap-card-inset text-2xs text-ap-ink dark:text-ap-chalk hover:underline cursor-pointer truncate max-w-[200px]"
             >
               {tpl}
             </button>

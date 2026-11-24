@@ -75,7 +75,7 @@ export const TeamMessagingChannelRail: React.FC<TeamMessagingChannelRailProps> =
   <>
     {/* Channel Rail */}
     <div
-      className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-wrap items-center gap-1.5"
+      className="px-4 py-2 border-b border-ap-frame/15 dark:border-ap-edge-dark flex flex-nowrap overflow-x-auto no-scrollbar sm:flex-wrap items-center gap-1.5"
       role="tablist"
     >
       {(
@@ -123,7 +123,7 @@ export const TeamMessagingChannelRail: React.FC<TeamMessagingChannelRailProps> =
                 setStatusError(null);
                 setOpenReceiptMsgId(null);
               }}
-              className={`min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-bold cursor-pointer ${
+              className={`shrink-0 min-h-[44px] sm:min-h-[34px] px-3 py-1 rounded-xl text-xs font-bold cursor-pointer ${
                 active ? 'ap-nav-volt-active' : 'liquid-capsule-track text-ap-ink dark:text-ap-chalk'
               }`}
             >

@@ -656,7 +656,9 @@ export const TracksideStopwatchView: React.FC<TracksideStopwatchViewProps> = ({
         onClearFeedback={() => setSaveFeedbackMsg(null)}
       />
 
-      <section className="relative md:sticky md:top-[60px] z-20 rounded-xl ap-card ap-card-clay-top p-2.5 sm:p-4 space-y-2 sm:space-y-3">
+      <section
+        className={`relative ${showToolsDrawer ? '' : 'md:sticky md:top-[60px]'} z-20 rounded-xl ap-card ap-card-clay-top p-2.5 sm:p-4 space-y-2 sm:space-y-3`}
+      >
         {/* HUD Row 1: Track Asphalt Clock Housing + Starter Volt Gun + Undo + Chute */}
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div

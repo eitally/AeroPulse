@@ -434,7 +434,7 @@ export const TracksideSetupFilterControls: React.FC<SetupFilterControlsProps> = 
         }`}
       >
         <Lightning className="w-3.5 h-3.5" weight="bold" />
-        <span>Chute</span>
+        <span>{showChuteBar ? 'Chute Bar ON' : 'Show Chute'}</span>
       </button>
     )}
 
