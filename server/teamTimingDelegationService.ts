@@ -782,7 +782,13 @@ export async function submitDelegatedSplits(params: {
       };
     }
 
-    if (session.pinRequired && session.pinHash && !authMember) {
+    const isPinExemptMember =
+      isStaffMember ||
+      Boolean(
+        session.assignedMembershipId &&
+          authMember?.membershipId === session.assignedMembershipId
+      );
+    if (session.pinRequired && session.pinHash && !isPinExemptMember) {
       const candidatePin = sanitizeText(params.pin, 12);
       if (
         !candidatePin ||

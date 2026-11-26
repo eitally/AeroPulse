@@ -40,6 +40,7 @@ export interface TeamCustomSubgroup {
 
 export interface TeamMessageRecord {
   id: string;
+  clientMessageId?: string;
   teamId: string;
   channelId: string;
   channelScope: TeamMessageChannelScope;

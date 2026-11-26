@@ -243,15 +243,19 @@ export async function unlinkProviderFromUser(
   const user = await getUserById(userId);
   if (!user) return { ok: false, error: 'User not found' };
 
-  if (user.authProviders.length <= 1) {
+  const removedProviders = user.authProviders.filter((p) => p.provider === provider);
+  const remainingProviders = user.authProviders.filter((p) => p.provider !== provider);
+  if (remainingProviders.length === 0) {
     return {
       ok: false,
       error: 'Cannot remove your last remaining login method.',
     };
   }
 
-  const removedProviders = user.authProviders.filter((p) => p.provider === provider);
-  user.authProviders = user.authProviders.filter((p) => p.provider !== provider);
+  user.authProviders = remainingProviders;
+  if (provider === 'passkey') {
+    user.passkeys = [];
+  }
   await saveUser(user);
   for (const removed of removedProviders) {
     await deleteTenantVault(`auth_prov_${removed.provider}_${hashKey(removed.providerId)}`);

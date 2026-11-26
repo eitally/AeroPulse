@@ -1,5 +1,6 @@
 import express, { type Request, type Response } from 'express';
 import fs from 'fs';
+import path from 'path';
 import { runtimeStore, saveSessionCacheAsync } from '../sessionContext.ts';
 import {
   deriveStravaSessionSid,
@@ -142,8 +143,22 @@ webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) =
     }
     const aspectType = String(req.body?.aspect_type || '').toLowerCase();
     const objectType = String(req.body?.object_type || '').toLowerCase();
-    const objectId = extractStravaId(req.body, 'object_id_str', 'object_id');
-    const ownerId = extractStravaId(req.body, 'owner_id_str', 'owner_id');
+    const rawObjectId = extractStravaId(req.body, 'object_id_str', 'object_id');
+    const rawOwnerId = extractStravaId(req.body, 'owner_id_str', 'owner_id');
+    if (
+      (rawOwnerId && !/^\d{1,24}$/.test(rawOwnerId)) ||
+      (rawObjectId && !/^[a-zA-Z0-9_-]{1,64}$/.test(rawObjectId))
+    ) {
+      res.status(400).json({ ok: false, error: 'Invalid Strava webhook identifier.' });
+      return;
+    }
+    const objectId = rawObjectId;
+    const ownerId = rawOwnerId;
+    const resolveSafeStravaArchivePath = (numericOwnerId: string): string | null => {
+      if (!/^\d{1,24}$/.test(numericOwnerId)) return null;
+      const resolved = path.resolve('/tmp', `aeropulse-strava-archive-${numericOwnerId}.json`);
+      return resolved.startsWith('/tmp/') ? resolved : null;
+    };
     const updates = req.body?.updates as Record<string, unknown> | undefined;
 
     // Compliance: Handle Strava user deauthorization (revoke tokens & purge cached archives)
@@ -165,8 +180,8 @@ webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) =
         await saveTenantVaultAsync(`session_${scopeKey}`, vaultDoc);
       }
       try {
-        const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
-        if (fs.existsSync(archivePath)) fs.unlinkSync(archivePath);
+        const archivePath = resolveSafeStravaArchivePath(ownerId);
+        if (archivePath && fs.existsSync(archivePath)) fs.unlinkSync(archivePath);
       } catch (err: unknown) {
         warnServerFallback('webhook:athlete-deauth-archive-unlink', err);
       }
@@ -178,8 +193,8 @@ webhookRouter.post('/api/webhooks/strava', async (req: Request, res: Response) =
     if (ownerId && objectType === 'activity' && aspectType === 'delete' && objectId) {
       let removedFromArchive = false;
       try {
-        const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
-        if (fs.existsSync(archivePath)) {
+        const archivePath = resolveSafeStravaArchivePath(ownerId);
+        if (archivePath && fs.existsSync(archivePath)) {
           const parsed = JSON.parse(fs.readFileSync(archivePath, 'utf8'));
           if (Array.isArray(parsed)) {
             const filtered = parsed.filter(

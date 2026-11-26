@@ -3,6 +3,7 @@ import {
   assertSafeExternalFetch,
   escapeHtml,
   isSafeHttpsUrl,
+  readBoundedResponseText,
   timingSafeStringEqual,
 } from './securityUtils.ts';
 import type {
@@ -159,40 +160,42 @@ export async function updateTeamExternalSyncConfig(params: {
   config: Partial<TeamExternalSyncConfig>;
   teamUrl?: string;
 }): Promise<TeamSummaryWithRole | null> {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) return null;
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc || !assertCoachMembership(doc, params.callerSid)) return null;
 
-  let mergedConfig: Partial<TeamExternalSyncConfig> = { ...(params.config || {}) };
-  if (params.teamUrl) {
-    const parsed = parseExternalTeamUrl(params.teamUrl);
-    if (parsed) {
-      mergedConfig = {
-        ...mergedConfig,
-        platform: parsed.platform,
-        ...(parsed.platform === 'ATHLETIC_NET'
-          ? {
-              athleticNetSchoolId: parsed.athleticNetSchoolId,
-              athleticNetSportSlug: parsed.athleticNetSportSlug,
-              athleticNetUrl: parsed.canonicalUrl,
-            }
-          : {
-              tfrrsTeamUrl: parsed.canonicalUrl,
-              tfrrsTeamCode: parsed.tfrrsTeamCode,
-            }),
-        ...(parsed.inferredTeamName && !mergedConfig.teamFilterKeyword
-          ? { teamFilterKeyword: parsed.inferredTeamName.replace(/\s+high\s+school$/i, '') }
-          : {}),
-      };
+    let mergedConfig: Partial<TeamExternalSyncConfig> = { ...(params.config || {}) };
+    if (params.teamUrl) {
+      const parsed = parseExternalTeamUrl(params.teamUrl);
+      if (parsed) {
+        mergedConfig = {
+          ...mergedConfig,
+          platform: parsed.platform,
+          ...(parsed.platform === 'ATHLETIC_NET'
+            ? {
+                athleticNetSchoolId: parsed.athleticNetSchoolId,
+                athleticNetSportSlug: parsed.athleticNetSportSlug,
+                athleticNetUrl: parsed.canonicalUrl,
+              }
+            : {
+                tfrrsTeamUrl: parsed.canonicalUrl,
+                tfrrsTeamCode: parsed.tfrrsTeamCode,
+              }),
+          ...(parsed.inferredTeamName && !mergedConfig.teamFilterKeyword
+            ? { teamFilterKeyword: parsed.inferredTeamName.replace(/\s+high\s+school$/i, '') }
+            : {}),
+        };
+      }
     }
-  }
 
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    mergedConfig,
-    doc.brand.externalSync
-  );
-  doc.updatedAt = new Date().toISOString();
-  await saveTeamDocRaw(params.teamId, doc);
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    doc.brand.externalSync = sanitizeExternalSyncConfig(
+      mergedConfig,
+      doc.brand.externalSync
+    );
+    doc.updatedAt = new Date().toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+  });
 }
 
 export async function syncTeamIcsCalendar(params: {
@@ -209,8 +212,8 @@ export async function syncTeamIcsCalendar(params: {
   cloudflareBlocked?: boolean;
   note?: string;
 }> {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+  const initialDoc = await loadTeamDocRaw(params.teamId);
+  if (!initialDoc || !assertCoachMembership(initialDoc, params.callerSid)) {
     return {
       ok: false,
       summary: null,
@@ -243,18 +246,18 @@ export async function syncTeamIcsCalendar(params: {
       if (!resp) {
         return {
           ok: false,
-          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+          summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
           addedMeetsCount: 0,
           parsedMeetsCount: 0,
           note: 'Blocked unsafe or private network calendar URL.',
         };
       }
 
-      const body = await resp.text();
+      const body = await readBoundedResponseText(resp, 512_000);
       if (!resp.ok || /just a moment|cf-mitigated|enable javascript and cookies/i.test(body)) {
         return {
           ok: false,
-          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+          summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
           addedMeetsCount: 0,
           parsedMeetsCount: 0,
           cloudflareBlocked: true,
@@ -268,7 +271,7 @@ export async function syncTeamIcsCalendar(params: {
     } catch {
       return {
         ok: false,
-        summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+        summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
         addedMeetsCount: 0,
         parsedMeetsCount: 0,
         cloudflareBlocked: true,
@@ -280,39 +283,52 @@ export async function syncTeamIcsCalendar(params: {
   if (!resolvedIcsText || !resolvedIcsText.includes('VEVENT')) {
     return {
       ok: false,
-      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
       addedMeetsCount: 0,
       parsedMeetsCount: 0,
       note: 'No VEVENT calendar entries found in the provided .ics feed.',
     };
   }
 
-  const extSource: ExternalTeamPlatform =
-    doc.brand.externalSync?.platform === 'TFRRS' ? 'TFRRS' : 'ATHLETIC_NET';
-  const meets = parseIcsCalendarToMeets(resolvedIcsText, extSource);
-  const addedCount = upsertMeetEventsOnDoc(doc, meets, extSource);
-  const nowIso = new Date().toISOString();
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+      return {
+        ok: false,
+        summary: null,
+        addedMeetsCount: 0,
+        parsedMeetsCount: 0,
+        note: 'Coach permissions required to sync team schedule.',
+      };
+    }
 
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    {
-      ...(normalizedUrl ? { icsCalendarUrl: normalizedUrl } : {}),
-      lastSyncedAt: nowIso,
-    },
-    doc.brand.externalSync
-  );
-  doc.updatedAt = nowIso;
-  await saveTeamDocRaw(params.teamId, doc);
+    const extSource: ExternalTeamPlatform =
+      doc.brand.externalSync?.platform === 'TFRRS' ? 'TFRRS' : 'ATHLETIC_NET';
+    const meets = parseIcsCalendarToMeets(resolvedIcsText, extSource);
+    const addedCount = upsertMeetEventsOnDoc(doc, meets, extSource);
+    const nowIso = new Date().toISOString();
 
-  return {
-    ok: true,
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-    addedMeetsCount: addedCount,
-    parsedMeetsCount: meets.length,
-    note:
-      addedCount > 0
-        ? `Added ${addedCount} meets from .ics calendar.`
-        : `Checked ${meets.length} meets (all already up to date).`,
-  };
+    doc.brand.externalSync = sanitizeExternalSyncConfig(
+      {
+        ...(normalizedUrl ? { icsCalendarUrl: normalizedUrl } : {}),
+        lastSyncedAt: nowIso,
+      },
+      doc.brand.externalSync
+    );
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      addedMeetsCount: addedCount,
+      parsedMeetsCount: meets.length,
+      note:
+        addedCount > 0
+          ? `Added ${addedCount} meets from .ics calendar.`
+          : `Checked ${meets.length} meets (all already up to date).`,
+    };
+  });
 }
 
 function findOrCreateExternalMembership(

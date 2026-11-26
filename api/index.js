@@ -502,6 +502,48 @@ async function assertSafeExternalFetch(rawUrl, init = {}, maxRedirects = 2) {
   }
   return null;
 }
+async function readBoundedResponseText(resp, maxBytes = 512e3) {
+  const safeMax = Math.max(1024, Math.floor(maxBytes));
+  const contentLengthHeader = resp.headers?.get?.("content-length");
+  if (contentLengthHeader) {
+    const declared = Number(contentLengthHeader);
+    if (Number.isFinite(declared) && declared > safeMax * 4) {
+      throw new Error(`Remote payload too large (${declared} bytes > limit).`);
+    }
+  }
+  if (!resp.body || typeof resp.body.getReader !== "function") {
+    const text = await resp.text();
+    return text.length > safeMax ? text.slice(0, safeMax) : text;
+  }
+  const reader = resp.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (total < safeMax) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      const remaining = safeMax - total;
+      if (value.byteLength > remaining) {
+        chunks.push(value.subarray(0, remaining));
+        total += remaining;
+        await reader.cancel().catch(() => {
+        });
+        break;
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: false }).decode(merged);
+}
 function securityHeadersMiddleware(req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
@@ -3045,7 +3087,7 @@ function extractDistanceMeters(cleanLine, isRepeatWork = false) {
   if (miMatch) return Math.round(Number(miMatch[1]) * 1609.34);
   const metersWordMatch = source.match(/\b(\d+(?:\.\d+)?)\s*(?:meters|meter)\b/i);
   if (metersWordMatch) return Math.round(Number(metersWordMatch[1]));
-  const hasExplicitMinutesHint = /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|cooldown|cool-down|steady|progression)\b|\d+\s*%/i.test(
+  const hasExplicitMinutesHint = /\b(?:ftp|tempo|threshold|sub-?t|cv|z1|z2|z3|z4|z5|easy|warmup|warm-up|wu|cooldown|cool-down|cd|steady|progression)\b|\d+\s*%/i.test(
     source
   );
   const mTokens = Array.from(source.matchAll(/\b(\d+)\s*m(?!in|ins|s)\b/gi));
@@ -3150,8 +3192,8 @@ function extractTargetPaceSecsPerKm(cleanLine, distanceMeters) {
 }
 function inferStepKind(cleanLine, explicitKind) {
   if (explicitKind) return explicitKind;
-  if (/\bwarm\s*-?\s*up\b/i.test(cleanLine)) return "warmup";
-  if (/\bcool\s*-?\s*down\b/i.test(cleanLine)) return "cooldown";
+  if (/\b(?:warm\s*-?\s*up|wu)\b/i.test(cleanLine)) return "warmup";
+  if (/\b(?:cool\s*-?\s*down|cd)\b/i.test(cleanLine)) return "cooldown";
   if (/\b(?:jog|walk|rest|recovery|float|standing)\b/i.test(cleanLine)) return "rest";
   return "work";
 }
@@ -4885,9 +4927,18 @@ function getConfiguredRateLimitBackend() {
 var memoryRateLimitStore = /* @__PURE__ */ new Map();
 var MAX_MEMORY_RATE_LIMIT_KEYS = 4e3;
 function getClientRateLimitIp(req) {
-  const forwarded = req.headers["x-vercel-forwarded-for"] || req.headers["x-forwarded-for"];
-  const firstForwarded = Array.isArray(forwarded) ? forwarded[0] : typeof forwarded === "string" ? forwarded.split(",")[0] : "";
-  const candidate = (firstForwarded || req.ip || req.socket?.remoteAddress || "local").trim();
+  const socketIp = String(req.socket?.remoteAddress || req.ip || "").trim();
+  const isVercelEdge = Boolean(process.env.VERCEL);
+  const isFromTrustedLocalProxy = !socketIp || socketIp === "local" || isPrivateOrReservedIp(socketIp.replace(/^::ffff:/i, ""));
+  let rawCandidate = "";
+  if (isVercelEdge) {
+    const vercelForwarded = req.headers["x-vercel-forwarded-for"];
+    rawCandidate = Array.isArray(vercelForwarded) ? vercelForwarded[vercelForwarded.length - 1] || "" : typeof vercelForwarded === "string" ? vercelForwarded.split(",").pop() || "" : "";
+  } else if (isFromTrustedLocalProxy) {
+    const forwarded = req.headers["x-vercel-forwarded-for"] || req.headers["x-forwarded-for"];
+    rawCandidate = Array.isArray(forwarded) ? forwarded[forwarded.length - 1] || "" : typeof forwarded === "string" ? forwarded.split(",").pop() || "" : "";
+  }
+  const candidate = (rawCandidate || req.ip || socketIp || "local").trim();
   return candidate.replace(/[^a-zA-Z0-9.:_-]/g, "").slice(0, 64) || "local";
 }
 function checkMemoryRateLimitSync(key, limit = 20, windowMs = 6e4) {
@@ -6288,14 +6339,18 @@ async function linkProviderToUser(userId, provider, providerId, profile) {
 async function unlinkProviderFromUser(userId, provider) {
   const user = await getUserById(userId);
   if (!user) return { ok: false, error: "User not found" };
-  if (user.authProviders.length <= 1) {
+  const removedProviders = user.authProviders.filter((p) => p.provider === provider);
+  const remainingProviders = user.authProviders.filter((p) => p.provider !== provider);
+  if (remainingProviders.length === 0) {
     return {
       ok: false,
       error: "Cannot remove your last remaining login method."
     };
   }
-  const removedProviders = user.authProviders.filter((p) => p.provider === provider);
-  user.authProviders = user.authProviders.filter((p) => p.provider !== provider);
+  user.authProviders = remainingProviders;
+  if (provider === "passkey") {
+    user.passkeys = [];
+  }
   await saveUser(user);
   for (const removed of removedProviders) {
     await deleteTenantVault(`auth_prov_${removed.provider}_${hashKey(removed.providerId)}`);
@@ -8574,13 +8629,27 @@ webhooksAndExportRouter.post("/api/webhooks/:provider", (req, res, next) => {
     receivedAt: (/* @__PURE__ */ new Date()).toISOString()
   });
 });
+var MAX_EXPORT_INPUT_STEPS = 100;
+var MAX_EXPORT_CHILD_STEPS = 20;
+var MAX_EXPORT_REPEAT_COUNT = 50;
+var MAX_EXPORT_EXPANDED_STEPS = 500;
 webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
+  const clientIp = getClientRateLimitIp(req);
+  const rate = checkMemoryRateLimitSync(`workout_export:${clientIp}`, 60, 6e4);
+  if (!rate.allowed) {
+    res.status(429).json({
+      ok: false,
+      error: "Too many workout export requests. Please wait a moment and try again.",
+      retryAfterSecs: rate.retryAfterSecs
+    });
+    return;
+  }
   const body = req.body && typeof req.body === "object" ? req.body : {};
-  const title = String(body.name || "MeetReady Prescribed Session").trim();
+  const title = String(body.name || "MeetReady Prescribed Session").trim().slice(0, 140);
   const sport = body.sportCategory === "Running" ? "Running" : "Cycling";
   const ftp = Math.max(100, Number(body.ftp) || 280);
   const thresholdPaceSecsPerKm = Math.max(95, Number(body.thresholdPaceSecsPerKm) || 245);
-  const workoutSyntax = typeof body.workoutSyntax === "string" ? body.workoutSyntax.trim() : "";
+  const workoutSyntax = typeof body.workoutSyntax === "string" ? body.workoutSyntax.trim().slice(0, 4e3) : "";
   let astNodes = null;
   let normalizedSteps = [];
   let fitSteps = [];
@@ -8593,10 +8662,11 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
     });
     let stepOrder = 0;
     for (const node of astNodes) {
-      const expand = node.type === "step" ? [node.step] : node.steps;
-      const reps = node.type === "repeat" ? node.repeatCount : 1;
+      const expand = (node.type === "step" ? [node.step] : node.steps).slice(0, MAX_EXPORT_CHILD_STEPS);
+      const reps = node.type === "repeat" ? Math.min(MAX_EXPORT_REPEAT_COUNT, Math.max(1, Math.round(node.repeatCount || 1))) : 1;
       for (let r = 0; r < reps; r++) {
         for (const s of expand) {
+          if (normalizedSteps.length >= MAX_EXPORT_EXPANDED_STEPS) break;
           stepOrder += 1;
           const pct2 = Math.max(40, Math.min(180, s.intensityPct || 75));
           const paceSecsKm = s.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct2 / 100));
@@ -8615,13 +8685,20 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
     }
   }
   if (normalizedSteps.length === 0) {
-    const rawSteps = Array.isArray(body.steps) && body.steps.length > 0 ? body.steps : [
+    const rawSteps = Array.isArray(body.steps) && body.steps.length > 0 ? body.steps.slice(0, MAX_EXPORT_INPUT_STEPS) : [
       { label: "Warmup", durationSecs: 600, targetPctFtp: 62 },
       { label: "Threshold Main Set", durationSecs: 1800, targetPctFtp: 96 },
       { label: "Cooldown", durationSecs: 600, targetPctFtp: 55 }
     ];
     let orderIdx = 0;
     for (let i = 0; i < rawSteps.length; i++) {
+      if (normalizedSteps.length >= MAX_EXPORT_EXPANDED_STEPS) {
+        res.status(400).json({
+          ok: false,
+          error: `Workout export exceeds maximum of ${MAX_EXPORT_EXPANDED_STEPS} expanded steps.`
+        });
+        return;
+      }
       const s = rawSteps[i];
       const pushSimpleStep = (item, kind) => {
         orderIdx += 1;
@@ -8656,14 +8733,30 @@ webhooksAndExportRouter.post("/api/workouts/export", (req, res) => {
         });
       };
       if (Array.isArray(s.steps) && s.steps.length > 0 && (s.repeatCount || 1) >= 2) {
-        const repTotal = Math.round(s.repeatCount || 2);
+        const rawRepeat = Number(s.repeatCount);
+        if (!Number.isFinite(rawRepeat) || rawRepeat > MAX_EXPORT_REPEAT_COUNT) {
+          res.status(400).json({
+            ok: false,
+            error: `Repeat count must be between 2 and ${MAX_EXPORT_REPEAT_COUNT}.`
+          });
+          return;
+        }
+        const boundedChildren = s.steps.slice(0, MAX_EXPORT_CHILD_STEPS);
+        const repTotal = Math.min(MAX_EXPORT_REPEAT_COUNT, Math.max(2, Math.round(rawRepeat)));
+        if (normalizedSteps.length + repTotal * boundedChildren.length > MAX_EXPORT_EXPANDED_STEPS) {
+          res.status(400).json({
+            ok: false,
+            error: `Workout export exceeds maximum of ${MAX_EXPORT_EXPANDED_STEPS} expanded steps.`
+          });
+          return;
+        }
         const startIdx = fitSteps.length;
         for (let r = 0; r < repTotal; r++) {
-          for (let j = 0; j < s.steps.length; j++) {
+          for (let j = 0; j < boundedChildren.length; j++) {
             if (r === 0) {
-              pushSimpleStep(s.steps[j], j % 2 === 1 ? "rest" : "work");
+              pushSimpleStep(boundedChildren[j], j % 2 === 1 ? "rest" : "work");
             } else {
-              const child = s.steps[j];
+              const child = boundedChildren[j];
               const pct2 = Math.max(40, Math.min(180, Number(child.targetPctFtp) || 75));
               const pace = child.targetPaceSecsPerKm ?? Math.round(thresholdPaceSecsPerKm / (pct2 / 100));
               const dist = child.distanceMeters ? Math.round(child.distanceMeters) : void 0;
@@ -11448,10 +11541,19 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
     }
     return true;
   }).map((bw) => {
-    if (!isParentFollower) return bw;
+    if (isStaffViewer) return bw;
+    if (isParentFollower) {
+      return {
+        ...bw,
+        athleteOverrides: void 0,
+        targetMembershipIds: void 0
+      };
+    }
+    const ownOverride = bw.athleteOverrides?.[myMembership.membershipId];
     return {
       ...bw,
-      athleteOverrides: void 0
+      athleteOverrides: ownOverride ? { [myMembership.membershipId]: ownOverride } : void 0,
+      targetMembershipIds: void 0
     };
   });
   const visibleComments = (doc.workoutComments || []).filter((c) => {
@@ -11484,10 +11586,11 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
   const subgroupById = new Map(
     (doc.customSubgroups || []).map((sg) => [sg.id, sg])
   );
+  const subgroupRequiresLinkedParents = (sg) => sg.includeLinkedParents !== false || doc.brand.orgType === "HIGH_SCHOOL" || doc.memberships.some((m) => sg.memberIds.includes(m.membershipId) && Boolean(m.isMinorU18));
   const visibleCustomSubgroups = (doc.customSubgroups || []).filter((sg) => {
     if (isStaffViewer) return true;
     if (sg.memberIds.includes(myMembership.membershipId)) return true;
-    if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+    if (isParentFollower && subgroupRequiresLinkedParents(sg) && linkedChildMembershipIds) {
       return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
     }
     return false;
@@ -11502,7 +11605,7 @@ function projectTeamSummaryForCaller(doc, callerSid, originUrl) {
       const sg = msg.customSubgroupId ? subgroupById.get(msg.customSubgroupId) : void 0;
       if (!sg) return false;
       if (sg.memberIds.includes(myMembership.membershipId)) return true;
-      if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+      if (isParentFollower && subgroupRequiresLinkedParents(sg) && linkedChildMembershipIds) {
         return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
       }
       return false;
@@ -11701,7 +11804,13 @@ async function autoLinkPendingTeamInvitesByEmail(params) {
           m.invitedName = params.athleteName.trim().slice(0, 64);
           linkedDisplayName = m.invitedName;
         }
-        if (!m.sharingTier) {
+        const requiresParentConsent = Boolean(
+          m.isMinorU18 && m.parentConsentStatus !== "ACKNOWLEDGED"
+        );
+        if (requiresParentConsent) {
+          m.parentConsentStatus = m.parentConsentStatus || "PENDING";
+          m.sharingTier = "LOAD_ONLY";
+        } else if (!m.sharingTier) {
           m.sharingTier = "SUMMARY_ONLY";
         }
         if (!m.liveSnapshot) {
@@ -12471,6 +12580,8 @@ function stripClinicalNotesForRole(cases, role) {
 
 // server/pushNotificationService.ts
 import crypto9 from "crypto";
+import dns2 from "dns";
+import net2 from "net";
 import { generateVAPIDKeys, sendNotification } from "web-push";
 var VAPID_VAULT_KEY = "thresh_vapid_keys_v1";
 var cachedVapidKeys = null;
@@ -12519,6 +12630,32 @@ async function listUserPushSubscriptions(userSid) {
   );
   return Array.isArray(subs) ? subs.filter((s) => s.enabled !== false) : [];
 }
+async function isAllowedPublicPushEndpointAsync(rawEndpoint) {
+  if (!isSafeExternalUrl(rawEndpoint)) return false;
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawEndpoint);
+  } catch {
+    return false;
+  }
+  if (parsedUrl.protocol !== "https:") return false;
+  const hostname = parsedUrl.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (net2.isIP(hostname) !== 0) {
+    return !isPrivateOrReservedIp(hostname);
+  }
+  try {
+    const records = await dns2.promises.lookup(hostname, { all: true, verbatim: true });
+    if (!records.length || records.some((r) => isPrivateOrReservedIp(r.address))) {
+      return false;
+    }
+    return true;
+  } catch {
+    if (process.env.VITEST && hostname.endsWith(".example.com")) {
+      return true;
+    }
+    return false;
+  }
+}
 async function saveUserPushSubscription(params) {
   const cleanEndpoint = String(params.endpoint || "").trim();
   const p256dh = String(params.keys?.p256dh || "").trim();
@@ -12526,15 +12663,8 @@ async function saveUserPushSubscription(params) {
   if (!cleanEndpoint) {
     return { ok: false, error: "Valid push subscription endpoint URL is required." };
   }
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(cleanEndpoint);
-  } catch {
-    return { ok: false, error: "Valid push subscription endpoint URL is required." };
-  }
-  const host = parsedUrl.hostname.toLowerCase();
-  const isPrivateHost = host === "localhost" || host === "::1" || host === "[::1]" || host.endsWith(".localhost") || host.startsWith("127.") || host.startsWith("10.") || host.startsWith("169.254.") || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
-  if (parsedUrl.protocol !== "https:" || isPrivateHost) {
+  const endpointSafe = await isAllowedPublicPushEndpointAsync(cleanEndpoint);
+  if (!endpointSafe) {
     return { ok: false, error: "Push subscription endpoint must be a public HTTPS URL." };
   }
   if (!p256dh || !auth) {
@@ -12615,10 +12745,13 @@ function resolvePushRecipientSidsForTeamEvent(params) {
       );
       if (!sg) return [];
       const memberSet = new Set(sg.memberIds || []);
+      const effectiveIncludeLinkedParents = sg.includeLinkedParents !== false || params.doc.brand.orgType === "HIGH_SCHOOL" || params.doc.memberships.some(
+        (member) => memberSet.has(member.membershipId) && Boolean(member.isMinorU18)
+      );
       for (const m of activeMembers) {
         if (canViewSafeguardingMedicalRole(m.role) || memberSet.has(m.membershipId)) {
           sids.add(m.userSid);
-        } else if (m.role === "PARENT_FOLLOWER" && sg.includeLinkedParents !== false && m.invitedEmail) {
+        } else if (m.role === "PARENT_FOLLOWER" && effectiveIncludeLinkedParents && m.invitedEmail) {
           const parentEmail = m.invitedEmail.trim().toLowerCase();
           const hasChild = params.doc.memberships.some(
             (child) => memberSet.has(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === parentEmail
@@ -12691,6 +12824,10 @@ async function dispatchPushPayloadToUsers(params) {
   }
   const keys = await getOrInitVapidKeys();
   const sender = testSenderOverride || (async (sub, payloadJson2) => {
+    const endpointStillSafe = await isAllowedPublicPushEndpointAsync(sub.endpoint);
+    if (!endpointStillSafe) {
+      throw new Error("Blocked unsafe Web Push subscription endpoint.");
+    }
     const res = await sendNotification(sub, payloadJson2, {
       vapidDetails: {
         subject: keys.subject,
@@ -12802,11 +12939,16 @@ async function dispatchTeamPushNotifications(params) {
       const hasLinkedChildInSubgroup = Boolean(parentEmailLower) && doc.memberships.some(
         (child) => subgroupMembers.has(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === parentEmailLower
       );
-      const unlinkedParentInParentsScope = !m.userSid && m.role === "PARENT_FOLLOWER" && (params.channelScope === "PARENTS_ONLY" || params.kind === "ANNOUNCEMENT" || params.channelScope === "CUSTOM_SUBGROUP" && Boolean(subgroup) && (subgroupMembers.has(m.membershipId) || subgroup.includeLinkedParents !== false && hasLinkedChildInSubgroup));
+      const subgroupEffectiveIncludeParents = Boolean(
+        subgroup && (subgroup.includeLinkedParents !== false || doc.brand.orgType === "HIGH_SCHOOL" || doc.memberships.some(
+          (member) => subgroupMembers.has(member.membershipId) && Boolean(member.isMinorU18)
+        ))
+      );
+      const unlinkedParentInParentsScope = !m.userSid && m.role === "PARENT_FOLLOWER" && (params.channelScope === "PARENTS_ONLY" || params.kind === "ANNOUNCEMENT" || params.channelScope === "CUSTOM_SUBGROUP" && Boolean(subgroup) && (subgroupMembers.has(m.membershipId) || subgroupEffectiveIncludeParents && hasLinkedChildInSubgroup));
       const guardianAlreadyDeliveredByPush = Boolean(m.parentGuardianEmail) && doc.memberships.some(
         (p) => p.role === "PARENT_FOLLOWER" && Boolean(p.userSid && deliveredSet.has(p.userSid)) && p.invitedEmail?.trim().toLowerCase() === m.parentGuardianEmail?.trim().toLowerCase()
       );
-      const includeGuardianForChild = !guardianAlreadyDeliveredByPush && Boolean(m.parentGuardianEmail) && (params.channelScope === "PARENTS_ONLY" || params.kind === "ANNOUNCEMENT" || params.channelScope === "CUSTOM_SUBGROUP" && subgroup?.includeLinkedParents !== false && subgroupMembers.has(m.membershipId));
+      const includeGuardianForChild = !guardianAlreadyDeliveredByPush && Boolean(m.parentGuardianEmail) && (params.channelScope === "PARENTS_ONLY" || params.kind === "ANNOUNCEMENT" || params.channelScope === "CUSTOM_SUBGROUP" && subgroupEffectiveIncludeParents && subgroupMembers.has(m.membershipId));
       if (hadUndeliveredSid || unlinkedParentInParentsScope) {
         const email = m.invitedEmail?.trim().toLowerCase();
         if (email && email.includes("@") && !excludedEmails.has(email)) {
@@ -14759,9 +14901,7 @@ emailOtpRouter.post("/api/auth/email/verify-otp", async (req, res) => {
       });
       return;
     }
-    const currentClaims = getVerifiedSessionClaims(req);
-    const verifiedPreferredSid = currentClaims && isCanonicalAuthenticatedClaims(currentClaims) ? currentClaims.sid : void 0;
-    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid, {
+    const result = await verifyEmailOtpCode(email, code, void 0, {
       birthMonthYear: req.body?.birthMonthYear,
       birthYear: req.body?.birthYear
     });
@@ -15306,7 +15446,10 @@ async function submitDelegatedSplits(params) {
         error: "This timing pass has expired."
       };
     }
-    if (session.pinRequired && session.pinHash && !authMember) {
+    const isPinExemptMember = isStaffMember || Boolean(
+      session.assignedMembershipId && authMember?.membershipId === session.assignedMembershipId
+    );
+    if (session.pinRequired && session.pinHash && !isPinExemptMember) {
       const candidatePin = sanitizeText(params.pin, 12);
       if (!candidatePin || !/^\d{4}$/.test(candidatePin) || !verifyTimingPassPin(session.sessionId, session.pinHash, candidatePin)) {
         return {
@@ -16824,38 +16967,40 @@ Cooldown 15m`,
   return added;
 }
 async function updateTeamExternalSyncConfig(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) return null;
-  let mergedConfig = { ...params.config || {} };
-  if (params.teamUrl) {
-    const parsed = parseExternalTeamUrl(params.teamUrl);
-    if (parsed) {
-      mergedConfig = {
-        ...mergedConfig,
-        platform: parsed.platform,
-        ...parsed.platform === "ATHLETIC_NET" ? {
-          athleticNetSchoolId: parsed.athleticNetSchoolId,
-          athleticNetSportSlug: parsed.athleticNetSportSlug,
-          athleticNetUrl: parsed.canonicalUrl
-        } : {
-          tfrrsTeamUrl: parsed.canonicalUrl,
-          tfrrsTeamCode: parsed.tfrrsTeamCode
-        },
-        ...parsed.inferredTeamName && !mergedConfig.teamFilterKeyword ? { teamFilterKeyword: parsed.inferredTeamName.replace(/\s+high\s+school$/i, "") } : {}
-      };
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc || !assertCoachMembership(doc, params.callerSid)) return null;
+    let mergedConfig = { ...params.config || {} };
+    if (params.teamUrl) {
+      const parsed = parseExternalTeamUrl(params.teamUrl);
+      if (parsed) {
+        mergedConfig = {
+          ...mergedConfig,
+          platform: parsed.platform,
+          ...parsed.platform === "ATHLETIC_NET" ? {
+            athleticNetSchoolId: parsed.athleticNetSchoolId,
+            athleticNetSportSlug: parsed.athleticNetSportSlug,
+            athleticNetUrl: parsed.canonicalUrl
+          } : {
+            tfrrsTeamUrl: parsed.canonicalUrl,
+            tfrrsTeamCode: parsed.tfrrsTeamCode
+          },
+          ...parsed.inferredTeamName && !mergedConfig.teamFilterKeyword ? { teamFilterKeyword: parsed.inferredTeamName.replace(/\s+high\s+school$/i, "") } : {}
+        };
+      }
     }
-  }
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    mergedConfig,
-    doc.brand.externalSync
-  );
-  doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
-  await saveTeamDocRaw(params.teamId, doc);
-  return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+    doc.brand.externalSync = sanitizeExternalSyncConfig(
+      mergedConfig,
+      doc.brand.externalSync
+    );
+    doc.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+    await saveTeamDocRaw(params.teamId, doc);
+    return projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl);
+  });
 }
 async function syncTeamIcsCalendar(params) {
-  const doc = await loadTeamDocRaw(params.teamId);
-  if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+  const initialDoc = await loadTeamDocRaw(params.teamId);
+  if (!initialDoc || !assertCoachMembership(initialDoc, params.callerSid)) {
     return {
       ok: false,
       summary: null,
@@ -16885,17 +17030,17 @@ async function syncTeamIcsCalendar(params) {
       if (!resp) {
         return {
           ok: false,
-          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+          summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
           addedMeetsCount: 0,
           parsedMeetsCount: 0,
           note: "Blocked unsafe or private network calendar URL."
         };
       }
-      const body = await resp.text();
+      const body = await readBoundedResponseText(resp, 512e3);
       if (!resp.ok || /just a moment|cf-mitigated|enable javascript and cookies/i.test(body)) {
         return {
           ok: false,
-          summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+          summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
           addedMeetsCount: 0,
           parsedMeetsCount: 0,
           cloudflareBlocked: true,
@@ -16906,7 +17051,7 @@ async function syncTeamIcsCalendar(params) {
     } catch {
       return {
         ok: false,
-        summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+        summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
         addedMeetsCount: 0,
         parsedMeetsCount: 0,
         cloudflareBlocked: true,
@@ -16917,32 +17062,44 @@ async function syncTeamIcsCalendar(params) {
   if (!resolvedIcsText || !resolvedIcsText.includes("VEVENT")) {
     return {
       ok: false,
-      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      summary: projectTeamSummaryForCaller(initialDoc, params.callerSid, params.originUrl),
       addedMeetsCount: 0,
       parsedMeetsCount: 0,
       note: "No VEVENT calendar entries found in the provided .ics feed."
     };
   }
-  const extSource = doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
-  const meets = parseIcsCalendarToMeets(resolvedIcsText, extSource);
-  const addedCount = upsertMeetEventsOnDoc(doc, meets, extSource);
-  const nowIso = (/* @__PURE__ */ new Date()).toISOString();
-  doc.brand.externalSync = sanitizeExternalSyncConfig(
-    {
-      ...normalizedUrl ? { icsCalendarUrl: normalizedUrl } : {},
-      lastSyncedAt: nowIso
-    },
-    doc.brand.externalSync
-  );
-  doc.updatedAt = nowIso;
-  await saveTeamDocRaw(params.teamId, doc);
-  return {
-    ok: true,
-    summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
-    addedMeetsCount: addedCount,
-    parsedMeetsCount: meets.length,
-    note: addedCount > 0 ? `Added ${addedCount} meets from .ics calendar.` : `Checked ${meets.length} meets (all already up to date).`
-  };
+  return withTeamRowLock(params.teamId, async () => {
+    const doc = await loadTeamDocRaw(params.teamId);
+    if (!doc || !assertCoachMembership(doc, params.callerSid)) {
+      return {
+        ok: false,
+        summary: null,
+        addedMeetsCount: 0,
+        parsedMeetsCount: 0,
+        note: "Coach permissions required to sync team schedule."
+      };
+    }
+    const extSource = doc.brand.externalSync?.platform === "TFRRS" ? "TFRRS" : "ATHLETIC_NET";
+    const meets = parseIcsCalendarToMeets(resolvedIcsText, extSource);
+    const addedCount = upsertMeetEventsOnDoc(doc, meets, extSource);
+    const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+    doc.brand.externalSync = sanitizeExternalSyncConfig(
+      {
+        ...normalizedUrl ? { icsCalendarUrl: normalizedUrl } : {},
+        lastSyncedAt: nowIso
+      },
+      doc.brand.externalSync
+    );
+    doc.updatedAt = nowIso;
+    await saveTeamDocRaw(params.teamId, doc);
+    return {
+      ok: true,
+      summary: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+      addedMeetsCount: addedCount,
+      parsedMeetsCount: meets.length,
+      note: addedCount > 0 ? `Added ${addedCount} meets from .ics calendar.` : `Checked ${meets.length} meets (all already up to date).`
+    };
+  });
 }
 function findOrCreateExternalMembership(doc, candidate) {
   const normKey = normalizeAthleteMatchKey(candidate.name);
@@ -18981,6 +19138,13 @@ async function updateMemberRosterLifecycleStatus(params) {
     if (target.role === "HEAD_COACH") {
       return { ok: false, error: "Cannot remove or archive the Head Coach directly." };
     }
+    const isStaffTarget = target.role === "ORG_ADMIN" || target.role === "ASSISTANT_COACH" || target.role === "ATHLETIC_TRAINER";
+    if (isStaffTarget && callerMem.role !== "HEAD_COACH" && callerMem.role !== "ORG_ADMIN") {
+      return {
+        ok: false,
+        error: "Only the Head Coach or Organization Admin can modify staff status."
+      };
+    }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     if ((params.status === "ALUMNI" || params.status === "REVOKED") && Array.isArray(target.coachRecordedActivities) && target.coachRecordedActivities.length > 0) {
       archiveTarget = {
@@ -20914,6 +21078,20 @@ async function postTeamMessage(params) {
     if (!callerMem) {
       return { ok: false, status: 403, error: "Active team membership is required to send messages." };
     }
+    const cleanClientMessageId = params.clientMessageId ? String(params.clientMessageId).trim().replace(/[^a-zA-Z0-9_.:-]/g, "").slice(0, 96) : "";
+    if (cleanClientMessageId) {
+      const existingDup = (doc.teamMessages || []).find(
+        (m) => m.clientMessageId === cleanClientMessageId && m.senderSid === params.callerSid
+      );
+      if (existingDup) {
+        return {
+          ok: true,
+          deduplicated: true,
+          message: existingDup,
+          team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl)
+        };
+      }
+    }
     const cleanBody = String(params.body || "").trim().slice(0, 800);
     if (!cleanBody) {
       return { ok: false, status: 400, error: "Message body is required." };
@@ -20981,9 +21159,14 @@ async function postTeamMessage(params) {
           error: "Select a valid team sub-group."
         };
       }
+      const subgroupAthleteMembers = doc.memberships.filter(
+        (m) => subgroup.memberIds.includes(m.membershipId) && m.status !== "REVOKED" && m.status !== "ALUMNI" && m.role === "ATHLETE"
+      );
+      const hasMinorInSubgroup = doc.brand.orgType === "HIGH_SCHOOL" || subgroupAthleteMembers.some((m) => m.isMinorU18);
+      const effectiveIncludeLinkedParents = subgroup.includeLinkedParents !== false || hasMinorInSubgroup;
       const isDirectMember = subgroup.memberIds.includes(callerMem.membershipId);
       const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
-      const isLinkedParentMember = isParentFollower && subgroup.includeLinkedParents !== false && Boolean(callerParentEmail) && doc.memberships.some(
+      const isLinkedParentMember = isParentFollower && effectiveIncludeLinkedParents && Boolean(callerParentEmail) && doc.memberships.some(
         (child) => subgroup.memberIds.includes(child.membershipId) && child.parentGuardianEmail?.trim().toLowerCase() === callerParentEmail
       );
       if (!isStaff && !isDirectMember && !isLinkedParentMember) {
@@ -21007,13 +21190,26 @@ async function postTeamMessage(params) {
           error: "Parent replies are currently set to coach announcements only."
         };
       }
-      const hasMinorInSubgroup = doc.memberships.some(
-        (m) => subgroup.memberIds.includes(m.membershipId) && (m.isMinorU18 || doc.brand.orgType === "HIGH_SCHOOL")
-      );
+      if (hasMinorInSubgroup && (params.privateDirectToMinor === true || params.guardianCc === false)) {
+        return {
+          ok: false,
+          status: 403,
+          error: "SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian visibility is mandatory."
+        };
+      }
       channelId = `subgroup:${subgroup.id}`;
       customSubgroupId = subgroup.id;
       customSubgroupName = subgroup.name;
-      guardianCcApplied = Boolean(hasMinorInSubgroup || subgroup.includeLinkedParents !== false);
+      guardianCcApplied = Boolean(hasMinorInSubgroup || effectiveIncludeLinkedParents);
+      if (hasMinorInSubgroup && subgroupAthleteMembers.length === 1 && subgroupAthleteMembers[0].parentGuardianEmail && callerMem.userSid !== subgroupAthleteMembers[0].userSid && isResendConfigured()) {
+        const soloMinor = subgroupAthleteMembers[0];
+        pendingGuardianEmail = {
+          to: soloMinor.parentGuardianEmail,
+          subject: `[MeetReady SafeSport CC] Team sub-group message (${subgroup.name}) for ${soloMinor.invitedName}`,
+          html: `<p><strong>${escapeHtml3(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml3(callerMem.role)}) posted in sub-group <strong>${escapeHtml3(subgroup.name)}</strong> with ${escapeHtml3(soloMinor.invitedName)}:</p><blockquote>${escapeHtml3(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
+          text: `${callerMem.invitedName || doc.brand.coachDisplayName} posted in ${subgroup.name} with ${soloMinor.invitedName}: ${cleanBody}`
+        };
+      }
     } else if (params.channelScope === "EVENT_GROUP") {
       resolvedEventGroup = normalizeCoachEventGroup(String(params.eventGroup || "")) || callerMem.eventGroup || "DISTANCE";
       channelId = `group:${resolvedEventGroup}`;
@@ -21084,6 +21280,7 @@ async function postTeamMessage(params) {
     );
     const record = {
       id: `msg_${crypto18.randomBytes(6).toString("hex")}`,
+      ...cleanClientMessageId ? { clientMessageId: cleanClientMessageId } : {},
       teamId: doc.brand.teamId,
       channelId,
       channelScope: params.channelScope,
@@ -21310,12 +21507,15 @@ async function upsertTeamCustomSubgroup(params) {
     }
     const nowIso = (/* @__PURE__ */ new Date()).toISOString();
     const cleanDesc = params.description ? String(params.description).trim().slice(0, 140) : void 0;
+    const hasMinorMember = doc.brand.orgType === "HIGH_SCHOOL" || doc.memberships.some(
+      (m) => validMemberIds.includes(m.membershipId) && Boolean(m.isMinorU18)
+    );
     const saved = {
       id: existingIdx >= 0 ? existingList[existingIdx].id : `sgrp_${crypto18.randomBytes(5).toString("hex")}`,
       name: cleanName,
       ...cleanDesc ? { description: cleanDesc } : {},
       memberIds: validMemberIds,
-      includeLinkedParents: params.includeLinkedParents !== false,
+      includeLinkedParents: hasMinorMember ? true : params.includeLinkedParents !== false,
       createdByMembershipId: existingIdx >= 0 ? existingList[existingIdx].createdByMembershipId : callerMem.membershipId,
       createdByName: existingIdx >= 0 ? existingList[existingIdx].createdByName : callerMem.invitedName || doc.brand.coachDisplayName || "Coach",
       createdAt: existingIdx >= 0 ? existingList[existingIdx].createdAt : nowIso
@@ -21465,6 +21665,7 @@ messagingAndPushRouter.post("/api/teams/:teamId/messages", async (req, res) => {
       customSubgroupId: typeof body.customSubgroupId === "string" ? body.customSubgroupId : void 0,
       targetMembershipId: typeof body.targetMembershipId === "string" ? body.targetMembershipId : void 0,
       body: String(body.body || ""),
+      clientMessageId: typeof body.clientMessageId === "string" ? body.clientMessageId : void 0,
       privateDirectToMinor: body.privateDirectToMinor === true,
       guardianCc: typeof body.guardianCc === "boolean" ? body.guardianCc : void 0,
       clientLocalHour: typeof body.clientLocalHour === "number" ? body.clientLocalHour : void 0,
@@ -24761,7 +24962,8 @@ async function buildUserDataExportPayload(req) {
 }
 function escapeCsvCell(value) {
   const raw = String(value ?? "");
-  const needsFormulaGuard = /^[=+\t\r@]/.test(raw) || /^-/.test(raw) && !/^-\d+(\.\d+)?$/.test(raw);
+  const trimmedLeading = raw.replace(/^[\t\r\n ]+/, "");
+  const needsFormulaGuard = /^[=+\t\r@]/.test(raw) || /^[=+@]/.test(trimmedLeading) || /^-/.test(trimmedLeading) && !/^-\d+(\.\d+)?$/.test(trimmedLeading);
   const safe = needsFormulaGuard ? `'${raw}` : raw;
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
@@ -25276,7 +25478,7 @@ async function finalizeUserAuthentication(req, res, user) {
   if (userCookieHeader) {
     appendSetCookieHeader(res, userCookieHeader);
   }
-  if (prevClaims?.sid && prevClaims.sid !== userSid) {
+  if (prevClaims?.sid && prevClaims.sid !== userSid && !isCanonicalAuthenticatedClaims(prevClaims)) {
     try {
       await migrateAnonymousTeamsToSid({
         oldSid: prevClaims.sid,
@@ -28795,8 +28997,11 @@ async function activateStravaCanonicalScope(req, res, opts) {
     canonicalSid = opts.athleteId ? deriveStravaSessionSid(opts.athleteId) : prevClaims?.sid || opts.expectedSid || crypto26.randomBytes(16).toString("hex");
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : "Strava Athlete";
   }
+  const prevIsAnonymous = Boolean(prevClaims?.sid && !isCanonicalAuthenticatedClaims(prevClaims));
+  const isSameCanonicalUser = Boolean(canonicalUserId && prevClaims?.sub === canonicalUserId);
+  const allowPrevMigration = prevIsAnonymous || isSameCanonicalUser;
   if (opts.athleteId) {
-    if (prevClaims?.sid && prevClaims.sid !== canonicalSid) {
+    if (prevClaims?.sid && prevClaims.sid !== canonicalSid && allowPrevMigration) {
       await migrateAnonymousTeamsToStravaSid({
         oldSid: prevClaims.sid,
         stravaSid: canonicalSid,
@@ -28819,55 +29024,57 @@ async function activateStravaCanonicalScope(req, res, opts) {
   bindRequestScopeKey(req, canonicalSid);
   const sessionToken = setSessionCookie(req, res, sessionSubject, canonicalSid, "verified");
   const store = getScopedRuntimeStore(req);
-  if (!store.stravaClientId && prevStore.stravaClientId) {
-    store.stravaClientId = prevStore.stravaClientId;
-  }
-  if (!store.stravaClientSecret && prevStore.stravaClientSecret) {
-    store.stravaClientSecret = prevStore.stravaClientSecret;
-  }
-  if (!store.intervalsApiKey && prevStore.intervalsApiKey) {
-    store.intervalsApiKey = prevStore.intervalsApiKey;
-    store.intervalsAthleteId = prevStore.intervalsAthleteId || "0";
-    store.intervalsAthleteName = prevStore.intervalsAthleteName || "";
-  }
-  if (!store.intervalsAccessToken && prevStore.intervalsAccessToken) {
-    store.intervalsAccessToken = prevStore.intervalsAccessToken;
-    store.intervalsScope = prevStore.intervalsScope;
-    store.intervalsAthleteId = prevStore.intervalsAthleteId || store.intervalsAthleteId || "0";
-    store.intervalsAthleteName = prevStore.intervalsAthleteName || store.intervalsAthleteName || "";
-  }
-  if (!store.wahooAccessToken && prevStore.wahooAccessToken) {
-    store.wahooAccessToken = prevStore.wahooAccessToken;
-    store.wahooRefreshToken = prevStore.wahooRefreshToken;
-    store.wahooExpiresAt = prevStore.wahooExpiresAt;
-    store.wahooScope = prevStore.wahooScope;
-    store.wahooUserId = prevStore.wahooUserId;
-    store.wahooAthleteName = prevStore.wahooAthleteName;
-  }
-  if (!store.polarAccessToken && prevStore.polarAccessToken) {
-    store.polarAccessToken = prevStore.polarAccessToken;
-    store.polarUserId = prevStore.polarUserId;
-    store.polarAthleteName = prevStore.polarAthleteName;
-    store.polarExpiresAt = prevStore.polarExpiresAt;
-    store.polarScope = prevStore.polarScope;
-  }
-  if (!store.corosAccessToken && prevStore.corosAccessToken) {
-    store.corosAccessToken = prevStore.corosAccessToken;
-    store.corosRefreshToken = prevStore.corosRefreshToken;
-    store.corosExpiresAt = prevStore.corosExpiresAt;
-    store.corosAthleteId = prevStore.corosAthleteId;
-    store.corosAthleteName = prevStore.corosAthleteName;
-  }
-  if (!store.stravaSyncPolicy && prevStore.stravaSyncPolicy) {
-    store.stravaSyncPolicy = prevStore.stravaSyncPolicy;
-  }
-  if (prevScopeKey && prevScopeKey !== scopeKey) {
-    const existingGarmin = await loadTenantVaultAsync(
-      `garmin_${prevScopeKey}`,
-      null
-    );
-    if (existingGarmin) {
-      await saveTenantVaultAsync(`garmin_${scopeKey}`, existingGarmin);
+  if (prevScopeKey === scopeKey || allowPrevMigration) {
+    if (!store.stravaClientId && prevStore.stravaClientId) {
+      store.stravaClientId = prevStore.stravaClientId;
+    }
+    if (!store.stravaClientSecret && prevStore.stravaClientSecret) {
+      store.stravaClientSecret = prevStore.stravaClientSecret;
+    }
+    if (!store.intervalsApiKey && prevStore.intervalsApiKey) {
+      store.intervalsApiKey = prevStore.intervalsApiKey;
+      store.intervalsAthleteId = prevStore.intervalsAthleteId || "0";
+      store.intervalsAthleteName = prevStore.intervalsAthleteName || "";
+    }
+    if (!store.intervalsAccessToken && prevStore.intervalsAccessToken) {
+      store.intervalsAccessToken = prevStore.intervalsAccessToken;
+      store.intervalsScope = prevStore.intervalsScope;
+      store.intervalsAthleteId = prevStore.intervalsAthleteId || store.intervalsAthleteId || "0";
+      store.intervalsAthleteName = prevStore.intervalsAthleteName || store.intervalsAthleteName || "";
+    }
+    if (!store.wahooAccessToken && prevStore.wahooAccessToken) {
+      store.wahooAccessToken = prevStore.wahooAccessToken;
+      store.wahooRefreshToken = prevStore.wahooRefreshToken;
+      store.wahooExpiresAt = prevStore.wahooExpiresAt;
+      store.wahooScope = prevStore.wahooScope;
+      store.wahooUserId = prevStore.wahooUserId;
+      store.wahooAthleteName = prevStore.wahooAthleteName;
+    }
+    if (!store.polarAccessToken && prevStore.polarAccessToken) {
+      store.polarAccessToken = prevStore.polarAccessToken;
+      store.polarUserId = prevStore.polarUserId;
+      store.polarAthleteName = prevStore.polarAthleteName;
+      store.polarExpiresAt = prevStore.polarExpiresAt;
+      store.polarScope = prevStore.polarScope;
+    }
+    if (!store.corosAccessToken && prevStore.corosAccessToken) {
+      store.corosAccessToken = prevStore.corosAccessToken;
+      store.corosRefreshToken = prevStore.corosRefreshToken;
+      store.corosExpiresAt = prevStore.corosExpiresAt;
+      store.corosAthleteId = prevStore.corosAthleteId;
+      store.corosAthleteName = prevStore.corosAthleteName;
+    }
+    if (!store.stravaSyncPolicy && prevStore.stravaSyncPolicy) {
+      store.stravaSyncPolicy = prevStore.stravaSyncPolicy;
+    }
+    if (prevScopeKey && prevScopeKey !== scopeKey) {
+      const existingGarmin = await loadTenantVaultAsync(
+        `garmin_${prevScopeKey}`,
+        null
+      );
+      if (existingGarmin) {
+        await saveTenantVaultAsync(`garmin_${scopeKey}`, existingGarmin);
+      }
     }
   }
   if (canonicalUserId && opts.athleteId) {
@@ -30131,6 +30338,7 @@ intervalsProfileAndPushRouter.post("/api/intervals/profile/sync", async (req, re
           garminDirect2.rawProfile?.ftp || 250
         ) : [];
         const firstGarminSetting = Array.isArray(garminDirect2?.rawProfile?.sportSettings) ? garminDirect2.rawProfile.sportSettings[0] : void 0;
+        const preservedDob = typeof runtimeStore.athleteProfile?.birthMonthYear === "string" ? runtimeStore.athleteProfile.birthMonthYear : void 0;
         const directSyncedProfile = buildServerAthleteProfile(
           {
             ...garminDirect2?.rawProfile || {},
@@ -30139,6 +30347,7 @@ intervalsProfileAndPushRouter.post("/api/intervals/profile/sync", async (req, re
             ftp: firstGarminSetting?.ftp ?? garminDirect2?.rawProfile?.ftp ?? (Number(sAth.ftp) > 80 ? Math.round(Number(sAth.ftp)) : void 0),
             weightKg: garminDirect2?.rawProfile?.weight ?? (Number(sAth.weight) > 30 ? Number(sAth.weight) : void 0),
             stravaZones: sZones,
+            ...preservedDob ? { birthMonthYear: preservedDob } : {},
             source: garminDirect2 ? "INTERVALS_GARMIN" : "STRAVA_OAUTH"
           },
           latestGarminW,
@@ -30225,8 +30434,12 @@ intervalsProfileAndPushRouter.post("/api/intervals/profile/sync", async (req, re
       ftp: garminDirect?.rawProfile?.ftp || rawProfile.ftp || stravaIdentity?.ftp,
       sportSettings: Array.isArray(garminDirect?.rawProfile?.sportSettings) && garminDirect.rawProfile.sportSettings.length > 0 ? garminDirect.rawProfile.sportSettings : rawProfile.sportSettings
     };
+    const preservedSyncedDob = typeof runtimeStore.athleteProfile?.birthMonthYear === "string" ? runtimeStore.athleteProfile.birthMonthYear : void 0;
     const syncedProfile = buildServerAthleteProfile(
-      mergedRawProfile,
+      {
+        ...mergedRawProfile,
+        ...preservedSyncedDob ? { birthMonthYear: preservedSyncedDob } : {}
+      },
       latestWellnessSummary,
       [...garminActs, ...rawActsList]
     );
@@ -32881,7 +33094,7 @@ coachRouter.post(["/api/races/parse", "/races/parse"], async (req, res) => {
         if (!remoteResp) {
           fetchNote = "Blocked unsafe, private-DNS, or cross-network redirect URL; parsed provided text only.";
         } else if (remoteResp.ok) {
-          const html = await remoteResp.text();
+          const html = await readBoundedResponseText(remoteResp, 512e3);
           fetchedTextSnippet = html.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<\/?(tr|p|div|li|br|h1|h2|h3|h4|table)[^>]*>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/[ \t]+/g, " ").replace(/\n{2,}/g, "\n").slice(0, 18e3);
         } else {
           fetchNote = `Remote site returned HTTP ${remoteResp.status}; parsed provided text.`;
@@ -33147,12 +33360,27 @@ configRouter.get(["/api/config/status", "/api/auth/status"], async (req, res) =>
     mapTileApiKey: isVerifiedSession && effectiveMapKey ? effectiveMapKey : void 0
   });
 });
-configRouter.post("/api/athlete/profile", (req, res) => {
+configRouter.post("/api/athlete/profile", async (req, res) => {
   const incoming = req.body?.athleteProfile || req.body || {};
+  const claims = getVerifiedSessionClaims(req);
+  const canonicalUserId = claims?.sub?.startsWith("usr_") ? claims.sub : void 0;
+  const userRecord = canonicalUserId ? await getUserById(canonicalUserId) : null;
+  const runtimeDob = typeof runtimeStore.athleteProfile?.birthMonthYear === "string" ? runtimeStore.athleteProfile.birthMonthYear : void 0;
+  const userDob = typeof userRecord?.birthMonthYear === "string" ? userRecord.birthMonthYear : void 0;
+  const existingBirthMonthYear = (() => {
+    if (userDob && runtimeDob) {
+      const userAge = resolveAthleteAgeTier({ birthMonthYear: userDob });
+      const runtimeAge = resolveAthleteAgeTier({ birthMonthYear: runtimeDob });
+      if (userAge.isMinorU18 && !runtimeAge.isMinorU18) return userDob;
+      if (runtimeAge.isMinorU18 && !userAge.isMinorU18) return runtimeDob;
+      return userDob;
+    }
+    return userDob || runtimeDob;
+  })();
   const coppaCheck = validateCoppaAgeInput({
     birthMonthYear: incoming.birthMonthYear,
     birthYear: incoming.birthYear,
-    existingBirthMonthYear: typeof runtimeStore.athleteProfile?.birthMonthYear === "string" ? runtimeStore.athleteProfile.birthMonthYear : void 0
+    existingBirthMonthYear
   });
   if (!coppaCheck.ok) {
     res.status(coppaCheck.statusCode || 400).json({
@@ -33162,10 +33390,14 @@ configRouter.post("/api/athlete/profile", (req, res) => {
     });
     return;
   }
+  const resolvedBirthMonthYear = coppaCheck.birthMonthYear || existingBirthMonthYear;
+  if (canonicalUserId && coppaCheck.birthMonthYear && !userDob) {
+    await updateUserBirthMonthYear(canonicalUserId, coppaCheck.birthMonthYear);
+  }
   const updated = buildServerAthleteProfile(
     {
       ...incoming,
-      ...coppaCheck.birthMonthYear ? { birthMonthYear: coppaCheck.birthMonthYear } : {},
+      ...resolvedBirthMonthYear ? { birthMonthYear: resolvedBirthMonthYear } : {},
       source: "CUSTOM_OVERRIDE"
     },
     null
@@ -33398,6 +33630,7 @@ configRouter.post("/api/auth/logout", async (req, res) => {
 // server/routers/webhookRouter.ts
 import express20 from "express";
 import fs8 from "fs";
+import path2 from "path";
 async function executeHourlyBackgroundPoll() {
   const results = {
     triggeredAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -33513,8 +33746,19 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
     }
     const aspectType = String(req.body?.aspect_type || "").toLowerCase();
     const objectType = String(req.body?.object_type || "").toLowerCase();
-    const objectId = extractStravaId(req.body, "object_id_str", "object_id");
-    const ownerId = extractStravaId(req.body, "owner_id_str", "owner_id");
+    const rawObjectId = extractStravaId(req.body, "object_id_str", "object_id");
+    const rawOwnerId = extractStravaId(req.body, "owner_id_str", "owner_id");
+    if (rawOwnerId && !/^\d{1,24}$/.test(rawOwnerId) || rawObjectId && !/^[a-zA-Z0-9_-]{1,64}$/.test(rawObjectId)) {
+      res.status(400).json({ ok: false, error: "Invalid Strava webhook identifier." });
+      return;
+    }
+    const objectId = rawObjectId;
+    const ownerId = rawOwnerId;
+    const resolveSafeStravaArchivePath = (numericOwnerId) => {
+      if (!/^\d{1,24}$/.test(numericOwnerId)) return null;
+      const resolved = path2.resolve("/tmp", `aeropulse-strava-archive-${numericOwnerId}.json`);
+      return resolved.startsWith("/tmp/") ? resolved : null;
+    };
     const updates = req.body?.updates;
     if (ownerId && objectType === "athlete" && (String(updates?.authorized || "").toLowerCase() === "false" || aspectType === "delete")) {
       const scopeKey = deriveStravaSessionSid(ownerId).slice(0, 24);
@@ -33530,8 +33774,8 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
         await saveTenantVaultAsync(`session_${scopeKey}`, vaultDoc);
       }
       try {
-        const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
-        if (fs8.existsSync(archivePath)) fs8.unlinkSync(archivePath);
+        const archivePath = resolveSafeStravaArchivePath(ownerId);
+        if (archivePath && fs8.existsSync(archivePath)) fs8.unlinkSync(archivePath);
       } catch (err) {
         warnServerFallback("webhook:athlete-deauth-archive-unlink", err);
       }
@@ -33541,8 +33785,8 @@ webhookRouter.post("/api/webhooks/strava", async (req, res) => {
     if (ownerId && objectType === "activity" && aspectType === "delete" && objectId) {
       let removedFromArchive = false;
       try {
-        const archivePath = `/tmp/aeropulse-strava-archive-${ownerId}.json`;
-        if (fs8.existsSync(archivePath)) {
+        const archivePath = resolveSafeStravaArchivePath(ownerId);
+        if (archivePath && fs8.existsSync(archivePath)) {
           const parsed = JSON.parse(fs8.readFileSync(archivePath, "utf8"));
           if (Array.isArray(parsed)) {
             const filtered = parsed.filter(
@@ -33938,7 +34182,7 @@ apiRouter.get("/api/health", async (_req, res) => {
   const pgHealth = await checkPostgresHealthAsync(2e3);
   const ok = pgHealth.configured ? pgHealth.healthy === true : true;
   const env = process.env;
-  const buildTimestamp = "2026-11-24T07:37:57Z" ? "2026-11-24T07:37:57Z" : SERVER_BOOT_ISO;
+  const buildTimestamp = "2026-11-26T06:47:14Z" ? "2026-11-26T06:47:14Z" : SERVER_BOOT_ISO;
   res.status(ok ? 200 : 503).json({
     ok,
     status: ok ? "ok" : "degraded",
@@ -33995,7 +34239,7 @@ apiRouter.use(analyticsRouter);
 
 // server/routers/ogPreviewRouter.ts
 import fs9 from "node:fs";
-import path2 from "node:path";
+import path3 from "node:path";
 import { fileURLToPath } from "node:url";
 import express23 from "express";
 
@@ -34162,11 +34406,11 @@ function resolveDistIndexHtml(customPath) {
   if (customPath) {
     candidates.push(customPath);
   }
-  candidates.push(path2.resolve(process.cwd(), "dist", "index.html"));
+  candidates.push(path3.resolve(process.cwd(), "dist", "index.html"));
   try {
-    const dir = path2.dirname(fileURLToPath(import.meta.url));
-    candidates.push(path2.resolve(dir, "../dist/index.html"));
-    candidates.push(path2.resolve(dir, "../../dist/index.html"));
+    const dir = path3.dirname(fileURLToPath(import.meta.url));
+    candidates.push(path3.resolve(dir, "../dist/index.html"));
+    candidates.push(path3.resolve(dir, "../../dist/index.html"));
   } catch {
   }
   for (const candidate of candidates) {

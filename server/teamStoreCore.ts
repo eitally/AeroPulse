@@ -769,10 +769,19 @@ export function projectTeamSummaryForCaller(
     }
     return true;
   }).map((bw) => {
-    if (!isParentFollower) return bw;
+    if (isStaffViewer) return bw;
+    if (isParentFollower) {
+      return {
+        ...bw,
+        athleteOverrides: undefined,
+        targetMembershipIds: undefined,
+      };
+    }
+    const ownOverride = bw.athleteOverrides?.[myMembership.membershipId];
     return {
       ...bw,
-      athleteOverrides: undefined,
+      athleteOverrides: ownOverride ? { [myMembership.membershipId]: ownOverride } : undefined,
+      targetMembershipIds: undefined,
     };
   });
 
@@ -816,11 +825,15 @@ export function projectTeamSummaryForCaller(
   const subgroupById = new Map<string, TeamCustomSubgroup>(
     (doc.customSubgroups || []).map((sg) => [sg.id, sg])
   );
+  const subgroupRequiresLinkedParents = (sg: TeamCustomSubgroup): boolean =>
+    sg.includeLinkedParents !== false ||
+    doc.brand.orgType === 'HIGH_SCHOOL' ||
+    doc.memberships.some((m) => sg.memberIds.includes(m.membershipId) && Boolean(m.isMinorU18));
 
   const visibleCustomSubgroups = (doc.customSubgroups || []).filter((sg) => {
     if (isStaffViewer) return true;
     if (sg.memberIds.includes(myMembership.membershipId)) return true;
-    if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+    if (isParentFollower && subgroupRequiresLinkedParents(sg) && linkedChildMembershipIds) {
       return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
     }
     return false;
@@ -836,7 +849,7 @@ export function projectTeamSummaryForCaller(
       const sg = msg.customSubgroupId ? subgroupById.get(msg.customSubgroupId) : undefined;
       if (!sg) return false;
       if (sg.memberIds.includes(myMembership.membershipId)) return true;
-      if (isParentFollower && sg.includeLinkedParents !== false && linkedChildMembershipIds) {
+      if (isParentFollower && subgroupRequiresLinkedParents(sg) && linkedChildMembershipIds) {
         return sg.memberIds.some((mid) => linkedChildMembershipIds.has(mid));
       }
       return false;
@@ -1132,7 +1145,13 @@ export async function autoLinkPendingTeamInvitesByEmail(params: {
           m.invitedName = params.athleteName.trim().slice(0, 64);
           linkedDisplayName = m.invitedName;
         }
-        if (!m.sharingTier) {
+        const requiresParentConsent = Boolean(
+          m.isMinorU18 && m.parentConsentStatus !== 'ACKNOWLEDGED'
+        );
+        if (requiresParentConsent) {
+          m.parentConsentStatus = m.parentConsentStatus || 'PENDING';
+          m.sharingTier = 'LOAD_ONLY';
+        } else if (!m.sharingTier) {
           m.sharingTier = 'SUMMARY_ONLY';
         }
         if (!m.liveSnapshot) {

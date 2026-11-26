@@ -78,6 +78,7 @@ export async function postTeamMessage(params: {
   customSubgroupId?: string;
   targetMembershipId?: string;
   body: string;
+  clientMessageId?: string;
   privateDirectToMinor?: boolean;
   guardianCc?: boolean;
   clientLocalHour?: number;
@@ -86,6 +87,7 @@ export async function postTeamMessage(params: {
 }): Promise<{
   ok: boolean;
   status?: number;
+  deduplicated?: boolean;
   message?: TeamMessageRecord;
   team?: TeamSummaryWithRole | null;
   emailFallbackCount?: number;
@@ -107,6 +109,26 @@ export async function postTeamMessage(params: {
     );
     if (!callerMem) {
       return { ok: false as const, status: 403, error: 'Active team membership is required to send messages.' };
+    }
+
+    const cleanClientMessageId = params.clientMessageId
+      ? String(params.clientMessageId)
+          .trim()
+          .replace(/[^a-zA-Z0-9_.:-]/g, '')
+          .slice(0, 96)
+      : '';
+    if (cleanClientMessageId) {
+      const existingDup = (doc.teamMessages || []).find(
+        (m) => m.clientMessageId === cleanClientMessageId && m.senderSid === params.callerSid
+      );
+      if (existingDup) {
+        return {
+          ok: true as const,
+          deduplicated: true as const,
+          message: existingDup,
+          team: projectTeamSummaryForCaller(doc, params.callerSid, params.originUrl),
+        };
+      }
     }
 
     const cleanBody = String(params.body || '').trim().slice(0, 800);
@@ -194,11 +216,23 @@ export async function postTeamMessage(params: {
           error: 'Select a valid team sub-group.',
         };
       }
+      const subgroupAthleteMembers = doc.memberships.filter(
+        (m) =>
+          subgroup.memberIds.includes(m.membershipId) &&
+          m.status !== 'REVOKED' &&
+          m.status !== 'ALUMNI' &&
+          m.role === 'ATHLETE'
+      );
+      const hasMinorInSubgroup =
+        doc.brand.orgType === 'HIGH_SCHOOL' ||
+        subgroupAthleteMembers.some((m) => m.isMinorU18);
+      const effectiveIncludeLinkedParents =
+        subgroup.includeLinkedParents !== false || hasMinorInSubgroup;
       const isDirectMember = subgroup.memberIds.includes(callerMem.membershipId);
       const callerParentEmail = callerMem.invitedEmail?.trim().toLowerCase();
       const isLinkedParentMember =
         isParentFollower &&
-        subgroup.includeLinkedParents !== false &&
+        effectiveIncludeLinkedParents &&
         Boolean(callerParentEmail) &&
         doc.memberships.some(
           (child) =>
@@ -227,15 +261,39 @@ export async function postTeamMessage(params: {
           error: 'Parent replies are currently set to coach announcements only.',
         };
       }
-      const hasMinorInSubgroup = doc.memberships.some(
-        (m) =>
-          subgroup.memberIds.includes(m.membershipId) &&
-          (m.isMinorU18 || doc.brand.orgType === 'HIGH_SCHOOL')
-      );
+      if (
+        hasMinorInSubgroup &&
+        (params.privateDirectToMinor === true || params.guardianCc === false)
+      ) {
+        return {
+          ok: false as const,
+          status: 403,
+          error:
+            'SafeSport MAAPP policy prohibits private 1:1 messages with minor athletes. Parent/Guardian visibility is mandatory.',
+        };
+      }
       channelId = `subgroup:${subgroup.id}`;
       customSubgroupId = subgroup.id;
       customSubgroupName = subgroup.name;
-      guardianCcApplied = Boolean(hasMinorInSubgroup || subgroup.includeLinkedParents !== false);
+      guardianCcApplied = Boolean(hasMinorInSubgroup || effectiveIncludeLinkedParents);
+
+      // SafeSport MAAPP: if a custom sub-group contains a single minor athlete and staff sends a message,
+      // also dispatch direct Guardian CC email to the minor's guardian on file when configured.
+      if (
+        hasMinorInSubgroup &&
+        subgroupAthleteMembers.length === 1 &&
+        subgroupAthleteMembers[0].parentGuardianEmail &&
+        callerMem.userSid !== subgroupAthleteMembers[0].userSid &&
+        isResendConfigured()
+      ) {
+        const soloMinor = subgroupAthleteMembers[0];
+        pendingGuardianEmail = {
+          to: soloMinor.parentGuardianEmail!,
+          subject: `[MeetReady SafeSport CC] Team sub-group message (${subgroup.name}) for ${soloMinor.invitedName}`,
+          html: `<p><strong>${escapeHtml(callerMem.invitedName || doc.brand.coachDisplayName)}</strong> (${escapeHtml(callerMem.role)}) posted in sub-group <strong>${escapeHtml(subgroup.name)}</strong> with ${escapeHtml(soloMinor.invitedName)}:</p><blockquote>${escapeHtml(cleanBody)}</blockquote><p style="font-size:12px;color:#555;">Copied automatically under MeetReady SafeSport MAAPP two-adult transparency.</p>`,
+          text: `${callerMem.invitedName || doc.brand.coachDisplayName} posted in ${subgroup.name} with ${soloMinor.invitedName}: ${cleanBody}`,
+        };
+      }
     } else if (params.channelScope === 'EVENT_GROUP') {
       resolvedEventGroup =
         (normalizeCoachEventGroup(String(params.eventGroup || '')) ||
@@ -331,6 +389,7 @@ export async function postTeamMessage(params: {
 
     const record: TeamMessageRecord = {
       id: `msg_${crypto.randomBytes(6).toString('hex')}`,
+      ...(cleanClientMessageId ? { clientMessageId: cleanClientMessageId } : {}),
       teamId: doc.brand.teamId,
       channelId,
       channelScope: params.channelScope,
@@ -669,12 +728,17 @@ export async function upsertTeamCustomSubgroup(params: {
 
     const nowIso = new Date().toISOString();
     const cleanDesc = params.description ? String(params.description).trim().slice(0, 140) : undefined;
+    const hasMinorMember =
+      doc.brand.orgType === 'HIGH_SCHOOL' ||
+      doc.memberships.some(
+        (m) => validMemberIds.includes(m.membershipId) && Boolean(m.isMinorU18)
+      );
     const saved: TeamCustomSubgroup = {
       id: existingIdx >= 0 ? existingList[existingIdx].id : `sgrp_${crypto.randomBytes(5).toString('hex')}`,
       name: cleanName,
       ...(cleanDesc ? { description: cleanDesc } : {}),
       memberIds: validMemberIds,
-      includeLinkedParents: params.includeLinkedParents !== false,
+      includeLinkedParents: hasMinorMember ? true : params.includeLinkedParents !== false,
       createdByMembershipId:
         existingIdx >= 0 ? existingList[existingIdx].createdByMembershipId : callerMem.membershipId,
       createdByName:

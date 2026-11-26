@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import dns from 'dns';
+import net from 'net';
 import { generateVAPIDKeys, sendNotification } from 'web-push';
 import type {
   CoachEventGroup,
@@ -14,7 +16,11 @@ import {
   sendEmailViaResend,
   withBoundedTimeout,
 } from './teamEmailAndOtpService.ts';
-import { escapeHtml } from './securityUtils.ts';
+import {
+  escapeHtml,
+  isPrivateOrReservedIp,
+  isSafeExternalUrl,
+} from './securityUtils.ts';
 import {
   canManageTeamGovernanceRole,
   canViewSafeguardingMedicalRole,
@@ -114,6 +120,34 @@ export async function listUserPushSubscriptions(
   return Array.isArray(subs) ? subs.filter((s) => s.enabled !== false) : [];
 }
 
+async function isAllowedPublicPushEndpointAsync(rawEndpoint: string): Promise<boolean> {
+  if (!isSafeExternalUrl(rawEndpoint)) return false;
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(rawEndpoint);
+  } catch {
+    return false;
+  }
+  if (parsedUrl.protocol !== 'https:') return false;
+  const hostname = parsedUrl.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (net.isIP(hostname) !== 0) {
+    return !isPrivateOrReservedIp(hostname);
+  }
+  try {
+    const records = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+    if (!records.length || records.some((r) => isPrivateOrReservedIp(r.address))) {
+      return false;
+    }
+    return true;
+  } catch {
+    // Allow synthetic *.example.com endpoints only inside unit test runners without external DNS
+    if (process.env.VITEST && hostname.endsWith('.example.com')) {
+      return true;
+    }
+    return false;
+  }
+}
+
 export async function saveUserPushSubscription(params: {
   userSid: string;
   endpoint: string;
@@ -127,24 +161,8 @@ export async function saveUserPushSubscription(params: {
   if (!cleanEndpoint) {
     return { ok: false, error: 'Valid push subscription endpoint URL is required.' };
   }
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(cleanEndpoint);
-  } catch {
-    return { ok: false, error: 'Valid push subscription endpoint URL is required.' };
-  }
-  const host = parsedUrl.hostname.toLowerCase();
-  const isPrivateHost =
-    host === 'localhost' ||
-    host === '::1' ||
-    host === '[::1]' ||
-    host.endsWith('.localhost') ||
-    host.startsWith('127.') ||
-    host.startsWith('10.') ||
-    host.startsWith('169.254.') ||
-    /^192\.168\./.test(host) ||
-    /^172\.(1[6-9]|2\d|3[01])\./.test(host);
-  if (parsedUrl.protocol !== 'https:' || isPrivateHost) {
+  const endpointSafe = await isAllowedPublicPushEndpointAsync(cleanEndpoint);
+  if (!endpointSafe) {
     return { ok: false, error: 'Push subscription endpoint must be a public HTTPS URL.' };
   }
   if (!p256dh || !auth) {
@@ -254,12 +272,18 @@ export function resolvePushRecipientSidsForTeamEvent(params: {
       );
       if (!sg) return [];
       const memberSet = new Set(sg.memberIds || []);
+      const effectiveIncludeLinkedParents =
+        sg.includeLinkedParents !== false ||
+        params.doc.brand.orgType === 'HIGH_SCHOOL' ||
+        params.doc.memberships.some(
+          (member) => memberSet.has(member.membershipId) && Boolean(member.isMinorU18)
+        );
       for (const m of activeMembers) {
         if (canViewSafeguardingMedicalRole(m.role) || memberSet.has(m.membershipId)) {
           sids.add(m.userSid!);
         } else if (
           m.role === 'PARENT_FOLLOWER' &&
-          sg.includeLinkedParents !== false &&
+          effectiveIncludeLinkedParents &&
           m.invitedEmail
         ) {
           const parentEmail = m.invitedEmail.trim().toLowerCase();
@@ -396,6 +420,10 @@ export async function dispatchPushPayloadToUsers(params: {
   const sender: PushSenderFn =
     testSenderOverride ||
     (async (sub, payloadJson) => {
+      const endpointStillSafe = await isAllowedPublicPushEndpointAsync(sub.endpoint);
+      if (!endpointStillSafe) {
+        throw new Error('Blocked unsafe Web Push subscription endpoint.');
+      }
       const res = await sendNotification(sub, payloadJson, {
         vapidDetails: {
           subject: keys.subject,
@@ -557,6 +585,15 @@ export async function dispatchTeamPushNotifications(params: {
             child.parentGuardianEmail?.trim().toLowerCase() === parentEmailLower
         );
 
+      const subgroupEffectiveIncludeParents = Boolean(
+        subgroup &&
+          (subgroup.includeLinkedParents !== false ||
+            doc.brand.orgType === 'HIGH_SCHOOL' ||
+            doc.memberships.some(
+              (member) => subgroupMembers.has(member.membershipId) && Boolean(member.isMinorU18)
+            ))
+      );
+
       const unlinkedParentInParentsScope =
         !m.userSid &&
         m.role === 'PARENT_FOLLOWER' &&
@@ -565,7 +602,7 @@ export async function dispatchTeamPushNotifications(params: {
           (params.channelScope === 'CUSTOM_SUBGROUP' &&
             Boolean(subgroup) &&
             (subgroupMembers.has(m.membershipId) ||
-              (subgroup!.includeLinkedParents !== false && hasLinkedChildInSubgroup))));
+              (subgroupEffectiveIncludeParents && hasLinkedChildInSubgroup))));
 
       const guardianAlreadyDeliveredByPush =
         Boolean(m.parentGuardianEmail) &&
@@ -583,7 +620,7 @@ export async function dispatchTeamPushNotifications(params: {
         (params.channelScope === 'PARENTS_ONLY' ||
           params.kind === 'ANNOUNCEMENT' ||
           (params.channelScope === 'CUSTOM_SUBGROUP' &&
-            subgroup?.includeLinkedParents !== false &&
+            subgroupEffectiveIncludeParents &&
             subgroupMembers.has(m.membershipId)));
 
       if (hadUndeliveredSid || unlinkedParentInParentsScope) {

@@ -736,6 +736,55 @@ export async function assertSafeExternalFetch(
 }
 
 /**
+ * Streams a remote fetch Response body up to `maxBytes` to prevent memory/OOM DoS
+ * from hostile or unexpectedly huge remote payloads.
+ */
+export async function readBoundedResponseText(
+  resp: globalThis.Response,
+  maxBytes = 512_000
+): Promise<string> {
+  const safeMax = Math.max(1024, Math.floor(maxBytes));
+  const contentLengthHeader = resp.headers?.get?.('content-length');
+  if (contentLengthHeader) {
+    const declared = Number(contentLengthHeader);
+    if (Number.isFinite(declared) && declared > safeMax * 4) {
+      throw new Error(`Remote payload too large (${declared} bytes > limit).`);
+    }
+  }
+  if (!resp.body || typeof resp.body.getReader !== 'function') {
+    const text = await resp.text();
+    return text.length > safeMax ? text.slice(0, safeMax) : text;
+  }
+  const reader = resp.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < safeMax) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      const remaining = safeMax - total;
+      if (value.byteLength > remaining) {
+        chunks.push(value.subarray(0, remaining));
+        total += remaining;
+        await reader.cancel().catch(() => {});
+        break;
+      }
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const merged = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    merged.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(merged);
+}
+
+/**
  * Express middleware that attaches standard security headers and prevents caching of API/auth endpoints.
  */
 export function securityHeadersMiddleware(req: Request, res: Response, next: NextFunction): void {

@@ -417,8 +417,12 @@ export async function activateStravaCanonicalScope(
     sessionSubject = !isGenericName(opts.athleteName) ? opts.athleteName : 'Strava Athlete';
   }
 
+  const prevIsAnonymous = Boolean(prevClaims?.sid && !isCanonicalAuthenticatedClaims(prevClaims));
+  const isSameCanonicalUser = Boolean(canonicalUserId && prevClaims?.sub === canonicalUserId);
+  const allowPrevMigration = prevIsAnonymous || isSameCanonicalUser;
+
   if (opts.athleteId) {
-    if (prevClaims?.sid && prevClaims.sid !== canonicalSid) {
+    if (prevClaims?.sid && prevClaims.sid !== canonicalSid && allowPrevMigration) {
       await migrateAnonymousTeamsToStravaSid({
         oldSid: prevClaims.sid,
         stravaSid: canonicalSid,
@@ -445,56 +449,59 @@ export async function activateStravaCanonicalScope(
   const store = getScopedRuntimeStore(req);
 
   // Preserve pre-OAuth credentials and previously linked Garmin/Intervals/Wahoo/Polar tokens
-  if (!store.stravaClientId && prevStore.stravaClientId) {
-    store.stravaClientId = prevStore.stravaClientId;
-  }
-  if (!store.stravaClientSecret && prevStore.stravaClientSecret) {
-    store.stravaClientSecret = prevStore.stravaClientSecret;
-  }
-  if (!store.intervalsApiKey && prevStore.intervalsApiKey) {
-    store.intervalsApiKey = prevStore.intervalsApiKey;
-    store.intervalsAthleteId = prevStore.intervalsAthleteId || '0';
-    store.intervalsAthleteName = prevStore.intervalsAthleteName || '';
-  }
-  if (!store.intervalsAccessToken && prevStore.intervalsAccessToken) {
-    store.intervalsAccessToken = prevStore.intervalsAccessToken;
-    store.intervalsScope = prevStore.intervalsScope;
-    store.intervalsAthleteId = prevStore.intervalsAthleteId || store.intervalsAthleteId || '0';
-    store.intervalsAthleteName = prevStore.intervalsAthleteName || store.intervalsAthleteName || '';
-  }
-  if (!store.wahooAccessToken && prevStore.wahooAccessToken) {
-    store.wahooAccessToken = prevStore.wahooAccessToken;
-    store.wahooRefreshToken = prevStore.wahooRefreshToken;
-    store.wahooExpiresAt = prevStore.wahooExpiresAt;
-    store.wahooScope = prevStore.wahooScope;
-    store.wahooUserId = prevStore.wahooUserId;
-    store.wahooAthleteName = prevStore.wahooAthleteName;
-  }
-  if (!store.polarAccessToken && prevStore.polarAccessToken) {
-    store.polarAccessToken = prevStore.polarAccessToken;
-    store.polarUserId = prevStore.polarUserId;
-    store.polarAthleteName = prevStore.polarAthleteName;
-    store.polarExpiresAt = prevStore.polarExpiresAt;
-    store.polarScope = prevStore.polarScope;
-  }
-  if (!store.corosAccessToken && prevStore.corosAccessToken) {
-    store.corosAccessToken = prevStore.corosAccessToken;
-    store.corosRefreshToken = prevStore.corosRefreshToken;
-    store.corosExpiresAt = prevStore.corosExpiresAt;
-    store.corosAthleteId = prevStore.corosAthleteId;
-    store.corosAthleteName = prevStore.corosAthleteName;
-  }
-  if (!store.stravaSyncPolicy && prevStore.stravaSyncPolicy) {
-    store.stravaSyncPolicy = prevStore.stravaSyncPolicy;
-  }
+  // ONLY when migrating an anonymous pre-auth session or linking Strava to the same canonical user.
+  if (prevScopeKey === scopeKey || allowPrevMigration) {
+    if (!store.stravaClientId && prevStore.stravaClientId) {
+      store.stravaClientId = prevStore.stravaClientId;
+    }
+    if (!store.stravaClientSecret && prevStore.stravaClientSecret) {
+      store.stravaClientSecret = prevStore.stravaClientSecret;
+    }
+    if (!store.intervalsApiKey && prevStore.intervalsApiKey) {
+      store.intervalsApiKey = prevStore.intervalsApiKey;
+      store.intervalsAthleteId = prevStore.intervalsAthleteId || '0';
+      store.intervalsAthleteName = prevStore.intervalsAthleteName || '';
+    }
+    if (!store.intervalsAccessToken && prevStore.intervalsAccessToken) {
+      store.intervalsAccessToken = prevStore.intervalsAccessToken;
+      store.intervalsScope = prevStore.intervalsScope;
+      store.intervalsAthleteId = prevStore.intervalsAthleteId || store.intervalsAthleteId || '0';
+      store.intervalsAthleteName = prevStore.intervalsAthleteName || store.intervalsAthleteName || '';
+    }
+    if (!store.wahooAccessToken && prevStore.wahooAccessToken) {
+      store.wahooAccessToken = prevStore.wahooAccessToken;
+      store.wahooRefreshToken = prevStore.wahooRefreshToken;
+      store.wahooExpiresAt = prevStore.wahooExpiresAt;
+      store.wahooScope = prevStore.wahooScope;
+      store.wahooUserId = prevStore.wahooUserId;
+      store.wahooAthleteName = prevStore.wahooAthleteName;
+    }
+    if (!store.polarAccessToken && prevStore.polarAccessToken) {
+      store.polarAccessToken = prevStore.polarAccessToken;
+      store.polarUserId = prevStore.polarUserId;
+      store.polarAthleteName = prevStore.polarAthleteName;
+      store.polarExpiresAt = prevStore.polarExpiresAt;
+      store.polarScope = prevStore.polarScope;
+    }
+    if (!store.corosAccessToken && prevStore.corosAccessToken) {
+      store.corosAccessToken = prevStore.corosAccessToken;
+      store.corosRefreshToken = prevStore.corosRefreshToken;
+      store.corosExpiresAt = prevStore.corosExpiresAt;
+      store.corosAthleteId = prevStore.corosAthleteId;
+      store.corosAthleteName = prevStore.corosAthleteName;
+    }
+    if (!store.stravaSyncPolicy && prevStore.stravaSyncPolicy) {
+      store.stravaSyncPolicy = prevStore.stravaSyncPolicy;
+    }
 
-  if (prevScopeKey && prevScopeKey !== scopeKey) {
-    const existingGarmin = await loadTenantVaultAsync<Record<string, unknown> | null>(
-      `garmin_${prevScopeKey}`,
-      null
-    );
-    if (existingGarmin) {
-      await saveTenantVaultAsync(`garmin_${scopeKey}`, existingGarmin);
+    if (prevScopeKey && prevScopeKey !== scopeKey) {
+      const existingGarmin = await loadTenantVaultAsync<Record<string, unknown> | null>(
+        `garmin_${prevScopeKey}`,
+        null
+      );
+      if (existingGarmin) {
+        await saveTenantVaultAsync(`garmin_${scopeKey}`, existingGarmin);
+      }
     }
   }
 

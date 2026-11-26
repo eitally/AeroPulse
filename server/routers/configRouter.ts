@@ -39,6 +39,8 @@ import {
 } from '../physiologyEngine.ts';
 import { resolveCallbackUrl } from '../oauthHelpers.ts';
 import { validateCoppaAgeInput } from '../coppaGuard.ts';
+import { getUserById, updateUserBirthMonthYear } from '../authService.ts';
+import { resolveAthleteAgeTier } from '../../src/physiology/ageAndComplianceEngine.ts';
 import { clearGarminSessionAsync } from '../garminConnectService.ts';
 import {
   getEffectiveIntervalsConfig,
@@ -325,15 +327,32 @@ configRouter.get(['/api/config/status', '/api/auth/status'], async (req: Request
   });
 });
 
-configRouter.post('/api/athlete/profile', (req: Request, res: Response) => {
+configRouter.post('/api/athlete/profile', async (req: Request, res: Response) => {
   const incoming = (req.body?.athleteProfile || req.body || {}) as Record<string, unknown>;
+  const claims = getVerifiedSessionClaims(req);
+  const canonicalUserId = claims?.sub?.startsWith('usr_') ? claims.sub : undefined;
+  const userRecord = canonicalUserId ? await getUserById(canonicalUserId) : null;
+  const runtimeDob =
+    typeof runtimeStore.athleteProfile?.birthMonthYear === 'string'
+      ? runtimeStore.athleteProfile.birthMonthYear
+      : undefined;
+  const userDob =
+    typeof userRecord?.birthMonthYear === 'string' ? userRecord.birthMonthYear : undefined;
+  const existingBirthMonthYear = (() => {
+    if (userDob && runtimeDob) {
+      const userAge = resolveAthleteAgeTier({ birthMonthYear: userDob });
+      const runtimeAge = resolveAthleteAgeTier({ birthMonthYear: runtimeDob });
+      if (userAge.isMinorU18 && !runtimeAge.isMinorU18) return userDob;
+      if (runtimeAge.isMinorU18 && !userAge.isMinorU18) return runtimeDob;
+      return userDob;
+    }
+    return userDob || runtimeDob;
+  })();
+
   const coppaCheck = validateCoppaAgeInput({
     birthMonthYear: incoming.birthMonthYear,
     birthYear: incoming.birthYear,
-    existingBirthMonthYear:
-      typeof runtimeStore.athleteProfile?.birthMonthYear === 'string'
-        ? runtimeStore.athleteProfile.birthMonthYear
-        : undefined,
+    existingBirthMonthYear,
   });
   if (!coppaCheck.ok) {
     res.status(coppaCheck.statusCode || 400).json({
@@ -343,10 +362,14 @@ configRouter.post('/api/athlete/profile', (req: Request, res: Response) => {
     });
     return;
   }
+  const resolvedBirthMonthYear = coppaCheck.birthMonthYear || existingBirthMonthYear;
+  if (canonicalUserId && coppaCheck.birthMonthYear && !userDob) {
+    await updateUserBirthMonthYear(canonicalUserId, coppaCheck.birthMonthYear);
+  }
   const updated = buildServerAthleteProfile(
     {
       ...incoming,
-      ...(coppaCheck.birthMonthYear ? { birthMonthYear: coppaCheck.birthMonthYear } : {}),
+      ...(resolvedBirthMonthYear ? { birthMonthYear: resolvedBirthMonthYear } : {}),
       source: 'CUSTOM_OVERRIDE',
     },
     null

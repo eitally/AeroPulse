@@ -254,7 +254,11 @@ async function finalizeUserAuthentication(
     appendSetCookieHeader(res, userCookieHeader);
   }
 
-  if (prevClaims?.sid && prevClaims.sid !== userSid) {
+  if (
+    prevClaims?.sid &&
+    prevClaims.sid !== userSid &&
+    !isCanonicalAuthenticatedClaims(prevClaims)
+  ) {
     try {
       await migrateAnonymousTeamsToSid({
         oldSid: prevClaims.sid,

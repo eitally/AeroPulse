@@ -20,6 +20,7 @@ import {
   assertSafeExternalFetch,
   getVerifiedSessionClaims,
   isCanonicalAuthenticatedClaims,
+  readBoundedResponseText,
 } from '../securityUtils.ts';
 import { getUserById } from '../authService.ts';
 import { listTeamsForUser } from '../teamService.ts';
@@ -772,7 +773,7 @@ coachRouter.post(['/api/races/parse', '/races/parse'], async (req: Request, res:
         if (!remoteResp) {
           fetchNote = 'Blocked unsafe, private-DNS, or cross-network redirect URL; parsed provided text only.';
         } else if (remoteResp.ok) {
-          const html = await remoteResp.text();
+          const html = await readBoundedResponseText(remoteResp, 512_000);
           fetchedTextSnippet = html
             .replace(/<script[\s\S]*?<\/script>/gi, ' ')
             .replace(/<style[\s\S]*?<\/style>/gi, ' ')

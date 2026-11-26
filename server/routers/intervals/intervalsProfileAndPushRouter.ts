@@ -103,6 +103,10 @@ intervalsProfileAndPushRouter.post('/api/intervals/profile/sync', async (req: Re
         const firstGarminSetting = Array.isArray(garminDirect?.rawProfile?.sportSettings)
           ? garminDirect.rawProfile.sportSettings[0]
           : undefined;
+        const preservedDob =
+          typeof runtimeStore.athleteProfile?.birthMonthYear === 'string'
+            ? runtimeStore.athleteProfile.birthMonthYear
+            : undefined;
         const directSyncedProfile = buildServerAthleteProfile(
           {
             ...(garminDirect?.rawProfile || {}),
@@ -116,6 +120,7 @@ intervalsProfileAndPushRouter.post('/api/intervals/profile/sync', async (req: Re
               garminDirect?.rawProfile?.weight ??
               (Number(sAth.weight) > 30 ? Number(sAth.weight) : undefined),
             stravaZones: sZones,
+            ...(preservedDob ? { birthMonthYear: preservedDob } : {}),
             source: garminDirect ? 'INTERVALS_GARMIN' : 'STRAVA_OAUTH',
           },
           latestGarminW,
@@ -237,8 +242,15 @@ intervalsProfileAndPushRouter.post('/api/intervals/profile/sync', async (req: Re
           : rawProfile.sportSettings,
     };
 
+    const preservedSyncedDob =
+      typeof runtimeStore.athleteProfile?.birthMonthYear === 'string'
+        ? runtimeStore.athleteProfile.birthMonthYear
+        : undefined;
     const syncedProfile = buildServerAthleteProfile(
-      mergedRawProfile,
+      {
+        ...mergedRawProfile,
+        ...(preservedSyncedDob ? { birthMonthYear: preservedSyncedDob } : {}),
+      },
       latestWellnessSummary,
       [...garminActs, ...rawActsList]
     );

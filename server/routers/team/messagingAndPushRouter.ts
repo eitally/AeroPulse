@@ -125,6 +125,7 @@ messagingAndPushRouter.post('/api/teams/:teamId/messages', async (req: Request, 
       customSubgroupId?: unknown;
       targetMembershipId?: unknown;
       body?: unknown;
+      clientMessageId?: unknown;
       privateDirectToMinor?: unknown;
       guardianCc?: unknown;
       clientLocalHour?: unknown;
@@ -139,6 +140,7 @@ messagingAndPushRouter.post('/api/teams/:teamId/messages', async (req: Request, 
       customSubgroupId: typeof body.customSubgroupId === 'string' ? body.customSubgroupId : undefined,
       targetMembershipId: typeof body.targetMembershipId === 'string' ? body.targetMembershipId : undefined,
       body: String(body.body || ''),
+      clientMessageId: typeof body.clientMessageId === 'string' ? body.clientMessageId : undefined,
       privateDirectToMinor: body.privateDirectToMinor === true,
       guardianCc: typeof body.guardianCc === 'boolean' ? body.guardianCc : undefined,
       clientLocalHour: typeof body.clientLocalHour === 'number' ? body.clientLocalHour : undefined,

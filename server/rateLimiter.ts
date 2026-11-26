@@ -1,4 +1,5 @@
 import type { Request } from 'express';
+import { isPrivateOrReservedIp } from './securityUtils.ts';
 import {
   consumeRateLimitPostgresAsync,
   getVaultStorageBackend,
@@ -33,13 +34,33 @@ const MAX_MEMORY_RATE_LIMIT_KEYS = 4000;
  * Extracts a normalized client IP address for rate-limit scoping across Vercel/proxies.
  */
 export function getClientRateLimitIp(req: Request): string {
-  const forwarded = req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'];
-  const firstForwarded = Array.isArray(forwarded)
-    ? forwarded[0]
-    : typeof forwarded === 'string'
-      ? forwarded.split(',')[0]
-      : '';
-  const candidate = (firstForwarded || req.ip || req.socket?.remoteAddress || 'local').trim();
+  const socketIp = String(req.socket?.remoteAddress || req.ip || '').trim();
+  const isVercelEdge = Boolean(process.env.VERCEL);
+  const isFromTrustedLocalProxy =
+    !socketIp ||
+    socketIp === 'local' ||
+    isPrivateOrReservedIp(socketIp.replace(/^::ffff:/i, ''));
+
+  let rawCandidate = '';
+  if (isVercelEdge) {
+    // On Vercel, x-vercel-forwarded-for is set authoritatively by the edge proxy.
+    const vercelForwarded = req.headers['x-vercel-forwarded-for'];
+    rawCandidate = Array.isArray(vercelForwarded)
+      ? vercelForwarded[vercelForwarded.length - 1] || ''
+      : typeof vercelForwarded === 'string'
+        ? vercelForwarded.split(',').pop() || ''
+        : '';
+  } else if (isFromTrustedLocalProxy) {
+    // Behind a trusted local/internal proxy, use the rightmost appended entry (not spoofable index 0).
+    const forwarded = req.headers['x-vercel-forwarded-for'] || req.headers['x-forwarded-for'];
+    rawCandidate = Array.isArray(forwarded)
+      ? forwarded[forwarded.length - 1] || ''
+      : typeof forwarded === 'string'
+        ? forwarded.split(',').pop() || ''
+        : '';
+  }
+
+  const candidate = (rawCandidate || req.ip || socketIp || 'local').trim();
   return candidate.replace(/[^a-zA-Z0-9.:_-]/g, '').slice(0, 64) || 'local';
 }
 

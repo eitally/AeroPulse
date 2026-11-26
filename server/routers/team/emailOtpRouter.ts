@@ -95,12 +95,10 @@ emailOtpRouter.post('/api/auth/email/verify-otp', async (req: Request, res: Resp
       });
       return;
     }
-    const currentClaims = getVerifiedSessionClaims(req);
-    const verifiedPreferredSid =
-      currentClaims && isCanonicalAuthenticatedClaims(currentClaims)
-        ? currentClaims.sid
-        : undefined;
-    const result = await verifyEmailOtpCode(email, code, verifiedPreferredSid, {
+    // Never pass a pre-existing browser session sid (neither another verified user's sid
+    // nor an unverified anon sid, preventing both cross-account takeover and session fixation).
+    // verifyEmailOtpCode derives the canonical user sid deterministically from otpUser.id.
+    const result = await verifyEmailOtpCode(email, code, undefined, {
       birthMonthYear: req.body?.birthMonthYear,
       birthYear: req.body?.birthYear,
     });

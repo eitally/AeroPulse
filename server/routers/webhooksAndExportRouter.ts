@@ -1,6 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { buildCorosWorkoutPayload } from '../corosConnectService.ts';
 import { buildWahooPlanJson } from '../wahooConnectService.ts';
+import { checkMemoryRateLimitSync, getClientRateLimitIp } from '../rateLimiter.ts';
 import { computeFatigueSlicedDurability } from '../../src/physiology/durabilityEngine.ts';
 import { simulateCoursePacingAndFueling } from '../../src/physiology/raceSimulator.ts';
 import { generateVerifiedRacePassport } from '../../src/physiology/raceRubberBander.ts';
@@ -117,13 +118,30 @@ webhooksAndExportRouter.post('/api/webhooks/:provider', (req: Request, res: Resp
  *  - Zwift `.ZWO` XML
  *  - Smart Trainer `.ERG` text
  */
+const MAX_EXPORT_INPUT_STEPS = 100;
+const MAX_EXPORT_CHILD_STEPS = 20;
+const MAX_EXPORT_REPEAT_COUNT = 50;
+const MAX_EXPORT_EXPANDED_STEPS = 500;
+
 webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Response) => {
+  const clientIp = getClientRateLimitIp(req);
+  const rate = checkMemoryRateLimitSync(`workout_export:${clientIp}`, 60, 60_000);
+  if (!rate.allowed) {
+    res.status(429).json({
+      ok: false,
+      error: 'Too many workout export requests. Please wait a moment and try again.',
+      retryAfterSecs: rate.retryAfterSecs,
+    });
+    return;
+  }
+
   const body = req.body && typeof req.body === 'object' ? req.body : {};
-  const title = String(body.name || 'MeetReady Prescribed Session').trim();
+  const title = String(body.name || 'MeetReady Prescribed Session').trim().slice(0, 140);
   const sport = body.sportCategory === 'Running' ? 'Running' : 'Cycling';
   const ftp = Math.max(100, Number(body.ftp) || 280);
   const thresholdPaceSecsPerKm = Math.max(95, Number(body.thresholdPaceSecsPerKm) || 245);
-  const workoutSyntax = typeof body.workoutSyntax === 'string' ? body.workoutSyntax.trim() : '';
+  const workoutSyntax =
+    typeof body.workoutSyntax === 'string' ? body.workoutSyntax.trim().slice(0, 4000) : '';
 
   interface ExportStepNormalized {
     stepOrder: number;
@@ -150,10 +168,14 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
 
     let stepOrder = 0;
     for (const node of astNodes) {
-      const expand = node.type === 'step' ? [node.step] : node.steps;
-      const reps = node.type === 'repeat' ? node.repeatCount : 1;
+      const expand = (node.type === 'step' ? [node.step] : node.steps).slice(0, MAX_EXPORT_CHILD_STEPS);
+      const reps =
+        node.type === 'repeat'
+          ? Math.min(MAX_EXPORT_REPEAT_COUNT, Math.max(1, Math.round(node.repeatCount || 1)))
+          : 1;
       for (let r = 0; r < reps; r++) {
         for (const s of expand) {
+          if (normalizedSteps.length >= MAX_EXPORT_EXPANDED_STEPS) break;
           stepOrder += 1;
           const pct = Math.max(40, Math.min(180, s.intensityPct || 75));
           const paceSecsKm = s.targetPaceSecsPerKm || Math.round(thresholdPaceSecsPerKm / (pct / 100));
@@ -189,7 +211,7 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
       }>;
     }> =
       Array.isArray(body.steps) && body.steps.length > 0
-        ? body.steps
+        ? body.steps.slice(0, MAX_EXPORT_INPUT_STEPS)
         : [
             { label: 'Warmup', durationSecs: 600, targetPctFtp: 62 },
             { label: 'Threshold Main Set', durationSecs: 1800, targetPctFtp: 96 },
@@ -198,6 +220,13 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
 
     let orderIdx = 0;
     for (let i = 0; i < rawSteps.length; i++) {
+      if (normalizedSteps.length >= MAX_EXPORT_EXPANDED_STEPS) {
+        res.status(400).json({
+          ok: false,
+          error: `Workout export exceeds maximum of ${MAX_EXPORT_EXPANDED_STEPS} expanded steps.`,
+        });
+        return;
+      }
       const s = rawSteps[i];
       const pushSimpleStep = (
         item: {
@@ -255,15 +284,31 @@ webhooksAndExportRouter.post('/api/workouts/export', (req: Request, res: Respons
       };
 
       if (Array.isArray(s.steps) && s.steps.length > 0 && (s.repeatCount || 1) >= 2) {
-        const repTotal = Math.round(s.repeatCount || 2);
+        const rawRepeat = Number(s.repeatCount);
+        if (!Number.isFinite(rawRepeat) || rawRepeat > MAX_EXPORT_REPEAT_COUNT) {
+          res.status(400).json({
+            ok: false,
+            error: `Repeat count must be between 2 and ${MAX_EXPORT_REPEAT_COUNT}.`,
+          });
+          return;
+        }
+        const boundedChildren = s.steps.slice(0, MAX_EXPORT_CHILD_STEPS);
+        const repTotal = Math.min(MAX_EXPORT_REPEAT_COUNT, Math.max(2, Math.round(rawRepeat)));
+        if (normalizedSteps.length + repTotal * boundedChildren.length > MAX_EXPORT_EXPANDED_STEPS) {
+          res.status(400).json({
+            ok: false,
+            error: `Workout export exceeds maximum of ${MAX_EXPORT_EXPANDED_STEPS} expanded steps.`,
+          });
+          return;
+        }
         const startIdx = fitSteps.length;
         for (let r = 0; r < repTotal; r++) {
-          for (let j = 0; j < s.steps.length; j++) {
+          for (let j = 0; j < boundedChildren.length; j++) {
             if (r === 0) {
-              pushSimpleStep(s.steps[j], j % 2 === 1 ? 'rest' : 'work');
+              pushSimpleStep(boundedChildren[j], j % 2 === 1 ? 'rest' : 'work');
             } else {
               // Keep unrolled normalizedSteps while emitting single FIT loop
-              const child = s.steps[j];
+              const child = boundedChildren[j];
               const pct = Math.max(40, Math.min(180, Number(child.targetPctFtp) || 75));
               const pace = child.targetPaceSecsPerKm ?? Math.round(thresholdPaceSecsPerKm / (pct / 100));
               const dist = child.distanceMeters ? Math.round(child.distanceMeters) : undefined;

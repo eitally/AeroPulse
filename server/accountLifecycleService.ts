@@ -469,8 +469,11 @@ export async function buildUserDataExportPayload(
 
 function escapeCsvCell(value: unknown): string {
   const raw = String(value ?? '');
+  const trimmedLeading = raw.replace(/^[\t\r\n ]+/, '');
   const needsFormulaGuard =
-    /^[=+\t\r@]/.test(raw) || (/^-/.test(raw) && !/^-\d+(\.\d+)?$/.test(raw));
+    /^[=+\t\r@]/.test(raw) ||
+    /^[=+@]/.test(trimmedLeading) ||
+    (/^-/.test(trimmedLeading) && !/^-\d+(\.\d+)?$/.test(trimmedLeading));
   const safe = needsFormulaGuard ? `'${raw}` : raw;
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }

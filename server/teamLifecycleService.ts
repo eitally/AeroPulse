@@ -511,6 +511,16 @@ export async function updateMemberRosterLifecycleStatus(params: {
     if (target.role === 'HEAD_COACH') {
       return { ok: false, error: 'Cannot remove or archive the Head Coach directly.' };
     }
+    const isStaffTarget =
+      target.role === 'ORG_ADMIN' ||
+      target.role === 'ASSISTANT_COACH' ||
+      target.role === 'ATHLETIC_TRAINER';
+    if (isStaffTarget && callerMem.role !== 'HEAD_COACH' && callerMem.role !== 'ORG_ADMIN') {
+      return {
+        ok: false,
+        error: 'Only the Head Coach or Organization Admin can modify staff status.',
+      };
+    }
 
     const nowIso = new Date().toISOString();
     if (
