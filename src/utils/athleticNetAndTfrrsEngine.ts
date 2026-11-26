@@ -784,7 +784,7 @@ export function resolveGraduationYearFromGradeToken(
     };
   }
 
-  const colMatch = clean.match(/^(FR|SO|JR|SR)(?:-([1-5]))?$/);
+  const colMatch = clean.match(/^(FR|SO|JR|SR)-([1-5])$/);
   if (colMatch) {
     const mapOffset: Record<string, number> = { SR: 0, JR: 1, SO: 2, FR: 3 };
     return {

@@ -48,7 +48,26 @@ class MeetReadyChatOutboxDatabase extends Dexie {
 }
 
 let cachedChatDb: MeetReadyChatOutboxDatabase | null = null;
-let inFlightChatFlush: Promise<ChatOutboxFlushResult> | null = null;
+const inFlightChatFlushByKey = new Map<string, Promise<ChatOutboxFlushResult>>();
+const redrainChatFlushByKey = new Set<string>();
+let pendingChatDexieOp: Promise<void> = Promise.resolve();
+let memoryChatShadow: Map<string, QueuedChatOutboxMessage> | null = null;
+
+function enqueueChatDexieOp(op: (db: MeetReadyChatOutboxDatabase) => Promise<void>): Promise<void> {
+  const db = getChatOutboxDb();
+  if (!db) return Promise.resolve();
+  const next = pendingChatDexieOp
+    .catch(() => {})
+    .then(async () => {
+      try {
+        await op(db);
+      } catch {
+        // Private mode or closed IndexedDB falls back to localStorage cleanly
+      }
+    });
+  pendingChatDexieOp = next;
+  return next;
+}
 
 function getChatOutboxDb(): MeetReadyChatOutboxDatabase | null {
   if (typeof indexedDB === 'undefined') return null;
@@ -86,75 +105,96 @@ function isValidQueuedMessage(candidate: unknown): candidate is QueuedChatOutbox
   );
 }
 
-function syncChatDexieMirrorAsync(items: QueuedChatOutboxMessage[]): void {
-  const db = getChatOutboxDb();
-  if (!db) return;
-  void db
-    .transaction('rw', db.messages, async () => {
-      await db.messages.clear();
-      if (items.length > 0) {
-        await db.messages.bulkPut(items);
-      }
-    })
-    .catch(() => {
-      // Private mode or closed IndexedDB falls back to localStorage cleanly
-    });
+function writeChatLocalStorage(items: QueuedChatOutboxMessage[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (items.length === 0) {
+      localStorage.removeItem(STORAGE_KEYS.CHAT_OUTBOX);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.CHAT_OUTBOX, JSON.stringify(items));
+    }
+  } catch {
+    // ignore localStorage quota errors; memory shadow + Dexie keep records intact
+  }
 }
 
 function quarantineChatDeadLetterAsync(
   msg: QueuedChatOutboxMessage,
   statusCode: number | undefined,
   reason: string
-): void {
-  const db = getChatOutboxDb();
-  if (!db) return;
+): Promise<void> {
   const record: ChatOutboxDeadLetter = {
     ...msg,
     lastError: reason,
     failedAt: new Date().toISOString(),
     ...(statusCode !== undefined ? { statusCode } : {}),
   };
-  void db.deadLetter.put(record).catch(() => {
-    // ignore private mode IndexedDB failures
+  return enqueueChatDexieOp(async (db) => {
+    await db.deadLetter.put(record);
   });
 }
 
-export function loadChatOutbox(teamId?: string): QueuedChatOutboxMessage[] {
-  if (typeof localStorage === 'undefined') return [];
+function readChatLocalStorageRaw(): QueuedChatOutboxMessage[] | null {
+  if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.CHAT_OUTBOX);
     if (!raw) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    const valid = parsed.filter(isValidQueuedMessage).map((m) => ({
+    return parsed.filter(isValidQueuedMessage).map((m) => ({
       ...m,
       attempts: typeof m.attempts === 'number' && Number.isFinite(m.attempts) ? m.attempts : 0,
     }));
-    return teamId ? valid.filter((m) => m.teamId === teamId) : valid;
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function saveChatOutbox(items: QueuedChatOutboxMessage[]): void {
-  if (typeof localStorage !== 'undefined') {
-    try {
-      if (items.length === 0) {
-        localStorage.removeItem(STORAGE_KEYS.CHAT_OUTBOX);
-      } else {
-        localStorage.setItem(STORAGE_KEYS.CHAT_OUTBOX, JSON.stringify(items));
-      }
-    } catch {
-      // ignore localStorage quota errors; Dexie mirror receives write below
+export function loadChatOutbox(teamId?: string): QueuedChatOutboxMessage[] {
+  const lsItems = readChatLocalStorageRaw();
+  let merged: QueuedChatOutboxMessage[];
+  if (lsItems && lsItems.length > 0) {
+    const byId = new Map<string, QueuedChatOutboxMessage>();
+    if (memoryChatShadow) {
+      for (const m of memoryChatShadow.values()) byId.set(m.localId, m);
     }
+    for (const m of lsItems) byId.set(m.localId, m);
+    merged = Array.from(byId.values()).sort((a, b) =>
+      String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+    );
+  } else if (memoryChatShadow && memoryChatShadow.size > 0) {
+    merged = Array.from(memoryChatShadow.values()).sort((a, b) =>
+      String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+    );
+  } else {
+    merged = [];
   }
-  syncChatDexieMirrorAsync(items);
+  return teamId ? merged.filter((m) => m.teamId === teamId) : merged;
+}
+
+export function saveChatOutbox(items: QueuedChatOutboxMessage[]): void {
+  memoryChatShadow = new Map(items.map((m) => [m.localId, m]));
+  writeChatLocalStorage(items);
+  void enqueueChatDexieOp(async (db) => {
+    await db.transaction('rw', db.messages, async () => {
+      const keepIds = new Set(items.map((m) => m.localId));
+      const existingKeys = await db.messages.toCollection().primaryKeys();
+      const staleKeys = existingKeys.filter((k) => !keepIds.has(k));
+      if (staleKeys.length > 0) {
+        await db.messages.bulkDelete(staleKeys);
+      }
+      if (items.length > 0) {
+        await db.messages.bulkPut(items);
+      }
+    });
+  });
   emitChatOutboxUpdated();
 }
 
 export async function hydrateChatOutboxFromDexie(
   teamId?: string
 ): Promise<QueuedChatOutboxMessage[]> {
+  await pendingChatDexieOp;
   const localItems = loadChatOutbox();
   const db = getChatOutboxDb();
   if (!db) {
@@ -171,9 +211,8 @@ export async function hydrateChatOutboxFromDexie(
     const merged = Array.from(byId.values()).sort((a, b) =>
       String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
     );
-    if (merged.length !== localItems.length) {
-      saveChatOutbox(merged);
-    }
+    memoryChatShadow = new Map(merged.map((m) => [m.localId, m]));
+    writeChatLocalStorage(merged);
     return teamId ? merged.filter((m) => m.teamId === teamId) : merged;
   } catch {
     return teamId ? localItems.filter((m) => m.teamId === teamId) : localItems;
@@ -215,93 +254,132 @@ export function enqueueChatOutboxMessage(
     attempts: 0,
   };
 
-  saveChatOutbox([...existing, queued]);
+  const next = [...existing, queued];
+  memoryChatShadow = new Map(next.map((m) => [m.localId, m]));
+  writeChatLocalStorage(next);
+  // Atomic per-record Dexie put (never clears previously queued Dexie records on localStorage quota errors)
+  void enqueueChatDexieOp(async (db) => {
+    await db.messages.put(queued);
+  });
+  emitChatOutboxUpdated();
   return queued;
 }
 
-export function removeChatOutboxMessage(localId: string): void {
+async function removeChatOutboxMessageAsync(localId: string): Promise<void> {
   const existing = loadChatOutbox();
   const next = existing.filter((m) => m.localId !== localId);
-  if (next.length !== existing.length) {
-    saveChatOutbox(next);
-  }
+  memoryChatShadow = new Map(next.map((m) => [m.localId, m]));
+  writeChatLocalStorage(next);
+  await enqueueChatDexieOp(async (db) => {
+    await db.messages.delete(localId);
+  });
+  emitChatOutboxUpdated();
+}
+
+export function removeChatOutboxMessage(localId: string): void {
+  void removeChatOutboxMessageAsync(localId);
 }
 
 export async function flushChatOutbox(
   senderFn: (msg: QueuedChatOutboxMessage) => Promise<void>,
   teamId?: string
 ): Promise<ChatOutboxFlushResult> {
-  if (inFlightChatFlush) {
-    return inFlightChatFlush;
+  const flushKey = teamId ? `team:${teamId}` : 'all';
+  const existingInFlight = inFlightChatFlushByKey.get(flushKey);
+  if (existingInFlight) {
+    redrainChatFlushByKey.add(flushKey);
+    return existingInFlight;
   }
 
-  inFlightChatFlush = (async () => {
-    const allItems = await hydrateChatOutboxFromDexie();
-    const candidates = teamId ? allItems.filter((m) => m.teamId === teamId) : allItems;
-    if (candidates.length === 0) {
-      return { sentCount: 0, droppedCount: 0, remainingCount: 0 };
-    }
-
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      return {
-        sentCount: 0,
-        droppedCount: 0,
-        remainingCount: candidates.length,
-      };
-    }
-
+  const runPromise = (async () => {
     let sentCount = 0;
     let droppedCount = 0;
     let lastError: string | undefined;
+    const processedInPass = new Set<string>();
 
-    for (const item of candidates) {
-      if ((item.attempts || 0) >= MAX_CHAT_OUTBOX_ATTEMPTS) {
-        const reason =
-          item.lastError || `Exhausted ${MAX_CHAT_OUTBOX_ATTEMPTS} chat outbox attempts`;
-        quarantineChatDeadLetterAsync(item, undefined, reason);
-        removeChatOutboxMessage(item.localId);
-        droppedCount += 1;
-        lastError = reason;
-        continue;
+    do {
+      redrainChatFlushByKey.delete(flushKey);
+      const allItems = await hydrateChatOutboxFromDexie();
+      const candidates = (teamId ? allItems.filter((m) => m.teamId === teamId) : allItems).filter(
+        (m) => !processedInPass.has(m.localId)
+      );
+      if (candidates.length === 0) {
+        break;
       }
 
-      try {
-        await senderFn(item);
-        removeChatOutboxMessage(item.localId);
-        sentCount += 1;
-      } catch (err: unknown) {
-        const status =
-          err instanceof TeamLifecycleApiError
-            ? err.status
-            : typeof (err as { status?: unknown })?.status === 'number'
-              ? (err as { status: number }).status
-              : undefined;
-        const message =
-          err instanceof Error && err.message ? err.message : 'Waiting for connection';
-        lastError = message;
-        const nextAttempts = (item.attempts || 0) + 1;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return {
+          sentCount,
+          droppedCount,
+          remainingCount: candidates.length,
+          ...(lastError ? { lastError } : {}),
+        };
+      }
 
-        if (
-          (status !== undefined && PERMANENT_ERROR_STATUSES.has(status)) ||
-          nextAttempts >= MAX_CHAT_OUTBOX_ATTEMPTS
-        ) {
-          quarantineChatDeadLetterAsync(
-            { ...item, attempts: nextAttempts, lastError: message },
-            status,
-            message
-          );
-          removeChatOutboxMessage(item.localId);
+      for (const item of candidates) {
+        processedInPass.add(item.localId);
+        if ((item.attempts || 0) >= MAX_CHAT_OUTBOX_ATTEMPTS) {
+          const reason =
+            item.lastError || `Exhausted ${MAX_CHAT_OUTBOX_ATTEMPTS} chat outbox attempts`;
+          await quarantineChatDeadLetterAsync(item, undefined, reason);
+          await removeChatOutboxMessageAsync(item.localId);
           droppedCount += 1;
-        } else {
-          const updated = loadChatOutbox().map((m) =>
-            m.localId === item.localId
-              ? { ...m, attempts: nextAttempts, lastError: message }
-              : m
-          );
-          saveChatOutbox(updated);
+          lastError = reason;
+          continue;
+        }
+
+        try {
+          await senderFn(item);
+          await removeChatOutboxMessageAsync(item.localId);
+          sentCount += 1;
+        } catch (err: unknown) {
+          const status =
+            err instanceof TeamLifecycleApiError
+              ? err.status
+              : typeof (err as { status?: unknown })?.status === 'number'
+                ? (err as { status: number }).status
+                : undefined;
+          const message =
+            err instanceof Error && err.message ? err.message : 'Waiting for connection';
+          lastError = message;
+          const nextAttempts = (item.attempts || 0) + 1;
+
+          if (
+            (status !== undefined && PERMANENT_ERROR_STATUSES.has(status)) ||
+            nextAttempts >= MAX_CHAT_OUTBOX_ATTEMPTS
+          ) {
+            await quarantineChatDeadLetterAsync(
+              { ...item, attempts: nextAttempts, lastError: message },
+              status,
+              message
+            );
+            await removeChatOutboxMessageAsync(item.localId);
+            droppedCount += 1;
+          } else {
+            const updatedMsg: QueuedChatOutboxMessage = {
+              ...item,
+              attempts: nextAttempts,
+              lastError: message,
+            };
+            const updated = loadChatOutbox().map((m) =>
+              m.localId === item.localId ? updatedMsg : m
+            );
+            memoryChatShadow = new Map(updated.map((m) => [m.localId, m]));
+            writeChatLocalStorage(updated);
+            await enqueueChatDexieOp(async (db) => {
+              await db.messages.put(updatedMsg);
+            });
+            emitChatOutboxUpdated();
+          }
         }
       }
-    }
+
+      // Check if any new items were enqueued mid-flush
+      const afterItems = loadChatOutbox(teamId);
+      if (afterItems.some((m) => !processedInPass.has(m.localId))) {
+        redrainChatFlushByKey.add(flushKey);
+      }
+    } while (redrainChatFlushByKey.has(flushKey));
 
     const remaining = loadChatOutbox(teamId).length;
     return {
@@ -311,13 +389,16 @@ export async function flushChatOutbox(
       ...(lastError ? { lastError } : {}),
     };
   })().finally(() => {
-    inFlightChatFlush = null;
+    inFlightChatFlushByKey.delete(flushKey);
+    redrainChatFlushByKey.delete(flushKey);
   });
 
-  return inFlightChatFlush;
+  inFlightChatFlushByKey.set(flushKey, runPromise);
+  return runPromise;
 }
 
 export async function loadChatDeadLetter(teamId?: string): Promise<ChatOutboxDeadLetter[]> {
+  await pendingChatDexieOp;
   const db = getChatOutboxDb();
   if (!db) return [];
   try {
@@ -329,6 +410,7 @@ export async function loadChatDeadLetter(teamId?: string): Promise<ChatOutboxDea
 }
 
 export async function clearChatOutbox(): Promise<void> {
+  memoryChatShadow = null;
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.removeItem(STORAGE_KEYS.CHAT_OUTBOX);
@@ -336,13 +418,8 @@ export async function clearChatOutbox(): Promise<void> {
       // ignore
     }
   }
-  const db = getChatOutboxDb();
-  if (db) {
-    try {
-      await Promise.all([db.messages.clear(), db.deadLetter.clear()]);
-    } catch {
-      // ignore private mode errors
-    }
-  }
+  await enqueueChatDexieOp(async (db) => {
+    await Promise.all([db.messages.clear(), db.deadLetter.clear()]);
+  });
   emitChatOutboxUpdated();
 }

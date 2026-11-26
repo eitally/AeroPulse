@@ -116,17 +116,13 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
   }, [isOpen, initialScope]);
 
   const activeTeamId = activeTeam?.brand.teamId;
+  const myTeamsRef = useRef(myTeams);
+  myTeamsRef.current = myTeams;
 
   useEffect(() => {
     if (!isOpen || !activeTeamId) return;
-    setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
-    void hydrateChatOutboxFromDexie(activeTeamId).then((items) => {
-      setQueuedOfflineMessages(items);
-    });
-    const onOutboxEvent = () => {
-      setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
-    };
-    const onOnlineEvent = () => {
+    let cancelled = false;
+    const runFlush = () => {
       if (isSampleDemo) return;
       void flushChatOutbox(async (q) => {
         const resp = await postTeamMessageApi({
@@ -136,6 +132,7 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
           customSubgroupId: q.customSubgroupId,
           targetMembershipId: q.targetMembershipId,
           body: q.body,
+          clientMessageId: q.localId,
           guardianCc: q.guardianCc ?? true,
           clientLocalHour: q.clientLocalHour,
           isEmergencyOverride: q.isEmergencyOverride,
@@ -144,24 +141,39 @@ export const TeamMessagingDrawer: React.FC<TeamMessagingDrawerProps> = ({
           onTeamsUpdated(resp.teams, q.teamId);
         } else if (resp.team) {
           onTeamsUpdated(
-            myTeams.map((t) => (t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t)),
+            myTeamsRef.current.map((t) =>
+              t.brand.teamId === resp.team!.brand.teamId ? resp.team! : t
+            ),
             resp.team.brand.teamId
           );
         }
       }, activeTeamId).then((res) => {
+        if (cancelled) return;
         setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
         if (res.sentCount > 0) {
           setStatusInfo(`Delivered ${res.sentCount} queued offline message(s) ✓`);
         }
       });
     };
-    window.addEventListener('thresh:chat-outbox-updated', onOutboxEvent);
-    window.addEventListener('online', onOnlineEvent);
-    return () => {
-      window.removeEventListener('thresh:chat-outbox-updated', onOutboxEvent);
-      window.removeEventListener('online', onOnlineEvent);
+    setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
+    void hydrateChatOutboxFromDexie(activeTeamId).then((items) => {
+      if (cancelled) return;
+      setQueuedOfflineMessages(items);
+      if (items.length > 0 && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+        runFlush();
+      }
+    });
+    const onOutboxEvent = () => {
+      if (!cancelled) setQueuedOfflineMessages(loadChatOutbox(activeTeamId));
     };
-  }, [activeTeamId, isOpen, isSampleDemo, myTeams, onTeamsUpdated]);
+    window.addEventListener('thresh:chat-outbox-updated', onOutboxEvent);
+    window.addEventListener('online', runFlush);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('thresh:chat-outbox-updated', onOutboxEvent);
+      window.removeEventListener('online', runFlush);
+    };
+  }, [activeTeamId, isOpen, isSampleDemo, onTeamsUpdated]);
 
   useEffect(() => {
     if (!isOpen || isSampleDemo) return;

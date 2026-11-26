@@ -108,13 +108,54 @@ export function useStopwatchSyncBridge({
     return swRes;
   }, [isSampleDemoMode, isSessionLoggedOut, hasEnteredWorkspace, applyUpdatedTeamToState]);
 
+  const flushPendingChatOutboxQuietly = useCallback(async () => {
+    if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    try {
+      const hasLocalChatQueue =
+        typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('thresh_chat_outbox_v1'));
+      if (!hasLocalChatQueue) return;
+      const [{ flushChatOutbox }, { postTeamMessageApi }] = await Promise.all([
+        import('../utils/chatOutbox'),
+        import('../utils/teamLifecycleApi'),
+      ]);
+      await flushChatOutbox(async (q) => {
+        const resp = await postTeamMessageApi({
+          teamId: q.teamId,
+          channelScope: q.channelScope,
+          eventGroup: q.eventGroup,
+          customSubgroupId: q.customSubgroupId,
+          targetMembershipId: q.targetMembershipId,
+          body: q.body,
+          clientMessageId: q.localId,
+          guardianCc: q.guardianCc ?? true,
+          clientLocalHour: q.clientLocalHour,
+          isEmergencyOverride: q.isEmergencyOverride,
+        });
+        if (resp.team) {
+          applyUpdatedTeamToState(resp.team);
+        } else if (resp.teams && resp.teams.length > 0) {
+          setMyTeams(resp.teams);
+        }
+      });
+    } catch {
+      // Non-fatal offline chat flush fallback
+    }
+  }, [
+    isSampleDemoMode,
+    isSessionLoggedOut,
+    hasEnteredWorkspace,
+    applyUpdatedTeamToState,
+    setMyTeams,
+  ]);
+
   useEffect(() => {
     if (isSampleDemoMode || isSessionLoggedOut || !hasEnteredWorkspace) return;
     void handleFlushStopwatchOutbox();
-    void flushFieldOutbox(applyUpdatedTeamToState);
+    void flushPendingChatOutboxQuietly();
     const onOnline = () => {
       void handleFlushStopwatchOutbox();
-      void flushFieldOutbox(applyUpdatedTeamToState);
+      void flushPendingChatOutboxQuietly();
     };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
@@ -123,7 +164,7 @@ export function useStopwatchSyncBridge({
     isSessionLoggedOut,
     hasEnteredWorkspace,
     handleFlushStopwatchOutbox,
-    applyUpdatedTeamToState,
+    flushPendingChatOutboxQuietly,
   ]);
 
   const handleSaveStopwatchActivities = useCallback(

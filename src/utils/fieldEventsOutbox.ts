@@ -74,36 +74,51 @@ function emitFieldOutboxUpdatedEvent(): void {
   }
 }
 
-function syncDexieMirrorAsync(batches: FieldEventsOutboxBatch[]): void {
+let pendingFieldDexieOp: Promise<void> = Promise.resolve();
+let memoryFieldShadow: Map<string, FieldEventsOutboxBatch> | null = null;
+
+function enqueueFieldDexieOp(op: (db: MeetReadyFieldOutboxDatabase) => Promise<void>): Promise<void> {
   const db = getOutboxDb();
-  if (!db) return;
-  void db
-    .transaction('rw', db.batches, async () => {
-      await db.batches.clear();
-      if (batches.length > 0) {
-        await db.batches.bulkPut(batches);
+  if (!db) return Promise.resolve();
+  const next = pendingFieldDexieOp
+    .catch(() => {})
+    .then(async () => {
+      try {
+        await op(db);
+      } catch {
+        // Private mode or closed IndexedDB falls back safely to localStorage
       }
-    })
-    .catch(() => {
-      // Private mode or closed IndexedDB falls back safely to localStorage
     });
+  pendingFieldDexieOp = next;
+  return next;
+}
+
+function writeFieldLocalStorage(batches: FieldEventsOutboxBatch[]): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    if (batches.length === 0) {
+      localStorage.removeItem(STORAGE_KEYS.FIELD_EVENTS_OUTBOX);
+    } else {
+      localStorage.setItem(STORAGE_KEYS.FIELD_EVENTS_OUTBOX, JSON.stringify(batches));
+    }
+  } catch {
+    // ignore localStorage quota errors; memory shadow + Dexie keep records intact
+  }
 }
 
 function quarantineBatchInDexieAsync(
   batch: FieldEventsOutboxBatch,
   statusCode: number | undefined,
   reason: string
-): void {
-  const db = getOutboxDb();
-  if (!db) return;
+): Promise<void> {
   const record: FieldEventsOutboxDeadLetter = {
     ...batch,
     lastError: reason,
     droppedAt: new Date().toISOString(),
     ...(statusCode !== undefined ? { statusCode } : {}),
   };
-  void db.deadLetter.put(record).catch(() => {
-    // ignore private mode IndexedDB failures
+  return enqueueFieldDexieOp(async (db) => {
+    await db.deadLetter.put(record);
   });
 }
 
@@ -119,8 +134,8 @@ function isValidOutboxBatch(candidate: unknown): candidate is FieldEventsOutboxB
   );
 }
 
-export function loadFieldOutbox(): FieldEventsOutboxBatch[] {
-  if (typeof localStorage === 'undefined') return [];
+function readFieldLocalStorageRaw(): FieldEventsOutboxBatch[] | null {
+  if (typeof localStorage === 'undefined') return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.FIELD_EVENTS_OUTBOX);
     if (!raw) return [];
@@ -132,23 +147,46 @@ export function loadFieldOutbox(): FieldEventsOutboxBatch[] {
       attempts: typeof b.attempts === 'number' && Number.isFinite(b.attempts) ? b.attempts : 0,
     }));
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function saveFieldOutbox(batches: FieldEventsOutboxBatch[]): void {
-  if (typeof localStorage !== 'undefined') {
-    try {
-      if (batches.length === 0) {
-        localStorage.removeItem(STORAGE_KEYS.FIELD_EVENTS_OUTBOX);
-      } else {
-        localStorage.setItem(STORAGE_KEYS.FIELD_EVENTS_OUTBOX, JSON.stringify(batches));
-      }
-    } catch {
-      // ignore localStorage quota errors; Dexie mirror still receives write below
+export function loadFieldOutbox(): FieldEventsOutboxBatch[] {
+  const lsBatches = readFieldLocalStorageRaw();
+  if (lsBatches && lsBatches.length > 0) {
+    const byId = new Map<string, FieldEventsOutboxBatch>();
+    if (memoryFieldShadow) {
+      for (const b of memoryFieldShadow.values()) byId.set(b.batchId, b);
     }
+    for (const b of lsBatches) byId.set(b.batchId, b);
+    return Array.from(byId.values()).sort((a, b) =>
+      String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+    );
   }
-  syncDexieMirrorAsync(batches);
+  if (memoryFieldShadow && memoryFieldShadow.size > 0) {
+    return Array.from(memoryFieldShadow.values()).sort((a, b) =>
+      String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
+    );
+  }
+  return [];
+}
+
+export function saveFieldOutbox(batches: FieldEventsOutboxBatch[]): void {
+  memoryFieldShadow = new Map(batches.map((b) => [b.batchId, b]));
+  writeFieldLocalStorage(batches);
+  void enqueueFieldDexieOp(async (db) => {
+    await db.transaction('rw', db.batches, async () => {
+      const keepIds = new Set(batches.map((b) => b.batchId));
+      const existingKeys = await db.batches.toCollection().primaryKeys();
+      const staleKeys = existingKeys.filter((k) => !keepIds.has(k));
+      if (staleKeys.length > 0) {
+        await db.batches.bulkDelete(staleKeys);
+      }
+      if (batches.length > 0) {
+        await db.batches.bulkPut(batches);
+      }
+    });
+  });
   emitFieldOutboxUpdatedEvent();
 }
 
@@ -157,6 +195,7 @@ export function saveFieldOutbox(batches: FieldEventsOutboxBatch[]): void {
  * that were evicted from or not yet mirrored to localStorage.
  */
 export async function hydrateFieldOutboxFromDexie(): Promise<FieldEventsOutboxBatch[]> {
+  await pendingFieldDexieOp;
   const localBatches = loadFieldOutbox();
   const db = getOutboxDb();
   if (!db) return localBatches;
@@ -169,9 +208,8 @@ export async function hydrateFieldOutboxFromDexie(): Promise<FieldEventsOutboxBa
     const merged = Array.from(byId.values()).sort((a, b) =>
       String(a.createdAt || '').localeCompare(String(b.createdAt || ''))
     );
-    if (merged.length !== localBatches.length) {
-      saveFieldOutbox(merged);
-    }
+    memoryFieldShadow = new Map(merged.map((b) => [b.batchId, b]));
+    writeFieldLocalStorage(merged);
     return merged;
   } catch {
     return localBatches;
@@ -212,15 +250,31 @@ export function enqueueFieldOutboxBatch(
     attempts: 0,
   };
 
-  saveFieldOutbox([...existing, batch]);
+  const next = [...existing, batch];
+  memoryFieldShadow = new Map(next.map((b) => [b.batchId, b]));
+  writeFieldLocalStorage(next);
+  // Atomic per-record Dexie put (never clears existing Dexie batches if localStorage quota fails)
+  void enqueueFieldDexieOp(async (db) => {
+    await db.batches.put(batch);
+  });
+  emitFieldOutboxUpdatedEvent();
   return batch;
 }
 
-export function removeFieldOutboxBatch(batchId: string): void {
+async function removeFieldOutboxBatchAsync(batchId: string): Promise<void> {
   const remaining = loadFieldOutbox().filter(
     (b) => b.batchId !== batchId && b.clientBatchId !== batchId
   );
-  saveFieldOutbox(remaining);
+  memoryFieldShadow = new Map(remaining.map((b) => [b.batchId, b]));
+  writeFieldLocalStorage(remaining);
+  await enqueueFieldDexieOp(async (db) => {
+    await db.batches.delete(batchId);
+  });
+  emitFieldOutboxUpdatedEvent();
+}
+
+export function removeFieldOutboxBatch(batchId: string): void {
+  void removeFieldOutboxBatchAsync(batchId);
 }
 
 export function countPendingFieldOutboxEntries(teamId?: string): number {
@@ -344,6 +398,7 @@ export const MAX_FIELD_OUTBOX_ATTEMPTS = 5;
 const PERMANENT_CLIENT_ERROR_STATUSES = new Set([400, 403, 404, 422]);
 
 let inFlightFieldOutboxFlush: Promise<FieldOutboxFlushResult> | null = null;
+let fieldFlushNeedsRedrain = false;
 
 /**
  * Flushes pending offline field-events batches in FIFO order whenever online.
@@ -354,104 +409,115 @@ export async function flushFieldOutbox(
   onTeamUpdated?: (team: TeamSummaryWithRole) => void
 ): Promise<FieldOutboxFlushResult> {
   if (inFlightFieldOutboxFlush) {
+    fieldFlushNeedsRedrain = true;
     return inFlightFieldOutboxFlush;
   }
 
   inFlightFieldOutboxFlush = (async () => {
-    const initialOutbox = await hydrateFieldOutboxFromDexie();
-    if (initialOutbox.length === 0) {
-      return {
-        syncedBatches: 0,
-        syncedEntries: 0,
-        droppedBatches: 0,
-        remainingBatches: 0,
-        remainingEntries: 0,
-      };
-    }
-
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      return {
-        syncedBatches: 0,
-        syncedEntries: 0,
-        droppedBatches: 0,
-        remainingBatches: initialOutbox.length,
-        remainingEntries: initialOutbox.reduce((s, b) => s + b.entries.length, 0),
-      };
-    }
-
     let syncedBatches = 0;
     let syncedEntries = 0;
     let droppedBatches = 0;
     let lastError: string | undefined;
+    const processedInPass = new Set<string>();
 
-    for (const batch of initialOutbox) {
-      if ((batch.attempts || 0) >= MAX_FIELD_OUTBOX_ATTEMPTS) {
-        const reason =
-          batch.lastError || `Exhausted ${MAX_FIELD_OUTBOX_ATTEMPTS} field outbox attempts`;
-        console.error(`[MeetReady Field Outbox] Quarantining poison-pill batch ${batch.batchId}: ${reason}`);
-        quarantineBatchInDexieAsync(batch, undefined, reason);
-        removeFieldOutboxBatch(batch.batchId);
-        droppedBatches += 1;
-        lastError = reason;
-        continue;
+    do {
+      fieldFlushNeedsRedrain = false;
+      const initialOutbox = (await hydrateFieldOutboxFromDexie()).filter(
+        (b) => !processedInPass.has(b.batchId)
+      );
+      if (initialOutbox.length === 0) {
+        break;
       }
 
-      try {
-        const resp = await recordTeamFieldMarksApi({
-          teamId: batch.teamId,
-          clientBatchId: batch.clientBatchId,
-          entries: batch.entries,
-        });
-        syncedBatches += 1;
-        syncedEntries += batch.entries.length;
-        removeFieldOutboxBatch(batch.batchId);
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return {
+          syncedBatches,
+          syncedEntries,
+          droppedBatches,
+          remainingBatches: initialOutbox.length,
+          remainingEntries: initialOutbox.reduce((s, b) => s + b.entries.length, 0),
+          ...(lastError ? { lastError } : {}),
+        };
+      }
 
-        const updatedTeam =
-          resp.team ||
-          resp.teams?.find((t) => t.brand.teamId === batch.teamId);
-        if (updatedTeam) {
-          onTeamUpdated?.(updatedTeam);
-        }
-      } catch (err: unknown) {
-        const status =
-          err instanceof TeamLifecycleApiError
-            ? err.status
-            : typeof (err as { status?: unknown })?.status === 'number'
-              ? (err as { status: number }).status
-              : undefined;
-        const message =
-          err instanceof Error && err.message ? err.message : 'Pending network sync';
-        lastError = message;
-        const nextAttempts = (batch.attempts || 0) + 1;
-
-        if (
-          (status !== undefined && PERMANENT_CLIENT_ERROR_STATUSES.has(status)) ||
-          nextAttempts >= MAX_FIELD_OUTBOX_ATTEMPTS
-        ) {
-          console.error(
-            `[MeetReady Field Outbox] Dropping batch ${batch.batchId} (${status ? `HTTP ${status}` : `${nextAttempts} attempts`}): ${message}`
-          );
-          quarantineBatchInDexieAsync(
-            { ...batch, attempts: nextAttempts, lastError: message },
-            status,
-            message
-          );
-          removeFieldOutboxBatch(batch.batchId);
+      for (const batch of initialOutbox) {
+        processedInPass.add(batch.batchId);
+        if ((batch.attempts || 0) >= MAX_FIELD_OUTBOX_ATTEMPTS) {
+          const reason =
+            batch.lastError || `Exhausted ${MAX_FIELD_OUTBOX_ATTEMPTS} field outbox attempts`;
+          console.error(`[MeetReady Field Outbox] Quarantining poison-pill batch ${batch.batchId}: ${reason}`);
+          await quarantineBatchInDexieAsync(batch, undefined, reason);
+          await removeFieldOutboxBatchAsync(batch.batchId);
           droppedBatches += 1;
-        } else {
-          const updated = loadFieldOutbox().map((b) =>
-            b.batchId === batch.batchId
-              ? {
-                  ...b,
-                  attempts: nextAttempts,
-                  lastError: message,
-                }
-              : b
-          );
-          saveFieldOutbox(updated);
+          lastError = reason;
+          continue;
+        }
+
+        try {
+          const resp = await recordTeamFieldMarksApi({
+            teamId: batch.teamId,
+            clientBatchId: batch.clientBatchId,
+            entries: batch.entries,
+          });
+          syncedBatches += 1;
+          syncedEntries += batch.entries.length;
+          await removeFieldOutboxBatchAsync(batch.batchId);
+
+          const updatedTeam =
+            resp.team ||
+            resp.teams?.find((t) => t.brand.teamId === batch.teamId);
+          if (updatedTeam) {
+            onTeamUpdated?.(updatedTeam);
+          }
+        } catch (err: unknown) {
+          const status =
+            err instanceof TeamLifecycleApiError
+              ? err.status
+              : typeof (err as { status?: unknown })?.status === 'number'
+                ? (err as { status: number }).status
+                : undefined;
+          const message =
+            err instanceof Error && err.message ? err.message : 'Pending network sync';
+          lastError = message;
+          const nextAttempts = (batch.attempts || 0) + 1;
+
+          if (
+            (status !== undefined && PERMANENT_CLIENT_ERROR_STATUSES.has(status)) ||
+            nextAttempts >= MAX_FIELD_OUTBOX_ATTEMPTS
+          ) {
+            console.error(
+              `[MeetReady Field Outbox] Dropping batch ${batch.batchId} (${status ? `HTTP ${status}` : `${nextAttempts} attempts`}): ${message}`
+            );
+            await quarantineBatchInDexieAsync(
+              { ...batch, attempts: nextAttempts, lastError: message },
+              status,
+              message
+            );
+            await removeFieldOutboxBatchAsync(batch.batchId);
+            droppedBatches += 1;
+          } else {
+            const updatedBatch: FieldEventsOutboxBatch = {
+              ...batch,
+              attempts: nextAttempts,
+              lastError: message,
+            };
+            const updated = loadFieldOutbox().map((b) =>
+              b.batchId === batch.batchId ? updatedBatch : b
+            );
+            memoryFieldShadow = new Map(updated.map((b) => [b.batchId, b]));
+            writeFieldLocalStorage(updated);
+            await enqueueFieldDexieOp(async (db) => {
+              await db.batches.put(updatedBatch);
+            });
+            emitFieldOutboxUpdatedEvent();
+          }
         }
       }
-    }
+
+      if (loadFieldOutbox().some((b) => !processedInPass.has(b.batchId))) {
+        fieldFlushNeedsRedrain = true;
+      }
+    } while (fieldFlushNeedsRedrain);
 
     const finalOutbox = loadFieldOutbox();
     return {
@@ -464,12 +530,14 @@ export async function flushFieldOutbox(
     };
   })().finally(() => {
     inFlightFieldOutboxFlush = null;
+    fieldFlushNeedsRedrain = false;
   });
 
   return inFlightFieldOutboxFlush;
 }
 
 export async function clearFieldOutboxDb(): Promise<void> {
+  memoryFieldShadow = null;
   if (typeof localStorage !== 'undefined') {
     try {
       localStorage.removeItem(STORAGE_KEYS.FIELD_EVENTS_OUTBOX);
@@ -477,13 +545,8 @@ export async function clearFieldOutboxDb(): Promise<void> {
       // ignore
     }
   }
-  const db = getOutboxDb();
-  if (db) {
-    try {
-      await Promise.all([db.batches.clear(), db.deadLetter.clear()]);
-    } catch {
-      // ignore private mode / closed DB errors
-    }
-  }
+  await enqueueFieldDexieOp(async (db) => {
+    await Promise.all([db.batches.clear(), db.deadLetter.clear()]);
+  });
   emitFieldOutboxUpdatedEvent();
 }

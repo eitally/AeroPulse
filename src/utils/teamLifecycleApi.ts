@@ -518,12 +518,14 @@ export async function postTeamMessageApi(params: {
   customSubgroupId?: string;
   targetMembershipId?: string;
   body: string;
+  clientMessageId?: string;
   guardianCc?: boolean;
   clientLocalHour?: number;
   isEmergencyOverride?: boolean;
 }) {
   return requestLifecycleJson<{
     message?: TeamMessageRecord;
+    deduplicated?: boolean;
     emailFallbackCount?: number;
     team?: TeamSummaryWithRole;
     teams?: TeamSummaryWithRole[];
@@ -535,6 +537,7 @@ export async function postTeamMessageApi(params: {
       customSubgroupId: params.customSubgroupId,
       targetMembershipId: params.targetMembershipId,
       body: params.body,
+      ...(params.clientMessageId ? { clientMessageId: params.clientMessageId } : {}),
       guardianCc: params.guardianCc,
       clientLocalHour: params.clientLocalHour,
       isEmergencyOverride: params.isEmergencyOverride,

@@ -43,14 +43,20 @@ export {
  * Formats seconds with 0.01s or 0.1s precision into Track & Field stopwatch format (`m:ss.xx` or `ss.xx`).
  */
 export function formatTrackMark(seconds: number, decimals: 1 | 2 = 2): string {
-  const safe = Math.max(0, seconds);
-  if (safe < 60) {
-    return `${safe.toFixed(decimals)}s`;
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const scale = decimals === 2 ? 100 : 10;
+  const totalTicks = Math.round(safe * scale);
+  const roundedSecs = totalTicks / scale;
+  if (roundedSecs < 60) {
+    return `${roundedSecs.toFixed(decimals)}s`;
   }
-  const hrs = Math.floor(safe / 3600);
-  const mins = Math.floor((safe % 3600) / 60);
-  const remSecs = safe - hrs * 3600 - mins * 60;
-  const secStr = remSecs.toFixed(decimals).padStart(decimals === 2 ? 5 : 4, '0');
+  const totalWholeSecs = Math.floor(totalTicks / scale);
+  const fracTicks = totalTicks % scale;
+  const hrs = Math.floor(totalWholeSecs / 3600);
+  const mins = Math.floor((totalWholeSecs % 3600) / 60);
+  const secs = totalWholeSecs % 60;
+  const fracStr = String(fracTicks).padStart(decimals, '0');
+  const secStr = `${String(secs).padStart(2, '0')}.${fracStr}`;
   if (hrs > 0) {
     return `${hrs}:${String(mins).padStart(2, '0')}:${secStr}`;
   }
@@ -1084,27 +1090,32 @@ export function summarizeNcaaCaraWeeklyHours(
   competitionDates: string[] = [],
   options?: NcaaCaraAuditOptions
 ): NcaaCaraWeeklyAudit {
-  const refMs = referenceDateStr
-    ? new Date(`${referenceDateStr.slice(0, 10)}T23:59:59Z`).getTime()
-    : Date.now();
-  const startMs = refMs - 7 * 86400 * 1000;
+  const refIso = referenceDateStr
+    ? referenceDateStr.slice(0, 10)
+    : (() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      })();
+  const refDateObj = new Date(`${refIso}T12:00:00Z`);
+  const startDateObj = new Date(refDateObj.getTime() - 6 * 86400 * 1000);
+  const startIso = Number.isNaN(startDateObj.getTime())
+    ? refIso
+    : startDateObj.toISOString().slice(0, 10);
+
+  const isDateInWindow = (isoDate: string): boolean =>
+    /^\d{4}-\d{2}-\d{2}$/.test(isoDate) && isoDate >= startIso && isoDate <= refIso;
 
   const hoursByDay = new Map<string, number>();
   const competitionDays = new Set<string>(
     competitionDates
-      .map((d) => d.slice(0, 10))
-      .filter((d) => {
-        if (!d) return false;
-        const dMs = new Date(`${d}T12:00:00Z`).getTime();
-        return !Number.isNaN(dMs) && dMs > startMs && dMs <= refMs;
-      })
+      .map((d) => String(d || '').slice(0, 10))
+      .filter((d) => isDateInWindow(d))
   );
 
   for (const act of activities) {
     if (!act?.startDateLocal) continue;
-    const tMs = new Date(act.startDateLocal).getTime();
-    if (Number.isNaN(tMs) || tMs <= startMs || tMs > refMs) continue;
     const dayKey = act.startDateLocal.slice(0, 10);
+    if (!isDateInWindow(dayKey)) continue;
     if (Boolean(act.officialRaceData) || Boolean(act.isCompetitionDay)) {
       competitionDays.add(dayKey);
     }

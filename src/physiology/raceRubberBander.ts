@@ -19,8 +19,10 @@ export interface RubberBanderInput {
 }
 
 function formatOfficialClock(secs: number): string {
-  const whole = Math.floor(secs);
-  const hundredths = Math.round((secs - whole) * 100);
+  const safe = Number.isFinite(secs) ? Math.max(0, secs) : 0;
+  const totalHundredths = Math.round(safe * 100);
+  const whole = Math.floor(totalHundredths / 100);
+  const hundredths = totalHundredths % 100;
   const h = Math.floor(whole / 3600);
   const m = Math.floor((whole % 3600) / 60);
   const s = whole % 60;

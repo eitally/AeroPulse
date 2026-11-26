@@ -410,13 +410,29 @@ export function optimizeTrackRelayLineup(params: {
     };
   }
 
-  // Pad if <4 athletes provided for solo/small group simulation, otherwise select top <= 8 specialists
-  const effectivePool =
-    poolInput.length >= 4
-      ? [...poolInput]
-          .sort((a, b) => a.thresholdPaceSecsPerKm - b.thresholdPaceSecsPerKm)
-          .slice(0, 8)
-      : Array.from({ length: 4 }, (_, i) => poolInput[i % poolInput.length]);
+  // Pad if <4 athletes provided for solo/small group simulation; for larger rosters (>8),
+  // take the union of top specialists for each distinct leg distance so sprinters are never pruned.
+  let effectivePool: RelayCandidateInput[];
+  if (poolInput.length < 4) {
+    effectivePool = Array.from({ length: 4 }, (_, i) => poolInput[i % poolInput.length]);
+  } else if (poolInput.length <= 10) {
+    effectivePool = poolInput;
+  } else {
+    const distinctDistances = Array.from(new Set(legDistances));
+    const perDistanceQuota = Math.max(3, Math.ceil(10 / distinctDistances.length));
+    const selectedSet = new Set<RelayCandidateInput>();
+    for (const dist of distinctDistances) {
+      const ranked = [...poolInput].sort(
+        (a, b) =>
+          predictRelayLegSplitSecs(a, dist, 1).splitSecs -
+          predictRelayLegSplitSecs(b, dist, 1).splitSecs
+      );
+      for (const cand of ranked.slice(0, perDistanceQuota)) {
+        selectedSet.add(cand);
+      }
+    }
+    effectivePool = Array.from(selectedSet).slice(0, 12);
+  }
 
   const n = effectivePool.length;
   const scoreMatrix: Array<Array<{ splitSecs: number; phenotype: SpeedReservePhenotype; rationale: string }>> =

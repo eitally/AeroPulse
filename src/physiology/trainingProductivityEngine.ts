@@ -727,10 +727,10 @@ export function evaluateRollingTrainingProductivity(params: {
   const rawTotal7d = sumLow + sumHigh + sumNeuro;
   const acuteLoad7d = Math.round(rawTotal7d);
 
-  // Resolve CTL, ATL, TSB, and 7d CTL Ramp Rate
+  // Resolve CTL, ATL, TSB, and 7d CTL Ramp Rate (defensively pick latest date even if unsorted)
   const latestW =
     wellnessUpToDate.length > 0
-      ? wellnessUpToDate[wellnessUpToDate.length - 1]
+      ? wellnessUpToDate.reduce((best, cur) => (cur.date >= best.date ? cur : best))
       : null;
   const fallbackPmc = computeFallbackPmcAtDate(
     filteredActivities,
@@ -1108,9 +1108,11 @@ export function evaluateSessionImpactReceipt(params: {
   const isTodaySession = todayActs.length > 0;
 
   // Use today's workouts if present; otherwise let the athlete inspect their latest workout day
-  const targetDateIso = isTodaySession
-    ? todayIso
-    : (activities[0].startDateLocal || '').slice(0, 10) || todayIso;
+  const latestActivityDateIso = activities.reduce((latest, act) => {
+    const d = (act.startDateLocal || '').slice(0, 10);
+    return d > latest ? d : latest;
+  }, '');
+  const targetDateIso = isTodaySession ? todayIso : latestActivityDateIso || todayIso;
   const sessionActs = isTodaySession
     ? todayActs
     : activities.filter(

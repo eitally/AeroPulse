@@ -720,8 +720,7 @@ export async function runLiveTelemetrySync(
               toUnifiedFromStrava
             );
             mergedActivities = [...mergedActivities, ...remainingStravaActivities].sort(
-              (a, b) =>
-                new Date(b.startDateLocal).getTime() - new Date(a.startDateLocal).getTime()
+              (a, b) => resolveActivityStartEpochMs(b) - resolveActivityStartEpochMs(a)
             );
           }
         } else if (

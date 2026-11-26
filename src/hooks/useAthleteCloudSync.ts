@@ -34,6 +34,102 @@ type TrackedCloudField =
   | 'gearItems'
   | 'sessionCheckIns';
 
+export function computeTeamSnapshotLoadAndCara(
+  activities: UnifiedActivity[],
+  referenceDateIso?: string
+): {
+  acuteLoad7d: number;
+  lowAerobicPct: number;
+  highAerobicPct: number;
+  neuromuscularPct: number;
+  caraHours7d: number;
+} {
+  const refIso = referenceDateIso
+    ? referenceDateIso.slice(0, 10)
+    : (() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      })();
+  const refDateObj = new Date(`${refIso}T12:00:00Z`);
+  const startDateObj = new Date(refDateObj.getTime() - 6 * 86_400_000);
+  const startIso = Number.isNaN(startDateObj.getTime())
+    ? refIso
+    : startDateObj.toISOString().slice(0, 10);
+
+  const recent7dActs = activities.filter((a) => {
+    const dayKey = String(a?.startDateLocal || '').slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(dayKey) && dayKey >= startIso && dayKey <= refIso;
+  });
+
+  const acuteLoad7d = Math.round(
+    recent7dActs.reduce((acc, a) => acc + (a.trainingLoad || 0), 0)
+  );
+
+  // Energy system breakdown from 7d zone seconds (falls back cleanly when zoneSecs is absent)
+  let lowSecs = 0;
+  let highSecs = 0;
+  let neuroSecs = 0;
+  for (const a of recent7dActs) {
+    const z = a.zoneSecs?.pace || a.zoneSecs?.hr || a.zoneSecs?.power;
+    if (Array.isArray(z) && z.length >= 5) {
+      lowSecs += (z[0] || 0) + (z[1] || 0);
+      highSecs += (z[2] || 0) + (z[3] || 0);
+      neuroSecs += (z[4] || 0) + (z[5] || 0) + (z[6] || 0);
+    } else if ((a.movingTimeSecs || 0) > 0) {
+      const secs = a.movingTimeSecs;
+      const intensity = a.intensityFactor || 0.72;
+      if (intensity >= 0.96 || Boolean(a.officialRaceData)) {
+        lowSecs += secs * 0.3;
+        highSecs += secs * 0.45;
+        neuroSecs += secs * 0.25;
+      } else if (intensity >= 0.82) {
+        lowSecs += secs * 0.55;
+        highSecs += secs * 0.35;
+        neuroSecs += secs * 0.1;
+      } else {
+        lowSecs += secs * 0.85;
+        highSecs += secs * 0.13;
+        neuroSecs += secs * 0.02;
+      }
+    }
+  }
+  const totalZoneSecs = lowSecs + highSecs + neuroSecs;
+  let lowAerobicPct = 0;
+  let highAerobicPct = 0;
+  let neuromuscularPct = 0;
+  if (totalZoneSecs > 0) {
+    lowAerobicPct = Math.round((lowSecs / totalZoneSecs) * 100);
+    highAerobicPct = Math.round((highSecs / totalZoneSecs) * 100);
+    neuromuscularPct = Math.max(0, 100 - lowAerobicPct - highAerobicPct);
+  }
+
+  // NCAA Bylaw 17.1.7.1: any competition day counts flat 3.0h (do NOT double-count warmup/shakeout on that same day)
+  const hoursByDay = new Map<string, number>();
+  const competitionDays = new Set<string>();
+  for (const a of recent7dActs) {
+    const dayKey = String(a.startDateLocal || '').slice(0, 10);
+    if (Boolean(a.officialRaceData) || Boolean(a.isCompetitionDay)) {
+      competitionDays.add(dayKey);
+    }
+    hoursByDay.set(dayKey, (hoursByDay.get(dayKey) || 0) + Math.max(0, a.movingTimeSecs || 0) / 3600);
+  }
+  for (const compDay of competitionDays) {
+    hoursByDay.set(compDay, 3.0);
+  }
+  let totalCaraHours = 0;
+  for (const dayHrs of hoursByDay.values()) {
+    totalCaraHours += dayHrs;
+  }
+
+  return {
+    acuteLoad7d,
+    lowAerobicPct,
+    highAerobicPct,
+    neuromuscularPct,
+    caraHours7d: Number(totalCaraHours.toFixed(1)),
+  };
+}
+
 function isCloudStateDirty(): boolean {
   if (typeof localStorage === 'undefined') return false;
   try {
@@ -157,6 +253,7 @@ export function useAthleteCloudSync({
   });
   const [sampleDemoCheckIns, setSampleDemoCheckIns] = useState<SessionCheckInRecord[]>([]);
   const [archivedCoachActivities, setArchivedCoachActivities] = useState<UnifiedActivity[]>([]);
+  const [hydrateRetryNonce, setHydrateRetryNonce] = useState(0);
 
   const effectiveSessionCheckIns = isSampleDemoMode ? sampleDemoCheckIns : sessionCheckIns;
 
@@ -450,6 +547,7 @@ export function useAthleteCloudSync({
     const dirtyAtStart = isCloudStateDirty();
 
     const hydrate = async () => {
+      let hydrationSucceeded = false;
       try {
         const res = await fetch('/api/athlete-state', {
           credentials: 'include',
@@ -464,6 +562,7 @@ export function useAthleteCloudSync({
           state?: AthleteCloudStateEnvelope | null;
         };
         if (cancelled) return;
+        hydrationSucceeded = true;
 
         const cloudState = data?.authenticated ? data.state : null;
         if (cloudState) {
@@ -627,9 +726,9 @@ export function useAthleteCloudSync({
           }
         }
       } catch {
-        // Non-fatal offline fallback to local IndexedDB/localStorage
+        // Non-fatal offline fallback to local IndexedDB/localStorage; retry on reconnect
       } finally {
-        if (!cancelled) {
+        if (!cancelled && hydrationSucceeded) {
           hydratedIdentityRef.current = identityKey;
           if (isCloudStateDirty() || localMutationRevRef.current > syncedRevRef.current) {
             void flushCloudStateSave();
@@ -645,6 +744,7 @@ export function useAthleteCloudSync({
   }, [
     hasLiveWorkspace,
     identityKey,
+    hydrateRetryNonce,
     setPlannedEvents,
     setTargetGoals,
     setAnnualMileageGoals,
@@ -709,11 +809,14 @@ export function useAthleteCloudSync({
     flushCloudStateSave,
   ]);
 
-  // 2b. Retry failed dirty state automatically when network connectivity returns
+  // 2b. Retry failed hydration or dirty state automatically when network connectivity returns
   useEffect(() => {
     if (!hasLiveWorkspace || typeof window === 'undefined') return;
     const handleOnline = () => {
-      if (hydratedIdentityRef.current !== identityKey) return;
+      if (hydratedIdentityRef.current !== identityKey) {
+        setHydrateRetryNonce((n) => n + 1);
+        return;
+      }
       if (isCloudStateDirty() || localMutationRevRef.current > syncedRevRef.current) {
         void flushCloudStateSave();
       }
@@ -732,13 +835,9 @@ export function useAthleteCloudSync({
     }
 
     const timer = window.setTimeout(() => {
-      const sevenDaysAgoMs = Date.now() - 7 * 86_400_000;
-      const recent7dActs = activities.filter(
-        (a) => new Date(a.startDateLocal).getTime() >= sevenDaysAgoMs
-      );
-      const acuteLoad7d = Math.round(
-        recent7dActs.reduce((acc, a) => acc + (a.trainingLoad || 0), 0)
-      );
+      const snapshotMetrics = computeTeamSnapshotLoadAndCara(activities);
+      const { acuteLoad7d, lowAerobicPct, highAerobicPct, neuromuscularPct, caraHours7d } =
+        snapshotMetrics;
       const ctlVal = selfLatestWellness?.ctl ?? 0;
       const atlVal = selfLatestWellness?.atl ?? Math.round(acuteLoad7d / 7);
       const tsbVal = selfLatestWellness?.tsb ?? Number((ctlVal - atlVal).toFixed(1));
@@ -772,24 +871,10 @@ export function useAthleteCloudSync({
             atl: atlVal,
             tsb: tsbVal,
             acuteLoad7d,
-            lowAerobicPct: 76,
-            highAerobicPct: 18,
-            neuromuscularPct: 6,
-            caraHours7d: Number(
-              (() => {
-                // NCAA Bylaw 17.1.7.3.2: every competition day counts as 3.0 CARA hours
-                const competitionDays = new Set<string>();
-                let practiceSecs = 0;
-                for (const a of recent7dActs) {
-                  if (a.officialRaceData) {
-                    competitionDays.add(String(a.startDateLocal || '').slice(0, 10));
-                  } else {
-                    practiceSecs += a.movingTimeSecs || 0;
-                  }
-                }
-                return (practiceSecs / 3600 + competitionDays.size * 3.0).toFixed(1);
-              })()
-            ),
+            lowAerobicPct,
+            highAerobicPct,
+            neuromuscularPct,
+            caraHours7d,
             ftpWatts: athleteProfile.ftp,
             thresholdPaceSecsPerKm: athleteProfile.thresholdPaceSecsPerKm,
             safeSportHideWeight: Boolean(athleteProfile.safeSportHideWeight),

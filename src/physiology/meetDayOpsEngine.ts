@@ -142,6 +142,23 @@ export interface RelaySquadGroup {
 
 const PREFERRED_LANE_ORDER = [4, 5, 3, 6, 2, 7, 1, 8];
 
+function getPreferredLaneOrderForCapacity(cap: number): number[] {
+  const safeCap = Math.max(1, Math.floor(cap));
+  if (safeCap === 8) return PREFERRED_LANE_ORDER;
+  if (safeCap === 9) return [5, 6, 4, 7, 3, 8, 2, 9, 1];
+  const center = Math.ceil(safeCap / 2);
+  const order: number[] = [];
+  for (let offset = 0; order.length < safeCap; offset++) {
+    if (offset === 0) {
+      order.push(center);
+    } else {
+      if (center + offset <= safeCap) order.push(center + offset);
+      if (center - offset >= 1) order.push(center - offset);
+    }
+  }
+  return order;
+}
+
 export const MEET_DIVISION_CHOICES = ['Varsity', 'Junior Varsity', 'Frosh/Soph'] as const;
 
 export function inferDivisionFromSquadGroup(squadGroup?: string): string {
@@ -243,16 +260,28 @@ function groupEntriesByPartition(
 export function parseTrackSeedTimeToSecs(raw: string): number | null {
   const s = String(raw || '').trim();
   if (!s || /^nt$/i.test(s)) return null;
-  const colon = s.match(/^(\d{1,2}):(\d{1,2}(?:\.\d{1,2})?)$/);
+  const hms = s.match(/^(\d{1,2}):(\d{2}):(\d{1,2}(?:\.\d{1,3})?)$/);
+  if (hms) {
+    const hrs = Number(hms[1]);
+    const mins = Number(hms[2]);
+    const secs = Number(hms[3]);
+    if (Number.isFinite(hrs) && Number.isFinite(mins) && Number.isFinite(secs) && mins < 60 && secs < 60) {
+      const total = hrs * 3600 + mins * 60 + secs;
+      return total > 0 ? Number(total.toFixed(2)) : null;
+    }
+    return null;
+  }
+  const colon = s.match(/^(\d{1,2}):(\d{1,2}(?:\.\d{1,3})?)$/);
   if (colon) {
     const mins = Number(colon[1]);
     const secs = Number(colon[2]);
     if (Number.isFinite(mins) && Number.isFinite(secs) && secs < 60) {
-      return Number((mins * 60 + secs).toFixed(2));
+      const total = mins * 60 + secs;
+      return total > 0 ? Number(total.toFixed(2)) : null;
     }
     return null;
   }
-  const plain = s.match(/^(\d{1,4}(?:\.\d{1,2})?)s?$/i);
+  const plain = s.match(/^(\d{1,4}(?:\.\d{1,3})?)s?$/i);
   if (plain) {
     const val = Number(plain[1]);
     return Number.isFinite(val) && val > 0 ? Number(val.toFixed(2)) : null;
@@ -541,10 +570,8 @@ export function seedTrackHeats(
         ? totalHeats - heatIndexFromFastest
         : heatIndexFromFastest + 1;
       const posInHeat = i % cap;
-      const lane =
-        cap <= 8 && !unlaned
-          ? PREFERRED_LANE_ORDER[posInHeat] ?? posInHeat + 1
-          : posInHeat + 1;
+      const laneOrder = !unlaned && cap <= 9 ? getPreferredLaneOrderForCapacity(cap) : null;
+      const lane = laneOrder ? laneOrder[posInHeat] ?? posInHeat + 1 : posInHeat + 1;
       const row = fastSorted[i];
       const positionLabel = unlaned ? `Box/Hip ${lane}` : `Lane ${lane}`;
       bucketAssignments.push({

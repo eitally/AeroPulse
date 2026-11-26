@@ -189,9 +189,14 @@ export function useTelemetrySync({
     });
   }, [reconcileStoreOwnerAthleteId]);
 
+  const inFlightSyncRef = useRef<Promise<void> | null>(null);
+
   const syncLiveTelemetry = useCallback(
     async (fullHistory = false, explicitStravaWindow?: StravaSyncWindow) => {
-      return runLiveTelemetrySync(
+      if (inFlightSyncRef.current && !fullHistory && !explicitStravaWindow) {
+        return inFlightSyncRef.current;
+      }
+      const pending = runLiveTelemetrySync(
         {
           activitiesRef,
           setActivities,
@@ -214,7 +219,13 @@ export function useTelemetrySync({
         },
         fullHistory,
         explicitStravaWindow
-      );
+      ).finally(() => {
+        if (inFlightSyncRef.current === pending) {
+          inFlightSyncRef.current = null;
+        }
+      });
+      inFlightSyncRef.current = pending;
+      return pending;
     },
     [fetchServerConfigStatus]
   );
@@ -471,8 +482,26 @@ export function useTelemetrySync({
     let lastAutoSyncMs = Date.now();
     const MIN_REFOCUS_INTERVAL_MS = 3 * 60 * 1000;
 
+    const hasAnyConnectedWearableOrSession = () => {
+      if (hasStravaClientCredentials()) return true;
+      try {
+        const hdrs = getSavedIntervalsHeaders();
+        return Boolean(
+          hdrs['x-intervals-api-key'] ||
+            hdrs['x-intervals-access-token'] ||
+            hdrs['x-garmin-personal-api-key'] ||
+            hdrs['x-garmin-bearer-token'] ||
+            hdrs['x-wahoo-access-token'] ||
+            hdrs['x-polar-access-token'] ||
+            hdrs['x-coros-access-token']
+        );
+      } catch {
+        return false;
+      }
+    };
+
     const triggerIfStale = () => {
-      if (!hasStravaClientCredentials()) return;
+      if (!hasAnyConnectedWearableOrSession()) return;
       if (document.visibilityState === 'visible') {
         const now = Date.now();
         if (now - lastAutoSyncMs >= MIN_REFOCUS_INTERVAL_MS) {
@@ -483,7 +512,7 @@ export function useTelemetrySync({
     };
 
     const intervalId = window.setInterval(() => {
-      if (!hasStravaClientCredentials()) return;
+      if (!hasAnyConnectedWearableOrSession()) return;
       lastAutoSyncMs = Date.now();
       void syncLiveTelemetry(false);
     }, 15 * 60 * 1000);

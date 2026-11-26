@@ -245,10 +245,13 @@ export function evaluateOrthopedicInterference(
 ): OrthopedicLoadSummary {
   const refDateStr = (referenceDateIso || getLocalDateIso()).slice(0, 10);
   const refMs = Date.parse(`${refDateStr}T23:59:59Z`);
+  const hasExplicitRef = Boolean(referenceDateIso);
   const refExactMs =
     referenceDateIso && referenceDateIso.includes('T')
       ? Date.parse(referenceDateIso)
-      : refMs;
+      : hasExplicitRef
+        ? refMs
+        : Date.now();
   const dayMs = 86_400_000;
   const hourMs = 3_600_000;
 

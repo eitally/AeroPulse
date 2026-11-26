@@ -417,6 +417,20 @@ export function enqueueOfflineDelegatedSubmission(
   return next;
 }
 
+const MAX_DELEGATED_OUTBOX_ATTEMPTS = 8;
+let inFlightDelegatedFlush: Promise<{ flushedCount: number; remainingCount: number }> | null = null;
+let delegatedFlushNeedsRedrain = false;
+
+export async function removeOfflineDelegatedSubmissionAsync(
+  clientSubmissionId: string
+): Promise<void> {
+  const remaining = readLocalQueue().filter(
+    (item) => item.clientSubmissionId !== clientSubmissionId
+  );
+  writeLocalQueue(remaining);
+  await deleteIdbQueueItem(clientSubmissionId);
+}
+
 export function removeOfflineDelegatedSubmission(clientSubmissionId: string): void {
   const remaining = readLocalQueue().filter(
     (item) => item.clientSubmissionId !== clientSubmissionId
@@ -429,40 +443,67 @@ export async function flushOfflineDelegatedSubmissions(passCode?: string): Promi
   flushedCount: number;
   remainingCount: number;
 }> {
-  const allQueued = await loadOfflineDelegatedSubmissionsAsync();
-  const cleanCode = passCode ? passCode.trim().toUpperCase() : '';
-  const targets = allQueued.filter(
-    (item) => !cleanCode || item.passCode.toUpperCase() === cleanCode
-  );
-  if (targets.length === 0) {
-    return { flushedCount: 0, remainingCount: allQueued.length };
-  }
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return { flushedCount: 0, remainingCount: targets.length };
+  if (inFlightDelegatedFlush) {
+    delegatedFlushNeedsRedrain = true;
+    return inFlightDelegatedFlush;
   }
 
-  let flushedCount = 0;
-  for (const item of targets) {
-    try {
-      await submitDelegatedSplitsApi(item.passCode, item.payload, item.pin);
-      removeOfflineDelegatedSubmission(item.clientSubmissionId);
-      flushedCount += 1;
-    } catch (err) {
-      const status = err instanceof TeamLifecycleApiError ? err.status : 0;
-      if (status === 400 || status === 404 || status === 410) {
-        removeOfflineDelegatedSubmission(item.clientSubmissionId);
-      } else {
-        const updated: OfflineQueuedDelegatedSubmission = {
-          ...item,
-          attempts: (item.attempts || 0) + 1,
-          lastError: err instanceof Error ? err.message : 'Sync failed',
-        };
-        enqueueOfflineDelegatedSubmission(updated);
+  inFlightDelegatedFlush = (async () => {
+    const cleanCode = passCode ? passCode.trim().toUpperCase() : '';
+    let flushedCount = 0;
+
+    do {
+      delegatedFlushNeedsRedrain = false;
+      const allQueued = await loadOfflineDelegatedSubmissionsAsync();
+      const targets = allQueued.filter(
+        (item) => !cleanCode || item.passCode.toUpperCase() === cleanCode
+      );
+      if (targets.length === 0) {
+        return { flushedCount, remainingCount: 0 };
       }
-    }
-  }
-  const remaining = loadOfflineDelegatedSubmissions(passCode);
-  return { flushedCount, remainingCount: remaining.length };
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return { flushedCount, remainingCount: targets.length };
+      }
+
+      for (const item of targets) {
+        if ((item.attempts || 0) >= MAX_DELEGATED_OUTBOX_ATTEMPTS) {
+          await removeOfflineDelegatedSubmissionAsync(item.clientSubmissionId);
+          continue;
+        }
+        try {
+          await submitDelegatedSplitsApi(item.passCode, item.payload, item.pin);
+          await removeOfflineDelegatedSubmissionAsync(item.clientSubmissionId);
+          flushedCount += 1;
+        } catch (err) {
+          const status = err instanceof TeamLifecycleApiError ? err.status : 0;
+          const nextAttempts = (item.attempts || 0) + 1;
+          if (
+            status === 400 ||
+            status === 403 ||
+            status === 404 ||
+            status === 410 ||
+            nextAttempts >= MAX_DELEGATED_OUTBOX_ATTEMPTS
+          ) {
+            await removeOfflineDelegatedSubmissionAsync(item.clientSubmissionId);
+          } else {
+            const updated: OfflineQueuedDelegatedSubmission = {
+              ...item,
+              attempts: nextAttempts,
+              lastError: err instanceof Error ? err.message : 'Sync failed',
+            };
+            enqueueOfflineDelegatedSubmission(updated);
+          }
+        }
+      }
+    } while (delegatedFlushNeedsRedrain);
+
+    const remaining = await loadOfflineDelegatedSubmissionsAsync(passCode);
+    return { flushedCount, remainingCount: remaining.length };
+  })().finally(() => {
+    inFlightDelegatedFlush = null;
+  });
+
+  return inFlightDelegatedFlush;
 }
 
 export function cachePublicTimingPassLocally(

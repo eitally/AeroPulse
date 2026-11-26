@@ -241,17 +241,40 @@ export function parseFatTimeString(raw: string): number {
     return Number.isFinite(val) && val > 0 ? Number(val.toFixed(2)) : 0;
   }
   if (parts.length === 2) {
+    if (!/^\d{1,3}$/.test(parts[0]) || !/^\d{1,2}(?:\.\d{1,3})?$/.test(parts[1])) return 0;
     const mins = parseInt(parts[0], 10);
     const secs = parseFloat(parts[1]);
-    if (!Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
-    return Number((mins * 60 + secs).toFixed(2));
+    if (!Number.isFinite(mins) || !Number.isFinite(secs) || mins < 0 || secs < 0 || secs >= 60) {
+      return 0;
+    }
+    const total = mins * 60 + secs;
+    return total > 0 ? Number(total.toFixed(2)) : 0;
   }
   if (parts.length === 3) {
+    if (
+      !/^\d{1,2}$/.test(parts[0]) ||
+      !/^\d{1,2}$/.test(parts[1]) ||
+      !/^\d{1,2}(?:\.\d{1,3})?$/.test(parts[2])
+    ) {
+      return 0;
+    }
     const hrs = parseInt(parts[0], 10);
     const mins = parseInt(parts[1], 10);
     const secs = parseFloat(parts[2]);
-    if (!Number.isFinite(hrs) || !Number.isFinite(mins) || !Number.isFinite(secs)) return 0;
-    return Number((hrs * 3600 + mins * 60 + secs).toFixed(2));
+    if (
+      !Number.isFinite(hrs) ||
+      !Number.isFinite(mins) ||
+      !Number.isFinite(secs) ||
+      hrs < 0 ||
+      mins < 0 ||
+      mins >= 60 ||
+      secs < 0 ||
+      secs >= 60
+    ) {
+      return 0;
+    }
+    const total = hrs * 3600 + mins * 60 + secs;
+    return total > 0 ? Number(total.toFixed(2)) : 0;
   }
   return 0;
 }
@@ -493,7 +516,15 @@ export function synthesizeOfficialRaceActivity(
     cadence: cadenceStream,
   };
 
-  const avgPaceSecsPerKm = Math.round((candidate.fatTimeSecs / candidate.eventDistanceMeters) * 1000);
+  const safeDistMeters =
+    Number.isFinite(candidate.eventDistanceMeters) && candidate.eventDistanceMeters > 0
+      ? candidate.eventDistanceMeters
+      : 1600;
+  const safeFatSecs =
+    Number.isFinite(candidate.fatTimeSecs) && candidate.fatTimeSecs > 0
+      ? candidate.fatTimeSecs
+      : 300;
+  const avgPaceSecsPerKm = Math.max(1, Math.round((safeFatSecs / safeDistMeters) * 1000));
   const firstHalfSplits = splits.slice(0, Math.ceil(splits.length / 2));
   const secondHalfSplits = splits.slice(Math.ceil(splits.length / 2));
   const firstHalfAvg =
@@ -566,7 +597,9 @@ export function synthesizeOfficialRaceActivity(
     avgPaceSecsPerKm,
     gapPaceSecsPerKm: avgPaceSecsPerKm,
     aerobicDecouplingPct: splitFadePct,
-    efficiencyFactor: Number(((1000 / avgPaceSecsPerKm) * 60 / (athleteLthr * 1.02)).toFixed(2)),
+    efficiencyFactor: Number(
+      (((1000 / Math.max(1, avgPaceSecsPerKm)) * 60) / Math.max(80, athleteLthr * 1.02)).toFixed(2)
+    ),
     firstHalfEf: 1.58,
     secondHalfEf: 1.56,
     deviceName: `Watchless FAT Timing (${candidate.platform})`,

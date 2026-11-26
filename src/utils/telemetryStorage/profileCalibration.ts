@@ -391,14 +391,16 @@ export function buildCompleteAthleteProfile(
   const isLegacyHardcodedProfile = isUncalibratedDefaultProfile(partial);
   const allowLocalFallback = !options?.skipLocalStorageFallback;
 
-  const storedWeight =
-    allowLocalFallback && typeof window !== 'undefined'
-      ? Number(window.localStorage.getItem('aeropulse_strava_athlete_weight_kg') || 0)
-      : 0;
-  const storedFtp =
-    allowLocalFallback && typeof window !== 'undefined'
-      ? Number(window.localStorage.getItem('aeropulse_strava_athlete_ftp') || 0)
-      : 0;
+  let storedWeight = 0;
+  let storedFtp = 0;
+  if (allowLocalFallback && typeof window !== 'undefined') {
+    try {
+      storedWeight = Number(window.localStorage.getItem('aeropulse_strava_athlete_weight_kg') || 0);
+      storedFtp = Number(window.localStorage.getItem('aeropulse_strava_athlete_ftp') || 0);
+    } catch {
+      // Restricted WebView / private iframe localStorage access is optional
+    }
+  }
 
   const weightKg = Number(
     (!isLegacyHardcodedProfile && partial?.weightKg && partial.weightKg !== 70
@@ -578,18 +580,20 @@ export function buildCompleteAthleteProfile(
       ? partial!.runHrZones!
       : buildHrZonesFromCeilings(runLthr, runMaxHr);
 
-  const storedGarminName =
-    allowLocalFallback && typeof window !== 'undefined'
-      ? window.localStorage.getItem('aeropulse_garmin_athlete_name')?.trim()
-      : undefined;
-  const storedStravaName =
-    allowLocalFallback && typeof window !== 'undefined'
-      ? window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim()
-      : undefined;
-  const storedIntervalsName =
-    allowLocalFallback && typeof window !== 'undefined'
-      ? window.localStorage.getItem('aeropulse_intervals_athlete_name')?.trim()
-      : undefined;
+  let storedGarminName: string | undefined;
+  let storedStravaName: string | undefined;
+  let storedIntervalsName: string | undefined;
+  let storedPrimarySportRaw: string | undefined;
+  if (allowLocalFallback && typeof window !== 'undefined') {
+    try {
+      storedGarminName = window.localStorage.getItem('aeropulse_garmin_athlete_name')?.trim();
+      storedStravaName = window.localStorage.getItem('aeropulse_strava_athlete_name')?.trim();
+      storedIntervalsName = window.localStorage.getItem('aeropulse_intervals_athlete_name')?.trim();
+      storedPrimarySportRaw = window.localStorage.getItem('thresh_primary_sport')?.trim();
+    } catch {
+      // Restricted WebView / private iframe localStorage access is optional
+    }
+  }
   const resolvedName =
     partial?.name && !isGenericAthleteName(partial.name)
       ? partial.name.trim()
@@ -601,10 +605,6 @@ export function buildCompleteAthleteProfile(
             ? storedIntervalsName
             : 'Athlete';
 
-  const storedPrimarySportRaw =
-    allowLocalFallback && typeof window !== 'undefined'
-      ? window.localStorage.getItem('thresh_primary_sport')?.trim()
-      : undefined;
   const storedPrimarySport: AthleteProfile['primarySport'] =
     storedPrimarySportRaw === 'Running' ||
     storedPrimarySportRaw === 'Cycling' ||

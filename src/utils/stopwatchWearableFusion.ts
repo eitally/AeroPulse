@@ -14,14 +14,20 @@ import {
 } from '../physiology/trackOvalGpsFusionEngine';
 
 function formatMarkSeconds(seconds: number, decimals: 1 | 2 = 2): string {
-  const safe = Math.max(0, seconds);
-  if (safe < 60) {
-    return `${safe.toFixed(decimals)}s`;
+  const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0;
+  const scale = decimals === 2 ? 100 : 10;
+  const totalTicks = Math.round(safe * scale);
+  const roundedSecs = totalTicks / scale;
+  if (roundedSecs < 60) {
+    return `${roundedSecs.toFixed(decimals)}s`;
   }
-  const hrs = Math.floor(safe / 3600);
-  const mins = Math.floor((safe % 3600) / 60);
-  const remSecs = safe - hrs * 3600 - mins * 60;
-  const secStr = remSecs.toFixed(decimals).padStart(decimals === 2 ? 5 : 4, '0');
+  const totalWholeSecs = Math.floor(totalTicks / scale);
+  const fracTicks = totalTicks % scale;
+  const hrs = Math.floor(totalWholeSecs / 3600);
+  const mins = Math.floor((totalWholeSecs % 3600) / 60);
+  const secs = totalWholeSecs % 60;
+  const fracStr = String(fracTicks).padStart(decimals, '0');
+  const secStr = `${String(secs).padStart(2, '0')}.${fracStr}`;
   if (hrs > 0) {
     return `${hrs}:${String(mins).padStart(2, '0')}:${secStr}`;
   }
