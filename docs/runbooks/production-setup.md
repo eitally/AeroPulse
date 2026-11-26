@@ -80,13 +80,13 @@ Configure these variables in **Vercel Dashboard → Project → Settings → Env
 
 ## 3. Post-Deploy Smoke Verification
 
-After saving env vars and redeploying `main`, run these three production checks:
+After saving env vars and redeploying `main`, run the automated production readiness audit and manual smoke checks:
 
-1. **API Health Flags:**
+1. **Automated Production Gate (`npm run check:prod`):**
    ```bash
-   curl -sS https://meetready.app/api/health
+   npm run check:prod
    ```
-   Confirm `ok: true`, `databaseHealthy: true`, `resendEmail: true`, `stripeBilling: true`, `stripeWebhook: true`, and `webPushVapid: true`.
+   Verifies `https://meetready.app/api/health` (`databaseHealthy: true`, non-`MEMORY` rate limiting, `resendEmail: true`, `webPushVapid: true`, `cronAuth: true`, `stripeBilling: true`, `stripeWebhook: true`), root `MX` + Resend DKIM/SPF/DMARC DNS records, and HTTP `200` on all public trust routes.
 2. **Stripe Webhook End-to-End:** Complete one Stripe checkout against a test team and verify the webhook at `https://meetready.app/api/billing/stripe/webhook` transitions the team billing state to `ACTIVE_PAID`.
 3. **Resend Auth Delivery:** Request one **Continue with Email** Magic Link on `https://meetready.app`, confirm the email arrives cleanly from `MeetReady <auth@meetready.app>`, and verify clicking the link signs into the live app.
 
@@ -94,7 +94,7 @@ After saving env vars and redeploying `main`, run these three production checks:
 
 ## 4. School District Procurement Desk (`procurement@meetready.app`, `MEE-18`)
 
-Public school districts and Athletic Directors pay via annual Purchase Orders and route compliance packets to **`procurement@meetready.app`** (matching `/procurement`, `/for-athletic-directors`, and generated PO invoices).
+Public school districts and Athletic Directors pay via annual Purchase Orders and route compliance packets to **`procurement@meetready.app`** (matching `/procurement`, `/for-athletic-directors`, and generated PO invoices). Ready-to-send Sole-Source, AP response, and Founding Season outreach templates live in [`procurement-templates/sole-source-and-ap-kit.md`](procurement-templates/sole-source-and-ap-kit.md).
 
 ### Ready-to-Attach Vendor Packet Checklist
 - [ ] **Inbound Mail Verified:** `procurement@meetready.app` (and optional `billing@meetready.app` alias) actively forwards to a monitored mailbox.

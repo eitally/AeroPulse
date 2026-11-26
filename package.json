@@ -18,6 +18,7 @@
     "test:e2e": "playwright test",
     "check:brand": "node scripts/checkBrandCasing.mjs",
     "check:bundle": "node scripts/checkBundleBudget.mjs",
+    "check:prod": "node scripts/verifyProdLaunch.mjs",
     "secrets:generate": "node scripts/generateProdSecrets.mjs"
   },
   "dependencies": {
